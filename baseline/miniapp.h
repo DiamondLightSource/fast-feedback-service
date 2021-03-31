@@ -12,6 +12,7 @@ typedef struct image_t {
 // file reading API specification
 
 int setup_hdf5_files(char *master_filename, char *data_filename);
+void cleanup_hdf5();
 
 image_t get_image(size_t number);
 

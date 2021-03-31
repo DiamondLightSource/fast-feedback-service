@@ -12,6 +12,12 @@ hid_t master;
 hid_t data;
 hid_t dataset;
 
+void cleanup_hdf5() {
+    H5Dclose(dataset);
+    H5Fclose(data);
+    H5Fclose(master);
+}
+
 size_t frames, slow, fast;
 
 size_t get_number_of_images() {

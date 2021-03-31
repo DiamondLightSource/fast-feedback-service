@@ -29,5 +29,7 @@ int main(int argc, char **argv) {
         free_image(image);
     }
 
+    cleanup_hdf5();
+
     return 0;
 }
