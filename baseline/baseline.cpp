@@ -2,7 +2,7 @@
 
 #include "baseline.h"
 #include "local.h"
-#include "spotfind.h"
+#include "spotfind_test_utils.h"
 
 using dials::algorithms::DispersionExtendedThreshold;
 using dials::algorithms::DispersionThreshold;
