@@ -20,5 +20,5 @@ find_package(benchmark REQUIRED)
 add_executable(baseline baseline.cpp )
 target_link_libraries(baseline PUBLIC Dials::Dials benchmark::benchmark)
 
-add_executable(h5read h5read.c)
+add_executable(h5read h5read.c miniapp.c)
 target_link_libraries(h5read PUBLIC hdf5::hdf5)
