@@ -10,4 +10,3 @@ typedef struct image {
 } image;
 
 #endif
-

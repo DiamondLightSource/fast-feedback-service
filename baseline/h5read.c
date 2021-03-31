@@ -108,7 +108,7 @@ void setup_data() {
     hid_t datatype, space;
 
     hsize_t dims[3];
-    
+
     dataset = H5Dopen(data, data_path, H5P_DEFAULT);
 
     if (dataset < 0) {
@@ -126,8 +126,8 @@ void setup_data() {
     space = H5Dget_space(dataset);
 
     if (H5Sget_simple_extent_ndims(space) != 3) {
-      fprintf(stderr, "raw data not three dimensional\n");
-      exit(1);
+        fprintf(stderr, "raw data not three dimensional\n");
+        exit(1);
     }
 
     H5Sget_simple_extent_dims(space, dims, NULL);
@@ -137,7 +137,6 @@ void setup_data() {
     fast = dims[2];
 
     printf("total data size: %ldx%ldx%ld\n", frames, slow, fast);
-    
 }
 
 int main(int argc, char **argv) {
