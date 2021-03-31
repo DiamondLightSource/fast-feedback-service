@@ -15,54 +15,53 @@ hid_t dataset;
 size_t frames, slow, fast;
 
 size_t get_number_of_images() {
-  return frames;
+    return frames;
 }
 
 void free_image(image_t i) {
-  free(i.data);
+    free(i.data);
 }
 
 image_t get_image(size_t n) {
-  if (n >= frames) {
-    fprintf(stderr, "image %ld > frames (%ld)\n", n, frames);
-    exit(1);
-  }
+    if (n >= frames) {
+        fprintf(stderr, "image %ld > frames (%ld)\n", n, frames);
+        exit(1);
+    }
 
-  hid_t mem_space, space, datatype;
-  
-  hsize_t dims[3], block[3], offset[3];
+    hid_t mem_space, space, datatype;
 
-  uint16_t * buffer = (uint16_t *) malloc (sizeof(uint16_t) * slow * fast);
+    hsize_t dims[3], block[3], offset[3];
 
-  block[0] = 1;
-  block[1] = slow;
-  block[2] = fast;
+    uint16_t *buffer = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast);
 
-  offset[0] = n;
-  offset[1] = 0;
-  offset[2] = 0;
+    block[0] = 1;
+    block[1] = slow;
+    block[2] = fast;
 
-  space = H5Dget_space(dataset);
-  datatype = H5Dget_type(dataset);
+    offset[0] = n;
+    offset[1] = 0;
+    offset[2] = 0;
 
-  // select data to read #todo add status checks
-  H5Sselect_hyperslab(space, H5S_SELECT_SET, offset, NULL, block, NULL);
-  mem_space = H5Screate_simple(3, block, NULL);
+    space = H5Dget_space(dataset);
+    datatype = H5Dget_type(dataset);
 
-  H5Dread(dataset, datatype, mem_space, space, H5P_DEFAULT, buffer);
+    // select data to read #todo add status checks
+    H5Sselect_hyperslab(space, H5S_SELECT_SET, offset, NULL, block, NULL);
+    mem_space = H5Screate_simple(3, block, NULL);
 
-  H5Sclose(space);
-  H5Sclose(mem_space);
-  
-  image_t result;
-  result.slow = slow;
-  result.fast = fast;
-  result.mask = mask;
-  result.data = buffer;
+    H5Dread(dataset, datatype, mem_space, space, H5P_DEFAULT, buffer);
 
-  return result;
+    H5Sclose(space);
+    H5Sclose(mem_space);
+
+    image_t result;
+    result.slow = slow;
+    result.fast = fast;
+    result.mask = mask;
+    result.data = buffer;
+
+    return result;
 }
-    
 
 void read_mask() {
     // uses master pointer above: beware if this is bad
