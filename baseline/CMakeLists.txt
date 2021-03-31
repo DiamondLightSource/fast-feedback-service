@@ -7,7 +7,10 @@ set(CMAKE_CXX_STANDARD 11)
 
 find_package(Boost REQUIRED)
 find_package(Dials REQUIRED)
-
+find_package(HDF5 REQUIRED)
 
 add_executable(baseline baseline.cpp local.cpp)
-target_link_libraries(baseline PUBLIC Dials::Dials)
+target_link_libraries(baseline PUBLIC Dials::Dials hdf5::hdf5)
+
+add_executable(h5read h5read.c)
+target_link_libraries(h5read PUBLIC hdf5::hdf5)
