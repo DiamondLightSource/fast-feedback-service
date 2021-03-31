@@ -1,5 +1,9 @@
+#include <benchmark/benchmark.h>
 
+#include "baseline.h"
+#include "local.h"
+#include "spotfind.h"
 
-int main(int argc, char** argv) {
-    return 0;
-}
+using dials::algorithms::DispersionExtendedThreshold;
+using dials::algorithms::DispersionThreshold;
+BENCHMARK_MAIN();
