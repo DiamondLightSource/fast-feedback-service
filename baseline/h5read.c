@@ -22,7 +22,9 @@ void read_mask() {
     char mask_path[] = "/entry/instrument/detector/pixel_mask";
     hid_t mask_dataset, mask_info, datatype;
 
+    size_t mask_dsize;
     uint32_t *raw_mask;
+    uint64_t *raw_mask_64; // why?
 
     mask_dataset = H5Dopen(master, mask_path, H5P_DEFAULT);
 
@@ -34,17 +36,33 @@ void read_mask() {
     datatype = H5Dget_type(mask_dataset);
     mask_info = H5Dget_space(mask_dataset);
 
-    if (H5Tget_size(datatype) != 4) {
-        fprintf(stderr, "mask data size != 4 (%ld)\n", H5Tget_size(datatype));
+    mask_dsize = H5Tget_size(datatype);
+    if (mask_dsize == 4) {
+        printf("mask dtype uint32");
+    } else if (mask_dsize == 8) {
+        printf("mask dtype uint64");
+    } else {      
+        fprintf(stderr, "mask data size != 4,8 (%ld)\n", H5Tget_size(datatype));
         exit(1);
     }
 
     mask_size = H5Sget_simple_extent_npoints(mask_info);
 
     printf("mask has %ld elements\n", mask_size);
-    raw_mask = (uint32_t *)malloc(sizeof(uint32_t) * mask_size);
 
-    if (H5Dread(mask_dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void *)raw_mask)
+    void *buffer = NULL;
+    
+    if (mask_dsize == 4) {
+      raw_mask = (uint32_t *)malloc(sizeof(uint32_t) * mask_size);
+      buffer = (void *) raw_mask;
+      raw_mask_64 = NULL;
+    } else {
+      raw_mask_64 = (uint64_t *)malloc(sizeof(uint64_t) * mask_size);
+      buffer = (void *) raw_mask_64;
+      raw_mask = NULL;
+    }
+    
+    if (H5Dread(mask_dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buffer)
         < 0) {
         fprintf(stderr, "error reading mask\n");
         exit(1);
@@ -56,20 +74,32 @@ void read_mask() {
 
     mask = (uint8_t *)malloc(sizeof(uint8_t) * mask_size);
 
-    for (size_t j = 0; j < mask_size; j++) {
+    if (mask_dsize == 4) {
+      for (size_t j = 0; j < mask_size; j++) {
         if (raw_mask[j] == 0) {
             zero++;
             mask[j] = 1;
         } else {
             mask[j] = 0;
         }
+      }
+    } else {
+      for (size_t j = 0; j < mask_size; j++) {
+        if (raw_mask_64[j] == 0) {
+            zero++;
+            mask[j] = 1;
+        } else {
+            mask[j] = 0;
+        }
+      }
     }
-
+    
     printf("%ld of the pixels are valid\n", zero);
 
     // cleanup
 
-    free(raw_mask);
+    if (raw_mask) free(raw_mask);
+    if (raw_mask_64) free(raw_mask_64);
     H5Dclose(mask_dataset);
 }
 
