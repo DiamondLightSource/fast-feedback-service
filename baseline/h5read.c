@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include "miniapp.h"
+
 uint8_t *mask;
 size_t mask_size;
 
@@ -11,13 +13,6 @@ hid_t data;
 hid_t dataset;
 
 size_t frames, slow, fast;
-
-typedef struct image {
-    uint16_t *data;
-    uint8_t *mask;
-    size_t n_slow;
-    size_t n_fast;
-} image;
 
 void read_mask() {
     // uses master pointer above: beware if this is bad
