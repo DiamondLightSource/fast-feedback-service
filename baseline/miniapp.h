@@ -9,4 +9,9 @@ typedef struct image {
     size_t n_fast;
 } image;
 
+// file reading API specification
+
+int setup_hdf5_files(char * master_filename,
+		     char * data_filename);
+
 #endif

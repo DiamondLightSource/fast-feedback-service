@@ -139,26 +139,22 @@ void setup_data() {
     printf("total data size: %ldx%ldx%ld\n", frames, slow, fast);
 }
 
-int main(int argc, char **argv) {
-    if (argc == 2) {
-        fprintf(stderr, "%s foobar.nxs foobar_000001.h5\n", argv[0]);
-        return 1;
-    }
+int setup_hdf5_files(char * master_filename, char * data_filename) {
 
     /* I'll do my own debug printing: disable HDF5 library output */
     H5Eset_auto(H5E_DEFAULT, NULL, NULL);
 
-    master = H5Fopen(argv[1], H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
+    master = H5Fopen(master_filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
 
     if (master < 0) {
-        fprintf(stderr, "error reading %s\n", argv[1]);
+        fprintf(stderr, "error reading %s\n", master_filename);
         return 1;
     }
 
-    data = H5Fopen(argv[2], H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
+    data = H5Fopen(data_filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
 
     if (data < 0) {
-        fprintf(stderr, "error reading %s\n", argv[2]);
+        fprintf(stderr, "error reading %s\n", data_filename);
         return 1;
     }
 
