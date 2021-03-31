@@ -1,0 +1,6 @@
+repos:
+  - repo: git://github.com/doublify/pre-commit-clang-format
+    rev: 62302476d0da01515660132d76902359bed0f782
+    hooks:
+    -   id: clang-format
+
