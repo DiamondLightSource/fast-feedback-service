@@ -7,7 +7,10 @@ uint8_t *mask;
 size_t mask_size;
 
 hid_t master;
+hid_t data;
 hid_t dataset;
+
+size_t frames, slow, fast;
 
 typedef struct image {
     uint16_t *data;
@@ -105,11 +108,13 @@ void read_mask() {
 void setup_data() {
     // uses master pointer above: beware if this is bad
 
-    char data_path[] = "/entry/data/data";
+    char data_path[] = "/data";
 
-    hid_t datatype;
+    hid_t datatype, space;
 
-    dataset = H5Dopen(master, data_path, H5P_DEFAULT);
+    hsize_t dims[3];
+    
+    dataset = H5Dopen(data, data_path, H5P_DEFAULT);
 
     if (dataset < 0) {
         fprintf(stderr, "error reading data from %s\n", data_path);
@@ -122,11 +127,27 @@ void setup_data() {
         fprintf(stderr, "native data size != 2 (%ld)\n", H5Tget_size(datatype));
         exit(1);
     }
+
+    space = H5Dget_space(dataset);
+
+    if (H5Sget_simple_extent_ndims(space) != 3) {
+      fprintf(stderr, "raw data not three dimensional\n");
+      exit(1);
+    }
+
+    H5Sget_simple_extent_dims(space, dims, NULL);
+
+    frames = dims[0];
+    slow = dims[1];
+    fast = dims[2];
+
+    printf("total data size: %ldx%ldx%ld\n", frames, slow, fast);
+    
 }
 
 int main(int argc, char **argv) {
-    if (argc == 1) {
-        fprintf(stderr, "%s /path/to/foobar.nxs\n", argv[0]);
+    if (argc == 2) {
+        fprintf(stderr, "%s foobar.nxs foobar_000001.h5\n", argv[0]);
         return 1;
     }
 
@@ -137,6 +158,13 @@ int main(int argc, char **argv) {
 
     if (master < 0) {
         fprintf(stderr, "error reading %s\n", argv[1]);
+        return 1;
+    }
+
+    data = H5Fopen(argv[2], H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
+
+    if (data < 0) {
+        fprintf(stderr, "error reading %s\n", argv[2]);
         return 1;
     }
 
