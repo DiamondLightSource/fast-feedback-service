@@ -139,8 +139,7 @@ void setup_data() {
     printf("total data size: %ldx%ldx%ld\n", frames, slow, fast);
 }
 
-int setup_hdf5_files(char * master_filename, char * data_filename) {
-
+int setup_hdf5_files(char *master_filename, char *data_filename) {
     /* I'll do my own debug printing: disable HDF5 library output */
     H5Eset_auto(H5E_DEFAULT, NULL, NULL);
 

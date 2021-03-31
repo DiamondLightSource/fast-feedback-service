@@ -9,8 +9,8 @@ int main(int argc, char **argv) {
     }
 
     if (setup_hdf5_files(argv[1], argv[2]) < 0) {
-      fprintf(stderr, "<shrug> bad thing </shrug>\n");
-      exit(1);
+        fprintf(stderr, "<shrug> bad thing </shrug>\n");
+        exit(1);
     }
 
     return 0;
