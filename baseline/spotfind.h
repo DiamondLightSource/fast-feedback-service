@@ -172,7 +172,6 @@ class ImageSource {
     // // Write an array_family object to a TIFF file
     template <typename IMSRC>
     void write_array(const char* filename, IMSRC image) {
-        std::cout << "Not writing array as TinyTiff disabled" << std::endl;
         //     // benchmark::ClobberMemory();
         //     TinyTIFFFile* tif = TinyTIFFWriter_open(filename, 16, IMAGE_W, IMAGE_H);
         //     std::vector<uint16_t> img;
