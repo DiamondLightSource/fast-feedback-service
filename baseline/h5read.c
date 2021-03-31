@@ -16,12 +16,21 @@ void cleanup_hdf5() {
     H5Dclose(dataset);
     H5Fclose(data);
     H5Fclose(master);
+    free(mask);
 }
 
 size_t frames, slow, fast;
 
 size_t get_number_of_images() {
     return frames;
+}
+
+size_t get_image_slow() {
+    return slow;
+}
+
+size_t get_image_fast() {
+    return fast;
 }
 
 void free_image(image_t i) {
