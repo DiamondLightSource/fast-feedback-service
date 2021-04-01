@@ -78,6 +78,9 @@ image_t get_image(size_t n) {
     return result;
 }
 
+// image_modules_t get_image_modules(size_t number);
+// void free_image_modules(image_modules_t image);
+
 void read_mask() {
     // uses master pointer above: beware if this is bad
 

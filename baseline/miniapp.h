@@ -31,6 +31,15 @@ typedef struct image_t {
     size_t fast;
 } image_t;
 
+/* data as modules i.e. 3D array */
+typedef struct image_modules_t {
+    uint16_t *data;
+    uint8_t *mask;
+    size_t modules;
+    size_t slow;
+    size_t fast;
+} image_modules_t;
+
 /* set up HDF5 files - call at the start */
 int setup_hdf5_files(char *master_filename, char *data_filename);
 
@@ -45,5 +54,9 @@ size_t get_image_fast();
 /* read an image, free the image */
 image_t get_image(size_t number);
 void free_image(image_t image);
+
+/* read an image as modules, free this */
+// image_modules_t get_image_modules(size_t number);
+// void free_image_modules(image_modules_t image);
 
 #endif
