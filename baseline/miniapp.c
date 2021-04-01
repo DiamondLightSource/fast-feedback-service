@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
 
     for (size_t j = 0; j < n_images; j++) {
         image_t image = get_image(j);
+        image_modules_t modules = get_image_modules(j);
 
         size_t zero = 0;
         for (size_t i = 0; i < (image.fast * image.slow); i++) {
@@ -24,17 +25,18 @@ int main(int argc, char **argv) {
                 zero++;
             }
         }
-        printf("image %ld had %ld valid zero pixels\n", j, zero);
 
-        free_image(image);
-    }
+        size_t zero_m = 0;
+        for (size_t i = 0; i < (modules.fast * modules.slow * modules.modules); i++) {
+            if (modules.data[i] == 0 && modules.mask[i] == 1) {
+                zero_m++;
+            }
+        }
 
-    for (size_t j = 0; j < n_images; j++) {
-        image_modules_t modules = get_image_modules(j);
-
-        printf("%ld %ld %ld\n", modules.modules, modules.slow, modules.fast);
+        printf("image %ld had %ld / %ld valid zero pixels\n", j, zero, zero_m);
 
         free_image_modules(modules);
+        free_image(image);
     }
 
     cleanup_hdf5();

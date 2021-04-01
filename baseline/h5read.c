@@ -8,6 +8,7 @@
 #include "eiger2xe.h"
 
 uint8_t *mask;
+uint8_t *module_mask;
 size_t mask_size;
 
 hid_t master;
@@ -19,6 +20,7 @@ void cleanup_hdf5() {
     H5Fclose(data);
     H5Fclose(master);
     free(mask);
+    free(module_mask);
 }
 
 size_t frames, slow, fast;
@@ -52,7 +54,7 @@ void blit(image_t image, image_modules_t *modules) {
         slow = 4;
     }
 
-    modules->mask = NULL;  // FIXME
+    modules->mask = module_mask;
     modules->slow = E2XE_MOD_SLOW;
     modules->fast = E2XE_MOD_FAST;
     modules->modules = slow * fast;
@@ -209,6 +211,37 @@ void read_mask() {
                 mask[j] = 1;
             } else {
                 mask[j] = 0;
+            }
+        }
+    }
+
+    // blit mask over to module mask
+
+    size_t fast, slow, offset, target, image_slow, image_fast, module_pixels;
+    module_pixels = E2XE_MOD_FAST * E2XE_MOD_SLOW;
+
+    if (mask_size == E2XE_16M_SLOW * E2XE_16M_FAST) {
+        slow = 8;
+        fast = 4;
+        image_slow = E2XE_16M_SLOW;
+        image_fast = E2XE_16M_FAST;
+    } else {
+        slow = 4;
+        fast = 2;
+        image_slow = E2XE_4M_SLOW;
+        image_fast = E2XE_4M_FAST;
+    }
+    module_mask = (uint8_t *)malloc(sizeof(uint8_t) * fast * slow * module_pixels);
+    for (size_t _slow = 0; _slow < slow; _slow++) {
+        size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image_fast;
+        for (size_t _fast = 0; _fast < fast; _fast++) {
+            for (size_t row = 0; row < E2XE_MOD_SLOW; row++) {
+                offset =
+                  (row0 + row * image_fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
+                target = (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
+                memcpy((void *)&module_mask[target],
+                       (void *)&mask[offset],
+                       sizeof(uint8_t) * E2XE_MOD_FAST);
             }
         }
     }
