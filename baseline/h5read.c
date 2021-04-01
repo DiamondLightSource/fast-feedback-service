@@ -2,8 +2,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "miniapp.h"
+#include "eiger2xe.h"
 
 uint8_t *mask;
 size_t mask_size;
@@ -37,6 +39,60 @@ void free_image(image_t i) {
     free(i.data);
 }
 
+/* blit the relevent pixel data across from a single image into an collection
+   of image modules - will allocate the latter */
+void blit(image_t image, image_modules_t *modules) {
+    size_t fast, slow, offset, target;
+
+    if (image.slow == E2XE_16M_SLOW) {
+        fast = 4;
+        slow = 8;
+    } else {
+        fast = 2;
+        slow = 4;
+    }
+
+    modules->mask = NULL;  // FIXME
+    modules->slow = E2XE_MOD_SLOW;
+    modules->fast = E2XE_MOD_FAST;
+    modules->modules = slow * fast;
+
+    size_t module_pixels = E2XE_MOD_SLOW * E2XE_MOD_FAST;
+
+    modules->data = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast * module_pixels);
+
+    for (size_t _slow = 0; _slow < slow; _slow++) {
+        size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image.fast;
+        for (size_t _fast = 0; _fast < fast; _fast++) {
+            for (size_t row = 0; row < E2XE_MOD_SLOW; row++) {
+                offset =
+                  (row0 + row * image.fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
+                target = (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
+                memcpy((void *)&modules->data[target],
+                       (void *)&image.data[offset],
+                       sizeof(uint16_t) * E2XE_MOD_FAST);
+            }
+        }
+    }
+}
+
+image_modules_t get_image_modules(size_t n) {
+    image_t image = get_image(n);
+    image_modules_t modules;
+    modules.data = NULL;
+    modules.mask = NULL;
+    modules.modules = -1;
+    modules.fast = -1;
+    modules.slow = -1;
+    blit(image, &modules);
+    free_image(image);
+    return modules;
+}
+
+void free_image_modules(image_modules_t i) {
+    free(i.data);
+}
+
 image_t get_image(size_t n) {
     if (n >= frames) {
         fprintf(stderr, "image %ld > frames (%ld)\n", n, frames);
@@ -45,7 +101,7 @@ image_t get_image(size_t n) {
 
     hid_t mem_space, space, datatype;
 
-    hsize_t dims[3], block[3], offset[3];
+    hsize_t block[3], offset[3];
 
     uint16_t *buffer = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast);
 
@@ -78,7 +134,6 @@ image_t get_image(size_t n) {
     return result;
 }
 
-// image_modules_t get_image_modules(size_t number);
 // void free_image_modules(image_modules_t image);
 
 void read_mask() {

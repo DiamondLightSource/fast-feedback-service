@@ -29,6 +29,14 @@ int main(int argc, char **argv) {
         free_image(image);
     }
 
+    for (size_t j = 0; j < n_images; j++) {
+        image_modules_t modules = get_image_modules(j);
+
+        printf("%ld %ld %ld\n", modules.modules, modules.slow, modules.fast);
+
+        free_image_modules(modules);
+    }
+
     cleanup_hdf5();
 
     return 0;

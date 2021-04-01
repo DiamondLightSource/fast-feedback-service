@@ -56,7 +56,7 @@ image_t get_image(size_t number);
 void free_image(image_t image);
 
 /* read an image as modules, free this */
-// image_modules_t get_image_modules(size_t number);
-// void free_image_modules(image_modules_t image);
+image_modules_t get_image_modules(size_t number);
+void free_image_modules(image_modules_t modules);
 
 #endif
