@@ -131,7 +131,7 @@ image_t get_image(size_t n) {
        but probably cheap */
 
     for (data_file = 0; data_file < data_file_count; data_file++) {
-        if (n >= data_files[data_file].offset) {
+        if ((n - data_files[data_file].offset) < data_files[data_file].frames) {
             break;
         }
     }
