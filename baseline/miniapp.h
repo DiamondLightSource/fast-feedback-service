@@ -7,7 +7,7 @@
  *
  * Call
  *
- * setup_hdf5_files(master_filename, data_filename)
+ * setup_hdf5_files(master_filename)
  *
  * to initialise all of the HDF5 data structures, read and transform the mask
  * etc. Then
@@ -42,7 +42,7 @@ typedef struct image_modules_t {
 } image_modules_t;
 
 /* set up HDF5 files - call at the start */
-int setup_hdf5_files(char *master_filename, char *data_filename);
+int setup_hdf5_files(char *master_filename);
 
 /* clean up at the end */
 void cleanup_hdf5();
