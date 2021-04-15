@@ -11,14 +11,15 @@
 #ifndef BASELINE_H
 #define BASELINE_H
 
-#include <cmath>
 #include <dials/algorithms/image/filter/distance.h>
 #include <dials/algorithms/image/filter/index_of_dispersion_filter.h>
 #include <dials/algorithms/image/filter/mean_and_variance.h>
 #include <dials/error.h>
-#include <iostream>
 #include <scitbx/array_family/ref_reductions.h>
 #include <scitbx/array_family/tiny_types.h>
+
+#include <cmath>
+#include <iostream>
 #include <vector>
 
 namespace baseline {

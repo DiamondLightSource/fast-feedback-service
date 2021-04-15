@@ -1,6 +1,7 @@
+#include "miniapp.h"
+
 #include <stdio.h>
 #include <stdlib.h>
-#include "miniapp.h"
 
 int main(int argc, char **argv) {
     if (argc == 2) {

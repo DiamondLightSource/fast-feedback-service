@@ -11,15 +11,16 @@
 #ifndef DIALS_ALGORITHMS_IMAGE_THRESHOLD_UNIMODAL_H
 #define DIALS_ALGORITHMS_IMAGE_THRESHOLD_UNIMODAL_H
 
-#include <cmath>
-#include <vector>
-#include <iostream>
-#include <scitbx/array_family/tiny_types.h>
-#include <scitbx/array_family/ref_reductions.h>
-#include <dials/error.h>
-#include <dials/algorithms/image/filter/mean_and_variance.h>
-#include <dials/algorithms/image/filter/index_of_dispersion_filter.h>
 #include <dials/algorithms/image/filter/distance.h>
+#include <dials/algorithms/image/filter/index_of_dispersion_filter.h>
+#include <dials/algorithms/image/filter/mean_and_variance.h>
+#include <dials/error.h>
+#include <scitbx/array_family/ref_reductions.h>
+#include <scitbx/array_family/tiny_types.h>
+
+#include <cmath>
+#include <iostream>
+#include <vector>
 
 namespace dials { namespace algorithms {
 

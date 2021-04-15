@@ -1,11 +1,11 @@
 #include <hdf5.h>
-#include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
-#include "miniapp.h"
 #include "eiger2xe.h"
+#include "miniapp.h"
 
 uint8_t *mask;
 uint8_t *module_mask;

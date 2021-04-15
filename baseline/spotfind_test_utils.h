@@ -9,6 +9,7 @@
 
 #include <scitbx/array_family/accessors/c_grid.h>
 #include <scitbx/array_family/shared.h>
+
 #include "local.h"
 
 namespace af = scitbx::af;

@@ -1,6 +1,7 @@
+#include "baseline.h"
+
 #include <benchmark/benchmark.h>
 
-#include "baseline.h"
 #include "local.h"
 #include "spotfind_test_utils.h"
 
