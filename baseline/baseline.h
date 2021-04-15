@@ -3,6 +3,9 @@
 
 #include "miniapp.h"
 
-extern "C" uint32_t spotfind_standard_dispersion(image_t image);
-
+extern "C" {
+void* create_spotfind(size_t width, size_t height);
+void free_spotfind(void* context);
+uint32_t spotfind_standard_dispersion(void* context, image_t image);
+}
 #endif

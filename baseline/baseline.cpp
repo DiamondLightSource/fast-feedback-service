@@ -814,12 +814,51 @@ class DispersionExtendedThreshold {
 
 }  // namespace baseline
 
-uint32_t spotfind_standard_dispersion(image_t image) {
-    ImageSource<image_t_type> src;
+template <typename T>
+class _spotfind_context {
+  public:
+    af::ref<bool, af::c_grid<2>> dst;
+    bool *_dest_store = nullptr;
 
-    const af::tiny<int, 2> image_size_(image.fast, image.slow);
+    baseline::DispersionThreshold algo;
 
-    auto algo = baseline::DispersionThreshold(
-      image_size_, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_);
-    algo.threshold(src.src, src.mask, src.dst);
+    _spotfind_context(size_t width, size_t height)
+        : algo(af::tiny<int, 2>(width, height),
+               kernel_size_,
+               nsig_b_,
+               nsig_s_,
+               threshold_,
+               min_count_) {
+        _dest_store = new bool[width * height];
+        dst =
+          af::ref<bool, af::c_grid<2>>(_dest_store, af::c_grid<2>(IMAGE_W, IMAGE_H));
+    }
+    ~_spotfind_context() {
+        delete[] _dest_store;
+    }
+    void threshold(const af::const_ref<T, af::c_grid<2>> &src,
+                   const af::const_ref<bool, af::c_grid<2>> &mask) {}
+};
+
+void *create_spotfind(size_t width, size_t height) {
+    return new _spotfind_context<uint16_t>(width, height);
+}
+void free_spotfind(void *context) {
+    delete reinterpret_cast<_spotfind_context<image_t_type> *>(context);
+}
+
+uint32_t spotfind_standard_dispersion(void *context, image_t image) {
+    auto ctx = reinterpret_cast<_spotfind_context<image_t_type> *>(context);
+
+    // Convert the image data to array_family pointers
+
+    // ctx.threshold()
+    // const af::tiny<int, 2> image_size_(image.fast, image.slow);
+    // dst = af::ref<bool, af::c_grid<2>>(destination_store.begin(),
+    // //                                        af::c_grid<2>(IMAGE_W, IMAGE_H));
+    // // Now, cast the source, mask, make destination
+
+    // auto algo = baseline::DispersionThreshold(
+    //   image_size_, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_);
+    // algo.threshold(src.src, src.mask, src.dst);
 }
