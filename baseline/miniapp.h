@@ -25,6 +25,9 @@
  *
  */
 
+// Define a data type alias so that other users don't have to hardcode
+typedef uint16_t image_t_type;
+
 typedef struct image_t {
     uint16_t *data;
     uint8_t *mask;

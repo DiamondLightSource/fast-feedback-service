@@ -11,6 +11,7 @@
 #include <scitbx/array_family/shared.h>
 
 #include "local.h"
+// #include "baseline.h"
 
 namespace af = scitbx::af;
 
