@@ -122,7 +122,10 @@ image_t get_image(size_t n) {
     H5Sselect_hyperslab(space, H5S_SELECT_SET, offset, NULL, block, NULL);
     mem_space = H5Screate_simple(3, block, NULL);
 
-    H5Dread(dataset, datatype, mem_space, space, H5P_DEFAULT, buffer);
+    if (H5Dread(dataset, datatype, mem_space, space, H5P_DEFAULT, buffer) < 0) {
+        H5Eprint(H5E_DEFAULT, NULL);
+        exit(1);
+    }
 
     H5Sclose(space);
     H5Sclose(mem_space);
