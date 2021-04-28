@@ -1,5 +1,7 @@
 #include "miniapp.h"
 
+#include <assert.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +13,7 @@ const char *USAGE = "Usage: %s [-h|--help] [FILE.nxs]\n";
 int main(int argc, char **argv) {
     // Handle simple case of -h or --help
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "-h") || strcmp(argv[i], "--help")) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             fprintf(stderr, USAGE, argv[0]);
             return 0;
         }
@@ -35,10 +37,18 @@ int main(int argc, char **argv) {
         image_modules_t modules = get_image_modules(j);
 
         if (j == 0) {
+            // Need to wait until we have an image to get its size
             image_slow = image.slow;
             image_fast = image.fast;
             spotfinder = spotfinder_create(image_fast, image_slow);
+        } else {
+            // For sanity sake, check this matches
+            assert(image.slow == image_slow);
+            assert(image.fast == image_fast);
         }
+
+        uint32_t strong_pixels = spotfinder_standard_dispersion(spotfinder, &image);
+
         size_t zero = 0;
         for (size_t i = 0; i < (image.fast * image.slow); i++) {
             if (image.data[i] == 0 && image.mask[i] == 1) {
@@ -53,7 +63,10 @@ int main(int argc, char **argv) {
             }
         }
 
-        printf("image %ld had %ld / %ld valid zero pixels\n", j, zero, zero_m);
+        printf("image %ld had %ld / %ld valid zero pixels, " PRIu32 " strong pixels\n",
+               j,
+               zero,
+               zero_m);
 
         free_image_modules(modules);
         free_image(image);
