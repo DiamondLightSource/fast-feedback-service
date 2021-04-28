@@ -1,5 +1,6 @@
 #include <benchmark/benchmark.h>
 
+#include <cassert>
 #include <iostream>
 
 #include "baseline.h"
@@ -21,6 +22,8 @@ static void BM_standard_dispersion(benchmark::State& state) {
     for (auto _ : state) {
         algo.threshold(src.src, src.mask, src.dst);
     }
+    // Double check this against pre-calculated
+    assert(src.validate_dst(src.dst));
     // Count the number of spots in dst
     uint32_t pixel_count = 0;
     for (int i = 0; i < (IMAGE_H * IMAGE_W); ++i) {
