@@ -847,7 +847,7 @@ class _spotfind_context {
     }
 };
 
-void *create_spotfinder(size_t width, size_t height) {
+void *spotfinder_create(size_t width, size_t height) {
     return new _spotfind_context<image_t_type, double>(width, height);
 }
 void spotfinder_free(void *context) {

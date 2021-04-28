@@ -3,9 +3,14 @@
 
 #include "miniapp.h"
 
+#ifdef __cplusplus
 extern "C" {
-void* create_spotfinder(size_t width, size_t height);
+#endif
+void* spotfinder_create(size_t width, size_t height);
 void spotfinder_free(void* context);
 uint32_t spotfinder_standard_dispersion(void* context, image_t* image);
+#ifdef __cplusplus
 }
+#endif
+
 #endif

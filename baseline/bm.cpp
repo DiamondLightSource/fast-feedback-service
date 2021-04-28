@@ -38,7 +38,7 @@ BENCHMARK_TEMPLATE(BM_standard_dispersion, float)->Unit(benchmark::kMillisecond)
 static void BM_C_API_dispersion(benchmark::State& state) {
     ImageSource<uint32_t> src;
 
-    auto finder = create_spotfinder(IMAGE_W, IMAGE_H);
+    auto finder = spotfinder_create(IMAGE_W, IMAGE_H);
 
     // Convert src to an image_t
     image_t image;
