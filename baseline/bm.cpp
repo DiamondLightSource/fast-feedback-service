@@ -5,6 +5,8 @@
 #include "baseline.h"
 #include "miniapp.h"
 #include "spotfind_test_utils.h"
+using std::cout;
+using std::endl;
 
 using dials::algorithms::DispersionExtendedThreshold;
 using dials::algorithms::DispersionThreshold;
@@ -19,6 +21,12 @@ static void BM_standard_dispersion(benchmark::State& state) {
     for (auto _ : state) {
         algo.threshold(src.src, src.mask, src.dst);
     }
+    // Count the number of spots in dst
+    uint32_t pixel_count = 0;
+    for (int i = 0; i < (IMAGE_H * IMAGE_W); ++i) {
+        pixel_count += src.dst[i];
+    }
+    cout << "Pixels for standard " << typeid(T).name() << ": " << pixel_count << endl;
 }
 BENCHMARK_TEMPLATE(BM_standard_dispersion, double)->Unit(benchmark::kMillisecond);
 BENCHMARK_TEMPLATE(BM_standard_dispersion, float)->Unit(benchmark::kMillisecond);
@@ -41,9 +49,11 @@ static void BM_C_API_dispersion(benchmark::State& state) {
         image.data[i] = src.src[i];
     }
 
+    uint32_t spots = 0;
     for (auto _ : state) {
-        spotfinder_standard_dispersion(finder, &image);
+        spots = spotfinder_standard_dispersion(finder, &image);
     }
+    cout << "Found spots: " << spots << endl;
     free_spotfinder(finder);
     delete[] image.mask;
     delete[] image.data;
