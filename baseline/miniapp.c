@@ -2,10 +2,20 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+const char *USAGE = "Usage: %s [-h|--help] [FILE.nxs]\n";
 
 int main(int argc, char **argv) {
+    // Handle simple case of -h or --help
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-h") || strcmp(argv[i], "--help")) {
+            fprintf(stderr, USAGE, argv[0]);
+            return 0;
+        }
+    }
     if (argc == 1) {
-        fprintf(stderr, "%s foobar.nxs\n", argv[0]);
+        fprintf(stderr, USAGE, argv[0]);
         return 1;
     }
 
