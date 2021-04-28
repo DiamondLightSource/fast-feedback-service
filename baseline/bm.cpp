@@ -50,7 +50,7 @@ static void BM_C_API_dispersion(benchmark::State& state) {
     delete[] image.mask;
     delete[] image.data;
 }
-BENCHMARK(BM_C_API_dispersion);
+BENCHMARK(BM_C_API_dispersion)->Unit(benchmark::kMillisecond);
 
 // BENCHMARK_TEMPLATE(BM_standard_dispersion, double)->Unit(benchmark::kMillisecond);
 // BENCHMARK_TEMPLATE(BM_standard_dispersion, float)->Unit(benchmark::kMillisecond);
