@@ -1,9 +1,12 @@
 #include <benchmark/benchmark.h>
 
+#include <iostream>
+
 #include "baseline.h"
-// #include "local.h"
 #include "miniapp.h"
 #include "spotfind_test_utils.h"
+
+using std::cout, std::endl;
 
 using dials::algorithms::DispersionExtendedThreshold;
 using dials::algorithms::DispersionThreshold;
@@ -12,9 +15,10 @@ template <class T>
 static void BM_standard_dispersion(benchmark::State& state) {
     ImageSource<T> src;
     // BeginTask task("dials.dispersion.benchmark", "dispersion");
+    auto algo = DispersionThreshold(
+      image_size_, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_);
+
     for (auto _ : state) {
-        auto algo = DispersionThreshold(
-          image_size_, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_);
         algo.threshold(src.src, src.mask, src.dst);
     }
 }
@@ -39,24 +43,13 @@ static void BM_C_API_dispersion(benchmark::State& state) {
         image.data[i] = src.src[i];
     }
 
-    // BeginTask task("dials.dispersion.benchmark", "dispersion");
     for (auto _ : state) {
         spotfinder_standard_dispersion(finder, &image);
-        // auto algo = DispersionThreshold(
-        //   image_size_, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_);
-        // algo.threshold(src.src, src.mask, src.dst);
     }
     free_spotfinder(finder);
     delete[] image.mask;
     delete[] image.data;
 }
 BENCHMARK(BM_C_API_dispersion)->Unit(benchmark::kMillisecond);
-
-// BENCHMARK_TEMPLATE(BM_standard_dispersion, double)->Unit(benchmark::kMillisecond);
-// BENCHMARK_TEMPLATE(BM_standard_dispersion, float)->Unit(benchmark::kMillisecond);
-
-// void* create_spotfinder(size_t width, size_t height);
-// void free_spotfinder(void* context);
-// uint32_t spotfinder_standard_dispersion(void* context, image_t* image);
 
 BENCHMARK_MAIN();

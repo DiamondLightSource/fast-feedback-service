@@ -857,10 +857,6 @@ void free_spotfinder(void *context) {
 uint32_t spotfinder_standard_dispersion(void *context, image_t *image) {
     auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
 
-    // Convert the image data to array_family pointers
-    // auto src = af::const_ref<image_t_type, af::c_grid<2>>(
-    //   image->data, af::c_grid<2>(IMAGE_W, IMAGE_H));
-
     // mask needs to convert uint8_t to bool
     auto mask = af::const_ref<bool, af::c_grid<2>>(
       reinterpret_cast<bool *>(image->mask), af::c_grid<2>(IMAGE_W, IMAGE_H));
