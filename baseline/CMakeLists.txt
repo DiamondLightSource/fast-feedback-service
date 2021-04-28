@@ -20,6 +20,7 @@ endif ()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_C_STANDARD 99)
 
 find_package(Boost REQUIRED)
 find_package(Dials REQUIRED)

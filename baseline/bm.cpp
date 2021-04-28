@@ -6,8 +6,6 @@
 #include "miniapp.h"
 #include "spotfind_test_utils.h"
 
-using std::cout, std::endl;
-
 using dials::algorithms::DispersionExtendedThreshold;
 using dials::algorithms::DispersionThreshold;
 

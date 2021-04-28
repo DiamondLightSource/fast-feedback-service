@@ -1,6 +1,7 @@
 #ifndef __MINIAPP_H
 #define __MINIAPP_H
 
+#include <stdint.h>
 #include <stdlib.h>
 
 /* Basic API specification:
