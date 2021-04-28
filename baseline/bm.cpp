@@ -57,7 +57,7 @@ static void BM_C_API_dispersion(benchmark::State& state) {
         spots = spotfinder_standard_dispersion(finder, &image);
     }
     cout << "Found spots: " << spots << endl;
-    free_spotfinder(finder);
+    spotfinder_free(finder);
     delete[] image.mask;
     delete[] image.data;
 }
