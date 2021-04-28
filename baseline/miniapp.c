@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "baseline.h"
+
 const char *USAGE = "Usage: %s [-h|--help] [FILE.nxs]\n";
 
 int main(int argc, char **argv) {
@@ -26,10 +28,17 @@ int main(int argc, char **argv) {
 
     size_t n_images = get_number_of_images();
 
+    uint16_t image_slow = 0, image_fast = 0;
+    void *spotfinder = NULL;
     for (size_t j = 0; j < n_images; j++) {
         image_t image = get_image(j);
         image_modules_t modules = get_image_modules(j);
 
+        if (j == 0) {
+            image_slow = image.slow;
+            image_fast = image.fast;
+            spotfinder = spotfinder_create(image_fast, image_slow);
+        }
         size_t zero = 0;
         for (size_t i = 0; i < (image.fast * image.slow); i++) {
             if (image.data[i] == 0 && image.mask[i] == 1) {
@@ -49,7 +58,7 @@ int main(int argc, char **argv) {
         free_image_modules(modules);
         free_image(image);
     }
-
+    spotfinder_free(spotfinder);
     cleanup_hdf5();
 
     return 0;

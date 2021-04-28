@@ -34,4 +34,4 @@ add_executable(bm bm.cpp)
 target_link_libraries(bm baseline)
 
 add_executable(h5read h5read.c miniapp.c)
-target_link_libraries(h5read PUBLIC hdf5::hdf5)
+target_link_libraries(h5read PUBLIC hdf5::hdf5 baseline)
