@@ -63,10 +63,11 @@ int main(int argc, char **argv) {
             }
         }
 
-        printf("image %ld had %ld / %ld valid zero pixels, " PRIu32 " strong pixels\n",
+        printf("image %ld had %ld / %ld valid zero pixels, %" PRIu32 " strong pixels\n",
                j,
                zero,
-               zero_m);
+               zero_m,
+               strong_pixels);
 
         free_image_modules(modules);
         free_image(image);
