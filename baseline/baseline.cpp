@@ -814,51 +814,68 @@ class DispersionExtendedThreshold {
 
 }  // namespace baseline
 
-template <typename T>
+template <typename T, typename internal_T = T>
 class _spotfind_context {
   public:
     af::ref<bool, af::c_grid<2>> dst;
     bool *_dest_store = nullptr;
+    af::tiny<int, 2> size;
+
+    af::ref<internal_T, af::c_grid<2>> src_converted;
+    internal_T *_src_converted_store;
 
     baseline::DispersionThreshold algo;
 
     _spotfind_context(size_t width, size_t height)
-        : algo(af::tiny<int, 2>(width, height),
-               kernel_size_,
-               nsig_b_,
-               nsig_s_,
-               threshold_,
-               min_count_) {
+        : size(width, height),
+          algo(size, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_) {
         _dest_store = new bool[width * height];
         dst =
           af::ref<bool, af::c_grid<2>>(_dest_store, af::c_grid<2>(IMAGE_W, IMAGE_H));
+        // Make a place to convert sources to the internal type
+        _src_converted_store = new internal_T[width * height];
+        src_converted = af::ref<internal_T, af::c_grid<2>>(
+          _src_converted_store, af::c_grid<2>(IMAGE_W, IMAGE_H));
     }
     ~_spotfind_context() {
         delete[] _dest_store;
+        delete[] _src_converted_store;
     }
-    void threshold(const af::const_ref<T, af::c_grid<2>> &src,
-                   const af::const_ref<bool, af::c_grid<2>> &mask) {}
+    void threshold(const af::const_ref<internal_T, af::c_grid<2>> &src,
+                   const af::const_ref<bool, af::c_grid<2>> &mask) {
+        algo.threshold(src_converted, mask, dst);
+    }
 };
 
-void *create_spotfind(size_t width, size_t height) {
+void *create_spotfinder(size_t width, size_t height) {
     return new _spotfind_context<uint16_t>(width, height);
 }
-void free_spotfind(void *context) {
-    delete reinterpret_cast<_spotfind_context<image_t_type> *>(context);
+void free_spotfinder(void *context) {
+    delete reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
 }
 
-uint32_t spotfind_standard_dispersion(void *context, image_t image) {
-    auto ctx = reinterpret_cast<_spotfind_context<image_t_type> *>(context);
+uint32_t spotfinder_standard_dispersion(void *context, image_t *image) {
+    auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
 
     // Convert the image data to array_family pointers
+    // auto src = af::const_ref<image_t_type, af::c_grid<2>>(
+    //   image->data, af::c_grid<2>(IMAGE_W, IMAGE_H));
 
-    // ctx.threshold()
-    // const af::tiny<int, 2> image_size_(image.fast, image.slow);
-    // dst = af::ref<bool, af::c_grid<2>>(destination_store.begin(),
-    // //                                        af::c_grid<2>(IMAGE_W, IMAGE_H));
-    // // Now, cast the source, mask, make destination
+    // mask needs to convert uint8_t to bool
+    auto mask = af::const_ref<bool, af::c_grid<2>>(
+      reinterpret_cast<bool *>(image->mask), af::c_grid<2>(IMAGE_W, IMAGE_H));
 
-    // auto algo = baseline::DispersionThreshold(
-    //   image_size_, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_);
-    // algo.threshold(src.src, src.mask, src.dst);
+    // Convert all items from the source image to
+    for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
+        ctx->src_converted[i] = image->data[i];
+    }
+
+    ctx->threshold(ctx->src_converted, mask);
+
+    // Let's count the number of destination pixels for now
+    uint32_t pixel_count = 0;
+    for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
+        pixel_count += ctx->dst[i];
+    }
+    return pixel_count;
 }
