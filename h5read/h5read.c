@@ -25,7 +25,7 @@ typedef struct h5_data_file {
 } h5_data_file;
 
 struct _h5read_handle {
-    int master_file;
+    hid_t master_file;
     int data_file_count;
     h5_data_file *data_files;
     size_t frames;  ///< Number of frames in this dataset
@@ -409,7 +409,6 @@ int unpack_vds(const char *filename, h5_data_file **data_files) {
     }
 
     hid_t dataset = H5Dopen(file, "/entry/data/data", H5P_DEFAULT);
-
     if (dataset < 0) {
         H5Fclose(file);
         fprintf(stderr, "error reading %s\n", "/entry/data/data");
@@ -463,7 +462,7 @@ h5read_handle *h5read_open(const char *master_filename) {
     /* I'll do my own debug printing: disable HDF5 library output */
     H5Eset_auto(H5E_DEFAULT, NULL, NULL);
 
-    int master_file = H5Fopen(master_filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    hid_t master_file = H5Fopen(master_filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 
     if (master_file < 0) {
         fprintf(stderr, "error reading %s\n", master_filename);
@@ -508,5 +507,5 @@ h5read_handle *h5read_open(const char *master_filename) {
 
     setup_data(file);
 
-    return NULL;
+    return file;
 }
