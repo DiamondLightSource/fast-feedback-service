@@ -1,8 +1,8 @@
-#include "miniapp.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "h5read.h"
 
 const char *USAGE = "Usage: %s [-h|--help] [FILE.nxs]\n";
 

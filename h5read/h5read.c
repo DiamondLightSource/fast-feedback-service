@@ -1,3 +1,5 @@
+#include "h5read.h"
+
 #include <hdf5.h>
 #include <libgen.h>
 #include <stdio.h>
@@ -6,7 +8,6 @@
 #include <unistd.h>
 
 #include "eiger2xe.h"
-#include "miniapp.h"
 
 uint8_t *mask;
 uint8_t *module_mask;
