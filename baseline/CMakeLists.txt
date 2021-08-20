@@ -33,7 +33,7 @@ add_library(baseline SHARED baseline.cpp )
 target_link_libraries(baseline PUBLIC Dials::Dials benchmark::benchmark h5read)
 
 add_executable(bm bm.cpp)
-target_link_libraries(bm baseline h5read)
+target_link_libraries(bm baseline)
 
-# add_executable(h5read h5read.c miniapp.c)
-# target_link_libraries(h5read PUBLIC hdf5::hdf5 baseline)
+add_executable(miniapp miniapp.c)
+target_link_libraries(miniapp PUBLIC hdf5::hdf5 baseline h5read)

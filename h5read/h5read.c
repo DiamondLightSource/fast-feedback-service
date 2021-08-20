@@ -9,10 +9,6 @@
 
 #include "eiger2xe.h"
 
-uint8_t *mask;
-uint8_t *module_mask;
-size_t mask_size;
-
 // VDS stuff
 
 #define MAXFILENAME 256
@@ -28,48 +24,61 @@ typedef struct h5_data_file {
     size_t offset;
 } h5_data_file;
 
-// allocate space for 100 virtual files (which would mean 100,000 frames)
+struct _h5read_handle {
+    hid_t master_file;
+    int data_file_count;
+    h5_data_file *data_files;
+    size_t frames;  ///< Number of frames in this dataset
+    size_t slow;    ///< Pixel dimension of images in the slow direction
+    size_t fast;    ///< Pixel dimensions of images in the fast direction
 
-h5_data_file data_files[MAXDATAFILES];
-int data_file_count;
-int data_file_current;
+    uint8_t *mask;         ///< Shared image mask
+    uint8_t *module_mask;  ///< Shared module mask
+    size_t mask_size;      ///< Total size(in pixels) of mask
+};
 
-hid_t master;
-
-void cleanup_hdf5() {
-    for (int i = 0; i < data_file_count; i++) {
-        H5Dclose(data_files[i].dataset);
-        H5Fclose(data_files[i].file);
+void h5read_free(h5read_handle *obj) {
+    for (int i = 0; i < obj->data_file_count; i++) {
+        H5Dclose(obj->data_files[i].dataset);
+        H5Fclose(obj->data_files[i].file);
     }
-    H5Fclose(master);
-    free(mask);
-    free(module_mask);
+    free(obj->data_files);
+    H5Fclose(obj->master_file);
+
+    free(obj->mask);
+    free(obj->module_mask);
+
+    free(obj);
 }
 
-size_t frames, slow, fast;
-
-size_t get_number_of_images() {
-    return frames;
+/// Get the number of frames available
+size_t h5read_get_number_of_images(h5read_handle *obj) {
+    return obj->frames;
 }
 
-size_t get_image_slow() {
-    return slow;
+size_t h5read_get_image_slow(h5read_handle *obj) {
+    return obj->slow;
 }
 
-size_t get_image_fast() {
-    return fast;
+size_t h5read_get_image_fast(h5read_handle *obj) {
+    return obj->fast;
 }
 
-void free_image(image_t i) {
-    free(i.data);
+void h5read_free_image(image_t *i) {
+    free(i->data);
+    // Mask is a pointer to the file-global file mask so isn't freed
+    free(i);
 }
 
-/* blit the relevent pixel data across from a single image into an collection
-   of image modules - will allocate the latter */
-void blit(image_t image, image_modules_t *modules) {
-    size_t fast, slow, offset, target;
-
-    if (image.slow == E2XE_16M_SLOW) {
+/// blit the relevent pixel data across from a single image into a collection
+/// of image modules - will allocate the latter
+///
+/// @param image    The image to blit from
+/// @param modules  The modules object to fill
+void _blit(image_t *image, image_modules_t *modules) {
+    // Number of modules in fast, slow directions
+    size_t fast, slow;
+    if (image->slow == E2XE_16M_SLOW) {
         fast = 4;
         slow = 8;
     } else {
@@ -77,7 +86,6 @@ void blit(image_t image, image_modules_t *modules) {
         slow = 4;
     }
 
-    modules->mask = module_mask;
     modules->slow = E2XE_MOD_SLOW;
     modules->fast = E2XE_MOD_FAST;
     modules->modules = slow * fast;
@@ -87,84 +95,75 @@ void blit(image_t image, image_modules_t *modules) {
     modules->data = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast * module_pixels);
 
     for (size_t _slow = 0; _slow < slow; _slow++) {
-        size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image.fast;
+        size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image->fast;
         for (size_t _fast = 0; _fast < fast; _fast++) {
             for (size_t row = 0; row < E2XE_MOD_SLOW; row++) {
-                offset =
-                  (row0 + row * image.fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
-                target = (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
+                size_t offset =
+                  (row0 + row * image->fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
+                size_t target =
+                  (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
                 memcpy((void *)&modules->data[target],
-                       (void *)&image.data[offset],
+                       (void *)&image->data[offset],
                        sizeof(uint16_t) * E2XE_MOD_FAST);
             }
         }
     }
 }
 
-image_modules_t get_image_modules(size_t n) {
-    image_t image = get_image(n);
-    image_modules_t modules;
-    modules.data = NULL;
-    modules.mask = NULL;
-    modules.modules = -1;
-    modules.fast = -1;
-    modules.slow = -1;
-    blit(image, &modules);
-    free_image(image);
+image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t n) {
+    image_t *image = h5read_get_image(obj, n);
+    image_modules_t *modules = malloc(sizeof(image_modules_t));
+    modules->data = NULL;
+    modules->mask = obj->module_mask;
+    modules->modules = -1;
+    modules->fast = -1;
+    modules->slow = -1;
+    _blit(image, modules);
+    h5read_free_image(image);
     return modules;
 }
 
-void free_image_modules(image_modules_t i) {
-    free(i.data);
+void h5read_free_image_modules(image_modules_t *i) {
+    free(i->data);
+    // Like image, mask is held on the central h5read_handle object
+    free(i);
 }
 
-image_t get_image(size_t n) {
-    int data_file;
-
-    h5_data_file *current;
-
-    if (n >= frames) {
-        fprintf(stderr, "image %ld > frames (%ld)\n", n, frames);
+image_t *h5read_get_image(h5read_handle *obj, size_t n) {
+    if (n >= obj->frames) {
+        fprintf(stderr, "image %ld > frames (%ld)\n", n, obj->frames);
         exit(1);
     }
 
     /* first find the right data file - having to do this lookup is annoying
        but probably cheap */
 
-    for (data_file = 0; data_file < data_file_count; data_file++) {
-        if ((n - data_files[data_file].offset) < data_files[data_file].frames) {
+    int data_file;
+    for (data_file = 0; data_file < obj->data_file_count; data_file++) {
+        if ((n - obj->data_files[data_file].offset)
+            < obj->data_files[data_file].frames) {
             break;
         }
     }
 
-    if (data_file == data_file_count) {
+    if (data_file == obj->data_file_count) {
         fprintf(stderr, "could not find data file for frame %ld\n", n);
         exit(1);
     }
 
-    current = &(data_files[data_file]);
+    h5_data_file *current = &(obj->data_files[data_file]);
 
-    hid_t mem_space, space, datatype;
+    hid_t space = H5Dget_space(current->dataset);
+    hid_t datatype = H5Dget_type(current->dataset);
 
-    hsize_t block[3], offset[3];
-
-    uint16_t *buffer = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast);
-
-    block[0] = 1;
-    block[1] = slow;
-    block[2] = fast;
-
-    offset[0] = n - current->offset;
-    offset[1] = 0;
-    offset[2] = 0;
-
-    space = H5Dget_space(current->dataset);
-    datatype = H5Dget_type(current->dataset);
+    hsize_t block[3] = {1, obj->slow, obj->fast};
+    hsize_t offset[3] = {n - current->offset, 0, 0};
 
     // select data to read #todo add status checks
     H5Sselect_hyperslab(space, H5S_SELECT_SET, offset, NULL, block, NULL);
-    mem_space = H5Screate_simple(3, block, NULL);
+    hid_t mem_space = H5Screate_simple(3, block, NULL);
 
+    uint16_t *buffer = (uint16_t *)malloc(sizeof(uint16_t) * obj->slow * obj->fast);
     if (H5Dread(current->dataset, datatype, mem_space, space, H5P_DEFAULT, buffer)
         < 0) {
         H5Eprint(H5E_DEFAULT, NULL);
@@ -174,61 +173,52 @@ image_t get_image(size_t n) {
     H5Sclose(space);
     H5Sclose(mem_space);
 
-    image_t result;
-    result.slow = slow;
-    result.fast = fast;
-    result.mask = mask;
-    result.data = buffer;
+    image_t *result = malloc(sizeof(image_t));
+    result->slow = obj->slow;
+    result->fast = obj->fast;
+    result->mask = obj->mask;
+    result->data = buffer;
 
     return result;
 }
 
-// void free_image_modules(image_modules_t image);
-
-void read_mask() {
-    // uses master pointer above: beware if this is bad
-
+void read_mask(h5read_handle *obj) {
     char mask_path[] = "/entry/instrument/detector/pixel_mask";
-    hid_t mask_dataset, mask_info, datatype;
 
-    size_t mask_dsize;
-    uint32_t *raw_mask;
-    uint64_t *raw_mask_64;  // why?
-
-    mask_dataset = H5Dopen(master, mask_path, H5P_DEFAULT);
+    hid_t mask_dataset = H5Dopen(obj->master_file, mask_path, H5P_DEFAULT);
 
     if (mask_dataset < 0) {
         fprintf(stderr, "error reading mask from %s\n", mask_path);
         exit(1);
     }
 
-    datatype = H5Dget_type(mask_dataset);
-    mask_info = H5Dget_space(mask_dataset);
+    hid_t datatype = H5Dget_type(mask_dataset);
+    hid_t mask_info = H5Dget_space(mask_dataset);
 
-    mask_dsize = H5Tget_size(datatype);
+    size_t mask_dsize = H5Tget_size(datatype);
     if (mask_dsize == 4) {
-        printf("mask dtype uint32");
+        printf("mask dtype uint32\n");
     } else if (mask_dsize == 8) {
-        printf("mask dtype uint64");
+        printf("mask dtype uint64\n");
     } else {
         fprintf(stderr, "mask data size != 4,8 (%ld)\n", H5Tget_size(datatype));
         exit(1);
     }
 
-    mask_size = H5Sget_simple_extent_npoints(mask_info);
+    obj->mask_size = H5Sget_simple_extent_npoints(mask_info);
 
-    printf("mask has %ld elements\n", mask_size);
+    printf("Mask has %ld elements\n", obj->mask_size);
 
     void *buffer = NULL;
 
+    uint32_t *raw_mask = NULL;
+    uint64_t *raw_mask_64 = NULL;  // why?
     if (mask_dsize == 4) {
-        raw_mask = (uint32_t *)malloc(sizeof(uint32_t) * mask_size);
+        raw_mask = (uint32_t *)malloc(sizeof(uint32_t) * obj->mask_size);
         buffer = (void *)raw_mask;
-        raw_mask_64 = NULL;
     } else {
-        raw_mask_64 = (uint64_t *)malloc(sizeof(uint64_t) * mask_size);
+        raw_mask_64 = (uint64_t *)malloc(sizeof(uint64_t) * obj->mask_size);
         buffer = (void *)raw_mask_64;
-        raw_mask = NULL;
     }
 
     if (H5Dread(mask_dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buffer) < 0) {
@@ -240,24 +230,24 @@ void read_mask() {
 
     size_t zero = 0;
 
-    mask = (uint8_t *)malloc(sizeof(uint8_t) * mask_size);
+    obj->mask = (uint8_t *)malloc(sizeof(uint8_t) * obj->mask_size);
 
     if (mask_dsize == 4) {
-        for (size_t j = 0; j < mask_size; j++) {
+        for (size_t j = 0; j < obj->mask_size; j++) {
             if (raw_mask[j] == 0) {
                 zero++;
-                mask[j] = 1;
+                obj->mask[j] = 1;
             } else {
-                mask[j] = 0;
+                obj->mask[j] = 0;
             }
         }
     } else {
-        for (size_t j = 0; j < mask_size; j++) {
+        for (size_t j = 0; j < obj->mask_size; j++) {
             if (raw_mask_64[j] == 0) {
                 zero++;
-                mask[j] = 1;
+                obj->mask[j] = 1;
             } else {
-                mask[j] = 0;
+                obj->mask[j] = 0;
             }
         }
     }
@@ -267,7 +257,7 @@ void read_mask() {
     size_t fast, slow, offset, target, image_slow, image_fast, module_pixels;
     module_pixels = E2XE_MOD_FAST * E2XE_MOD_SLOW;
 
-    if (mask_size == E2XE_16M_SLOW * E2XE_16M_FAST) {
+    if (obj->mask_size == E2XE_16M_SLOW * E2XE_16M_FAST) {
         slow = 8;
         fast = 4;
         image_slow = E2XE_16M_SLOW;
@@ -278,7 +268,7 @@ void read_mask() {
         image_slow = E2XE_4M_SLOW;
         image_fast = E2XE_4M_FAST;
     }
-    module_mask = (uint8_t *)malloc(sizeof(uint8_t) * fast * slow * module_pixels);
+    obj->module_mask = (uint8_t *)malloc(sizeof(uint8_t) * fast * slow * module_pixels);
     for (size_t _slow = 0; _slow < slow; _slow++) {
         size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image_fast;
         for (size_t _fast = 0; _fast < fast; _fast++) {
@@ -286,8 +276,8 @@ void read_mask() {
                 offset =
                   (row0 + row * image_fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
                 target = (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
-                memcpy((void *)&module_mask[target],
-                       (void *)&mask[offset],
+                memcpy((void *)&obj->module_mask[target],
+                       (void *)&obj->mask[offset],
                        sizeof(uint8_t) * E2XE_MOD_FAST);
             }
         }
@@ -302,7 +292,15 @@ void read_mask() {
     H5Dclose(mask_dataset);
 }
 
-int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file *vds) {
+/// Get number of VDS and read info about all the sub-files.
+///
+/// @param master           HDF5 File object pointing to the master file
+/// @param dataset          The root dataset to search for VDS from
+/// @param data_files_array Pointer to an array variable, that will be
+///                         allocated and filled with basic information
+///                         about the VDS sub-files.
+/// @returns The number of VDS found and allocated into data_files_array
+int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_array) {
     hid_t plist, vds_source;
     size_t vds_count;
     herr_t status;
@@ -310,6 +308,10 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file *vds) {
     plist = H5Dget_create_plist(dataset);
 
     status = H5Pget_virtual_count(plist, &vds_count);
+
+    *data_files_array = calloc(vds_count, sizeof(h5_data_file));
+    // Used to use vds parameter directly - put here so no mass-changes
+    h5_data_file *vds = *data_files_array;
 
     for (int j = 0; j < vds_count; j++) {
         hsize_t start[MAXDIM], stride[MAXDIM], count[MAXDIM], block[MAXDIM];
@@ -390,22 +392,23 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file *vds) {
     return vds_count;
 }
 
-int unpack_vds(char *filename, h5_data_file *data_files) {
-    hid_t dataset, file;
-    char *root, cwd[MAXFILENAME];
-    int retval;
-
+/// Extracts the h5_data_file dictionary for information on all VDS
+///
+/// @param filename         The name of the master file
+/// @param h5_data_file     The data_files array to be allocated and filled
+///
+/// @returns The number of VDS files
+int unpack_vds(const char *filename, h5_data_file **data_files) {
     // TODO if we want this to become SWMR aware in the future will need to
     // allow for that here
-    file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    hid_t file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 
     if (file < 0) {
         fprintf(stderr, "error reading %s\n", filename);
         return -1;
     }
 
-    dataset = H5Dopen(file, "/entry/data/data", H5P_DEFAULT);
-
+    hid_t dataset = H5Dopen(file, "/entry/data/data", H5P_DEFAULT);
     if (dataset < 0) {
         H5Fclose(file);
         fprintf(stderr, "error reading %s\n", "/entry/data/data");
@@ -413,88 +416,96 @@ int unpack_vds(char *filename, h5_data_file *data_files) {
     }
 
     /* always set the absolute path to file information */
-    root = dirname(filename);
+    char rootpath[MAXFILENAME];
+    strncpy(rootpath, filename, MAXFILENAME);
+    char *root = dirname(rootpath);
+    char cwd[MAXFILENAME];
     if ((strlen(root) == 1) && (root[0] == '.')) {
         root = getcwd(cwd, MAXFILENAME);
     }
 
-    retval = vds_info(root, file, dataset, data_files);
+    int vds_count = vds_info(root, file, dataset, data_files);
 
     H5Dclose(dataset);
     H5Fclose(file);
 
-    return retval;
+    return vds_count;
 }
 
-void setup_data() {
-    hid_t datatype, space, dataset;
-
-    hsize_t dims[3];
-
-    dataset = data_files[0].dataset;
-
-    datatype = H5Dget_type(dataset);
+void setup_data(h5read_handle *obj) {
+    hid_t dataset = obj->data_files[0].dataset;
+    hid_t datatype = H5Dget_type(dataset);
 
     if (H5Tget_size(datatype) != 2) {
         fprintf(stderr, "native data size != 2 (%ld)\n", H5Tget_size(datatype));
         exit(1);
     }
 
-    space = H5Dget_space(dataset);
+    hid_t space = H5Dget_space(dataset);
 
     if (H5Sget_simple_extent_ndims(space) != 3) {
         fprintf(stderr, "raw data not three dimensional\n");
         exit(1);
     }
 
+    hsize_t dims[3];
     H5Sget_simple_extent_dims(space, dims, NULL);
 
-    slow = dims[1];
-    fast = dims[2];
+    obj->slow = dims[1];
+    obj->fast = dims[2];
 
-    printf("total data size: %ldx%ldx%ld\n", frames, slow, fast);
+    printf("Total data size: %ldx%ldx%ld\n", obj->frames, obj->slow, obj->fast);
     H5Sclose(space);
 }
 
-int setup_hdf5_files(char *master_filename) {
+h5read_handle *h5read_open(const char *master_filename) {
     /* I'll do my own debug printing: disable HDF5 library output */
     H5Eset_auto(H5E_DEFAULT, NULL, NULL);
 
-    master = H5Fopen(master_filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    hid_t master_file = H5Fopen(master_filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 
-    if (master < 0) {
+    if (master_file < 0) {
         fprintf(stderr, "error reading %s\n", master_filename);
-        return 1;
+        return NULL;
     }
 
-    data_file_count = unpack_vds(master_filename, data_files);
+    // Create the H5 handle object
+    h5read_handle *file = calloc(1, sizeof(h5read_handle));
+    file->master_file = master_file;
 
-    if (data_file_count < 0) {
+    file->data_file_count = unpack_vds(master_filename, &file->data_files);
+
+    if (file->data_file_count < 0) {
         fprintf(stderr, "error reading %s\n", master_filename);
-        return 1;
+        H5Fclose(master_file);
+        free(file);
+        return NULL;
     }
 
     // open up the actual data files, count all the frames
-    frames = 0;
-    for (int j = 0; j < data_file_count; j++) {
+    file->frames = 0;
+    h5_data_file *data_files = file->data_files;
+    for (int j = 0; j < file->data_file_count; j++) {
         data_files[j].file =
           H5Fopen(data_files[j].filename, H5F_ACC_RDONLY, H5P_DEFAULT);
         if (data_files[j].file < 0) {
             fprintf(stderr, "error reading %s\n", data_files[j].filename);
-            return 1;
+            // Lots of code to cleanup here, so just quit for now
+            exit(1);
         }
         data_files[j].dataset =
           H5Dopen(data_files[j].file, data_files[j].dsetname, H5P_DEFAULT);
         if (data_files[j].dataset < 0) {
             fprintf(stderr, "error reading %s\n", data_files[j].filename);
-            return 1;
+            // Lots of code to cleanup here, so just quit for now
+            exit(1);
         }
-        frames += data_files[j].frames;
+        file->frames += data_files[j].frames;
     }
 
-    read_mask();
+    read_mask(file);
 
-    setup_data();
+    setup_data(file);
 
-    return 0;
+    return file;
 }

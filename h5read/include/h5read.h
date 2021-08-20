@@ -1,8 +1,8 @@
-#ifndef __MINIAPP_H
-#define __MINIAPP_H
+#ifndef _H5READ_H
+#define _H5READ_H
 
+#include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
 
 /* Basic API specification:
  *
@@ -26,6 +26,12 @@
  *
  */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct _h5read_handle h5read_handle;
+
 // Define a data type alias so that other users don't have to hardcode
 typedef uint16_t image_t_type;
 
@@ -38,30 +44,38 @@ typedef struct image_t {
 
 /* data as modules i.e. 3D array */
 typedef struct image_modules_t {
-    uint16_t *data;
-    uint8_t *mask;
-    size_t modules;
-    size_t slow;
-    size_t fast;
+    uint16_t *data;  ///< Module image data in a 3D array block of [module][slow][fast]
+    uint8_t *mask;   ///< Image mask, in the same shape as the module data
+    size_t modules;  ///< Total number of modules
+    size_t slow;     ///< Number of pixels in slow direction per module
+    size_t fast;     ///< Number of pixels in fast direction per module
 } image_modules_t;
 
-/* set up HDF5 files - call at the start */
-int setup_hdf5_files(char *master_filename);
+/// Read an h5 file. Returns NULL if failed.
+h5read_handle *h5read_open(const char *master_filename);
 
-/* clean up at the end */
-void cleanup_hdf5();
+/// Cleanup and release an h5 file object
+void h5read_free(h5read_handle *);
 
-/* interrogate number / size of images */
-size_t get_number_of_images();
-size_t get_image_slow();
-size_t get_image_fast();
+/// Get the number of images in a dataset
+size_t h5read_get_number_of_images(h5read_handle *obj);
+/// Get the number of image pixels in the slow dimension
+size_t h5read_get_image_slow(h5read_handle *obj);
+/// Get the number of image pixels in the fast dimension
+size_t h5read_get_image_fast(h5read_handle *obj);
 
-/* read an image, free the image */
-image_t get_image(size_t number);
-void free_image(image_t image);
+/// Read an image from a dataset
+image_t *h5read_get_image(h5read_handle *obj, size_t number);
+/// Free a previously read image
+void h5read_free_image(image_t *image);
 
-/* read an image as modules, free this */
-image_modules_t get_image_modules(size_t number);
-void free_image_modules(image_modules_t modules);
+/// Read an image from a dataset, split up into modules
+image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t frame_number);
+/// Free an image read as modules
+void h5read_free_image_modules(image_modules_t *modules);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
