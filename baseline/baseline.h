@@ -1,7 +1,7 @@
 #ifndef BASELINE_H
 #define BASELINE_H
 
-#include "miniapp.h"
+#include "h5read.h"
 
 #ifdef __cplusplus
 extern "C" {

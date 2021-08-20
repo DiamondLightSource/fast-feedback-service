@@ -27,11 +27,13 @@ find_package(Dials REQUIRED)
 find_package(HDF5 REQUIRED)
 find_package(benchmark REQUIRED)
 
+add_subdirectory(../h5read h5read)
+
 add_library(baseline SHARED baseline.cpp )
-target_link_libraries(baseline PUBLIC Dials::Dials benchmark::benchmark)
+target_link_libraries(baseline PUBLIC Dials::Dials benchmark::benchmark h5read)
 
 add_executable(bm bm.cpp)
-target_link_libraries(bm baseline)
+target_link_libraries(bm baseline h5read)
 
-add_executable(h5read h5read.c miniapp.c)
-target_link_libraries(h5read PUBLIC hdf5::hdf5 baseline)
+# add_executable(h5read h5read.c miniapp.c)
+# target_link_libraries(h5read PUBLIC hdf5::hdf5 baseline)

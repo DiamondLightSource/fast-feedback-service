@@ -4,7 +4,7 @@
 #include <iostream>
 
 #include "baseline.h"
-#include "miniapp.h"
+#include "h5read.h"
 #include "spotfind_test_utils.h"
 using std::cout;
 using std::endl;
