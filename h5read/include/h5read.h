@@ -44,8 +44,8 @@ typedef struct image_t {
 
 /* data as modules i.e. 3D array */
 typedef struct image_modules_t {
-    uint16_t *data;
-    uint8_t *mask;
+    uint16_t *data;  ///< Module image data in a 3D array block of [module][slow][fast]
+    uint8_t *mask;   ///< Image mask, in the same shape as the module data
     size_t modules;  ///< Total number of modules
     size_t slow;     ///< Number of pixels in slow direction per module
     size_t fast;     ///< Number of pixels in fast direction per module
