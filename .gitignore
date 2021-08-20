@@ -11,8 +11,10 @@
 *~
 
 _build/
-ENV/
+*ENV/
 *.pyc
 build/
 .vscode/
 compile_commands.json
+
+.dials_build
