@@ -37,10 +37,6 @@ struct _h5read_handle {
     size_t mask_size;
 };
 
-int data_file_current;
-
-hid_t master;
-
 void h5read_free(h5read_handle *obj) {
     for (int i = 0; i < obj->data_file_count; i++) {
         H5Dclose(obj->data_files[i].dataset);
@@ -189,11 +185,9 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
 // void free_image_modules(image_modules_t image);
 
 void read_mask(h5read_handle *obj) {
-    // uses master pointer above: beware if this is bad
-
     char mask_path[] = "/entry/instrument/detector/pixel_mask";
 
-    hid_t mask_dataset = H5Dopen(master, mask_path, H5P_DEFAULT);
+    hid_t mask_dataset = H5Dopen(obj->master_file, mask_path, H5P_DEFAULT);
 
     if (mask_dataset < 0) {
         fprintf(stderr, "error reading mask from %s\n", mask_path);
