@@ -32,12 +32,11 @@ struct _h5read_handle {
     int master_file;
     int data_file_count;
     h5_data_file *data_files;
-    size_t frames, slow, fast;
+    size_t frames;  ///< Number of frames in this dataset
+    size_t slow;    ///< Pixel dimension of images in the slow direction
+    size_t fast;    ///< Pixel dimensions of images in the fast direction
 };
 
-// allocate space for 100 virtual files (which would mean 100,000 frames)
-
-// h5_data_file data_files[MAXDATAFILES];
 int data_file_current;
 
 hid_t master;
@@ -55,8 +54,6 @@ void h5read_free(h5read_handle *obj) {
 
     free(obj);
 }
-
-size_t slow, fast;
 
 /// Get the number of frames available
 size_t h5read_get_number_of_images(h5read_handle *obj) {
@@ -158,14 +155,14 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     hid_t space = H5Dget_space(current->dataset);
     hid_t datatype = H5Dget_type(current->dataset);
 
-    hsize_t block[3] = {1, slow, fast};
+    hsize_t block[3] = {1, obj->slow, obj->fast};
     hsize_t offset[3] = {n - current->offset, 0, 0};
 
     // select data to read #todo add status checks
     H5Sselect_hyperslab(space, H5S_SELECT_SET, offset, NULL, block, NULL);
     hid_t mem_space = H5Screate_simple(3, block, NULL);
 
-    uint16_t *buffer = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast);
+    uint16_t *buffer = (uint16_t *)malloc(sizeof(uint16_t) * obj->slow * obj->fast);
     if (H5Dread(current->dataset, datatype, mem_space, space, H5P_DEFAULT, buffer)
         < 0) {
         H5Eprint(H5E_DEFAULT, NULL);
@@ -176,8 +173,8 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     H5Sclose(mem_space);
 
     image_t *result = malloc(sizeof(image_t));
-    result->slow = slow;
-    result->fast = fast;
+    result->slow = obj->slow;
+    result->fast = obj->fast;
     result->mask = mask;
     result->data = buffer;
 
