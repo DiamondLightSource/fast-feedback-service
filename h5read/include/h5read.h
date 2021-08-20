@@ -1,8 +1,8 @@
 #ifndef __MINIAPP_H
 #define __MINIAPP_H
 
+#include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
 
 /* Basic API specification:
  *
@@ -26,6 +26,12 @@
  *
  */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct _h5read_handle h5read_handle;
+
 // Define a data type alias so that other users don't have to hardcode
 typedef uint16_t image_t_type;
 
@@ -45,11 +51,11 @@ typedef struct image_modules_t {
     size_t fast;
 } image_modules_t;
 
-/* set up HDF5 files - call at the start */
-int setup_hdf5_files(char *master_filename);
+/// Read an h5 file. Returns NULL if failed.
+h5read_handle *h5read_open(const char *master_filename);
 
-/* clean up at the end */
-void cleanup_hdf5();
+/// Cleanup and release an h5 file object
+void h5read_free(h5read_handle *);
 
 /* interrogate number / size of images */
 size_t get_number_of_images();
@@ -63,5 +69,9 @@ void free_image(image_t image);
 /* read an image as modules, free this */
 image_modules_t get_image_modules(size_t number);
 void free_image_modules(image_modules_t modules);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

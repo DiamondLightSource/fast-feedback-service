@@ -28,40 +28,53 @@ typedef struct h5_data_file {
     size_t offset;
 } h5_data_file;
 
+struct _h5read_handle {
+    int master_file;
+    int data_file_count;
+    h5_data_file *data_files;
+    size_t frames, slow, fast;
+};
+
 // allocate space for 100 virtual files (which would mean 100,000 frames)
 
-h5_data_file data_files[MAXDATAFILES];
-int data_file_count;
+// h5_data_file data_files[MAXDATAFILES];
 int data_file_current;
 
 hid_t master;
 
-void cleanup_hdf5() {
-    for (int i = 0; i < data_file_count; i++) {
-        H5Dclose(data_files[i].dataset);
-        H5Fclose(data_files[i].file);
+void h5read_free(h5read_handle *obj) {
+    for (int i = 0; i < obj->data_file_count; i++) {
+        H5Dclose(obj->data_files[i].dataset);
+        H5Fclose(obj->data_files[i].file);
     }
-    H5Fclose(master);
+    free(obj->data_files);
+    H5Fclose(obj->master_file);
+
     free(mask);
     free(module_mask);
+
+    free(obj);
 }
 
-size_t frames, slow, fast;
+size_t slow, fast;
 
-size_t get_number_of_images() {
-    return frames;
+/// Get the number of frames available
+size_t h5read_get_number_of_images(h5read_handle *obj) {
+    return obj->frames;
 }
 
-size_t get_image_slow() {
-    return slow;
+size_t h5read_get_image_slow(h5read_handle *obj) {
+    return obj->slow;
 }
 
-size_t get_image_fast() {
-    return fast;
+size_t h5read_get_image_fast(h5read_handle *obj) {
+    return obj->fast;
 }
 
-void free_image(image_t i) {
-    free(i.data);
+void h5read_free_image(image_t *i) {
+    free(i->data);
+    // Mask is a pointer to the file-global file mask so isn't freed
+    free(i);
 }
 
 /* blit the relevent pixel data across from a single image into an collection
@@ -118,53 +131,41 @@ void free_image_modules(image_modules_t i) {
     free(i.data);
 }
 
-image_t get_image(size_t n) {
-    int data_file;
-
-    h5_data_file *current;
-
-    if (n >= frames) {
-        fprintf(stderr, "image %ld > frames (%ld)\n", n, frames);
+image_t *h5read_get_image(h5read_handle *obj, size_t n) {
+    if (n >= obj->frames) {
+        fprintf(stderr, "image %ld > frames (%ld)\n", n, obj->frames);
         exit(1);
     }
 
     /* first find the right data file - having to do this lookup is annoying
        but probably cheap */
 
-    for (data_file = 0; data_file < data_file_count; data_file++) {
-        if ((n - data_files[data_file].offset) < data_files[data_file].frames) {
+    int data_file;
+    for (data_file = 0; data_file < obj->data_file_count; data_file++) {
+        if ((n - obj->data_files[data_file].offset)
+            < obj->data_files[data_file].frames) {
             break;
         }
     }
 
-    if (data_file == data_file_count) {
+    if (data_file == obj->data_file_count) {
         fprintf(stderr, "could not find data file for frame %ld\n", n);
         exit(1);
     }
 
-    current = &(data_files[data_file]);
+    h5_data_file *current = &(obj->data_files[data_file]);
 
-    hid_t mem_space, space, datatype;
+    hid_t space = H5Dget_space(current->dataset);
+    hid_t datatype = H5Dget_type(current->dataset);
 
-    hsize_t block[3], offset[3];
-
-    uint16_t *buffer = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast);
-
-    block[0] = 1;
-    block[1] = slow;
-    block[2] = fast;
-
-    offset[0] = n - current->offset;
-    offset[1] = 0;
-    offset[2] = 0;
-
-    space = H5Dget_space(current->dataset);
-    datatype = H5Dget_type(current->dataset);
+    hsize_t block[3] = {1, slow, fast};
+    hsize_t offset[3] = {n - current->offset, 0, 0};
 
     // select data to read #todo add status checks
     H5Sselect_hyperslab(space, H5S_SELECT_SET, offset, NULL, block, NULL);
-    mem_space = H5Screate_simple(3, block, NULL);
+    hid_t mem_space = H5Screate_simple(3, block, NULL);
 
+    uint16_t *buffer = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast);
     if (H5Dread(current->dataset, datatype, mem_space, space, H5P_DEFAULT, buffer)
         < 0) {
         H5Eprint(H5E_DEFAULT, NULL);
@@ -174,11 +175,11 @@ image_t get_image(size_t n) {
     H5Sclose(space);
     H5Sclose(mem_space);
 
-    image_t result;
-    result.slow = slow;
-    result.fast = fast;
-    result.mask = mask;
-    result.data = buffer;
+    image_t *result = malloc(sizeof(image_t));
+    result->slow = slow;
+    result->fast = fast;
+    result->mask = mask;
+    result->data = buffer;
 
     return result;
 }
@@ -302,7 +303,15 @@ void read_mask() {
     H5Dclose(mask_dataset);
 }
 
-int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file *vds) {
+/// Get number of VDS and read info about all the sub-files.
+///
+/// @param master           HDF5 File object pointing to the master file
+/// @param dataset          The root dataset to search for VDS from
+/// @param data_files_array Pointer to an array variable, that will be
+///                         allocated and filled with basic information
+///                         about the VDS sub-files.
+/// @returns The number of VDS found and allocated into data_files_array
+int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_array) {
     hid_t plist, vds_source;
     size_t vds_count;
     herr_t status;
@@ -310,6 +319,10 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file *vds) {
     plist = H5Dget_create_plist(dataset);
 
     status = H5Pget_virtual_count(plist, &vds_count);
+
+    *data_files_array = calloc(vds_count, sizeof(h5_data_file));
+    // Used to use vds parameter directly - put here so no mass-changes
+    h5_data_file *vds = *data_files_array;
 
     for (int j = 0; j < vds_count; j++) {
         hsize_t start[MAXDIM], stride[MAXDIM], count[MAXDIM], block[MAXDIM];
@@ -390,21 +403,23 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file *vds) {
     return vds_count;
 }
 
-int unpack_vds(char *filename, h5_data_file *data_files) {
-    hid_t dataset, file;
-    char *root, cwd[MAXFILENAME];
-    int retval;
-
+/// Extracts the h5_data_file dictionary for information on all VDS
+///
+/// @param filename         The name of the master file
+/// @param h5_data_file     The data_files array to be allocated and filled
+///
+/// @returns The number of VDS files
+int unpack_vds(const char *filename, h5_data_file **data_files) {
     // TODO if we want this to become SWMR aware in the future will need to
     // allow for that here
-    file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    hid_t file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 
     if (file < 0) {
         fprintf(stderr, "error reading %s\n", filename);
         return -1;
     }
 
-    dataset = H5Dopen(file, "/entry/data/data", H5P_DEFAULT);
+    hid_t dataset = H5Dopen(file, "/entry/data/data", H5P_DEFAULT);
 
     if (dataset < 0) {
         H5Fclose(file);
@@ -413,88 +428,96 @@ int unpack_vds(char *filename, h5_data_file *data_files) {
     }
 
     /* always set the absolute path to file information */
-    root = dirname(filename);
+    char rootpath[MAXFILENAME];
+    strncpy(rootpath, filename, MAXFILENAME);
+    char *root = dirname(rootpath);
+    char cwd[MAXFILENAME];
     if ((strlen(root) == 1) && (root[0] == '.')) {
         root = getcwd(cwd, MAXFILENAME);
     }
 
-    retval = vds_info(root, file, dataset, data_files);
+    int vds_count = vds_info(root, file, dataset, data_files);
 
     H5Dclose(dataset);
     H5Fclose(file);
 
-    return retval;
+    return vds_count;
 }
 
-void setup_data() {
-    hid_t datatype, space, dataset;
-
-    hsize_t dims[3];
-
-    dataset = data_files[0].dataset;
-
-    datatype = H5Dget_type(dataset);
+void setup_data(h5read_handle *obj) {
+    hid_t dataset = obj->data_files[0].dataset;
+    hid_t datatype = H5Dget_type(dataset);
 
     if (H5Tget_size(datatype) != 2) {
         fprintf(stderr, "native data size != 2 (%ld)\n", H5Tget_size(datatype));
         exit(1);
     }
 
-    space = H5Dget_space(dataset);
+    hid_t space = H5Dget_space(dataset);
 
     if (H5Sget_simple_extent_ndims(space) != 3) {
         fprintf(stderr, "raw data not three dimensional\n");
         exit(1);
     }
 
+    hsize_t dims[3];
     H5Sget_simple_extent_dims(space, dims, NULL);
 
-    slow = dims[1];
-    fast = dims[2];
+    obj->slow = dims[1];
+    obj->fast = dims[2];
 
-    printf("total data size: %ldx%ldx%ld\n", frames, slow, fast);
+    printf("Total data size: %ldx%ldx%ld\n", obj->frames, obj->slow, obj->fast);
     H5Sclose(space);
 }
 
-int setup_hdf5_files(char *master_filename) {
+h5read_handle *h5read_open(const char *master_filename) {
     /* I'll do my own debug printing: disable HDF5 library output */
     H5Eset_auto(H5E_DEFAULT, NULL, NULL);
 
-    master = H5Fopen(master_filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    int master_file = H5Fopen(master_filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 
-    if (master < 0) {
+    if (master_file < 0) {
         fprintf(stderr, "error reading %s\n", master_filename);
-        return 1;
+        return NULL;
     }
 
-    data_file_count = unpack_vds(master_filename, data_files);
+    // Create the H5 handle object
+    h5read_handle *file = calloc(1, sizeof(h5read_handle));
+    file->master_file = master_file;
 
-    if (data_file_count < 0) {
+    file->data_file_count = unpack_vds(master_filename, &file->data_files);
+
+    if (file->data_file_count < 0) {
         fprintf(stderr, "error reading %s\n", master_filename);
-        return 1;
+        H5Fclose(master_file);
+        free(file);
+        return NULL;
     }
 
     // open up the actual data files, count all the frames
-    frames = 0;
-    for (int j = 0; j < data_file_count; j++) {
+    file->frames = 0;
+    h5_data_file *data_files = file->data_files;
+    for (int j = 0; j < file->data_file_count; j++) {
         data_files[j].file =
           H5Fopen(data_files[j].filename, H5F_ACC_RDONLY, H5P_DEFAULT);
         if (data_files[j].file < 0) {
             fprintf(stderr, "error reading %s\n", data_files[j].filename);
-            return 1;
+            // Lots of code to cleanup here, so just quit for now
+            exit(1);
         }
         data_files[j].dataset =
           H5Dopen(data_files[j].file, data_files[j].dsetname, H5P_DEFAULT);
         if (data_files[j].dataset < 0) {
             fprintf(stderr, "error reading %s\n", data_files[j].filename);
-            return 1;
+            // Lots of code to cleanup here, so just quit for now
+            exit(1);
         }
-        frames += data_files[j].frames;
+        file->frames += data_files[j].frames;
     }
 
     read_mask();
 
-    setup_data();
+    setup_data(file);
 
-    return 0;
+    return NULL;
 }
