@@ -197,9 +197,9 @@ void read_mask(h5read_handle *obj) {
 
     size_t mask_dsize = H5Tget_size(datatype);
     if (mask_dsize == 4) {
-        printf("mask dtype uint32");
+        printf("mask dtype uint32\n");
     } else if (mask_dsize == 8) {
-        printf("mask dtype uint64");
+        printf("mask dtype uint64\n");
     } else {
         fprintf(stderr, "mask data size != 4,8 (%ld)\n", H5Tget_size(datatype));
         exit(1);
