@@ -2,25 +2,12 @@ cmake_minimum_required(VERSION 3.19)
 
 project(baseline)
 
-# Set the default build type to RelWithDebInfo
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose the type of build." FORCE)
-  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
-endif()
-
-# Always use coloured output, unless turned off
-option (FORCE_COLORED_OUTPUT "Always produce ANSI-colored output (GNU/Clang only)." TRUE)
-if (${FORCE_COLORED_OUTPUT})
-  add_compile_options(
-    $<$<OR:$<CXX_COMPILER_ID:GNU>,$<C_COMPILER_ID:GNU>>:-fdiagnostics-color=always>
-    $<$<OR:$<CXX_COMPILER_ID:Clang>,$<C_COMPILER_ID:Clang>>:-fcolor-diagnostics>
-    $<$<OR:$<CXX_COMPILER_ID:AppleClang>,$<C_COMPILER_ID:AppleClang>>:-fcolor-diagnostics>
-  )
-endif ()
-
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/" "${CMAKE_SOURCE_DIR}/../cmake/Modules")
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_C_STANDARD 99)
+
+include(SetDefaultBuildRelWithDebInfo)
+include(AlwaysColourCompilation)
 
 find_package(Boost REQUIRED)
 find_package(Dials REQUIRED)
