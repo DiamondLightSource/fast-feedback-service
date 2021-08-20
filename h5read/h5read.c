@@ -32,9 +32,9 @@ struct _h5read_handle {
     size_t slow;    ///< Pixel dimension of images in the slow direction
     size_t fast;    ///< Pixel dimensions of images in the fast direction
 
-    uint8_t *mask;
-    uint8_t *module_mask;
-    size_t mask_size;
+    uint8_t *mask;         ///< Shared image mask
+    uint8_t *module_mask;  ///< Shared module mask
+    size_t mask_size;      ///< Total size(in pixels) of mask
 };
 
 void h5read_free(h5read_handle *obj) {
@@ -181,8 +181,6 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
 
     return result;
 }
-
-// void free_image_modules(image_modules_t image);
 
 void read_mask(h5read_handle *obj) {
     char mask_path[] = "/entry/instrument/detector/pixel_mask";

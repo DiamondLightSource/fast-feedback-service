@@ -57,17 +57,21 @@ h5read_handle *h5read_open(const char *master_filename);
 /// Cleanup and release an h5 file object
 void h5read_free(h5read_handle *);
 
-/* interrogate number / size of images */
+/// Get the number of images in a dataset
 size_t h5read_get_number_of_images(h5read_handle *obj);
+/// Get the number of image pixels in the slow dimension
 size_t h5read_get_image_slow(h5read_handle *obj);
+/// Get the number of image pixels in the fast dimension
 size_t h5read_get_image_fast(h5read_handle *obj);
 
-/* read an image, free the image */
+/// Read an image from a dataset
 image_t *h5read_get_image(h5read_handle *obj, size_t number);
+/// Free a previously read image
 void h5read_free_image(image_t *image);
 
-/* read an image as modules, free this */
+/// Read an image from a dataset, split up into modules
 image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t frame_number);
+/// Free an image read as modules
 void h5read_free_image_modules(image_modules_t *modules);
 
 #ifdef __cplusplus
