@@ -30,7 +30,6 @@ target_link_libraries(h5read PUBLIC hdf5::hdf5)
 
 # Only build the example reader as a root script
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  add_executable(h5read_exec miniapp.c)
-  set_target_properties(h5read_exec PROPERTIES OUTPUT_NAME h5read)
-  target_link_libraries(h5read_exec PUBLIC h5read)
+  add_executable(read_h5read read_h5read.c)
+  target_link_libraries(read_h5read PUBLIC h5read)
 endif()
