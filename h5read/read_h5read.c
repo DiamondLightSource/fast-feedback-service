@@ -19,38 +19,40 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (setup_hdf5_files(argv[1]) < 0) {
+    h5read_handle *obj = h5read_open(argv[1]);
+    if (obj == NULL) {
         fprintf(stderr, "<shrug> bad thing </shrug>\n");
         exit(1);
     }
 
-    size_t n_images = get_number_of_images();
+    size_t n_images = h5read_get_number_of_images(obj);
 
     for (size_t j = 0; j < n_images; j++) {
-        image_t image = get_image(j);
-        image_modules_t modules = get_image_modules(j);
+        image_t *image = h5read_get_image(obj, j);
+        image_modules_t *modules = h5read_get_image_modules(obj, j);
 
         size_t zero = 0;
-        for (size_t i = 0; i < (image.fast * image.slow); i++) {
-            if (image.data[i] == 0 && image.mask[i] == 1) {
+        for (size_t i = 0; i < (image->fast * image->slow); i++) {
+            if (image->data[i] == 0 && image->mask[i] == 1) {
                 zero++;
             }
         }
 
         size_t zero_m = 0;
-        for (size_t i = 0; i < (modules.fast * modules.slow * modules.modules); i++) {
-            if (modules.data[i] == 0 && modules.mask[i] == 1) {
+        for (size_t i = 0; i < (modules->fast * modules->slow * modules->modules);
+             i++) {
+            if (modules->data[i] == 0 && modules->mask[i] == 1) {
                 zero_m++;
             }
         }
 
         printf("image %ld had %ld / %ld valid zero pixels\n", j, zero, zero_m);
 
-        free_image_modules(modules);
-        free_image(image);
+        h5read_free_image_modules(modules);
+        h5read_free_image(image);
     }
 
-    cleanup_hdf5();
+    h5read_free(obj);
 
     return 0;
 }

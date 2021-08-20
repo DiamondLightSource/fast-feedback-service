@@ -9,10 +9,6 @@
 
 #include "eiger2xe.h"
 
-uint8_t *mask;
-uint8_t *module_mask;
-size_t mask_size;
-
 // VDS stuff
 
 #define MAXFILENAME 256
@@ -35,6 +31,10 @@ struct _h5read_handle {
     size_t frames;  ///< Number of frames in this dataset
     size_t slow;    ///< Pixel dimension of images in the slow direction
     size_t fast;    ///< Pixel dimensions of images in the fast direction
+
+    uint8_t *mask;
+    uint8_t *module_mask;
+    size_t mask_size;
 };
 
 int data_file_current;
@@ -49,8 +49,8 @@ void h5read_free(h5read_handle *obj) {
     free(obj->data_files);
     H5Fclose(obj->master_file);
 
-    free(mask);
-    free(module_mask);
+    free(obj->mask);
+    free(obj->module_mask);
 
     free(obj);
 }
@@ -74,12 +74,15 @@ void h5read_free_image(image_t *i) {
     free(i);
 }
 
-/* blit the relevent pixel data across from a single image into an collection
-   of image modules - will allocate the latter */
-void blit(image_t image, image_modules_t *modules) {
-    size_t fast, slow, offset, target;
-
-    if (image.slow == E2XE_16M_SLOW) {
+/// blit the relevent pixel data across from a single image into a collection
+/// of image modules - will allocate the latter
+///
+/// @param image    The image to blit from
+/// @param modules  The modules object to fill
+void _blit(image_t *image, image_modules_t *modules) {
+    // Number of modules in fast, slow directions
+    size_t fast, slow;
+    if (image->slow == E2XE_16M_SLOW) {
         fast = 4;
         slow = 8;
     } else {
@@ -87,7 +90,6 @@ void blit(image_t image, image_modules_t *modules) {
         slow = 4;
     }
 
-    modules->mask = module_mask;
     modules->slow = E2XE_MOD_SLOW;
     modules->fast = E2XE_MOD_FAST;
     modules->modules = slow * fast;
@@ -97,35 +99,38 @@ void blit(image_t image, image_modules_t *modules) {
     modules->data = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast * module_pixels);
 
     for (size_t _slow = 0; _slow < slow; _slow++) {
-        size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image.fast;
+        size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image->fast;
         for (size_t _fast = 0; _fast < fast; _fast++) {
             for (size_t row = 0; row < E2XE_MOD_SLOW; row++) {
-                offset =
-                  (row0 + row * image.fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
-                target = (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
+                size_t offset =
+                  (row0 + row * image->fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
+                size_t target =
+                  (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
                 memcpy((void *)&modules->data[target],
-                       (void *)&image.data[offset],
+                       (void *)&image->data[offset],
                        sizeof(uint16_t) * E2XE_MOD_FAST);
             }
         }
     }
 }
 
-image_modules_t get_image_modules(size_t n) {
-    image_t image = get_image(n);
-    image_modules_t modules;
-    modules.data = NULL;
-    modules.mask = NULL;
-    modules.modules = -1;
-    modules.fast = -1;
-    modules.slow = -1;
-    blit(image, &modules);
-    free_image(image);
+image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t n) {
+    image_t *image = h5read_get_image(obj, n);
+    image_modules_t *modules = malloc(sizeof(image_modules_t));
+    modules->data = NULL;
+    modules->mask = obj->module_mask;
+    modules->modules = -1;
+    modules->fast = -1;
+    modules->slow = -1;
+    _blit(image, modules);
+    h5read_free_image(image);
     return modules;
 }
 
-void free_image_modules(image_modules_t i) {
-    free(i.data);
+void h5read_free_image_modules(image_modules_t *i) {
+    free(i->data);
+    // Like image, mask is held on the central h5read_handle object
+    free(i);
 }
 
 image_t *h5read_get_image(h5read_handle *obj, size_t n) {
@@ -175,7 +180,7 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     image_t *result = malloc(sizeof(image_t));
     result->slow = obj->slow;
     result->fast = obj->fast;
-    result->mask = mask;
+    result->mask = obj->mask;
     result->data = buffer;
 
     return result;
@@ -183,27 +188,22 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
 
 // void free_image_modules(image_modules_t image);
 
-void read_mask() {
+void read_mask(h5read_handle *obj) {
     // uses master pointer above: beware if this is bad
 
     char mask_path[] = "/entry/instrument/detector/pixel_mask";
-    hid_t mask_dataset, mask_info, datatype;
 
-    size_t mask_dsize;
-    uint32_t *raw_mask;
-    uint64_t *raw_mask_64;  // why?
-
-    mask_dataset = H5Dopen(master, mask_path, H5P_DEFAULT);
+    hid_t mask_dataset = H5Dopen(master, mask_path, H5P_DEFAULT);
 
     if (mask_dataset < 0) {
         fprintf(stderr, "error reading mask from %s\n", mask_path);
         exit(1);
     }
 
-    datatype = H5Dget_type(mask_dataset);
-    mask_info = H5Dget_space(mask_dataset);
+    hid_t datatype = H5Dget_type(mask_dataset);
+    hid_t mask_info = H5Dget_space(mask_dataset);
 
-    mask_dsize = H5Tget_size(datatype);
+    size_t mask_dsize = H5Tget_size(datatype);
     if (mask_dsize == 4) {
         printf("mask dtype uint32");
     } else if (mask_dsize == 8) {
@@ -213,20 +213,20 @@ void read_mask() {
         exit(1);
     }
 
-    mask_size = H5Sget_simple_extent_npoints(mask_info);
+    obj->mask_size = H5Sget_simple_extent_npoints(mask_info);
 
-    printf("mask has %ld elements\n", mask_size);
+    printf("Mask has %ld elements\n", obj->mask_size);
 
     void *buffer = NULL;
 
+    uint32_t *raw_mask = NULL;
+    uint64_t *raw_mask_64 = NULL;  // why?
     if (mask_dsize == 4) {
-        raw_mask = (uint32_t *)malloc(sizeof(uint32_t) * mask_size);
+        raw_mask = (uint32_t *)malloc(sizeof(uint32_t) * obj->mask_size);
         buffer = (void *)raw_mask;
-        raw_mask_64 = NULL;
     } else {
-        raw_mask_64 = (uint64_t *)malloc(sizeof(uint64_t) * mask_size);
+        raw_mask_64 = (uint64_t *)malloc(sizeof(uint64_t) * obj->mask_size);
         buffer = (void *)raw_mask_64;
-        raw_mask = NULL;
     }
 
     if (H5Dread(mask_dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buffer) < 0) {
@@ -238,24 +238,24 @@ void read_mask() {
 
     size_t zero = 0;
 
-    mask = (uint8_t *)malloc(sizeof(uint8_t) * mask_size);
+    obj->mask = (uint8_t *)malloc(sizeof(uint8_t) * obj->mask_size);
 
     if (mask_dsize == 4) {
-        for (size_t j = 0; j < mask_size; j++) {
+        for (size_t j = 0; j < obj->mask_size; j++) {
             if (raw_mask[j] == 0) {
                 zero++;
-                mask[j] = 1;
+                obj->mask[j] = 1;
             } else {
-                mask[j] = 0;
+                obj->mask[j] = 0;
             }
         }
     } else {
-        for (size_t j = 0; j < mask_size; j++) {
+        for (size_t j = 0; j < obj->mask_size; j++) {
             if (raw_mask_64[j] == 0) {
                 zero++;
-                mask[j] = 1;
+                obj->mask[j] = 1;
             } else {
-                mask[j] = 0;
+                obj->mask[j] = 0;
             }
         }
     }
@@ -265,7 +265,7 @@ void read_mask() {
     size_t fast, slow, offset, target, image_slow, image_fast, module_pixels;
     module_pixels = E2XE_MOD_FAST * E2XE_MOD_SLOW;
 
-    if (mask_size == E2XE_16M_SLOW * E2XE_16M_FAST) {
+    if (obj->mask_size == E2XE_16M_SLOW * E2XE_16M_FAST) {
         slow = 8;
         fast = 4;
         image_slow = E2XE_16M_SLOW;
@@ -276,7 +276,7 @@ void read_mask() {
         image_slow = E2XE_4M_SLOW;
         image_fast = E2XE_4M_FAST;
     }
-    module_mask = (uint8_t *)malloc(sizeof(uint8_t) * fast * slow * module_pixels);
+    obj->module_mask = (uint8_t *)malloc(sizeof(uint8_t) * fast * slow * module_pixels);
     for (size_t _slow = 0; _slow < slow; _slow++) {
         size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image_fast;
         for (size_t _fast = 0; _fast < fast; _fast++) {
@@ -284,8 +284,8 @@ void read_mask() {
                 offset =
                   (row0 + row * image_fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
                 target = (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
-                memcpy((void *)&module_mask[target],
-                       (void *)&mask[offset],
+                memcpy((void *)&obj->module_mask[target],
+                       (void *)&obj->mask[offset],
                        sizeof(uint8_t) * E2XE_MOD_FAST);
             }
         }
@@ -512,7 +512,7 @@ h5read_handle *h5read_open(const char *master_filename) {
         file->frames += data_files[j].frames;
     }
 
-    read_mask();
+    read_mask(file);
 
     setup_data(file);
 

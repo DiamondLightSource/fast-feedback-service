@@ -46,9 +46,9 @@ typedef struct image_t {
 typedef struct image_modules_t {
     uint16_t *data;
     uint8_t *mask;
-    size_t modules;
-    size_t slow;
-    size_t fast;
+    size_t modules;  ///< Total number of modules
+    size_t slow;     ///< Number of pixels in slow direction per module
+    size_t fast;     ///< Number of pixels in fast direction per module
 } image_modules_t;
 
 /// Read an h5 file. Returns NULL if failed.
@@ -58,17 +58,17 @@ h5read_handle *h5read_open(const char *master_filename);
 void h5read_free(h5read_handle *);
 
 /* interrogate number / size of images */
-size_t get_number_of_images();
-size_t get_image_slow();
-size_t get_image_fast();
+size_t h5read_get_number_of_images(h5read_handle *obj);
+size_t h5read_get_image_slow(h5read_handle *obj);
+size_t h5read_get_image_fast(h5read_handle *obj);
 
 /* read an image, free the image */
-image_t get_image(size_t number);
-void free_image(image_t image);
+image_t *h5read_get_image(h5read_handle *obj, size_t number);
+void h5read_free_image(image_t *image);
 
 /* read an image as modules, free this */
-image_modules_t get_image_modules(size_t number);
-void free_image_modules(image_modules_t modules);
+image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t frame_number);
+void h5read_free_image_modules(image_modules_t *modules);
 
 #ifdef __cplusplus
 }
