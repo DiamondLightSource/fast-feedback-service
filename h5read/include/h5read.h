@@ -1,5 +1,5 @@
-#ifndef __MINIAPP_H
-#define __MINIAPP_H
+#ifndef _H5READ_H
+#define _H5READ_H
 
 #include <stddef.h>
 #include <stdint.h>
