@@ -131,7 +131,10 @@ void h5read_free_image_modules(image_modules_t *i) {
 
 image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     if (n >= obj->frames) {
-        fprintf(stderr, "image %ld > frames (%ld)\n", n, obj->frames);
+        fprintf(stderr,
+                "Error: image %ld greater than number of frames (%ld)\n",
+                n,
+                obj->frames);
         exit(1);
     }
 
@@ -147,7 +150,7 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     }
 
     if (data_file == obj->data_file_count) {
-        fprintf(stderr, "could not find data file for frame %ld\n", n);
+        fprintf(stderr, "Error: Could not find data file for frame %ld\n", n);
         exit(1);
     }
 
@@ -188,7 +191,7 @@ void read_mask(h5read_handle *obj) {
     hid_t mask_dataset = H5Dopen(obj->master_file, mask_path, H5P_DEFAULT);
 
     if (mask_dataset < 0) {
-        fprintf(stderr, "error reading mask from %s\n", mask_path);
+        fprintf(stderr, "Error: While reading mask from %s\n", mask_path);
         exit(1);
     }
 
@@ -201,7 +204,7 @@ void read_mask(h5read_handle *obj) {
     } else if (mask_dsize == 8) {
         printf("mask dtype uint64\n");
     } else {
-        fprintf(stderr, "mask data size != 4,8 (%ld)\n", H5Tget_size(datatype));
+        fprintf(stderr, "Error: mask data size (%ld) != 4,8\n", H5Tget_size(datatype));
         exit(1);
     }
 
@@ -222,7 +225,7 @@ void read_mask(h5read_handle *obj) {
     }
 
     if (H5Dread(mask_dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buffer) < 0) {
-        fprintf(stderr, "error reading mask\n");
+        fprintf(stderr, "Error: While reading mask\n");
         exit(1);
     }
 
@@ -398,7 +401,8 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
 /// @param h5_data_file     The data_files array to be allocated and filled
 ///
 /// @returns The number of VDS files
-int unpack_vds(const char *filename, h5_data_file **data_files) {
+int __attribute__((visibility("hidden")))
+unpack_vds(const char *filename, h5_data_file **data_files) {
     // TODO if we want this to become SWMR aware in the future will need to
     // allow for that here
     hid_t file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);

@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
 
     h5read_handle *obj = h5read_open(argv[1]);
     if (obj == NULL) {
-        fprintf(stderr, "<shrug> bad thing </shrug>\n");
+        fprintf(stderr, "Error: Failed to open %s\n", argv[1]);
         exit(1);
     }
 
