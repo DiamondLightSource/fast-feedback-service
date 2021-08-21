@@ -408,14 +408,14 @@ unpack_vds(const char *filename, h5_data_file **data_files) {
     hid_t file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 
     if (file < 0) {
-        fprintf(stderr, "error reading %s\n", filename);
+        fprintf(stderr, "Error: Opening for VDS read %s\n", filename);
         return -1;
     }
 
     hid_t dataset = H5Dopen(file, "/entry/data/data", H5P_DEFAULT);
     if (dataset < 0) {
         H5Fclose(file);
-        fprintf(stderr, "error reading %s\n", "/entry/data/data");
+        fprintf(stderr, "Error: Reading H5 entry %s\n", "/entry/data/data");
         return -1;
     }
 
@@ -463,13 +463,10 @@ void setup_data(h5read_handle *obj) {
 }
 
 h5read_handle *h5read_open(const char *master_filename) {
-    /* I'll do my own debug printing: disable HDF5 library output */
-    H5Eset_auto(H5E_DEFAULT, NULL, NULL);
-
     hid_t master_file = H5Fopen(master_filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 
     if (master_file < 0) {
-        fprintf(stderr, "error reading %s\n", master_filename);
+        fprintf(stderr, "Error: Reading %s\n", master_filename);
         return NULL;
     }
 
@@ -480,7 +477,7 @@ h5read_handle *h5read_open(const char *master_filename) {
     file->data_file_count = unpack_vds(master_filename, &file->data_files);
 
     if (file->data_file_count < 0) {
-        fprintf(stderr, "error reading %s\n", master_filename);
+        fprintf(stderr, "Error: While reading VDS of %s\n", master_filename);
         H5Fclose(master_file);
         free(file);
         return NULL;
@@ -493,14 +490,16 @@ h5read_handle *h5read_open(const char *master_filename) {
         data_files[j].file =
           H5Fopen(data_files[j].filename, H5F_ACC_RDONLY, H5P_DEFAULT);
         if (data_files[j].file < 0) {
-            fprintf(stderr, "error reading %s\n", data_files[j].filename);
+            fprintf(stderr, "Error: Opening child file %s\n", data_files[j].filename);
             // Lots of code to cleanup here, so just quit for now
             exit(1);
         }
         data_files[j].dataset =
           H5Dopen(data_files[j].file, data_files[j].dsetname, H5P_DEFAULT);
         if (data_files[j].dataset < 0) {
-            fprintf(stderr, "error reading %s\n", data_files[j].filename);
+            fprintf(stderr,
+                    "Error: Reading datasets of child file %s\n",
+                    data_files[j].filename);
             // Lots of code to cleanup here, so just quit for now
             exit(1);
         }
