@@ -401,8 +401,7 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
 /// @param h5_data_file     The data_files array to be allocated and filled
 ///
 /// @returns The number of VDS files
-int __attribute__((visibility("hidden")))
-unpack_vds(const char *filename, h5_data_file **data_files) {
+int unpack_vds(const char *filename, h5_data_file **data_files) {
     // TODO if we want this to become SWMR aware in the future will need to
     // allow for that here
     hid_t file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
