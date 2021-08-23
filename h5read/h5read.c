@@ -540,5 +540,10 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
         fprintf(stderr, USAGE, argv[0]);
         exit(1);
     }
-    return h5read_open(argv[1]);
+    h5read_handle *handle = h5read_open(argv[1]);
+    if (handle == NULL) {
+        fprintf(stderr, "Error: Could not open nexus file %s\n", argv[1]);
+        exit(1);
+    }
+    return handle;
 }
