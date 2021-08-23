@@ -2,6 +2,7 @@
 
 #include <hdf5.h>
 #include <libgen.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -510,4 +511,34 @@ h5read_handle *h5read_open(const char *master_filename) {
     setup_data(file);
 
     return file;
+}
+
+h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
+    const char *USAGE = "Usage: %s [-h|--help] [-v] [FILE.nxs]\n";
+
+    bool verbose = false;
+    // Handle simple case of -h or --help
+    for (int i = 1; i < argc; ++i) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            fprintf(stderr, USAGE, argv[0]);
+            exit(0);
+        }
+        if (!strcmp(argv[i], "-v")) {
+            verbose = true;
+            // Shift the rest over this one so that we only have positionals
+            for (int j = i; j < argc; j++) {
+                argv[i] = argv[j];
+            }
+            argc -= 1;
+        }
+    }
+    if (!verbose) {
+        // Turn off verbose hdf5 errors
+        H5Eset_auto(H5E_DEFAULT, NULL, NULL);
+    }
+    if (argc == 1) {
+        fprintf(stderr, USAGE, argv[0]);
+        exit(1);
+    }
+    return h5read_open(argv[1]);
 }

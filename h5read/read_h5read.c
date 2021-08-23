@@ -1,4 +1,3 @@
-#include <hdf5.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,34 +5,9 @@
 
 #include "h5read.h"
 
-const char *USAGE = "Usage: %s [-h|--help] [-v] [FILE.nxs]\n";
-
 int main(int argc, char **argv) {
-    bool verbose = false;
-    // Handle simple case of -h or --help
-    for (int i = 1; i < argc; ++i) {
-        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-            fprintf(stderr, USAGE, argv[0]);
-            return 0;
-        }
-        if (!strcmp(argv[i], "-v")) {
-            verbose = true;
-            // Shift the rest over this one so that we only have positionals
-            for (int j = i; j < argc; j++) {
-                argv[i] = argv[j];
-            }
-            argc -= 1;
-        }
-    }
-    if (!verbose) {
-        // Turn off verbose hdf5 errors
-        H5Eset_auto(H5E_DEFAULT, NULL, NULL);
-    }
-    if (argc == 1) {
-        fprintf(stderr, USAGE, argv[0]);
-        return 1;
-    }
-    h5read_handle *obj = h5read_open(argv[1]);
+    h5read_handle *obj = h5read_parse_standard_args(argc, argv);
+
     if (obj == NULL) {
         fprintf(stderr, "Error: Failed to open %s\n", argv[1]);
         exit(1);
