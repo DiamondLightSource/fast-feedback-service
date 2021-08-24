@@ -57,6 +57,11 @@ function(_duplicate_target new_target target)
 endfunction()
 
 if(CXX_HAS_FPGA_FLAG)
+    # This is a Windows-specific flag that enables exception handling in host code
+    if(WIN32)
+        set(FPGA_WIN_FLAG "/EHsc")
+    endif()
+
     set(CXX_HAS_FPGA_FLAG Yes)
     # FPGA board selection
     if(NOT DEFINED FPGA_BOARD)
@@ -76,13 +81,13 @@ if(CXX_HAS_FPGA_FLAG)
     add_library(FPGA::EMULATED INTERFACE IMPORTED )
     set_target_properties(FPGA::EMULATED PROPERTIES
         INTERFACE_COMPILE_DEFINITIONS "FPGA_EMULATOR;FPGA"
-        INTERFACE_COMPILE_OPTIONS "-fintelfpga"
+        INTERFACE_COMPILE_OPTIONS "-fintelfpga;${FPGA_WIN_FLAG}"
         INTERFACE_LINK_OPTIONS "-fintelfpga")
 
     add_library(FPGA::FPGA INTERFACE IMPORTED)
     set_target_properties(FPGA::FPGA PROPERTIES
         INTERFACE_COMPILE_DEFINITIONS "FPGA"
-        INTERFACE_COMPILE_OPTIONS "-fintelfpga"
+        INTERFACE_COMPILE_OPTIONS "-fintelfpga;${FPGA_WIN_FLAG}"
         INTERFACE_LINK_OPTIONS "-fintelfpga;-Xshardware;-Xsboard=${FPGA_BOARD}")
     
     ## Add FPGA variants of a target
