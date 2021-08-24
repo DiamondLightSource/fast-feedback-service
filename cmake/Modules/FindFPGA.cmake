@@ -91,7 +91,7 @@ if(CXX_HAS_FPGA_FLAG)
     ## - target.fpga:       Hardware FPGA (Adds -DFPGA compile definition)
     ## - target.fpga_emu:   Emulated FPGA (Adds -DFPGA and -DFPGA_EMULATOR compile definition)
     ## - target_report.a:   FPGA Report (Hardware FPGA, but only the early linking stages and report output)
-    function(add_fpga_variants target)
+    function(fpga_add_variants target)
         get_target_property(_imported ${target} IMPORTED)
         if(_imported)
             # Our duplicate target function doesn't handle this yet
