@@ -6,6 +6,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../cmake/Modules
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
+set(HDF5_FIND_QUIETLY Yes)
 find_package(HDF5 REQUIRED)
 
 add_library(h5read h5read.c)
