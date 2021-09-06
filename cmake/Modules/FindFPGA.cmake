@@ -124,17 +124,19 @@ if(CXX_HAS_FPGA_FLAG)
     ## Convenience function to add a target and variants at the same time
     function(fpga_add_executable name)
         cmake_parse_arguments(PARSE_ARGV 1 _addexec "" "" "")
+        add_library(${name} INTERFACE)
+
         add_executable(${name}.fpga_emu ${_addexec_UNPARSED_ARGUMENTS})
-        target_link_libraries(${name}.fpga_emu FPGA::EMULATED)
+        target_link_libraries(${name}.fpga_emu FPGA::EMULATED ${NAME})
 
         add_executable(${name}_report.a ${_addexec_UNPARSED_ARGUMENTS})
-        target_link_libraries(${name}_report.a FPGA::FPGA)
+        target_link_libraries(${name}_report.a FPGA::FPGA ${NAME})
         target_link_options(${name}_report.a PRIVATE "-fsycl-link=early")
         set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
         add_dependencies(fpga_report ${name}_report.a)
 
         add_executable(${name}.fpga ${_addexec_UNPARSED_ARGUMENTS})
-        target_link_libraries(${name}.fpga FPGA::FPGA)
+        target_link_libraries(${name}.fpga FPGA::FPGA ${NAME})
         set_target_properties(${name}.fpga PROPERTIES EXCLUDE_FROM_ALL yes)
         add_dependencies(fpga ${name}.fpga)
 
