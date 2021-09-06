@@ -54,6 +54,9 @@ typedef struct image_modules_t {
 /// Read an h5 file. Returns NULL if failed.
 h5read_handle *h5read_open(const char *master_filename);
 
+/// Generate sample data
+h5read_handle *h5read_generate_samples();
+
 /// Cleanup and release an h5 file object
 void h5read_free(h5read_handle *);
 

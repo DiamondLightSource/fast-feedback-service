@@ -1,5 +1,6 @@
 #include "h5read.h"
 
+#include <assert.h>
 #include <hdf5.h>
 #include <libgen.h>
 #include <stdbool.h>
@@ -43,8 +44,8 @@ void h5read_free(h5read_handle *obj) {
         H5Dclose(obj->data_files[i].dataset);
         H5Fclose(obj->data_files[i].file);
     }
-    free(obj->data_files);
-    H5Fclose(obj->master_file);
+    if (obj->data_files) free(obj->data_files);
+    if (obj->master_file) H5Fclose(obj->master_file);
 
     free(obj->mask);
     free(obj->module_mask);
@@ -513,10 +514,53 @@ h5read_handle *h5read_open(const char *master_filename) {
     return file;
 }
 
+// Generate a mask with just module bounds masked off
+uint8_t *_generate_e2xe_16m_mask() {
+    assert(E2XE_MOD_SLOW * E2XE_16M_NSLOW + E2XE_GAP_SLOW * (E2XE_16M_NSLOW - 1)
+           == E2XE_16M_SLOW);
+    assert(E2XE_MOD_FAST * E2XE_16M_NFAST + E2XE_GAP_FAST * (E2XE_16M_NFAST - 1)
+           == E2XE_16M_FAST);
+    uint8_t *mask = calloc(E2XE_16M_SLOW * E2XE_16M_SLOW, sizeof(uint8_t));
+    // Horizontal gaps
+    for (int gap = 1; gap < E2XE_16M_NSLOW; ++gap) {
+        size_t y = gap * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
+        // Horizontal gaps can just be bulk memset for each gap
+        memset(mask + y * E2XE_16M_FAST, 1, E2XE_GAP_SLOW * E2XE_16M_FAST);
+    }
+    // Vertical gaps
+    for (int gap = 1; gap < E2XE_16M_NFAST; ++gap) {
+        size_t x = gap * (E2XE_MOD_FAST + E2XE_GAP_FAST);
+        for (int y = 0; y < E2XE_16M_SLOW; ++y) {
+            memset(mask + y * E2XE_16M_FAST + x, 1, E2XE_GAP_FAST);
+        }
+    }
+    return mask;
+}
+
+h5read_handle *h5read_generate_samples() {
+    h5read_handle *file = calloc(1, sizeof(h5read_handle));
+
+    // Generate the mask
+    file->mask = _generate_e2xe_16m_mask();
+    // Module mask is just empty for now
+    file->module_mask = calloc(
+      E2XE_16M_NSLOW * E2XE_16M_NFAST * E2XE_MOD_FAST * E2XE_MOD_SLOW, sizeof(uint8_t));
+
+    // Debug - writing mask to a test file
+    // FILE *fo = fopen("mask.dat", "w");
+    // fwrite(file->mask, sizeof(uint8_t), E2XE_16M_SLOW * E2XE_16M_FAST, fo);
+    // fclose(fo);
+
+    file->frames = 1;
+    return file;
+}
+
 h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
-    const char *USAGE = "Usage: %s [-h|--help] [-v] [FILE.nxs]\n";
+    const char *USAGE = "Usage: %s [-h|--help] [-v] [FILE.nxs | --sample]\n";
 
     bool verbose = false;
+    bool sample_data = false;
+
     // Handle simple case of -h or --help
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
@@ -531,16 +575,35 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
             }
             argc -= 1;
         }
+        if (!strcmp(argv[i], "--sample")) {
+            sample_data = true;
+            // Shift the rest over this one so that we only have positionals
+            for (int j = i; j < argc; j++) {
+                argv[i] = argv[j];
+            }
+            argc -= 1;
+        }
     }
     if (!verbose) {
         // Turn off verbose hdf5 errors
         H5Eset_auto(H5E_DEFAULT, NULL, NULL);
     }
-    if (argc == 1) {
+    h5read_handle *handle = 0;
+    if (argc == 1 && !sample_data) {
         fprintf(stderr, USAGE, argv[0]);
         exit(1);
     }
-    h5read_handle *handle = h5read_open(argv[1]);
+    // If we specifically requested --sample, then we can have no more arguments
+    if (argc > 1 && sample_data) {
+        fprintf(stderr, "Unrecognised extra arguments with --sample\n");
+        exit(1);
+    }
+    if (sample_data) {
+        fprintf(stderr, "Using SAMPLE dataset\n");
+        handle = h5read_generate_samples();
+    } else {
+        handle = h5read_open(argv[1]);
+    }
     if (handle == NULL) {
         fprintf(stderr, "Error: Could not open nexus file %s\n", argv[1]);
         exit(1);
