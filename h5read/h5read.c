@@ -559,7 +559,7 @@ uint8_t *_generate_e2xe_16m_mask() {
 h5read_handle *h5read_generate_samples() {
     h5read_handle *file = calloc(1, sizeof(h5read_handle));
 
-    // Generate the mask
+    // Generate the mask - with module gaps masked off
     file->mask = _generate_e2xe_16m_mask();
     // Module mask is just empty for now
     file->module_mask =
