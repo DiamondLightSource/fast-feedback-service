@@ -67,7 +67,7 @@ if(CXX_HAS_FPGA_FLAG)
     if(NOT DEFINED FPGA_BOARD)
         # Boards are defined as package:board
         # Packages from: "aoc -list-boards" and "aoc -list-board-packages"
-        set(FPGA_BOARD "intel_s10sx_pac:pac_s10" CACHE STRING "The package:board combination to pass to aoc")
+        set(FPGA_BOARD "intel_s10sx_pac:pac_s10_usm" CACHE STRING "The package:board combination to pass to aoc")
         message(STATUS "FPGA_BOARD not specified, using default")
     endif()
     message(STATUS "Configuring for FPGA board: ${FPGA_BOARD}")
@@ -137,6 +137,7 @@ if(CXX_HAS_FPGA_FLAG)
         target_link_libraries(${name}.fpga FPGA::FPGA)
         set_target_properties(${name}.fpga PROPERTIES EXCLUDE_FROM_ALL yes)
         add_dependencies(fpga ${name}.fpga)
+
     endfunction()
 endif()
 
