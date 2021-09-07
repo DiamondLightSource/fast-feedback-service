@@ -7,20 +7,27 @@ between parsing of image files between implementations.
 ## Usage
 
 Add this directory as a subdirectory in your `CMakeLists.txt`:
+
 ```cmake
 add_subdirectory(../h5read h5read)
 ```
+
 And then add as a dependency to your built targets:
+
 ```cmake
 target_link_libraries(${target_name} PUBLIC h5read)
 ```
+
 All manipulation and data access happens via an opaque `h5read_handle` object.
 The easiest way to create an `h5read_handle` is to use the provided argument
 parser:
+
 ```c
 h5read_handle *obj = h5read_parse_standard_args(argc, argv);
 ```
+
 This will parse any argument for your program as:
+
 ```
 Usage: your_program [-h|--help] [-v] [FILE.nxs | --sample]
 
@@ -54,6 +61,7 @@ from.
 ```c
 h5read_handle *h5read_open(const char *master_filename)
 ```
+
 Open a Nexus file, and return an opaque `h5read_handle` pointer. This must be
 released by calling `h5read_free` when it is no longer required. If the
 function cannot open a root nexus file, it will return `NULL`.
@@ -69,10 +77,10 @@ other shaped detectors.
 
 ---
 
-
 ```c
 h5read_handle *h5read_generate_samples();
 ```
+
 Doesn't open a Nexus file, but instead return an `h5read_handle` that accesses
 a set of generated sample data, as described in [Generated Sample
 Data](#generated-sample-data) of data. This also needs to be released by
@@ -83,8 +91,9 @@ calling `h5read_free` when it is no longer required.
 ```c
 h5read_handle *h5read_parse_standard_args(int argc, char **argv)
 ```
+
 Parse an arc/argv pair of command line arguments. This will accept a filename,
-or a request to use sample data with ``--sample``. If there is an error reading
+or a request to use sample data with `--sample`. If there is an error reading
 the nexus file, then this will call `exit(1)`, so the returned handle from this
 function will always be valid.
 
@@ -95,22 +104,23 @@ function will always be valid.
 ```c
 size_t h5read_get_number_of_images(h5read_handle *obj);
 ```
+
 Get the number of images in a particular dataset
 
 ---
 
-
 ```c
 size_t h5read_get_image_slow(h5read_handle *obj);
 ```
+
 Get the number of image pixels in the slow dimension
 
 ---
 
-
 ```c
 size_t h5read_get_image_fast(h5read_handle *obj);
 ```
+
 Get the number of image pixels in the fast dimension
 
 ---
@@ -118,6 +128,7 @@ Get the number of image pixels in the fast dimension
 ### Image Data
 
 Image Data is represented in the form of a struct:
+
 ```c
 typedef struct image_t {
     uint16_t *data;
@@ -126,19 +137,23 @@ typedef struct image_t {
     size_t fast;
 } image_t;
 ```
-Where ``slow`` and ``fast`` are the image dimensions, in pixels, and ``data``
-and ``mask`` are pointers to 2D arrays of image data. For convenience,
-`image_t_type` is defined in ``h5read.h`` to point to the data type used for
+
+Where `slow` and `fast` are the image dimensions, in pixels, and `data`
+and `mask` are pointers to 2D arrays of image data. For convenience,
+`image_t_type` is defined in `h5read.h` to point to the data type used for
 image data.
 
 You can retrieve an image struct for a particular image with:
+
 ```c
 image_t *h5read_get_image(h5read_handle *obj, size_t frame_number);
 ```
+
 If the library cannot read the image, it will print an error message and
 call `exit(1)`.
 
 When you are finished with the image, you can release it by calling:
+
 ```
 void h5read_free_image(image_t *image);
 ```
@@ -158,14 +173,18 @@ typedef struct image_modules_t {
 } image_modules_t;
 
 ```
+
 This can be retrieved with:
+
 ```c
 image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t frame_number);
 ```
+
 Like `h5read_get_image`, this function will call `exit(1)` with an error
 message if it fails to load the image data.
 
 This `image_modules_t` object should be released after usage by calling:
+
 ```c
 void h5read_free_image_modules(image_modules_t *modules);
 ```
