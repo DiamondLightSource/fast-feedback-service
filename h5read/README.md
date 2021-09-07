@@ -49,9 +49,6 @@ from.
 
 ### Handle Creation
 
----
-
-
 ```c
 h5read_handle *h5read_open(const char *master_filename)
 ```
@@ -80,8 +77,6 @@ or a requits
 ---
 
 ### Image Information
-
----
 
 ```c
 size_t h5read_get_number_of_images(h5read_handle *obj);
