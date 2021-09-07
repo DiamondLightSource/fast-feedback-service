@@ -560,13 +560,15 @@ uint8_t *_generate_e2xe_16m_mask() {
     }
     // Horizontal gaps
     for (int gap = 1; gap < E2XE_16M_NSLOW; ++gap) {
-        size_t y = gap * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
+        // First gap has 1 module 0 gap, second gap has 2 modules 1 gap etc
+        size_t y = gap * E2XE_MOD_SLOW + (gap - 1) * E2XE_GAP_SLOW;
         // Horizontal gaps can just be bulk memset for each gap
         memset(mask + y * E2XE_16M_FAST, 0, E2XE_GAP_SLOW * E2XE_16M_FAST);
     }
     // Vertical gaps
     for (int gap = 1; gap < E2XE_16M_NFAST; ++gap) {
-        size_t x = gap * (E2XE_MOD_FAST + E2XE_GAP_FAST);
+        // First gap has 1 module 0 gap, second gap has 2 modules 1 gap etc
+        size_t x = gap * E2XE_MOD_FAST + (gap - 1) * E2XE_GAP_FAST;
         for (int y = 0; y < E2XE_16M_SLOW; ++y) {
             memset(mask + y * E2XE_16M_FAST + x, 0, E2XE_GAP_FAST);
         }
