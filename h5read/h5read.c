@@ -580,7 +580,13 @@ h5read_handle *h5read_generate_samples() {
 }
 
 h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
-    const char *USAGE = "Usage: %s [-h|--help] [-v] [FILE.nxs | --sample]\n";
+    const char *USAGE = "Usage: %s [-h|--help] [-v] [FILE.nxs | --sample]";
+    const char *HELP =
+      "Options:\n\
+  FILE.nxs      Path to the Nexus file to parse\n\
+  -h, --help    Show this message\n\
+  -v            Verbose HDF5 message output\n\
+  --sample      Don't load a data file, instead use generated test data";
 
     bool verbose = false;
     bool sample_data = false;
@@ -589,6 +595,7 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             fprintf(stderr, USAGE, argv[0]);
+            fprintf(stderr, "\n\n%s\n", HELP);
             exit(0);
         }
         if (!strcmp(argv[i], "-v")) {
