@@ -42,9 +42,10 @@ which masks off the module gap but otherwise is empty.
 The intention is to provide a baseline of simple, known images to do validation
 from.
 
-| Index | Description                                                      |
-|-------|------------------------------------------------------------------|
-| 0     | Completely empty image. This means 16842752 valid, empty pixels. |
+| Index | Description                                                                                               |
+| ----- | --------------------------------------------------------------------------------------------------------- |
+| 0     | Completely empty image. This means 16842752 valid, empty pixels.                                          |
+| 1     | Single pixels of I=100, every 42 pixels in a grid, for 10296 total. Of these pixels, 9604 are not masked. |
 
 ## Functions
 
