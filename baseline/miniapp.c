@@ -7,27 +7,8 @@
 #include "baseline.h"
 #include "h5read.h"
 
-const char *USAGE = "Usage: %s [-h|--help] [FILE.nxs]\n";
-
 int main(int argc, char **argv) {
-    // Handle simple case of -h or --help
-    for (int i = 1; i < argc; ++i) {
-        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-            fprintf(stderr, USAGE, argv[0]);
-            return 0;
-        }
-    }
-    if (argc == 1) {
-        fprintf(stderr, USAGE, argv[0]);
-        return 1;
-    }
-
-    h5read_handle *obj = h5read_open(argv[1]);
-    if (obj == NULL) {
-        fprintf(stderr, "<shrug> bad thing </shrug>\n");
-        exit(1);
-    }
-
+    h5read_handle *obj = h5read_parse_standard_args(argc, argv);
     size_t n_images = h5read_get_number_of_images(obj);
 
     uint16_t image_slow = 0, image_fast = 0;
