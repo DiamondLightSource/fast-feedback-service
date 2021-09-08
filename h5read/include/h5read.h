@@ -4,28 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Basic API specification:
- *
- * Call
- *
- * setup_hdf5_files(master_filename)
- *
- * to initialise all of the HDF5 data structures, read and transform the mask
- * etc. Then
- *
- * get_number_of_images()
- *
- * will return the number of images in the given data file. You can then read
- * these images to return an image_t with
- *
- * get_image(number)
- *
- * which you must call free_image() on when you are done. At the end it would
- * be polite to call cleanup_hdf5() which will free allocated resources though
- * this is somewhat academic, unless you have a lot more work to do.
- *
- */
-
 #ifdef __cplusplus
 extern "C" {
 #endif
