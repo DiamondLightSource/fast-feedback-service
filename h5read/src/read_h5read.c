@@ -15,14 +15,19 @@ int main(int argc, char **argv) {
 
     size_t n_images = h5read_get_number_of_images(obj);
 
+    printf("               %8s / %s\n", "Image", "Module");
     for (size_t j = 0; j < n_images; j++) {
         image_t *image = h5read_get_image(obj, j);
         image_modules_t *modules = h5read_get_image_modules(obj, j);
 
-        size_t zero = 0;
+        size_t zero = 0, zero_invalid = 0;
         for (size_t i = 0; i < (image->fast * image->slow); i++) {
-            if (image->data[i] == 0 && image->mask[i] == 1) {
-                zero++;
+            if (image->data[i] == 0) {
+                if (image->mask[i] == 1) {
+                    zero++;
+                } else {
+                    zero_invalid++;
+                }
             }
         }
 
@@ -33,8 +38,18 @@ int main(int argc, char **argv) {
                 zero_m++;
             }
         }
-
-        printf("image %ld had %ld / %ld valid zero pixels\n", j, zero, zero_m);
+        char *colour = "\033[31m";
+        if (zero == zero_m) {
+            colour = "\033[32m";
+        }
+        printf(
+          "%simage %4ld had %8ld / %8ld valid zero pixels (%zd invalid zero "
+          "pixel)\033[0m\n",
+          colour,
+          j,
+          zero,
+          zero_m,
+          zero_invalid);
 
         h5read_free_image_modules(modules);
         h5read_free_image(image);

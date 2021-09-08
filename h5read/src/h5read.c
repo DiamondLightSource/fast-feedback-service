@@ -131,9 +131,11 @@ void h5read_free_image_modules(image_modules_t *i) {
     free(i);
 }
 
+#define NUM_SAMPLE_IMAGES 3
+
 /// Generate a sample image from number
 image_t *_generate_sample_image(h5read_handle *obj, size_t n) {
-    assert(n >= 0 && n <= 1);
+    assert(n >= 0 && n <= NUM_SAMPLE_IMAGES);
     image_t *img = malloc(sizeof(image_t));
     img->mask = obj->mask;
     img->fast = E2XE_16M_FAST;
@@ -142,19 +144,34 @@ image_t *_generate_sample_image(h5read_handle *obj, size_t n) {
     if (n == 0) {
         img->data = calloc(img->fast * img->slow, sizeof(uint16_t));
     } else if (n == 1) {
+        // Image 1: I=1 for every unmasked pixel
+        img->data = calloc(img->fast * img->slow, sizeof(uint16_t));
+        for (int mody = 0; mody < E2XE_16M_NSLOW; ++mody) {
+            // row0 is the row of the module top row
+            size_t row0 = mody * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
+            for (int modx = 0; modx < E2XE_16M_NFAST; ++modx) {
+                // col0 is the column of the module left
+                int col0 = modx * (E2XE_MOD_FAST + E2XE_GAP_FAST);
+                for (int row = 0; row < E2XE_MOD_SLOW; ++row) {
+                    memset(img->data + E2XE_16M_FAST * (row0 + row) + col0,
+                           1,
+                           E2XE_MOD_FAST * sizeof(uint16_t));
+                }
+            }
+        }
+    } else if (n == 2) {
+        // Image 2: High pixel (100) every 42 pixels across the detector
         int count = 0;
         int mask_count = 0;
-        // Image 1: High pixel (100) every 42 pixels across the detector
         img->data = calloc(img->fast * img->slow, sizeof(uint16_t));
-        for (int y = 0; y < E2XE_16M_SLOW; y += 42) {
-            for (int x = 0; x < E2XE_16M_FAST; x += 42) {
+        for (int y = 0; y < E2XE_16M_SLOW; y += 6) {
+            for (int x = 0; x < E2XE_16M_FAST; x += 6) {
                 int k = y * E2XE_16M_FAST + x;
                 img->data[k] = 100;
                 count += 1;
                 if (img->mask[k]) mask_count += 1;
             }
         }
-        printf("Count: %d (%d valid)\n", count, mask_count);
     }
 
     return img;
@@ -595,7 +612,7 @@ h5read_handle *h5read_generate_samples() {
     // fwrite(file->mask, sizeof(uint8_t), E2XE_16M_SLOW * E2XE_16M_FAST, fo);
     // fclose(fo);
 
-    file->frames = 2;
+    file->frames = NUM_SAMPLE_IMAGES;
     return file;
 }
 
