@@ -9,10 +9,6 @@ include(AlwaysColourCompilation)
 set(HDF5_FIND_QUIETLY Yes)
 find_package(HDF5 REQUIRED)
 
-if (NOT CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
-  set(CMAKE_CXX_STANDARD 20)
-endif()
-
 add_library(h5read src/h5read.c src/h5read.cc)
 
 target_include_directories(h5read PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include )

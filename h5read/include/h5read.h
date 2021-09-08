@@ -64,7 +64,6 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv);
 
 #include <array>
 #include <memory>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -76,8 +75,8 @@ class Image {
   public:
     Image(std::shared_ptr<h5read_handle> reader, size_t i) noexcept;
 
-    const std::span<image_t_type> data;
-    const std::span<uint8_t> mask;
+    image_t_type *const data;
+    uint8_t *const mask;
     const size_t slow;
     const size_t fast;
 };
@@ -87,22 +86,23 @@ class ImageModules {
     std::shared_ptr<h5read_handle> _handle;
     std::shared_ptr<image_modules_t> _modules;
     // Mutable vectors to point to the appropriate parts of the module data
-    std::vector<std::span<image_t_type>> _modules_data;
-    std::vector<std::span<uint8_t>> _modules_masks;
+    std::vector<image_t_type *> _modules_data;
+    std::vector<uint8_t *> _modules_masks;
 
   public:
     ImageModules(std::shared_ptr<h5read_handle> handle, size_t i) noexcept;
 
-    const std::span<image_t_type> data;
-    const std::span<uint8_t> mask;
+    image_t_type *const data;
+    uint8_t *const mask;
 
     const size_t n_modules;  ///< Number of modules
     const size_t slow;       ///< Height of a module, in pixels
     const size_t fast;       ///< Width of a module, in pixels
+
     /// Convenience lookup to get data for a particular module
-    const std::span<std::span<image_t_type>> modules;
+    image_t_type *const *const modules;
     /// Convenience lookup to get mask for a particular module
-    const std::span<std::span<uint8_t>> masks;
+    uint8_t *const *const masks;
 };
 
 // Declare a C++ "object" version so we don't have to keep track of allocations

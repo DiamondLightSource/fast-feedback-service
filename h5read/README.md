@@ -256,10 +256,10 @@ members pointing to the various data:
 
 ```C++
 struct Image {
-    const std::span<image_t_type> data; // Pointer to image data
-    const std::span<uint8_t> mask;      // Pointer to mask data
-    const size_t slow;                  // Number of y (slow) pixels
-    const size_t fast;                  // Number of x (fast) pixels
+    image_t_type *const data; // Pointer to image data
+    uint8_t *const mask;      // Pointer to mask data
+    const size_t slow;        // Number of y (slow) pixels
+    const size_t fast;        // Number of x (fast) pixels
 }
 ```
 
@@ -275,15 +275,15 @@ This returns an object with image data in the form of a modules array:
 
 ```
 struct ImageModules {
-    const std::span<image_t_type> data;
-    const std::span<uint8_t> mask;
+    image_t_type *const data;
+    uint8_t *const mask;
 
     const size_t n_modules;  // Number of modules
     const size_t slow;       // Height of a module, in pixels
     const size_t fast;       // Width of a module, in pixels
 
-    const std::span<std::span<image_t_type>> modules;
-    const std::span<std::span<uint8_t>> masks;
+    image_t_type *const *const modules;
+    uint8_t *const *const masks;
 }
 ```
 
@@ -291,15 +291,16 @@ struct ImageModules {
 array of data for all modules.
 
 In addition, for convenience, there are the `.modules` and `.masks` lookup
-arrays - these are arrays that point to each module separately, so to e.g. sum
-up all the pixels (without checking the mask) in the fourth module:
+arrays - these are arrays that point to each module separately, so one can
+access a single module by e.g.
 
 ```C++
-size_t sum = 0;
-for (auto i : modules.modules[4]) {
-    sum += i;
-}
+image_t_type *module = modules.modules[1];
 ```
+
+(This was slightly cleaner in an earlier implementation that used `std::span`,
+however C++20 does not seem available everywhere that dpcpp was, so perhaps it
+is unfortunately a little early to require C++20 support.)
 
 Unlike the C api, it is safe to keep these objects around longer than the main
 `H5Read` object.
