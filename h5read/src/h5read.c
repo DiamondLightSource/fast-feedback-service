@@ -617,13 +617,18 @@ h5read_handle *h5read_generate_samples() {
 }
 
 h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
-    const char *USAGE = "Usage: %s [-h|--help] [-v] [FILE.nxs | --sample]";
+    bool implicit_sample = getenv("H5READ_IMPLICIT_SAMPLE") != NULL;
+    const char *USAGE = implicit_sample
+                          ? "Usage: %s [-h|--help] [-v] [FILE.nxs | --sample]"
+                          : "Usage: %s [-h|--help] [-v] (FILE.nxs | --sample)";
     const char *HELP =
       "Options:\n\
   FILE.nxs      Path to the Nexus file to parse\n\
   -h, --help    Show this message\n\
   -v            Verbose HDF5 message output\n\
-  --sample      Don't load a data file, instead use generated test data";
+  --sample      Don't load a data file, instead use generated test data.\n\
+                If H5READ_IMPLICIT_SAMPLE is set, then this is assumed,\n\
+                if a file is not provided.";
 
     bool verbose = false;
     bool sample_data = false;
@@ -656,7 +661,15 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
         // Turn off verbose hdf5 errors
         H5Eset_auto(H5E_DEFAULT, NULL, NULL);
     }
-    h5read_handle *handle = 0;
+    bool implicit_sample_data = false;
+    if (implicit_sample && argc == 1 && !sample_data) {
+        fprintf(
+          stderr,
+          "No input file but H5READ_IMPLICIT_SAMPLE is set - defaulting to sample "
+          "data\n");
+        sample_data = true;
+    }
+
     if (argc == 1 && !sample_data) {
         fprintf(stderr, USAGE, argv[0]);
         exit(1);
@@ -666,6 +679,8 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
         fprintf(stderr, "Unrecognised extra arguments with --sample\n");
         exit(1);
     }
+
+    h5read_handle *handle = 0;
     if (sample_data) {
         fprintf(stderr, "Using SAMPLE dataset\n");
         handle = h5read_generate_samples();

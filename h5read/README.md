@@ -101,6 +101,9 @@ or a request to use sample data with `--sample`. If there is an error reading
 the nexus file, then this will call `exit(1)`, so the returned handle from this
 function will always be valid.
 
+If the environment variable `H5READ_IMPLICIT_SAMPLE` is set, then if you do
+not pass any arguments `--sample` will be assumed.
+
 ---
 
 ```c
