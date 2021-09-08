@@ -1,8 +1,11 @@
 # h5read
 
-Designed to be a common utility c-library for reading nexus hdf5 files
+Designed to be a common utility c and library for reading nexus hdf5 files
 from miniapp implementations. This is intended to help remove differences
 between parsing of image files between implementations.
+
+There are both [C](#reference---c-api) and [C++](#reference---c-api-1) API
+interfaces to the library.
 
 ## Usage
 
@@ -55,7 +58,7 @@ from.
 | 1     | I=1 for every unmasked pixel                                                                              |
 | 2     | Single pixels of I=100, every 42 pixels in a grid, for 10296 total. Of these pixels, 9604 are not masked. |
 
-## Functions
+## Reference - C API
 
 ### Handle Creation
 
@@ -97,6 +100,16 @@ Parse an arc/argv pair of command line arguments. This will accept a filename,
 or a request to use sample data with `--sample`. If there is an error reading
 the nexus file, then this will call `exit(1)`, so the returned handle from this
 function will always be valid.
+
+---
+
+```c
+h5read_free(h5read_handle *)
+```
+
+Frees a previously constructed handle object. It is an error to release these
+resources without first releasing all image data - the image objects may
+hold references to data held in the master object.
 
 ---
 
@@ -189,3 +202,104 @@ This `image_modules_t` object should be released after usage by calling:
 ```c
 void h5read_free_image_modules(image_modules_t *modules);
 ```
+
+## Reference - C++ API
+
+Alongside the C api, there is also C++ API in `#include "h5read.h"`. This
+mostly takes the same form, but takes care of memory management for you.
+
+### Creating Reader Objects
+
+Instead of creating an handle pointer, You create an `H5Read` class. This has
+three constructor forms:
+
+```C++
+H5Read()
+```
+
+Constructs the reader with sample data, as via `h5read_generate_samples`.
+
+```C++
+H5Read(const std::string &filename)
+```
+
+Constructs a reader from a physical Nexus file. Any way that the `h5read_open`
+could fail by returning a null pointer, this will raise an
+`std::runtime_error`.
+
+```C++
+H5Read(int argc, char **argv);
+```
+
+Construct a reader by interpreting command-line arguments, the same as
+`h5read_parse_standard_args`.
+
+Once you have an `H5Read` object, you can retrieve information via:
+
+```C++
+size_t get_number_of_images();     // Get the number of frames in the reader
+size_t get_image_slow();   // Get the number of pixels in the slow dimension
+size_t get_image_fast();   // Get the number of pixels in the fast dimension
+std::array<size_t, 2> image_shape(); // Get the image shape, in (slow, fast)
+```
+
+### Image Data
+
+To access an image, you can use:
+
+```C++
+Image H5Read::get_image(size_t index)
+```
+
+This will return an `Image` object. Much like the `image_t` struct, this contains
+members pointing to the various data:
+
+```C++
+struct Image {
+    const std::span<image_t_type> data; // Pointer to image data
+    const std::span<uint8_t> mask;      // Pointer to mask data
+    const size_t slow;                  // Number of y (slow) pixels
+    const size_t fast;                  // Number of x (fast) pixels
+}
+```
+
+### Image Modules Data
+
+To access an image in the form of separate modules, you can use:
+
+```C++
+ImageModules H5Read::get_image_modules(size_t index)
+```
+
+This returns an object with image data in the form of a modules array:
+
+```
+struct ImageModules {
+    const std::span<image_t_type> data;
+    const std::span<uint8_t> mask;
+
+    const size_t n_modules;  // Number of modules
+    const size_t slow;       // Height of a module, in pixels
+    const size_t fast;       // Width of a module, in pixels
+
+    const std::span<std::span<image_t_type>> modules;
+    const std::span<std::span<uint8_t>> masks;
+}
+```
+
+`.data` and `.mask` are the same as `image_modules_t` - a pointer to the entire
+array of data for all modules.
+
+In addition, for convenience, there are the `.modules` and `.masks` lookup
+arrays - these are arrays that point to each module separately, so to e.g. sum
+up all the pixels (without checking the mask) in the fourth module:
+
+```C++
+size_t sum = 0;
+for (auto i : modules.modules[4]) {
+    sum += i;
+}
+```
+
+Unlike the C api, it is safe to keep these objects around longer than the main
+`H5Read` object.
