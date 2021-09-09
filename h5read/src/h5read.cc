@@ -30,8 +30,8 @@ Image::Image(std::shared_ptr<h5read_handle> handle, size_t i) noexcept
     : _handle(handle),
       _image{std::shared_ptr<image_t>(h5read_get_image(_handle.get(), i),
                                       h5read_image_freeer)},
-      data{_image->data},
-      mask{_image->mask},
+      data{_image->data, _image->slow * _image->fast},
+      mask{_image->mask, _image->slow * _image->fast},
       slow{_image->slow},
       fast{_image->fast} {
     // Currently h5read_get_image guarantees that it will never return invalid
@@ -45,18 +45,18 @@ ImageModules::ImageModules(std::shared_ptr<h5read_handle> handle, size_t i) noex
                                          h5read_image_modules_freeer)},
       _modules_data{_modules->modules},
       _modules_masks{_modules->modules},
-      data{_modules->data},
-      mask{_modules->mask},
+      data{_modules->data, _modules->slow * _modules->fast * _modules->modules},
+      mask{_modules->mask, _modules->slow * _modules->fast * _modules->modules},
       n_modules{_modules->modules},
       slow{_modules->slow},
       fast{_modules->fast},
-      modules{&_modules_data.front()},
-      masks{&_modules_masks.front()} {
+      modules{&_modules_data.front(), _modules->modules},
+      masks{&_modules_masks.front(), _modules->modules} {
     // Build the data and mask per-module lookups
     // We build a hidden vector so that we can have a const span pointing to
     // the pre-reserved data
     for (int i = 0; i < _modules->modules; ++i) {
-        _modules_data[i] = _modules->data + slow * fast * i;
-        _modules_masks[i] = _modules->mask + slow * fast * i;
+        _modules_data[i] = SPAN{_modules->data + slow * fast * i, slow * fast};
+        _modules_masks[i] = SPAN{_modules->mask + slow * fast * i, slow * fast};
     }
 }

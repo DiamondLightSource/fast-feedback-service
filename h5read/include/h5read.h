@@ -84,8 +84,8 @@ class Image {
   public:
     Image(std::shared_ptr<h5read_handle> reader, size_t i) noexcept;
 
-    image_t_type *const data;
-    uint8_t *const mask;
+    const SPAN<image_t_type> data;
+    const SPAN<uint8_t> mask;
     const size_t slow;
     const size_t fast;
 };
@@ -95,23 +95,22 @@ class ImageModules {
     std::shared_ptr<h5read_handle> _handle;
     std::shared_ptr<image_modules_t> _modules;
     // Mutable vectors to point to the appropriate parts of the module data
-    std::vector<image_t_type *> _modules_data;
-    std::vector<uint8_t *> _modules_masks;
+    std::vector<SPAN<image_t_type>> _modules_data;
+    std::vector<SPAN<uint8_t>> _modules_masks;
 
   public:
     ImageModules(std::shared_ptr<h5read_handle> handle, size_t i) noexcept;
 
-    image_t_type *const data;
-    uint8_t *const mask;
+    const SPAN<image_t_type> data;
+    const SPAN<uint8_t> mask;
 
     const size_t n_modules;  ///< Number of modules
     const size_t slow;       ///< Height of a module, in pixels
     const size_t fast;       ///< Width of a module, in pixels
-
     /// Convenience lookup to get data for a particular module
-    image_t_type *const *const modules;
+    const SPAN<SPAN<image_t_type>> modules;
     /// Convenience lookup to get mask for a particular module
-    uint8_t *const *const masks;
+    const SPAN<SPAN<uint8_t>> masks;
 };
 
 // Declare a C++ "object" version so we don't have to keep track of allocations

@@ -16,9 +16,8 @@ int main(int argc, char **argv) {
         auto modules = reader.get_image_modules(j);
 
         size_t zero = 0, zero_invalid = 0;
-        for (size_t i = 0; i < image.slow * image.fast; i++) {
+        for (size_t i = 0; i < image.data.size(); i++) {
             if (image.data[i] == 0) {
-                image.data[i] = 1;
                 if (image.mask[i] == 1) {
                     zero++;
                 } else {
@@ -27,13 +26,12 @@ int main(int argc, char **argv) {
             }
         }
 
-        long zero_m = 0;
-        for (size_t i = 0; i < modules.slow * modules.fast * modules.n_modules; i++) {
+        size_t zero_m = 0;
+        for (size_t i = 0; i < modules.data.size(); i++) {
             if (modules.data[i] == 0 && modules.mask[i] == 1) {
                 zero_m++;
             }
         }
-
         if (zero == zero_m) {
             std::cout << "\033[32m";
         } else {
