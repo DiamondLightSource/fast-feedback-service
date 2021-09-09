@@ -211,6 +211,16 @@ void h5read_free_image_modules(image_modules_t *modules);
 Alongside the C api, there is also C++ API in `#include "h5read.h"`. This
 mostly takes the same form, but takes care of memory management for you.
 
+This API makes use of the C++20 [`std::span`] object. If you are compiling on
+an earlier standard or an implementation without the `<span>` header, then a
+backport implementation is used, [`tcb::span`]. If you include the `h5read.h`
+header, then the macro `SPAN` is bound to either `std::span` or `tcb::span`,
+whichever is available. (This is controlled with the `USE_SPAN_BACKPORT`
+compiler definition, which happens automatically if using the CMake submodule).
+
+[`std::span`]: https://en.cppreference.com/w/cpp/container/span
+[`tcb::span`]: https://github.com/tcbrindle/span
+
 ### Creating Reader Objects
 
 Instead of creating an handle pointer, You create an `H5Read` class. This has
