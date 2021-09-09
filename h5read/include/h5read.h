@@ -67,6 +67,15 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv);
 #include <string>
 #include <vector>
 
+// We might be on an implementation that doesn't have <span>, so use a backport
+#ifdef USE_SPAN_BACKPORT
+#include "span.hpp"
+#define SPAN tcb::span
+#else
+#include <span>
+#define SPAN std::span
+#endif
+
 class Image {
   private:
     std::shared_ptr<h5read_handle> _handle;
