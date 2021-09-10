@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,13 +16,19 @@ int main(int argc, char **argv) {
 
     size_t n_images = h5read_get_number_of_images(obj);
 
+    // A buffer we own, to check reading image data into a preallocated buffer
+    image_t_type *buffer = malloc(h5read_get_image_fast(obj)
+                                  * h5read_get_image_slow(obj) * sizeof(image_t_type));
+
     printf("               %8s / %s\n", "Image", "Module");
     for (size_t j = 0; j < n_images; j++) {
         image_t *image = h5read_get_image(obj, j);
         image_modules_t *modules = h5read_get_image_modules(obj, j);
-
+        h5read_get_image_into(obj, j, buffer);
         size_t zero = 0, zero_invalid = 0;
         for (size_t i = 0; i < (image->fast * image->slow); i++) {
+            // Check that our owned buffer is correct
+            assert(buffer[i] == image->data[i]);
             if (image->data[i] == 0) {
                 if (image->mask[i] == 1) {
                     zero++;
@@ -55,6 +62,7 @@ int main(int argc, char **argv) {
         h5read_free_image(image);
     }
 
+    free(buffer);
     h5read_free(obj);
 
     return 0;

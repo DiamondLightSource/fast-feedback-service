@@ -175,6 +175,28 @@ When you are finished with the image, you can release it by calling:
 void h5read_free_image(image_t *image);
 ```
 
+
+The above `h5read_get_image` allocates a buffer for you. If you then need to
+copy the image data somewhere else, then this is inefficient. For this reason,
+there is an additional API method to get image data:
+
+```c
+void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data);
+```
+
+Read an image from a dataset into a preallocated buffer. The caller is
+responsible for both allocating and releasing the image data buffer. This
+buffer *must* be at least large enough to hold an image of slow*fast, or else
+undefined memory could be overwritten. To get the mask data, you can call:
+
+```c
+uint8_t *h5read_get_mask(h5read_handle *obj);
+```
+Borrows a pointer to the internal (shared) mask data. This is a common mask
+defined at the file level and shared between all images. You must not release
+this memory, and must not use it beyond calling `h5read_free` on the h5read
+handle object.
+
 ### Image Modules Data
 
 For convenience, you can also access image data in the form of single modules.

@@ -45,10 +45,24 @@ size_t h5read_get_image_slow(h5read_handle *obj);
 /// Get the number of image pixels in the fast dimension
 size_t h5read_get_image_fast(h5read_handle *obj);
 
+/** Borrow a pointer to the image mask.
+ *
+ * This must not be released by the caller, and must not be used beyond
+ * the point that h5read_free is called. */
+uint8_t *h5read_get_mask(h5read_handle *obj);
+
 /// Read an image from a dataset
 image_t *h5read_get_image(h5read_handle *obj, size_t number);
 /// Free a previously read image
 void h5read_free_image(image_t *image);
+
+/** Read an image from a dataset into a preallocated buffer.
+ *
+ * The caller is responsible for both allocating and releasing the image
+ * data buffer. This buffer *must* be at least large enough to hold an
+ * image of slow*fast, or else undefined memory could be overwritten.
+ */
+void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data);
 
 /// Read an image from a dataset, split up into modules
 image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t frame_number);
