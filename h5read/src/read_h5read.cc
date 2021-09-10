@@ -1,22 +1,28 @@
 #include <algorithm>
+#include <cassert>
 #include <cstdio>
 #include <iostream>
 
 #include "h5read.h"
 
 int main(int argc, char **argv) {
-    // h5read_handle *obj = h5read_parse_standard_args(argc, argv);
     auto reader = H5Read(argc, argv);
 
     size_t n_images = reader.get_number_of_images();
+
+    // A buffer we own, to check reading image data into a preallocated buffer
+    auto buffer = std::make_unique<H5Read::image_type[]>(reader.get_image_slow()
+                                                         * reader.get_image_fast());
 
     printf("               %8s / %s\n", "Image", "Module");
     for (size_t j = 0; j < n_images; j++) {
         auto image = reader.get_image(j);
         auto modules = reader.get_image_modules(j);
+        reader.get_image_into(j, buffer.get());
 
         size_t zero = 0, zero_invalid = 0;
         for (size_t i = 0; i < image.data.size(); i++) {
+            assert(image.data[i] == buffer[i]);
             if (image.data[i] == 0) {
                 if (image.mask[i] == 1) {
                     zero++;

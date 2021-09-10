@@ -272,6 +272,7 @@ Construct a reader by interpreting command-line arguments, the same as
 Once you have an `H5Read` object, you can retrieve information via:
 
 ```C++
+span<uint8_t> get_mask();                       // Get the central mask data
 size_t get_number_of_images();     // Get the number of frames in the reader
 size_t get_image_slow();   // Get the number of pixels in the slow dimension
 size_t get_image_fast();   // Get the number of pixels in the fast dimension

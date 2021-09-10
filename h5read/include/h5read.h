@@ -130,6 +130,8 @@ class ImageModules {
 // Declare a C++ "object" version so we don't have to keep track of allocations
 class H5Read {
   public:
+    using image_type = image_t_type;
+
     /// Create a reader using generated sample data
     H5Read();
     /// Create a reader from a Nexus file
@@ -137,8 +139,17 @@ class H5Read {
     /// Create a reader by parsing command arguments
     H5Read(int argc, char **argv) noexcept;
 
+    /// Read image data into an existing buffer
+    void get_image_into(size_t index, uint16_t *data) {
+        h5read_get_image_into(_handle.get(), index, data);
+    }
+
     Image get_image(size_t index) {
         return Image(_handle, index);
+    }
+
+    SPAN<uint8_t> get_mask() {
+        return {h5read_get_mask(_handle.get()), get_image_slow() * get_image_fast()};
     }
 
     ImageModules get_image_modules(size_t index) {
