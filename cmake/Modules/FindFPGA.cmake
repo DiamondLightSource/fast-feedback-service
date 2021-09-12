@@ -9,6 +9,8 @@ include (FindPackageHandleStandardArgs)
 
 check_cxx_compiler_flag(-fintelfpga CXX_HAS_FPGA_FLAG)
 
+include(ArchiveTarget)
+
 ## Duplicate a target and all relevant properties
 ##
 ## This is an INTERNAL function to FindFPGA. It doesn't attempt to
@@ -119,6 +121,7 @@ if(CXX_HAS_FPGA_FLAG)
         target_link_libraries(${target}.fpga FPGA::FPGA)
         set_target_properties(${target}.fpga PROPERTIES EXCLUDE_FROM_ALL yes)
         add_dependencies(fpga ${target}.fpga)
+        archive_target(${target}.fpga)
     endfunction()
 
     ## Convenience function to add a target and variants at the same time
@@ -137,6 +140,7 @@ if(CXX_HAS_FPGA_FLAG)
         target_link_libraries(${name}.fpga FPGA::FPGA ${NAME} ${_addexec_LINK_LIBRARIES})
         set_target_properties(${name}.fpga PROPERTIES EXCLUDE_FROM_ALL yes)
         add_dependencies(fpga ${name}.fpga)
+        archive_target(${name}.fpga)
 
     endfunction()
 endif()
