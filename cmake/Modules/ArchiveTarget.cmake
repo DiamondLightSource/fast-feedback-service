@@ -20,6 +20,11 @@ Usage:
         The <archive_dir> is controlled by the TARGET_ARCHIVE_DIR
         variable, which defaults to `${CMAKE_BINARY_DIR}/archive/`.
 
+        Alternatively, if the environment variable CMAKE_TARGET_ARCHIVE_DIR
+        is set, and there is no explicit TARGET_ARCHIVE_DIR provided to
+        cmake, then the environment variable will be used as the archive
+        directory.
+
 Usage as a Script:
 
     cmake -P ArchiveTarget.cmake -- (get_commit <output_name> | archive <commit_id_file> <target>)
@@ -51,7 +56,12 @@ Commands:
 cmake_minimum_required(VERSION 3.20)
 include_guard()
 
-set(TARGET_ARCHIVE_DIR "${CMAKE_BINARY_DIR}/archive" CACHE PATH "Output path for cached copied of output targets")
+# Read from the CMAKE_TARGET_ARCHIVE_DIR if set in the environment
+if(DEFINED ENV{CMAKE_TARGET_ARCHIVE_DIR} AND NOT TARGET_ARCHIVE_DIR)
+    set(TARGET_ARCHIVE_DIR "$ENV{CMAKE_TARGET_ARCHIVE_DIR}" CACHE PATH "Output path for cached copied of output targets")
+else()
+    set(TARGET_ARCHIVE_DIR "${CMAKE_BINARY_DIR}/archive" CACHE PATH "Output path for cached copied of output targets")
+endif()
 
 # Check to see if we are being run with include(). In this case, we want
 # to provide macros to run this same file in script mode
