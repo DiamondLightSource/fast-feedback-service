@@ -139,6 +139,7 @@ if(CXX_HAS_FPGA_FLAG)
         add_executable(${name}.fpga ${_addexec_UNPARSED_ARGUMENTS})
         target_link_libraries(${name}.fpga FPGA::FPGA ${NAME} ${_addexec_LINK_LIBRARIES})
         set_target_properties(${name}.fpga PROPERTIES EXCLUDE_FROM_ALL yes)
+        set_property(TARGET ${name}.fpga PROPERTY JOB_POOL_LINK console)
         add_dependencies(fpga ${name}.fpga)
         archive_target(${name}.fpga)
 
