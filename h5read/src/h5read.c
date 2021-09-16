@@ -153,9 +153,9 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
                 // col0 is the column of the module left
                 int col0 = modx * (E2XE_MOD_FAST + E2XE_GAP_FAST);
                 for (int row = 0; row < E2XE_MOD_SLOW; ++row) {
-                    memset(data + E2XE_16M_FAST * (row0 + row) + col0,
-                           1,
-                           E2XE_MOD_FAST * sizeof(uint16_t));
+                    for (int x = 0; x < E2XE_MOD_FAST; ++x) {
+                        *(data + E2XE_16M_FAST * (row0 + row) + col0 + x) = 1;
+                    }
                 }
             }
         }
