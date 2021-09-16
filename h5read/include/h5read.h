@@ -161,15 +161,15 @@ class H5Read {
         return h5read_get_number_of_images(_handle.get());
     }
     /// Get the number of pixels in the slow dimension
-    size_t get_image_slow() {
+    size_t get_image_slow() const {
         return h5read_get_image_slow(_handle.get());
     }
     /// Get the number of pixels in the fast dimension
-    size_t get_image_fast() {
+    size_t get_image_fast() const {
         return h5read_get_image_fast(_handle.get());
     }
     /// Get the image shape, in (slow, fast) pixels
-    std::array<size_t, 2> image_shape() {
+    std::array<size_t, 2> image_shape() const {
         return {get_image_slow(), get_image_fast()};
     }
 
