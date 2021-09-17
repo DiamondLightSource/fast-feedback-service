@@ -80,8 +80,8 @@ if(CXX_HAS_FPGA_FLAG)
     add_custom_target(fpga_report)
     set_target_properties(fpga_report PROPERTIES EXCLUDE_FROM_ALL yes)
 
-    add_library(FPGA::EMULATED INTERFACE IMPORTED )
-    set_target_properties(FPGA::EMULATED PROPERTIES
+    add_library(FPGA::EMULATOR INTERFACE IMPORTED )
+    set_target_properties(FPGA::EMULATOR PROPERTIES
         INTERFACE_COMPILE_DEFINITIONS "FPGA_EMULATOR;FPGA"
         INTERFACE_COMPILE_OPTIONS "-fintelfpga;${FPGA_WIN_FLAG}"
         INTERFACE_LINK_OPTIONS "-fintelfpga")
@@ -108,7 +108,7 @@ if(CXX_HAS_FPGA_FLAG)
 
         # FPGA Emulator
         _duplicate_target(${target}.fpga_emu ${target})
-        target_link_libraries(${target}.fpga_emu FPGA::EMULATED)
+        target_link_libraries(${target}.fpga_emu FPGA::EMULATOR)
         
         # FPGA Report
         _duplicate_target(${target}_report.a ${target})
@@ -132,7 +132,7 @@ if(CXX_HAS_FPGA_FLAG)
     function(fpga_add_executable name)
         cmake_parse_arguments(PARSE_ARGV 1 _addexec "ALWAYS_REPORT" "" "LINK_LIBRARIES")
         add_executable(${name}.fpga_emu ${_addexec_UNPARSED_ARGUMENTS})
-        target_link_libraries(${name}.fpga_emu FPGA::EMULATED ${NAME} ${_addexec_LINK_LIBRARIES})
+        target_link_libraries(${name}.fpga_emu FPGA::EMULATOR ${NAME} ${_addexec_LINK_LIBRARIES})
 
         add_executable(${name}_report.a ${_addexec_UNPARSED_ARGUMENTS})
         target_link_libraries(${name}_report.a FPGA::FPGA ${NAME} ${_addexec_LINK_LIBRARIES})
