@@ -99,6 +99,7 @@ if(CXX_HAS_FPGA_FLAG)
     ## - target.fpga_emu:   Emulated FPGA (Adds -DFPGA and -DFPGA_EMULATOR compile definition)
     ## - target_report.a:   FPGA Report (Hardware FPGA, but only the early linking stages and report output)
     function(fpga_add_variants target)
+        cmake_parse_arguments(PARSE_ARGV 1 _addexec "ALWAYS_REPORT")
         get_target_property(_imported ${target} IMPORTED)
         if(_imported)
             # Our duplicate target function doesn't handle this yet
@@ -113,7 +114,10 @@ if(CXX_HAS_FPGA_FLAG)
         _duplicate_target(${target}_report.a ${target})
         target_link_libraries(${target}_report.a FPGA::FPGA)
         target_link_options(${target}_report.a PRIVATE "-fsycl-link=early")
-        set_target_properties(${target}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
+        # By default, don't make the report, unless requested
+        if (NOT ${_addexec_ALWAYS_REPORT})
+            set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
+        endif()
         add_dependencies(fpga_report ${target}_report.a)
     
         # FPGA hardware build
@@ -126,14 +130,17 @@ if(CXX_HAS_FPGA_FLAG)
 
     ## Convenience function to add a target and variants at the same time
     function(fpga_add_executable name)
-        cmake_parse_arguments(PARSE_ARGV 1 _addexec "" "" "LINK_LIBRARIES")
+        cmake_parse_arguments(PARSE_ARGV 1 _addexec "ALWAYS_REPORT" "" "LINK_LIBRARIES")
         add_executable(${name}.fpga_emu ${_addexec_UNPARSED_ARGUMENTS})
         target_link_libraries(${name}.fpga_emu FPGA::EMULATED ${NAME} ${_addexec_LINK_LIBRARIES})
 
         add_executable(${name}_report.a ${_addexec_UNPARSED_ARGUMENTS})
         target_link_libraries(${name}_report.a FPGA::FPGA ${NAME} ${_addexec_LINK_LIBRARIES})
         target_link_options(${name}_report.a PRIVATE "-fsycl-link=early")
-        set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
+        # By default, don't make the report, unless requested
+        if (NOT ${_addexec_ALWAYS_REPORT})
+            set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
+        endif()
         add_dependencies(fpga_report ${name}_report.a)
 
         add_executable(${name}.fpga ${_addexec_UNPARSED_ARGUMENTS})
