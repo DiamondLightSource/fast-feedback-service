@@ -77,8 +77,8 @@ if(CXX_HAS_FPGA_FLAG)
     add_custom_target(fpga)
     set_target_properties(fpga PROPERTIES EXCLUDE_FROM_ALL yes)
 
-    add_custom_target(fpga_report)
-    set_target_properties(fpga_report PROPERTIES EXCLUDE_FROM_ALL yes)
+    add_custom_target(fpga.report)
+    set_target_properties(fpga.report PROPERTIES EXCLUDE_FROM_ALL yes)
 
     add_custom_target(fpga.profile)
     set_target_properties(fpga.profile PROPERTIES EXCLUDE_FROM_ALL yes)
@@ -121,7 +121,7 @@ if(CXX_HAS_FPGA_FLAG)
         if (NOT ${_addexec_ALWAYS_REPORT})
             set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
         endif()
-        add_dependencies(fpga_report ${target}_report.a)
+        add_dependencies(fpga.report ${target}_report.a)
     
         # FPGA hardware build
         _duplicate_target(${target}.fpga ${target})
@@ -144,7 +144,7 @@ if(CXX_HAS_FPGA_FLAG)
         if (NOT ${_addexec_ALWAYS_REPORT})
             set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
         endif()
-        add_dependencies(fpga_report ${name}_report.a)
+        add_dependencies(fpga.report ${name}_report.a)
 
         add_executable(${name}.fpga ${_addexec_UNPARSED_ARGUMENTS})
         target_link_libraries(${name}.fpga FPGA::FPGA ${NAME} ${_addexec_LINK_LIBRARIES})
