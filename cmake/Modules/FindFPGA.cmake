@@ -80,6 +80,9 @@ if(CXX_HAS_FPGA_FLAG)
     add_custom_target(fpga_report)
     set_target_properties(fpga_report PROPERTIES EXCLUDE_FROM_ALL yes)
 
+    add_custom_target(fpga.profile)
+    set_target_properties(fpga.profile PROPERTIES EXCLUDE_FROM_ALL yes)
+
     add_library(FPGA::EMULATOR INTERFACE IMPORTED )
     set_target_properties(FPGA::EMULATOR PROPERTIES
         INTERFACE_COMPILE_DEFINITIONS "FPGA_EMULATOR;FPGA"
@@ -150,6 +153,13 @@ if(CXX_HAS_FPGA_FLAG)
         add_dependencies(fpga ${name}.fpga)
         archive_target(${name}.fpga)
 
+        add_executable(${name}.fpga.profile ${_addexec_UNPARSED_ARGUMENTS})
+        target_link_libraries(${name}.fpga.profile FPGA::FPGA ${NAME} ${_addexec_LINK_LIBRARIES})
+        target_link_options(${name}.fpga.profile PRIVATE "-Xsprofile")
+        set_target_properties(${name}.fpga.profile PROPERTIES EXCLUDE_FROM_ALL yes)
+        set_property(TARGET ${name}.fpga.profile PROPERTY JOB_POOL_LINK console)
+        add_dependencies(fpga.profile ${name}.fpga)
+        archive_target(${name}.fpga.profile)
     endfunction()
 endif()
 
