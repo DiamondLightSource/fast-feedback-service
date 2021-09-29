@@ -25,4 +25,5 @@ ContinuationIndentWidth: 2
 IndentCaseLabels: false
 NamespaceIndentation: Inner
 SortIncludes: true
+ReflowComments: false
 ---
