@@ -135,7 +135,7 @@ void h5read_free_image_modules(image_modules_t *i) {
     free(i);
 }
 
-#define NUM_SAMPLE_IMAGES 3
+#define NUM_SAMPLE_IMAGES 4
 
 /// Generate a sample image from number
 void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
@@ -166,6 +166,29 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
             for (int x = 0; x < E2XE_16M_FAST; x += 6) {
                 int k = y * E2XE_16M_FAST + x;
                 data[k] = 100;
+            }
+        }
+    } else if (n == 3) {
+        // Image 3: "Random" background, zero on masks
+
+        // Implement a very simple 'random' generator, Numerical Methods' ranqd1
+        // - this ensures that we have stable cross-platform results.
+        int64_t idum = 0;
+
+        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
+        for (int mody = 0; mody < E2XE_16M_NSLOW; ++mody) {
+            // row0 is the row of the module top row
+            size_t row0 = mody * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
+            for (int modx = 0; modx < E2XE_16M_NFAST; ++modx) {
+                // col0 is the column of the module left
+                int col0 = modx * (E2XE_MOD_FAST + E2XE_GAP_FAST);
+                for (int row = 0; row < E2XE_MOD_SLOW; ++row) {
+                    for (int x = 0; x < E2XE_MOD_FAST; ++x) {
+                        *(data + E2XE_16M_FAST * (row0 + row) + col0 + x) =
+                          labs(idum % 4);
+                        idum = 1664525L * idum + 1013904223L;
+                    }
+                }
             }
         }
     } else {
