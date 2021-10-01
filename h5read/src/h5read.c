@@ -162,8 +162,8 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
     } else if (n == 2) {
         // Image 2: High pixel (100) every 42 pixels across the detector
         memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
-        for (int y = 0; y < E2XE_16M_SLOW; y += 6) {
-            for (int x = 0; x < E2XE_16M_FAST; x += 6) {
+        for (int y = 0; y < E2XE_16M_SLOW; y += 42) {
+            for (int x = 0; x < E2XE_16M_FAST; x += 42) {
                 int k = y * E2XE_16M_FAST + x;
                 data[k] = 100;
             }
