@@ -24,6 +24,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
             $<$<OR:$<CXX_COMPILER_ID:GNU>,$<C_COMPILER_ID:GNU>>:-fdiagnostics-color=always>
             $<$<OR:$<CXX_COMPILER_ID:Clang>,$<C_COMPILER_ID:Clang>>:-fcolor-diagnostics>
             $<$<OR:$<CXX_COMPILER_ID:AppleClang>,$<C_COMPILER_ID:AppleClang>>:-fcolor-diagnostics>
+            $<$<OR:$<CXX_COMPILER_ID:IntelLLVM>,$<C_COMPILER_ID:IntelLLVM>>:-fcolor-diagnostics>
         )
     endif()
 endif()
