@@ -174,9 +174,21 @@ elseif(_command STREQUAL "archive")
         endif()
     endif()
     execute_process(COMMAND ${CMAKE_COMMAND} -E copy "${archive_target}" "${archive_path}"
-    RESULT_VARIABLE _copy_result)
+        RESULT_VARIABLE _copy_result)
     if(_copy_result)
         message(WARNING "Archiver: Error copying ${archive_target} to ${archive_path}, not archived")
+    else()
+        # Make a symlink from our build folder to the new archive
+        # Get the target filename of our archive target
+        cmake_path(GET archive_path FILENAME _archived_filename)
+        cmake_path(GET archive_target PARENT_PATH _symlink_location)
+        cmake_path(APPEND _symlink_location "${_archived_filename}" )
+        message(STATUS "Creating symlink ${_symlink_location} to ${archive_path}")
+        execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink "${archive_path}" "${_symlink_location}" 
+            RESULT_VARIABLE _symlink_result)
+        if (_symlink_result)
+            message(WARNING "Archiver: Error creating symlink ${_symlink_locaion}")
+        endif()
     endif()
     cmake_path(GET archive_path FILENAME _archive_filename)
     message(STATUS "Archived ${_target_basename} to archive/${_archive_filename}")
