@@ -57,6 +57,7 @@ from.
 | 0     | Completely empty image. This means 16842752 valid, empty pixels.                                          |
 | 1     | I=1 for every unmasked pixel                                                                              |
 | 2     | Single pixels of I=100, every 42 pixels in a grid, for 10296 total. Of these pixels, 9604 are not masked. |
+| 3     | "Random" background between 0 and 3 intensity, and zero under the masks. This is not a true random.       |
 
 ## Reference - C API
 
