@@ -173,7 +173,7 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
 
         // Implement a very simple 'random' generator, Numerical Methods' ranqd1
         // - this ensures that we have stable cross-platform results.
-        int64_t idum = 0;
+        uint64_t idum = 0;
 
         memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
         for (int mody = 0; mody < E2XE_16M_NSLOW; ++mody) {
@@ -184,9 +184,11 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
                 int col0 = modx * (E2XE_MOD_FAST + E2XE_GAP_FAST);
                 for (int row = 0; row < E2XE_MOD_SLOW; ++row) {
                     for (int x = 0; x < E2XE_MOD_FAST; ++x) {
-                        *(data + E2XE_16M_FAST * (row0 + row) + col0 + x) =
-                          labs(idum % 4);
-                        idum = 1664525L * idum + 1013904223L;
+                        *(data + E2XE_16M_FAST * (row0 + row) + col0 + x) = (idum % 10);
+                        // basic LCG % 4 isn't unpredictable enough for us. Fake it.
+                        do {
+                            idum = 1664525UL * idum + 1013904223UL;
+                        } while (idum % 10 >= 4);
                     }
                 }
             }
