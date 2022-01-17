@@ -64,10 +64,10 @@ else()
 endif()
 
 # Check to see if we are being run with include(). In this case, we want
-# to provide macros to run this same file in script mode
+# to provide macros to run this same file in script mode
 if(NOT CMAKE_SCRIPT_MODE_FILE OR CMAKE_PARENT_LIST_FILE)
     # Archives a target on build completion with the commit ID at the point
-    # compilation was started
+    # compilation was started
     function(archive_target target)
         add_custom_command(TARGET ${target} PRE_BUILD
             COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_FUNCTION_LIST_FILE}"
@@ -76,7 +76,7 @@ if(NOT CMAKE_SCRIPT_MODE_FILE OR CMAKE_PARENT_LIST_FILE)
             COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_FUNCTION_LIST_FILE}"
                     -- archive "${CMAKE_BINARY_DIR}/commit.id" $<TARGET_FILE:${target}> "${TARGET_ARCHIVE_DIR}")
     endfunction()
-    # Don't do any of the actual script-file parts
+    # Don't do any of the actual script-file parts
     return()
 endif()
 
@@ -126,7 +126,7 @@ elseif(_command STREQUAL "archive")
     endif()
     list(GET ARGS 1 commit_id_file)
     list(GET ARGS 2 archive_target)
-    # Get the archive dir, if specified
+    # Get the archive dir, if specified
     if (_arg_len EQUAL 4)
         list(GET ARGS 3 archive_path)
     else()
@@ -142,11 +142,11 @@ elseif(_command STREQUAL "archive")
     endif()
     file(READ "${commit_id_file}" commit_id)
     if (NOT commit_id)
-        # If this file is empty, then we couldn't get a commit ID. We
+        # If this file is empty, then we couldn't get a commit ID. We
         # should have already been warned about this.
         return()
     endif()
-    # Work out the target name for archiving
+    # Work out the target name for archiving
     cmake_path(GET archive_target FILENAME _target_basename)
     cmake_path(APPEND archive_path "${_target_basename}.${commit_id}" )
     # Make sure the output path exists
@@ -160,7 +160,7 @@ elseif(_command STREQUAL "archive")
             message(STATUS "Archiver: Nothing to do for ${_target_basename}")
             return()
         else()
-            # We have a conflicting file. Find an integer to append that
+            # We have a conflicting file. Find an integer to append that
             # doesn't already exist
             set(copy_integer 1)
             while(EXISTS "${archive_path}.${copy_integer}")
@@ -178,8 +178,8 @@ elseif(_command STREQUAL "archive")
     if(_copy_result)
         message(WARNING "Archiver: Error copying ${archive_target} to ${archive_path}, not archived")
     else()
-        # Make a symlink from our build folder to the new archive
-        # Get the target filename of our archive target
+        # Make a symlink from our build folder to the new archive
+        # Get the target filename of our archive target
         cmake_path(GET archive_path FILENAME _archived_filename)
         cmake_path(GET archive_target PARENT_PATH _symlink_location)
         cmake_path(APPEND _symlink_location "${_archived_filename}" )

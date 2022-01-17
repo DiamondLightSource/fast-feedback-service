@@ -15,7 +15,7 @@ include(ArchiveTarget)
 ##
 ## This is an INTERNAL function to FindFPGA. It doesn't attempt to
 ## perfectly copy all properties, as WIP development is ongoing the
-## more important properties might be expanded.
+## more important properties might be expanded.
 function(_duplicate_target new_target target)
     get_target_property(_type ${target} TYPE)
     if(_type STREQUAL STATIC_LIBRARY)
@@ -30,7 +30,7 @@ function(_duplicate_target new_target target)
 
 
     set(copy_properties "")
-    # Build list of namespaced properties
+    # Build list of namespaced properties
     foreach(namespace "" INTERFACE)
         set(_prefix "")
         if(namespace)
@@ -45,13 +45,13 @@ function(_duplicate_target new_target target)
             list(APPEND copy_properties "${_prop}")
         endforeach()
     endforeach()
-    # "Other" properties
+    # "Other" properties
     # list(APPEND copy_properties LOCATION)
 
-    # Now, copy all the propertes to the new target
+    # Now, copy all the propertes to the new target
     foreach(_property ${copy_properties})
         get_target_property(_prop ${target} ${_property})
-        # Copy anything as long as it is not-NOTFOUND
+        # Copy anything as long as it is not-NOTFOUND
         if(NOT _prop MATCHES ".*-NOTFOUND$")
             set_target_properties(${new_target} PROPERTIES ${_property} "${_prop}")
         endif()
@@ -68,7 +68,7 @@ if(CXX_HAS_FPGA_FLAG)
     # FPGA board selection
     if(NOT DEFINED FPGA_BOARD)
         # Boards are defined as package:board
-        # Packages from: "aoc -list-boards" and "aoc -list-board-packages"
+        # Packages from: "aoc -list-boards" and "aoc -list-board-packages"
         set(FPGA_BOARD "intel_s10sx_pac:pac_s10_usm" CACHE STRING "The package:board combination to pass to aoc")
         message(STATUS "FPGA_BOARD not specified, using default")
     endif()
@@ -94,13 +94,13 @@ if(CXX_HAS_FPGA_FLAG)
         INTERFACE_COMPILE_DEFINITIONS "FPGA"
         INTERFACE_COMPILE_OPTIONS "-fintelfpga;${FPGA_WIN_FLAG}"
         INTERFACE_LINK_OPTIONS "-fintelfpga;-Xshardware;-Xsboard=${FPGA_BOARD}")
-    
+
     ## Add FPGA variants of a target
     ##
     ## This will duplicate the target, and add variants for:
     ## - target.fpga:       Hardware FPGA (Adds -DFPGA compile definition)
-    ## - target.fpga_emu:   Emulated FPGA (Adds -DFPGA and -DFPGA_EMULATOR compile definition)
-    ## - target_report.a:   FPGA Report (Hardware FPGA, but only the early linking stages and report output)
+    ## - target.fpga_emu:   Emulated FPGA (Adds -DFPGA and -DFPGA_EMULATOR compile definition)
+    ## - target_report.a:   FPGA Report (Hardware FPGA, but only the early linking stages and report output)
     function(fpga_add_variants target)
         cmake_parse_arguments(PARSE_ARGV 1 _addexec "ALWAYS_REPORT")
         get_target_property(_imported ${target} IMPORTED)
@@ -112,17 +112,17 @@ if(CXX_HAS_FPGA_FLAG)
         # FPGA Emulator
         _duplicate_target(${target}.fpga_emu ${target})
         target_link_libraries(${target}.fpga_emu FPGA::EMULATOR)
-        
+
         # FPGA Report
         _duplicate_target(${target}_report.a ${target})
         target_link_libraries(${target}_report.a FPGA::FPGA)
         target_link_options(${target}_report.a PRIVATE "-fsycl-link=early")
-        # By default, don't make the report, unless requested
+        # By default, don't make the report, unless requested
         if (NOT ${_addexec_ALWAYS_REPORT})
             set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
         endif()
         add_dependencies(fpga.report ${target}_report.a)
-    
+
         # FPGA hardware build
         _duplicate_target(${target}.fpga ${target})
         target_link_libraries(${target}.fpga FPGA::FPGA)
@@ -140,7 +140,7 @@ if(CXX_HAS_FPGA_FLAG)
         add_executable(${name}_report.a ${_addexec_UNPARSED_ARGUMENTS})
         target_link_libraries(${name}_report.a FPGA::FPGA ${NAME} ${_addexec_LINK_LIBRARIES})
         target_link_options(${name}_report.a PRIVATE "-fsycl-link=early")
-        # By default, don't make the report, unless requested
+        # By default, don't make the report, unless requested
         if (NOT ${_addexec_ALWAYS_REPORT})
             set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
         endif()
