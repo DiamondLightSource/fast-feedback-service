@@ -102,7 +102,7 @@ if(CXX_HAS_FPGA_FLAG)
     ## - target.fpga_emu:   Emulated FPGA (Adds -DFPGA and -DFPGA_EMULATOR compile definition)
     ## - target_report.a:   FPGA Report (Hardware FPGA, but only the early linking stages and report output)
     function(fpga_add_variants target)
-        cmake_parse_arguments(PARSE_ARGV 1 _addexec "ALWAYS_REPORT")
+        cmake_parse_arguments(PARSE_ARGV 1 _addexec "ALWAYS_REPORT" "" "")
         get_target_property(_imported ${target} IMPORTED)
         if(_imported)
             # Our duplicate target function doesn't handle this yet
@@ -119,7 +119,7 @@ if(CXX_HAS_FPGA_FLAG)
         target_link_options(${target}_report.a PRIVATE "-fsycl-link=early")
         # By default, don't make the report, unless requested
         if (NOT ${_addexec_ALWAYS_REPORT})
-            set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
+            set_target_properties(${target}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
         endif()
         add_dependencies(fpga.report ${target}_report.a)
 
