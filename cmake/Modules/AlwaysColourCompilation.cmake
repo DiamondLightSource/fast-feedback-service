@@ -21,10 +21,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     option (FORCE_COLORED_OUTPUT "Always produce ANSI-colored output (GNU/Clang only)." TRUE)
     if (${FORCE_COLORED_OUTPUT})
         add_compile_options(
-            $<$<OR:$<CXX_COMPILER_ID:GNU>,$<C_COMPILER_ID:GNU>>:-fdiagnostics-color=always>
-            $<$<OR:$<CXX_COMPILER_ID:Clang>,$<C_COMPILER_ID:Clang>>:-fcolor-diagnostics>
-            $<$<OR:$<CXX_COMPILER_ID:AppleClang>,$<C_COMPILER_ID:AppleClang>>:-fcolor-diagnostics>
-            $<$<OR:$<CXX_COMPILER_ID:IntelLLVM>,$<C_COMPILER_ID:IntelLLVM>>:-fcolor-diagnostics>
+            $<$<OR:$<COMPILE_LANG_AND_ID:CXX,GNU>,$<COMPILE_LANG_AND_ID:C,GNU>>:-fdiagnostics-color=always>
+            $<$<OR:$<COMPILE_LANG_AND_ID:CXX,Clang>,$<COMPILE_LANG_AND_ID:C,Clang>>:-fcolor-diagnostics>
+            $<$<OR:$<COMPILE_LANG_AND_ID:CXX,AppleClang>,$<COMPILE_LANG_AND_ID:C,AppleClang>>:-fcolor-diagnostics>
+            $<$<OR:$<COMPILE_LANG_AND_ID:CXX,IntelLLVM>,$<COMPILE_LANG_AND_ID:C,IntelLLVM>>:-fcolor-diagnostics>
         )
     endif()
 endif()
+
