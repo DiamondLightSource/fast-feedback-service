@@ -135,7 +135,7 @@ void h5read_free_image_modules(image_modules_t *i) {
     free(i);
 }
 
-#define NUM_SAMPLE_IMAGES 4
+#define NUM_SAMPLE_IMAGES 6
 
 /// Generate a sample image from number
 void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
@@ -169,6 +169,23 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
             }
         }
     } else if (n == 3) {
+        // Image 3 - I=x
+        for (int y = 0; y < E2XE_16M_SLOW; y++) {
+            for (int x = 0; x < E2XE_16M_FAST; x++) {
+                int k = y * E2XE_16M_FAST + x;
+                data[k] = x;
+            }
+        }
+    } else if (n == 4) {
+        // Image 3 - I=y
+        for (int y = 0; y < E2XE_16M_SLOW; y++) {
+            for (int x = 0; x < E2XE_16M_FAST; x++) {
+                int k = y * E2XE_16M_FAST + x;
+                data[k] = y;
+            }
+        }
+
+    } else if (n == 5) {
         // Image 3: "Random" background, zero on masks
 
         // Implement a very simple 'random' generator, Numerical Methods' ranqd1
