@@ -288,8 +288,12 @@ void read_mask(h5read_handle *obj) {
     hid_t mask_dataset = H5Dopen(obj->master_file, mask_path, H5P_DEFAULT);
 
     if (mask_dataset < 0) {
-        fprintf(stderr, "Error: While reading mask from %s\n", mask_path);
-        exit(1);
+        // We are allowed to not have a mask in NXmx
+        fprintf(stderr, "Warning: no mask data found at %s\n", mask_path);
+        // Make an empty mask
+        obj->mask_size = 0;
+        obj->mask = NULL;
+        return;
     }
 
     hid_t datatype = H5Dget_type(mask_dataset);

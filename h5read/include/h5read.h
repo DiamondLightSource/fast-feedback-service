@@ -78,6 +78,7 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv);
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -148,8 +149,12 @@ class H5Read {
         return Image(_handle, index);
     }
 
-    SPAN<uint8_t> get_mask() {
-        return {h5read_get_mask(_handle.get()), get_image_slow() * get_image_fast()};
+    std::optional<SPAN<uint8_t>> get_mask() {
+        auto mask = h5read_get_mask(_handle.get());
+        if (mask == nullptr) {
+            return std::nullopt;
+        }
+        return {{h5read_get_mask(_handle.get()), get_image_slow() * get_image_fast()}};
     }
 
     ImageModules get_image_modules(size_t index) {
