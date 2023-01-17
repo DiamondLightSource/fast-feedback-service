@@ -7,7 +7,7 @@
 include(CheckCXXCompilerFlag)
 include (FindPackageHandleStandardArgs)
 
-check_cxx_compiler_flag(-fintelfpga CXX_HAS_FPGA_FLAG)
+check_cxx_compiler_flag("-fsycl -fintelfpga" CXX_HAS_FPGA_FLAG)
 
 include(ArchiveTarget)
 
@@ -86,14 +86,14 @@ if(CXX_HAS_FPGA_FLAG)
     add_library(FPGA::EMULATOR INTERFACE IMPORTED )
     set_target_properties(FPGA::EMULATOR PROPERTIES
         INTERFACE_COMPILE_DEFINITIONS "FPGA_EMULATOR;FPGA"
-        INTERFACE_COMPILE_OPTIONS "-fintelfpga;${FPGA_WIN_FLAG}"
-        INTERFACE_LINK_OPTIONS "-fintelfpga")
+        INTERFACE_COMPILE_OPTIONS "-fsycl;-fintelfpga;${FPGA_WIN_FLAG}"
+        INTERFACE_LINK_OPTIONS "-fsycl;-fintelfpga")
 
     add_library(FPGA::FPGA INTERFACE IMPORTED)
     set_target_properties(FPGA::FPGA PROPERTIES
         INTERFACE_COMPILE_DEFINITIONS "FPGA"
-        INTERFACE_COMPILE_OPTIONS "-fintelfpga;${FPGA_WIN_FLAG}"
-        INTERFACE_LINK_OPTIONS "-fintelfpga;-Xshardware;-Xsboard=${FPGA_BOARD}")
+        INTERFACE_COMPILE_OPTIONS "-fsycl;-fintelfpga;${FPGA_WIN_FLAG}"
+        INTERFACE_LINK_OPTIONS "-fsycl;-fintelfpga;-Xshardware;-Xsboard=${FPGA_BOARD}")
 
     ## Add FPGA variants of a target
     ##
