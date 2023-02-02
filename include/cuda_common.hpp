@@ -140,7 +140,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
 
         // cudaDeviceProp deviceProp;
         cudaGetDeviceProperties(&_arguments.device, _arguments.device_index);
-        fmt::print("Using {} (CUDA {}.{})\n",
+        fmt::print("Using {} (CUDA {}.{})\n\n",
                    bold(_arguments.device.name),
                    _arguments.device.major,
                    _arguments.device.minor);
