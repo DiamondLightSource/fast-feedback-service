@@ -211,7 +211,7 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
             }
         }
     } else {
-        fprintf(stderr, "Error: Unhandled sample image %d\n", n);
+        fprintf(stderr, "Error: Unhandled sample image %d\n", (int)n);
         exit(2);
     }
 }
@@ -482,7 +482,8 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
             }
         } else {
             char scr[MAXFILENAME];
-            sprintf(scr, "%s/%s", root, vds[j].filename);
+            assert(snprintf(scr, MAXFILENAME, "%s/%s", root, vds[j].filename)
+                   < MAXFILENAME);
             strcpy(vds[j].filename, scr);
         }
 
