@@ -16,6 +16,17 @@ add_library(h5read src/h5read.c src/h5read.cc)
 target_include_directories(h5read PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include )
 target_link_libraries(h5read PUBLIC hdf5::hdf5)
 
+# Problem:
+#
+#   The HDF5 Library build configuration from h5cc sometimes adds NDEBUG to
+#   INTERFACE_COMPILE_DEFINITIONS. This effectively turns off asserts for all
+#   projects in the dependency chain, even if the build_type is Debug. So,
+#   let's manually remove it, if present.
+get_target_property(_hdf5_interface_defs hdf5::hdf5 INTERFACE_COMPILE_DEFINITIONS)
+list(REMOVE_ITEM _hdf5_interface_defs NDEBUG)
+set_target_properties(hdf5::hdf5 PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_hdf5_interface_defs}")
+
+
 # Check if we have the C++20 span header. Otherwise, use the backport
 check_include_file_cxx(span HAS_CXX20_SPAN)
 if(NOT HAS_CXX20_SPAN)
