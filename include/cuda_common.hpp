@@ -177,4 +177,88 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
     bool _activated_h5read = false;
 };
 
+/// Draw a subset of the pixel values for a 2D image array
+/// fast, slow, width, height - describe the bounding box to draw
+/// data_width, data_height - describe the full data array size
+template <typename T>
+void draw_image_data(const T *data,
+                     size_t fast,
+                     size_t slow,
+                     size_t width,
+                     size_t height,
+                     size_t data_width,
+                     size_t data_height) {
+    std::string format_type = "";
+    if constexpr (std::is_integral<T>::value) {
+        format_type = "d";
+    } else {
+        format_type = ".1f";
+    }
+
+    // Walk over the data and get various metadata for generation
+    // Maximum value
+    T accum = 0;
+    // Maximum format width for each column
+    std::vector<int> col_widths;
+    for (int col = fast; col < fast + width; ++col) {
+        size_t maxw = fmt::formatted_size("{}", col);
+        for (int row = slow; row < min(slow + height, data_height); ++row) {
+            auto val = data[col + data_width * row];
+            auto fmt_spec = fmt::format("{{:{}}}", format_type);
+            maxw = std::max(maxw, fmt::formatted_size(fmt_spec, val));
+            accum = max(accum, val);
+        }
+        col_widths.push_back(maxw);
+    }
+
+    // Draw a row header
+    fmt::print("x =       ");
+    for (int i = 0; i < width; ++i) {
+        auto x = i + fast;
+        fmt::print("{:{}} ", x, col_widths[i]);
+    }
+    fmt::print("\n         ┌");
+    for (int i = 0; i < width; ++i) {
+        for (int j = 0; j < col_widths[i]; ++j) {
+            fmt::print("─");
+        }
+        fmt::print("─");
+    }
+    fmt::print("┐\n");
+
+    for (int y = slow; y < min(slow + height, data_height); ++y) {
+        if (y == slow) {
+            fmt::print("y = {:2d} │", y);
+        } else {
+            fmt::print("    {:2d} │", y);
+        }
+        for (int i = fast; i < fast + width; ++i) {
+            // Calculate color
+            // Black, 232->255, White
+            // Range of 24 colors, not including white. Split into 25 bins, so
+            // that we have a whole black top bin
+            // float bin_scale = -25
+            auto dat = data[i + data_width * y];
+            int color = 255 - ((float)dat / (float)accum) * 24;
+            if (color <= 231) color = 0;
+            if (dat < 0) {
+                color = 9;
+            }
+
+            if (dat == accum) {
+                fmt::print("\033[0m\033[1m");
+            } else {
+                fmt::print("\033[38;5;{}m", color);
+            }
+            auto fmt_spec =
+              fmt::format("{{:{}{}}} ", col_widths[i - fast], format_type);
+            fmt::print(fmt_spec, dat);
+            if (dat == accum) {
+                fmt::print("\033[0m");
+            }
+        }
+        fmt::print("\033[0m│\n");
+    }
+}
+
 #endif
