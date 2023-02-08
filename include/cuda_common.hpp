@@ -201,7 +201,7 @@ void draw_image_data(const T *data,
     // Maximum format width for each column
     std::vector<int> col_widths;
     for (int col = fast; col < fast + width; ++col) {
-        size_t maxw = fmt::formatted_size("{}", col);
+        size_t maxw = fmt::formatted_size("{:3}", col);
         for (int row = slow; row < min(slow + height, data_height); ++row) {
             auto val = data[col + data_width * row];
             auto fmt_spec = fmt::format("{{:{}}}", format_type);
@@ -228,9 +228,9 @@ void draw_image_data(const T *data,
 
     for (int y = slow; y < min(slow + height, data_height); ++y) {
         if (y == slow) {
-            fmt::print("y = {:2d} │", y);
+            fmt::print("y = {:4d} │", y);
         } else {
-            fmt::print("    {:2d} │", y);
+            fmt::print("    {:4d} │", y);
         }
         for (int i = fast; i < fast + width; ++i) {
             // Calculate color
