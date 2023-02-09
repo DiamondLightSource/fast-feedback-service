@@ -140,7 +140,11 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         }
 
         // cudaDeviceProp deviceProp;
-        cudaGetDeviceProperties(&_arguments.device, _arguments.device_index);
+        if (cudaGetDeviceProperties(&_arguments.device, _arguments.device_index)
+            != cudaSuccess) {
+            fmt::print(bold(red("{}: Could not inspect GPU\n")));
+            std::exit(1);
+        }
         fmt::print("Using {} (CUDA {}.{})\n\n",
                    bold(_arguments.device.name),
                    _arguments.device.major,
