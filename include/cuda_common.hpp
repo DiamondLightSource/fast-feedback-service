@@ -6,6 +6,7 @@
 #include <argparse/argparse.hpp>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 #if __has_include(<hdf5.h>)
 #define HAS_HDF5
@@ -241,10 +242,12 @@ void draw_image_data(const T *data,
             auto dat = data[i + data_width * y];
             int color = 255 - ((float)dat / (float)accum) * 24;
             if (color <= 231) color = 0;
-            if (dat < 0) {
-                color = 9;
+            // Avoid type comparison warnings when operating on unsigned
+            if constexpr (std::is_signed<decltype(dat)>::value) {
+                if (dat < 0) {
+                    color = 9;
+                }
             }
-
             if (dat == accum) {
                 fmt::print("\033[0m\033[1m");
             } else {
