@@ -263,5 +263,16 @@ void draw_image_data(const T *data,
         fmt::print("\033[0m│\n");
     }
 }
+template <typename T, typename U>
+void draw_image_data(const std::unique_ptr<T, U> &data,
+                     size_t fast,
+                     size_t slow,
+                     size_t width,
+                     size_t height,
+                     size_t data_width,
+                     size_t data_height) {
+    draw_image_data(
+      static_cast<T *>(data.get()), fast, slow, width, height, data_width, data_height);
+}
 
 #endif
