@@ -51,15 +51,17 @@ class cuda_error : public std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
+auto cuda_error_string(cudaError_t err) {
+    const char *err_name = cudaGetErrorName(err);
+    const char *err_str = cudaGetErrorString(err);
+    return fmt::format("{}: {}", std::string{err_name}, std::string{err_str});
+}
+
 /// Raise an exception IF CUDA is in an error state, with the name and description
 auto cuda_throw_error() -> void {
     auto err = cudaGetLastError();
     if (err != cudaSuccess) {
-        const char *err_name = cudaGetErrorName(err);
-        const char *err_str = cudaGetErrorString(err);
-        std::string s =
-          fmt::format("{}: {}\n", std::string{err_name}, std::string{err_str});
-        throw cuda_error(s);
+        throw cuda_error(cuda_error_string(err));
     }
 }
 
@@ -140,9 +142,17 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         }
 
         // cudaDeviceProp deviceProp;
+        if (cudaSetDevice(_arguments.device_index) != cudaSuccess) {
+            fmt::print(red("{}: Could not select device ({})"),
+                       bold("Error"),
+                       cuda_error_string(cudaGetLastError()));
+            std::exit(1);
+        }
         if (cudaGetDeviceProperties(&_arguments.device, _arguments.device_index)
             != cudaSuccess) {
-            fmt::print(bold(red("{}: Could not inspect GPU\n")));
+            fmt::print(red("{}: Could not inspect GPU ({})\n",
+                           bold("Error"),
+                           cuda_error_string(cudaGetLastError())));
             std::exit(1);
         }
         fmt::print("Using {} (CUDA {}.{})\n\n",
