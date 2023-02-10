@@ -225,6 +225,9 @@ void draw_image_data(const T *data,
         }
         col_widths.push_back(maxw);
     }
+    bool is_top = slow == 0;
+    bool is_left = fast == 0;
+    bool is_right = fast + width >= data_width;
 
     // Draw a row header
     fmt::print("x =       ");
@@ -232,20 +235,46 @@ void draw_image_data(const T *data,
         auto x = i + fast;
         fmt::print("{:{}} ", x, col_widths[i]);
     }
-    fmt::print("\n         ┌");
+    fmt::print("\n         ");
+    if (is_top) {
+        if (is_left) {
+            fmt::print("╔");
+        } else {
+            fmt::print("╒");
+        }
+    } else {
+        if (is_left) {
+            fmt::print("╓");
+        } else {
+            fmt::print("┌");
+        }
+    }
+
     for (int i = 0; i < width; ++i) {
         for (int j = 0; j < col_widths[i]; ++j) {
-            fmt::print("─");
+            fmt::print(is_top ? "═" : "─");
         }
-        fmt::print("─");
+        fmt::print(is_top ? "═" : "─");
     }
-    fmt::print("┐\n");
-
+    if (is_top) {
+        if (is_right) {
+            fmt::print("╗");
+        } else {
+            fmt::print("╕");
+        }
+    } else {
+        if (is_right) {
+            fmt::print("╖");
+        } else {
+            fmt::print("┐");
+        }
+    }
+    fmt::print("\n");
     for (int y = slow; y < min(slow + height, data_height); ++y) {
         if (y == slow) {
-            fmt::print("y = {:4d} │", y);
+            fmt::print("y = {:4d} {}", y, is_left ? "║" : "│");
         } else {
-            fmt::print("    {:4d} │", y);
+            fmt::print("    {:4d} {}", y, is_left ? "║" : "│");
         }
         for (int i = fast; i < fast + width; ++i) {
             // Calculate color
@@ -274,7 +303,7 @@ void draw_image_data(const T *data,
                 fmt::print("\033[0m");
             }
         }
-        fmt::print("\033[0m│\n");
+        fmt::print("\033[0m{}\n", is_right ? "║" : "│");
     }
 }
 template <typename T, typename U>
