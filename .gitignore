@@ -18,3 +18,5 @@ build/
 compile_commands.json
 
 .dials_build
+
+a.out

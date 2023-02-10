@@ -17,15 +17,19 @@
 
 set(DIALS_BUILD ${DIALS_BUILD} CACHE PATH "Dials build folder")
 
+
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Dials DEFAULT_MSG DIALS_BUILD)
 
+
 if(DIALS_BUILD)
+  find_package(Boost REQUIRED)
+
   if (NOT TARGET Dials::Dials)
     add_library(Dials::Dials IMPORTED INTERFACE)
   endif()
 
-  set(DIALS_INCLUDE_DIRS "${DIALS_BUILD}/include;${DIALS_BUILD}/../modules;${DIALS_BUILD}/../modules/cctbx_project")
+  set(DIALS_INCLUDE_DIRS "${DIALS_BUILD}/include;${DIALS_BUILD}/../modules;${DIALS_BUILD}/../modules/cctbx_project;${DIALS_BUILD}/../modules/dials/src")
   mark_as_advanced(DIALS_INCLUDE_DIRS)
 
   set_target_properties(Dials::Dials PROPERTIES

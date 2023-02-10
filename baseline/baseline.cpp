@@ -827,14 +827,14 @@ class _spotfind_context {
     baseline::DispersionThreshold algo;
 
     _spotfind_context(size_t width, size_t height)
-        : size(width, height),
+        : size(height, width),
           algo(size, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_) {
         _dest_store = new bool[width * height];
-        dst = af::ref<bool, af::c_grid<2>>(_dest_store, af::c_grid<2>(width, height));
+        dst = af::ref<bool, af::c_grid<2>>(_dest_store, af::c_grid<2>(height, width));
         // Make a place to convert sources to the internal type
         _src_converted_store = new internal_T[width * height];
         src_converted = af::ref<internal_T, af::c_grid<2>>(
-          _src_converted_store, af::c_grid<2>(width, height));
+          _src_converted_store, af::c_grid<2>(height, width));
     }
     ~_spotfind_context() {
         delete[] _dest_store;
@@ -853,14 +853,16 @@ void spotfinder_free(void *context) {
     delete reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
 }
 
-uint32_t spotfinder_standard_dispersion(void *context, image_t *image) {
+uint32_t spotfinder_standard_dispersion(void *context,
+                                        image_t *image,
+                                        bool **destination) {
     auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
 
     // mask needs to convert uint8_t to bool
     auto mask = af::const_ref<bool, af::c_grid<2>>(
       reinterpret_cast<bool *>(image->mask), af::c_grid<2>(ctx->size[0], ctx->size[1]));
 
-    // Convert all items from the source image to
+    // Convert all items from the source image type to double
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
         ctx->src_converted[i] = image->data[i];
     }
@@ -872,5 +874,8 @@ uint32_t spotfinder_standard_dispersion(void *context, image_t *image) {
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
         pixel_count += ctx->dst[i];
     }
+
+    if (destination != nullptr) *destination = &ctx->dst.front();
+
     return pixel_count;
 }
