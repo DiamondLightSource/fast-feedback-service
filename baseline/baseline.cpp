@@ -853,7 +853,9 @@ void spotfinder_free(void *context) {
     delete reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
 }
 
-uint32_t spotfinder_standard_dispersion(void *context, image_t *image) {
+uint32_t spotfinder_standard_dispersion(void *context,
+                                        image_t *image,
+                                        bool **destination) {
     auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
 
     // mask needs to convert uint8_t to bool
@@ -872,5 +874,8 @@ uint32_t spotfinder_standard_dispersion(void *context, image_t *image) {
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
         pixel_count += ctx->dst[i];
     }
+
+    if (destination != nullptr) *destination = &ctx->dst.front();
+
     return pixel_count;
 }
