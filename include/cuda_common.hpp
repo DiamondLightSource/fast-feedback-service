@@ -318,4 +318,119 @@ void draw_image_data(const std::unique_ptr<T, U> &data,
       static_cast<T *>(data.get()), fast, slow, width, height, data_width, data_height);
 }
 
+template <typename T>
+auto make_cuda_malloc(size_t num_items = 1) {
+    T *obj = nullptr;
+    if (cudaMalloc(&obj, sizeof(T) * num_items) != cudaSuccess || obj == nullptr) {
+        throw std::bad_alloc{};
+    }
+    auto deleter = [](T *ptr) { cudaFree(ptr); };
+    return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
+}
+
+template <typename T>
+auto make_cuda_managed_malloc(size_t num_items) {
+    T *obj = nullptr;
+    if (cudaMallocManaged(&obj, sizeof(T) * num_items) != cudaSuccess
+        || obj == nullptr) {
+        throw std::bad_alloc{};
+    }
+    auto deleter = [](T *ptr) { cudaFree(ptr); };
+    return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
+}
+/// Allocate memory using cudaMallocHost
+template <typename T>
+auto make_cuda_pinned_malloc(size_t num_items = 1) {
+    T *obj = nullptr;
+    if (cudaMallocHost(&obj, sizeof(T) * num_items) != cudaSuccess || obj == nullptr) {
+        throw std::bad_alloc{};
+    }
+    auto deleter = [](T *ptr) { cudaFreeHost(ptr); };
+    return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
+}
+
+template <typename T>
+auto make_cuda_pitched_malloc(size_t width, size_t height) {
+    size_t pitch = 0;
+    T *obj = nullptr;
+    if (cudaMallocPitch(&obj, &pitch, width * sizeof(T), height) != cudaSuccess
+        || obj == nullptr) {
+        throw std::bad_alloc{};
+    }
+    auto deleter = [](T *ptr) { cudaFree(ptr); };
+    return std::make_pair(std::unique_ptr<T[], decltype(deleter)>{obj, deleter},
+                          pitch / sizeof(T));
+}
+
+class CudaEvent {
+    cudaEvent_t event;
+
+  public:
+    CudaEvent() {
+        if (cudaEventCreate(&event) != cudaSuccess) {
+            cuda_throw_error();
+        }
+    }
+    CudaEvent(cudaEvent_t event) : event(event) {}
+
+    ~CudaEvent() {
+        cudaEventDestroy(event);
+    }
+    void record(cudaStream_t stream = 0) {
+        if (cudaEventRecord(event, stream) != cudaSuccess) {
+            cuda_throw_error();
+        }
+    }
+    /// Elapsed Event time, in milliseconds
+    float elapsed_time(CudaEvent &since) {
+        float elapsed_time = 0.0f;
+        if (cudaEventElapsedTime(&elapsed_time, since.event, event) != cudaSuccess) {
+            cuda_throw_error();
+        }
+        return elapsed_time;
+    }
+    void synchronize() {
+        if (cudaEventSynchronize(event) != cudaSuccess) {
+            cuda_throw_error();
+        }
+    }
+};
+
+template <typename T = uint8_t>
+auto GBps(float time_ms, size_t number_objects) -> float {
+    return 1000 * number_objects * sizeof(T) / time_ms / 1e9;
+}
+
+template <typename T, typename U>
+bool compare_results(const T *left,
+                     const size_t left_pitch,
+                     const U *right,
+                     const size_t right_pitch,
+                     std::size_t width,
+                     std::size_t height,
+                     size_t *mismatch_x = nullptr,
+                     size_t *mismatch_y = nullptr) {
+    for (size_t y = 0; y < height; ++y) {
+        for (size_t x = 0; x < width; ++x) {
+            T lval = left[left_pitch * y + x];
+            U rval = right[right_pitch * y + x];
+            if (lval != rval) {
+                if (mismatch_x != nullptr) {
+                    *mismatch_x = x;
+                }
+                if (mismatch_y != nullptr) {
+                    *mismatch_y = y;
+                }
+                fmt::print("First mismatch at ({}, {}), Left {} != {} Right\n",
+                           x,
+                           y,
+                           lval,
+                           rval);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 #endif
