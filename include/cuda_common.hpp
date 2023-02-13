@@ -110,7 +110,11 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
           .implicit_value(false)
           .action([](const std::string &value) {
               int deviceCount;
-              cudaGetDeviceCount(&deviceCount);
+              if (cudaGetDeviceCount(&deviceCount) != cudaSuccess) {
+                  fmt::print("\033[1;31mError: Could not get GPU count ({})\033[0m\n",
+                             cudaGetErrorString(cudaGetLastError()));
+                  std::exit(1);
+              }
 
               fmt::print("System GPUs:\n");
               for (int device = 0; device < deviceCount; ++device) {
