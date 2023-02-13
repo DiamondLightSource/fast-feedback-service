@@ -7,13 +7,18 @@
 
 #include "baseline.h"
 #include "h5read.h"
+#include "no_tbx.h"
 
 int main(int argc, char **argv) {
     h5read_handle *obj = h5read_parse_standard_args(argc, argv);
     size_t n_images = h5read_get_number_of_images(obj);
 
     uint16_t image_slow = 0, image_fast = 0;
-    void *spotfinder = NULL;
+    void *spotfinder = nullptr;
+    void *no_tbx_spotfinder = nullptr;
+    bool *strong_spotfinder = nullptr;
+    bool *strong_no_tbx_spotfinder = nullptr;
+
     for (size_t j = 0; j < n_images; j++) {
         image_t *image = h5read_get_image(obj, j);
         image_modules_t *modules = h5read_get_image_modules(obj, j);
@@ -23,18 +28,26 @@ int main(int argc, char **argv) {
             image_slow = image->slow;
             image_fast = image->fast;
             spotfinder = spotfinder_create(image_fast, image_slow);
-        } else {
-            // For sanity sake, check this matches
-            assert(image->slow == image_slow);
-            assert(image->fast == image_fast);
+            no_tbx_spotfinder = no_tbx_spotfinder_create(image_fast, image_slow);
         }
 
-        uint32_t strong_pixels = spotfinder_standard_dispersion(spotfinder, image);
+        uint32_t strong_pixels =
+          spotfinder_standard_dispersion(spotfinder, image, &strong_spotfinder);
+        uint32_t strong_pixels_no_tbx = no_tbx_spotfinder_standard_dispersion(
+          no_tbx_spotfinder, image, &strong_no_tbx_spotfinder);
 
         size_t zero = 0;
+        size_t n_strong = 0;
+        size_t n_strong_notbx = 0;
         for (size_t i = 0; i < (image->fast * image->slow); i++) {
             if (image->data[i] == 0 && image->mask[i] == 1) {
                 zero++;
+            }
+            if (strong_spotfinder[i]) ++n_strong;
+            if (strong_no_tbx_spotfinder[i]) ++n_strong_notbx;
+            if (strong_spotfinder[i] != strong_no_tbx_spotfinder[i]) {
+                printf("Error: Spotfinders disagree at %d\n", int(i));
+                exit(1);
             }
         }
 
@@ -51,6 +64,7 @@ int main(int argc, char **argv) {
                zero,
                zero_m,
                strong_pixels);
+        printf("    %d == %d standard, notbx\n", (int)n_strong, (int)n_strong_notbx);
 
         h5read_free_image_modules(modules);
         h5read_free_image(image);

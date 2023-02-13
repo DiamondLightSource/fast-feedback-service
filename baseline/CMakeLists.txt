@@ -19,8 +19,14 @@ add_subdirectory(../h5read h5read)
 add_library(baseline SHARED baseline.cpp )
 target_link_libraries(baseline PUBLIC Dials::Dials h5read)
 
+add_library(no_tbx SHARED no_tbx.cc )
+target_link_libraries(no_tbx PUBLIC h5read Dials::Dials)
+
 add_executable(bm bm.cpp)
-target_link_libraries(bm baseline benchmark::benchmark)
+target_link_libraries(bm baseline benchmark::benchmark no_tbx)
 
 add_executable(miniapp miniapp.cc)
 target_link_libraries(miniapp PUBLIC hdf5::hdf5 baseline h5read)
+
+add_executable(check_no_tbx check_no_tbx.cc)
+target_link_libraries(check_no_tbx PUBLIC hdf5::hdf5 baseline h5read no_tbx)
