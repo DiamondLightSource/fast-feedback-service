@@ -48,8 +48,8 @@ class DispersionThreshold {
         // Check the input
         assert(threshold_ >= 0);
         assert(nsig_b >= 0 && nsig_s >= 0);
-        assert(image_size.all_gt(0));
-        assert(kernel_size.all_gt(0));
+        assert(image_size[0] > 0 && image_size[1] > 0);
+        assert(kernel_size[0] > 0 && kernel_size[1] > 0);
 
         // Ensure the min counts are valid
         std::size_t num_kernel = (2 * kernel_size[0] + 1) * (2 * kernel_size[1] + 1);
@@ -179,15 +179,9 @@ class DispersionThreshold {
                    const std::span<bool> mask,
                    std::span<bool> dst) {
         // check the input
-        assert(src.accessor().all_eq(image_size_));
-        assert(src.accessor().all_eq(mask.accessor()));
-        assert(src.accessor().all_eq(dst.accessor()));
-
-        // Get the table
-        assert(sizeof(T) <= sizeof(double));
-
-        // Cast the buffer to the table type
-        // af::ref<Data> table(reinterpret_cast<Data *>(&buffer_[0]), buffer_.size());
+        assert(src.size() >= image_size_[0] * image_size_[1]);
+        assert(src.size() == mask.size());
+        assert(src.size() == dst.size());
 
         // compute the summed area table
         compute_sat(table_, src, mask);

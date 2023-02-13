@@ -25,8 +25,8 @@ int main(int argc, char **argv) {
             spotfinder = spotfinder_create(image_fast, image_slow);
         } else {
             // For sanity sake, check this matches
-            assert(image.slow == image_slow);
-            assert(image.fast == image_fast);
+            assert(image->slow == image_slow);
+            assert(image->fast == image_fast);
         }
 
         uint32_t strong_pixels = spotfinder_standard_dispersion(spotfinder, image);
