@@ -37,10 +37,14 @@ int main(int argc, char **argv) {
           no_tbx_spotfinder, image, &strong_no_tbx_spotfinder);
 
         size_t zero = 0;
+        size_t n_strong = 0;
+        size_t n_strong_notbx = 0;
         for (size_t i = 0; i < (image->fast * image->slow); i++) {
             if (image->data[i] == 0 && image->mask[i] == 1) {
                 zero++;
             }
+            if (strong_spotfinder[i]) ++n_strong;
+            if (strong_no_tbx_spotfinder[i]) ++n_strong_notbx;
             if (strong_spotfinder[i] != strong_no_tbx_spotfinder[i]) {
                 printf("Error: Spotfinders disagree at %d\n", int(i));
                 exit(1);
@@ -60,6 +64,7 @@ int main(int argc, char **argv) {
                zero,
                zero_m,
                strong_pixels);
+        printf("    %d == %d standard, notbx\n", (int)n_strong, (int)n_strong_notbx);
 
         h5read_free_image_modules(modules);
         h5read_free_image(image);
