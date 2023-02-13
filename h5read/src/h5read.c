@@ -135,6 +135,22 @@ void h5read_free_image_modules(image_modules_t *i) {
     free(i);
 }
 
+// *Really* minimal PCG32 code / (c) 2014 M.E. O'Neill / pcg-random.org
+// Licensed under Apache License 2.0 (NO WARRANTY, etc. see website)
+typedef struct {
+    uint64_t state;
+    uint64_t inc;
+} pcg32_random_t;
+uint32_t pcg32_random_r(pcg32_random_t *rng) {
+    uint64_t oldstate = rng->state;
+    // Advance internal state
+    rng->state = oldstate * 6364136223846793005ULL + (rng->inc | 1);
+    // Calculate output function (XSH RR), uses old state for max ILP
+    uint32_t xorshifted = ((oldstate >> 18u) ^ oldstate) >> 27u;
+    uint32_t rot = oldstate >> 59u;
+    return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
+}
+
 #define NUM_SAMPLE_IMAGES 6
 
 /// Generate a sample image from number
@@ -188,9 +204,7 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
     } else if (n == 5) {
         // Image 3: "Random" background, zero on masks
 
-        // Implement a very simple 'random' generator, Numerical Methods' ranqd1
-        // - this ensures that we have stable cross-platform results.
-        uint64_t idum = 0;
+        pcg32_random_t state;
 
         memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
         for (int mody = 0; mody < E2XE_16M_NSLOW; ++mody) {
@@ -201,11 +215,8 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
                 int col0 = modx * (E2XE_MOD_FAST + E2XE_GAP_FAST);
                 for (int row = 0; row < E2XE_MOD_SLOW; ++row) {
                     for (int x = 0; x < E2XE_MOD_FAST; ++x) {
-                        *(data + E2XE_16M_FAST * (row0 + row) + col0 + x) = (idum % 10);
-                        // basic LCG % 4 isn't unpredictable enough for us. Fake it.
-                        do {
-                            idum = 1664525UL * idum + 1013904223UL;
-                        } while (idum % 10 >= 4);
+                        uint32_t num = pcg32_random_r(&state);
+                        *(data + E2XE_16M_FAST * (row0 + row) + col0 + x) = (num % 10);
                     }
                 }
             }
