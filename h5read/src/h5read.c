@@ -676,8 +676,8 @@ h5read_handle *h5read_generate_samples() {
 h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
     bool implicit_sample = getenv("H5READ_IMPLICIT_SAMPLE") != NULL;
     const char *USAGE = implicit_sample
-                          ? "Usage: %s [-h|--help] [-v] [FILE.nxs | --sample]"
-                          : "Usage: %s [-h|--help] [-v] (FILE.nxs | --sample)";
+                          ? "Usage: %s [-h|--help] [-v] [FILE.nxs | --sample]\n"
+                          : "Usage: %s [-h|--help] [-v] (FILE.nxs | --sample)\n";
     const char *HELP =
       "Options:\n\
   FILE.nxs      Path to the Nexus file to parse\n\
@@ -694,7 +694,7 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             fprintf(stderr, USAGE, argv[0]);
-            fprintf(stderr, "\n\n%s\n", HELP);
+            fprintf(stderr, "\n%s\n", HELP);
             exit(0);
         }
         if (!strcmp(argv[i], "-v")) {
