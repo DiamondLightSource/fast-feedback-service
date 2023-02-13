@@ -17,10 +17,10 @@ find_package(benchmark REQUIRED)
 add_subdirectory(../h5read h5read)
 
 add_library(baseline SHARED baseline.cpp )
-target_link_libraries(baseline PUBLIC Dials::Dials benchmark::benchmark h5read)
+target_link_libraries(baseline PUBLIC Dials::Dials h5read)
 
 add_executable(bm bm.cpp)
-target_link_libraries(bm baseline)
+target_link_libraries(bm baseline benchmark::benchmark)
 
-add_executable(miniapp miniapp.c)
+add_executable(miniapp miniapp.cc)
 target_link_libraries(miniapp PUBLIC hdf5::hdf5 baseline h5read)
