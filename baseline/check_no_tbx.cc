@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
         uint32_t strong_pixels =
           spotfinder_standard_dispersion(spotfinder, image, &strong_spotfinder);
         uint32_t strong_pixels_no_tbx = no_tbx_spotfinder_standard_dispersion(
-          spotfinder, image, &strong_no_tbx_spotfinder);
+          no_tbx_spotfinder, image, &strong_no_tbx_spotfinder);
 
         size_t zero = 0;
         for (size_t i = 0; i < (image->fast * image->slow); i++) {

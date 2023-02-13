@@ -201,8 +201,6 @@ class DispersionThreshold {
     std::vector<Data> table_;
 };
 
-}  // namespace no_tbx
-
 template <typename T, typename internal_T = T>
 class _spotfind_context {
   public:
@@ -229,18 +227,20 @@ class _spotfind_context {
           {reinterpret_cast<bool *>(_dest_store.data()), _dest_store.size()});
     }
 };
+}  // namespace no_tbx
 
 void *no_tbx_spotfinder_create(size_t width, size_t height) {
-    return new _spotfind_context<image_t_type, double>(width, height);
+    return new no_tbx::_spotfind_context<image_t_type, double>(width, height);
 }
 void no_tbx_spotfinder_free(void *context) {
-    delete reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
+    delete reinterpret_cast<no_tbx::_spotfind_context<image_t_type, double> *>(context);
 }
 
 uint32_t no_tbx_spotfinder_standard_dispersion(void *context,
                                                image_t *image,
                                                bool **destination) {
-    auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
+    auto ctx =
+      reinterpret_cast<no_tbx::_spotfind_context<image_t_type, double> *>(context);
 
     // mask needs to convert uint8_t to bool
     // auto mask = af::const_ref<bool>(
