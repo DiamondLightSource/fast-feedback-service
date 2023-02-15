@@ -6,7 +6,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../cmake/Modules
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
-include(CheckIncludeFileCXX)
+include(CheckCXXSymbolExists)
 
 set(HDF5_FIND_QUIETLY Yes)
 find_package(HDF5 REQUIRED)
@@ -27,10 +27,10 @@ list(REMOVE_ITEM _hdf5_interface_defs NDEBUG)
 set_target_properties(hdf5::hdf5 PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_hdf5_interface_defs}")
 
 
-# Check if we have the C++20 span header. Otherwise, use the backport
-check_include_file_cxx(span HAS_CXX20_SPAN)
+# Check if we have the C++20 span header and symbol. Otherwise, use the backport
+check_cxx_symbol_exists(std::span span HAS_CXX20_SPAN)
 if(NOT HAS_CXX20_SPAN)
-  # We don't want to build the projects testing, so just recreate the interface here
+  # We don't want to build the tcb::span testing targets, so just recreate the interface here
   add_library(span INTERFACE)
   target_sources(span INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../dependencies/span/include/tcb/span.hpp)
   target_include_directories(span INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../dependencies/span/include/tcb)
