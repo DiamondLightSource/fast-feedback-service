@@ -9,24 +9,28 @@ set(CMAKE_C_STANDARD 99)
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
-find_package(Boost REQUIRED)
-find_package(Dials REQUIRED)
-find_package(HDF5 REQUIRED)
-find_package(benchmark REQUIRED)
+find_package(Dials)
 
 add_subdirectory(../h5read h5read)
 
-add_library(baseline SHARED baseline.cpp )
-target_link_libraries(baseline PUBLIC Dials::Dials h5read)
+if (Dials_FOUND)
+    add_library(baseline SHARED baseline.cpp )
+    target_link_libraries(baseline PUBLIC Dials::Dials h5read)
+endif()
 
 add_library(no_tbx SHARED no_tbx.cc )
-target_link_libraries(no_tbx PUBLIC h5read Dials::Dials)
+target_link_libraries(no_tbx PUBLIC h5read)
 
-add_executable(bm bm.cpp)
-target_link_libraries(bm baseline benchmark::benchmark no_tbx)
 
-add_executable(miniapp miniapp.cc)
-target_link_libraries(miniapp PUBLIC hdf5::hdf5 baseline h5read)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    find_package(benchmark REQUIRED)
 
-add_executable(check_no_tbx check_no_tbx.cc)
-target_link_libraries(check_no_tbx PUBLIC hdf5::hdf5 baseline h5read no_tbx)
+    add_executable(bm bm.cpp)
+    target_link_libraries(bm baseline benchmark::benchmark no_tbx)
+
+    add_executable(miniapp miniapp.cc)
+    target_link_libraries(miniapp PUBLIC baseline h5read)
+
+    add_executable(check_no_tbx check_no_tbx.cc)
+    target_link_libraries(check_no_tbx PUBLIC baseline h5read no_tbx)
+endif()
