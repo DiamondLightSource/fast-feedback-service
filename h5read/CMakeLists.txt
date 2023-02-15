@@ -10,7 +10,6 @@ include(AlwaysColourCompilation)
 
 include(CheckCXXSymbolExists)
 
-set(HDF5_FIND_QUIETLY Yes)
 find_package(HDF5)
 
 add_library(h5read src/h5read.c src/h5read.cc)
