@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.20)
+# Constraints on minimum version:
+# - FindHDF5 only creates interface targets on 3.20+
 
 project(h5read LANGUAGES C CXX)
 
