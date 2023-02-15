@@ -16,9 +16,14 @@ H5Read::H5Read() {
 }
 
 H5Read::H5Read(const std::string &filename) {
+#ifdef HAVE_HDF5
     auto obj = h5read_open(filename.c_str());
     if (obj == nullptr) throw std::runtime_error("Could not open Nexus file");
     _handle = std::shared_ptr<h5read_handle>(obj, h5read_freeer);
+#else
+    throw std::runtime_error(
+      "h5read built without HDF5 support; cannot open nexus file");
+#endif
 }
 
 H5Read::H5Read(int argc, char **argv) noexcept {
