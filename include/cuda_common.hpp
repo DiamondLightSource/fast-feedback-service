@@ -65,7 +65,6 @@ auto cuda_throw_error() -> void {
     }
 }
 
-template <class T>
 class CUDAArgumentParser;
 
 struct CUDAArguments {
@@ -78,18 +77,11 @@ struct CUDAArguments {
     cudaDeviceProp device;
 
   private:
-    template <class T>
     friend class CUDAArgumentParser;
 };
 
-template <class ARGS = CUDAArguments>
 class CUDAArgumentParser : public argparse::ArgumentParser {
-    static_assert(std::is_base_of<ARGS, CUDAArguments>::value,
-                  "Must be templated against a subclass of FPGAArgument");
-
   public:
-    typedef ARGS ArgumentType;
-
     CUDAArgumentParser(std::string version = "0.1.0")
         : ArgumentParser("", version, argparse::default_arguments::help) {
         this->add_argument("-v", "--verbose")
@@ -134,7 +126,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
           });
     }
 
-    auto parse_args(int argc, char **argv) -> ARGS {
+    auto parse_args(int argc, char **argv) -> CUDAArguments {
         try {
             ArgumentParser::parse_args(argc, argv);
         } catch (std::runtime_error &e) {
@@ -192,7 +184,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
     }
 
   private:
-    ARGS _arguments{};
+    CUDAArguments _arguments{};
     bool _activated_h5read = false;
 };
 
