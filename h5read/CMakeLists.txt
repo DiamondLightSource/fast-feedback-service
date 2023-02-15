@@ -7,8 +7,7 @@ project(h5read LANGUAGES C CXX)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../cmake/Modules")
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
-
-include(CheckCXXSymbolExists)
+include(UseSpanBackportIfNeeded)
 
 find_package(HDF5)
 
@@ -27,18 +26,6 @@ if (TARGET hdf5::hdf5)
   get_target_property(_hdf5_interface_defs hdf5::hdf5 INTERFACE_COMPILE_DEFINITIONS)
   list(REMOVE_ITEM _hdf5_interface_defs NDEBUG)
   set_target_properties(hdf5::hdf5 PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_hdf5_interface_defs}")
-endif()
-
-# Check if we have the C++20 span header and symbol. Otherwise, use the backport
-check_cxx_symbol_exists(std::span span HAS_CXX20_SPAN)
-if(NOT HAS_CXX20_SPAN)
-  # We don't want to build the tcb::span testing targets, so just recreate the interface here
-  add_library(span INTERFACE)
-  target_sources(span INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../dependencies/span/include/tcb/span.hpp)
-  target_include_directories(span INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../dependencies/span/include/tcb)
-  target_compile_features(span INTERFACE cxx_std_11)
-  target_link_libraries(h5read PUBLIC span)
-  target_compile_definitions(h5read PUBLIC USE_SPAN_BACKPORT)
 endif()
 
 # Only build the example reader as a root script

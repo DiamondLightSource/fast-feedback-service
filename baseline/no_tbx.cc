@@ -6,8 +6,16 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
-#include <span>
 #include <vector>
+
+// We might be on an implementation that doesn't have <span>, so use a backport
+#ifdef USE_SPAN_BACKPORT
+#include "span.hpp"
+using tcb::span;
+#else
+#include <span>
+using std::span;
+#endif
 
 const std::array<int, 2> kernel_size_{3, 3};
 const int min_count_ = 2;
@@ -67,9 +75,7 @@ class DispersionThreshold {
      * @param src The input array
      * @param mask The mask array
      */
-    void compute_sat(std::span<Data> table,
-                     const std::span<T> src,
-                     const std::span<bool> mask) {
+    void compute_sat(span<Data> table, const span<T> src, const span<bool> mask) {
         // Largest value to consider
         const T BIG = (1 << 24);  // About 16m counts
 
@@ -106,10 +112,10 @@ class DispersionThreshold {
      * @param mask - The mask array
      * @param dst The output array
      */
-    void compute_threshold(std::span<Data> table,
-                           const std::span<T> src,
-                           const std::span<bool> mask,
-                           std::span<bool> dst) {
+    void compute_threshold(span<Data> table,
+                           const span<T> src,
+                           const span<bool> mask,
+                           span<bool> dst) {
         // Get the size of the image
         auto [ysize, xsize] = image_size_;
 
@@ -175,9 +181,7 @@ class DispersionThreshold {
      * @param mask - The mask array.
      * @param dst - The destination array.
      */
-    void threshold(const std::span<T> src,
-                   const std::span<bool> mask,
-                   std::span<bool> dst) {
+    void threshold(const span<T> src, const span<bool> mask, span<bool> dst) {
         // check the input
         assert(src.size() >= image_size_[0] * image_size_[1]);
         assert(src.size() == mask.size());
@@ -187,7 +191,7 @@ class DispersionThreshold {
         compute_sat(table_, src, mask);
 
         // Compute the image threshold
-        auto table_span = std::span<Data>{table_.data(), table_.size()};
+        auto table_span = span<Data>{table_.data(), table_.size()};
         compute_threshold(table_span, src, mask, dst);
     }
 
@@ -209,7 +213,7 @@ class _spotfind_context {
     std::vector<internal_T> _src_converted_store;
     std::array<int, 2> size;
 
-    // std::span<T> src_converted;
+    // span<T> src_converted;
     // internal_T *_src_converted_store;
 
     no_tbx::DispersionThreshold<internal_T> algo;
@@ -220,7 +224,7 @@ class _spotfind_context {
         _dest_store.resize(width * height);
         _src_converted_store.resize(width * height);
     }
-    void threshold(const std::span<internal_T> &src, const std::span<bool> &mask) {
+    void threshold(const span<internal_T> &src, const span<bool> &mask) {
         algo.threshold(
           src,
           mask,
@@ -245,8 +249,8 @@ uint32_t no_tbx_spotfinder_standard_dispersion(void *context,
     // mask needs to convert uint8_t to bool
     // auto mask = af::const_ref<bool>(
     //   reinterpret_cast<bool *>(image->mask)(ctx->size[0], ctx->size[1]));
-    auto mask = std::span<bool>{reinterpret_cast<bool *>(image->mask),
-                                static_cast<size_t>(ctx->size[0] * ctx->size[1])};
+    auto mask = span<bool>{reinterpret_cast<bool *>(image->mask),
+                           static_cast<size_t>(ctx->size[0] * ctx->size[1])};
 
     // Convert all items from the source image type to double
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
