@@ -12,7 +12,7 @@ using std::span;
 #include <memory>
 #include <type_traits>
 
-template <typename T>
+template <typename T = double>
 class StandaloneSpotfinder {
     // Make sure this is a type we predeclare
     static_assert(

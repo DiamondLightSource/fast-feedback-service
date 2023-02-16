@@ -34,6 +34,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # We can only build the comparison dials/no_tbx if we have dials
     if (Dials_FOUND)
         add_executable(check_no_tbx check_no_tbx.cc)
-        target_link_libraries(check_no_tbx PUBLIC baseline_dials h5read no_tbx)
+        target_link_libraries(check_no_tbx PUBLIC baseline_dials h5read standalone)
     endif()
 endif()
