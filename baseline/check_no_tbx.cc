@@ -7,70 +7,83 @@
 
 #include "baseline.h"
 #include "h5read.h"
-#include "no_tbx.h"
+#include "standalone.h"
 
 int main(int argc, char **argv) {
-    h5read_handle *obj = h5read_parse_standard_args(argc, argv);
-    size_t n_images = h5read_get_number_of_images(obj);
+    auto reader = H5Read(argc, argv);
+    size_t n_images = reader.get_number_of_images();
 
-    uint16_t image_slow = 0, image_fast = 0;
-    void *spotfinder = nullptr;
-    void *no_tbx_spotfinder = nullptr;
+    auto [image_slow, image_fast] = reader.image_shape();
+
     bool *strong_spotfinder = nullptr;
-    bool *strong_no_tbx_spotfinder = nullptr;
+    auto *spotfinder = spotfinder_create(image_fast, image_slow);
+    auto standalone_spotfinder = StandaloneSpotfinder(image_fast, image_slow);
 
+    auto mask = reader.get_mask().value_or(span<uint8_t>{});
+
+    auto image_double = std::vector<double>(image_fast * image_slow);
+
+    bool failed = false;
     for (size_t j = 0; j < n_images; j++) {
-        image_t *image = h5read_get_image(obj, j);
-        image_modules_t *modules = h5read_get_image_modules(obj, j);
+        auto image = reader.get_image(j);
+        auto modules = reader.get_image_modules(j);
 
-        if (j == 0) {
-            // Need to wait until we have an image to get its size
-            image_slow = image->slow;
-            image_fast = image->fast;
-            spotfinder = spotfinder_create(image_fast, image_slow);
-            no_tbx_spotfinder = no_tbx_spotfinder_create(image_fast, image_slow);
-        }
-
+        // Construct an image_t for the standard_dispersion call
+        image_t c_image{.data = image.data.data(),
+                        .mask = mask.data(),
+                        .slow = image_slow,
+                        .fast = image_fast};
         uint32_t strong_pixels =
-          spotfinder_standard_dispersion(spotfinder, image, &strong_spotfinder);
-        uint32_t strong_pixels_no_tbx = no_tbx_spotfinder_standard_dispersion(
-          no_tbx_spotfinder, image, &strong_no_tbx_spotfinder);
+          spotfinder_standard_dispersion(spotfinder, &c_image, &strong_spotfinder);
+        // uint32_t strong_pixels_no_tbx = no_tbx_spotfinder_standard_dispersion(
+        //   no_tbx_spotfinder, image, &strong_no_tbx_spotfinder);
+        // standalone_spotfinder.standard_dispersion(image, )
+        image_double.assign(image.data.begin(), image.data.end());
+        auto standalone_strong_pixels = standalone_spotfinder.standard_dispersion(
+          image_double, {reinterpret_cast<bool *>(mask.data()), mask.size()});
 
         size_t zero = 0;
         size_t n_strong = 0;
         size_t n_strong_notbx = 0;
-        for (size_t i = 0; i < (image->fast * image->slow); i++) {
-            if (image->data[i] == 0 && image->mask[i] == 1) {
+        long first_incorrect_index = -1;
+        for (size_t i = 0; i < (image_fast * image_slow); i++) {
+            if (image.data[i] == 0 && image.mask[i] == 1) {
                 zero++;
             }
             if (strong_spotfinder[i]) ++n_strong;
-            if (strong_no_tbx_spotfinder[i]) ++n_strong_notbx;
-            if (strong_spotfinder[i] != strong_no_tbx_spotfinder[i]) {
-                printf("Error: Spotfinders disagree at %d\n", int(i));
-                exit(1);
+            if (standalone_strong_pixels[i]) ++n_strong_notbx;
+            if (strong_spotfinder[i] != standalone_strong_pixels[i]
+                && first_incorrect_index == -1) {
+                first_incorrect_index = i;
             }
         }
 
         size_t zero_m = 0;
-        for (size_t i = 0; i < (modules->fast * modules->slow * modules->modules);
-             i++) {
-            if (modules->data[i] == 0 && modules->mask[i] == 1) {
+        for (size_t i = 0; i < (modules.fast * modules.slow * modules.n_modules); i++) {
+            if (modules.data[i] == 0 && modules.mask[i] == 1) {
                 zero_m++;
             }
         }
 
-        printf("image %ld had %ld / %ld valid zero pixels, %" PRIu32 " strong pixels\n",
+        printf("\nImage %ld had %ld / %ld valid zero pixels, %" PRIu32
+               " strong pixels\n",
                j,
                zero,
                zero_m,
                strong_pixels);
-        printf("    %d == %d standard, notbx\n", (int)n_strong, (int)n_strong_notbx);
-
-        h5read_free_image_modules(modules);
-        h5read_free_image(image);
+        auto col = n_strong == n_strong_notbx ? "\033[32m" : "\033[1;31m";
+        printf("    %sDIALS %5d %s %-5d standalone\033[0m\n",
+               col,
+               (int)n_strong,
+               n_strong == n_strong_notbx ? "==" : "!=",
+               (int)n_strong_notbx);
+        if (first_incorrect_index != -1) {
+            printf("    \033[1;31mError: Spotfinders disagree at %d\033[0m\n",
+                   int(first_incorrect_index));
+            failed = true;
+        }
     }
     spotfinder_free(spotfinder);
-    h5read_free(obj);
 
-    return 0;
+    return failed;
 }

@@ -18,15 +18,15 @@ if (Dials_FOUND)
     target_link_libraries(baseline_dials PUBLIC Dials::Dials h5read)
 endif()
 
-add_library(no_tbx SHARED no_tbx.cc )
-target_link_libraries(no_tbx PUBLIC h5read)
+add_library(standalone SHARED standalone.cc )
+target_link_libraries(standalone PUBLIC h5read)
 
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     find_package(benchmark REQUIRED)
 
     add_executable(bm bm.cpp)
-    target_link_libraries(bm benchmark::benchmark baseline_dials no_tbx)
+    target_link_libraries(bm benchmark::benchmark baseline_dials standalone h5read)
 
     add_executable(miniapp miniapp.cc)
     target_link_libraries(miniapp PUBLIC $<TARGET_NAME_IF_EXISTS:baseline_dials> h5read)
@@ -34,6 +34,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # We can only build the comparison dials/no_tbx if we have dials
     if (Dials_FOUND)
         add_executable(check_no_tbx check_no_tbx.cc)
-        target_link_libraries(check_no_tbx PUBLIC baseline_dials h5read no_tbx)
+        target_link_libraries(check_no_tbx PUBLIC baseline_dials h5read standalone)
     endif()
 endif()

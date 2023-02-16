@@ -8,6 +8,15 @@
 #include <string>
 #include <type_traits>
 
+// We might be on an implementation that doesn't have <span>, so use a backport
+#ifdef USE_SPAN_BACKPORT
+#include "span.hpp"
+using tcb::span;
+#else
+#include <span>
+using std::span;
+#endif
+
 #if __has_include(<hdf5.h>)
 #define HAS_HDF5
 namespace _hdf5 {
@@ -313,6 +322,16 @@ void draw_image_data(const std::unique_ptr<T, U> &data,
     draw_image_data(
       static_cast<T *>(data.get()), fast, slow, width, height, data_width, data_height);
 }
+template <typename T>
+void draw_image_data(const span<const T> data,
+                     size_t fast,
+                     size_t slow,
+                     size_t width,
+                     size_t height,
+                     size_t data_width,
+                     size_t data_height) {
+    draw_image_data(data.data(), fast, slow, width, height, data_width, data_height);
+}
 
 template <typename T>
 auto make_cuda_malloc(size_t num_items = 1) {
@@ -429,4 +448,20 @@ bool compare_results(const T *left,
     return true;
 }
 
+template <typename T, typename I, typename I2>
+auto count_nonzero(const T *data, I width, I height, I2 pitch) -> size_t {
+    size_t strong = 0;
+    for (size_t row = 0; row < height; ++row) {
+        for (size_t col = 0; col < width; ++col) {
+            if (data[row * pitch + col]) {
+                strong += 1;
+            }
+        }
+    }
+    return strong;
+}
+template <typename T, typename I, typename I2>
+auto count_nonzero(const span<const T> data, I width, I height, I2 pitch) -> size_t {
+    return count_nonzero(data.data(), width, height, pitch);
+}
 #endif
