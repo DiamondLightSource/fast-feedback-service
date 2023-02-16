@@ -18,15 +18,15 @@ if (Dials_FOUND)
     target_link_libraries(baseline_dials PUBLIC Dials::Dials h5read)
 endif()
 
-add_library(no_tbx SHARED no_tbx.cc )
-target_link_libraries(no_tbx PUBLIC h5read)
+add_library(standalone SHARED standalone.cc )
+target_link_libraries(standalone PUBLIC h5read)
 
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     find_package(benchmark REQUIRED)
 
     add_executable(bm bm.cpp)
-    target_link_libraries(bm benchmark::benchmark baseline_dials no_tbx h5read)
+    target_link_libraries(bm benchmark::benchmark baseline_dials standalone h5read)
 
     add_executable(miniapp miniapp.cc)
     target_link_libraries(miniapp PUBLIC $<TARGET_NAME_IF_EXISTS:baseline_dials> h5read)

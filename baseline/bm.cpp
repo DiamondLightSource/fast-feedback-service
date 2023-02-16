@@ -7,8 +7,8 @@
 
 #include "baseline.h"
 #include "h5read.h"
-#include "no_tbx.h"
 #include "spotfind_test_utils.h"
+#include "standalone.h"
 
 // We might be on an implementation that doesn't have <span>, so use a backport
 #ifdef USE_SPAN_BACKPORT
@@ -145,7 +145,7 @@ BENCHMARK(BM_C_API_dispersion)->Unit(benchmark::kMillisecond);
 static void BM_Standalone_dispersion_copy(benchmark::State& state) {
     ImageSource<uint16_t> src;
     auto image = src.h5read_image();
-    auto finder = DialsSpotfinder<double>(src.fast(), src.slow());
+    auto finder = StandaloneSpotfinder<double>(src.fast(), src.slow());
     std::vector<double> converted_image(src.fast() * src.slow());
 
     for (auto _ : state) {
@@ -158,7 +158,7 @@ BENCHMARK(BM_Standalone_dispersion_copy)->Unit(benchmark::kMillisecond);
 static void BM_Standalone_dispersion(benchmark::State& state) {
     ImageSource<uint16_t> src;
     auto image = src.h5read_image();
-    auto finder = DialsSpotfinder<double>(src.fast(), src.slow());
+    auto finder = StandaloneSpotfinder<double>(src.fast(), src.slow());
     std::vector<double> converted_image(src.fast() * src.slow());
     converted_image.assign(src.image_data().begin(), src.image_data().end());
 

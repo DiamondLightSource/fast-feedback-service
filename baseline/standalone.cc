@@ -1,5 +1,5 @@
 
-#include "no_tbx.h"
+#include "standalone.h"
 
 #include <h5read.h>
 
@@ -213,19 +213,19 @@ class DispersionThreshold {
 
 }  // namespace no_tbx
 
-template class DialsSpotfinder<float>;
-template class DialsSpotfinder<double>;
+template class StandaloneSpotfinder<float>;
+template class StandaloneSpotfinder<double>;
 
 template <typename T>
-void DialsSpotfinder<T>::DialsSpotfinderImplDeleter::operator()(
-  DialsSpotfinderImpl *ptr) const {
+void StandaloneSpotfinder<T>::StandaloneSpotfinderImplDeleter::operator()(
+  StandaloneSpotfinderImpl *ptr) const {
     delete ptr;
 }
 
 template <typename T>
-class DialsSpotfinder<T>::DialsSpotfinderImpl {
+class StandaloneSpotfinder<T>::StandaloneSpotfinderImpl {
   public:
-    DialsSpotfinderImpl(size_t width, size_t height)
+    StandaloneSpotfinderImpl(size_t width, size_t height)
         : width(width),
           height(height),
           results(width * height),
@@ -243,15 +243,16 @@ class DialsSpotfinder<T>::DialsSpotfinderImpl {
 };
 
 template <typename T>
-DialsSpotfinder<T>::DialsSpotfinder(size_t width, size_t height) {
+StandaloneSpotfinder<T>::StandaloneSpotfinder(size_t width, size_t height) {
     // Can't use make_unique with custom deleter
-    auto obj = new DialsSpotfinderImpl(width, height);
-    impl = std::unique_ptr<DialsSpotfinderImpl, DialsSpotfinderImplDeleter>(obj);
+    auto obj = new StandaloneSpotfinderImpl(width, height);
+    impl =
+      std::unique_ptr<StandaloneSpotfinderImpl, StandaloneSpotfinderImplDeleter>(obj);
 }
 
 template <typename T>
-auto DialsSpotfinder<T>::standard_dispersion(const span<const T> image,
-                                             const span<const bool> mask)
+auto StandaloneSpotfinder<T>::standard_dispersion(const span<const T> image,
+                                                  const span<const bool> mask)
   -> span<bool> {
     auto results =
       span<bool>{reinterpret_cast<bool *>(impl->results.data()), impl->results.size()};
