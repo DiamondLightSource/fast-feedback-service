@@ -71,12 +71,6 @@ class ImageSource {
           .slow = slow(),
           .fast = fast(),
         };
-        // image_t img;
-        // img.data = ;
-        // img.mask = const_cast<uint8_t*>(mask_data().data());
-        // img.slow = slow();
-        // img.fast = fast();
-        // return img;
     }
 
 #ifdef HAVE_DIALS
