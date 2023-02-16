@@ -149,7 +149,7 @@ class H5Read {
         return Image(_handle, index);
     }
 
-    std::optional<SPAN<uint8_t>> get_mask() {
+    std::optional<SPAN<uint8_t>> get_mask() const {
         auto mask = h5read_get_mask(_handle.get());
         if (mask == nullptr) {
             return std::nullopt;

@@ -26,7 +26,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     find_package(benchmark REQUIRED)
 
     add_executable(bm bm.cpp)
-    target_link_libraries(bm benchmark::benchmark baseline_dials no_tbx)
+    target_link_libraries(bm benchmark::benchmark baseline_dials no_tbx h5read)
 
     add_executable(miniapp miniapp.cc)
     target_link_libraries(miniapp PUBLIC $<TARGET_NAME_IF_EXISTS:baseline_dials> h5read)
