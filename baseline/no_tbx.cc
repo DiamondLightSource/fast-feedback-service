@@ -1,4 +1,6 @@
 
+#include "no_tbx.h"
+
 #include <h5read.h>
 
 #include <array>
@@ -75,7 +77,9 @@ class DispersionThreshold {
      * @param src The input array
      * @param mask The mask array
      */
-    void compute_sat(span<Data> table, const span<T> src, const span<bool> mask) {
+    void compute_sat(span<Data> table,
+                     const span<const T> src,
+                     const span<const bool> mask) {
         // Largest value to consider
         const T BIG = (1 << 24);  // About 16m counts
 
@@ -112,9 +116,9 @@ class DispersionThreshold {
      * @param mask - The mask array
      * @param dst The output array
      */
-    void compute_threshold(span<Data> table,
-                           const span<T> src,
-                           const span<bool> mask,
+    void compute_threshold(span<const Data> table,
+                           const span<const T> src,
+                           const span<const bool> mask,
                            span<bool> dst) {
         // Get the size of the image
         auto [ysize, xsize] = image_size_;
@@ -181,7 +185,9 @@ class DispersionThreshold {
      * @param mask - The mask array.
      * @param dst - The destination array.
      */
-    void threshold(const span<T> src, const span<bool> mask, span<bool> dst) {
+    void threshold(const span<const T> src,
+                   const span<const bool> mask,
+                   span<bool> dst) {
         // check the input
         assert(src.size() >= image_size_[0] * image_size_[1]);
         assert(src.size() == mask.size());
@@ -205,68 +211,52 @@ class DispersionThreshold {
     std::vector<Data> table_;
 };
 
-template <typename T, typename internal_T = T>
-class _spotfind_context {
-  public:
-    std::vector<uint8_t> _dest_store;
-
-    std::vector<internal_T> _src_converted_store;
-    std::array<int, 2> size;
-
-    // span<T> src_converted;
-    // internal_T *_src_converted_store;
-
-    no_tbx::DispersionThreshold<internal_T> algo;
-
-    _spotfind_context(size_t width, size_t height)
-        : size{static_cast<int>(height), static_cast<int>(width)},
-          algo(size, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_) {
-        _dest_store.resize(width * height);
-        _src_converted_store.resize(width * height);
-    }
-    void threshold(const span<internal_T> &src, const span<bool> &mask) {
-        algo.threshold(
-          src,
-          mask,
-          {reinterpret_cast<bool *>(_dest_store.data()), _dest_store.size()});
-    }
-};
 }  // namespace no_tbx
 
-void *no_tbx_spotfinder_create(size_t width, size_t height) {
-    return new no_tbx::_spotfind_context<image_t_type, double>(width, height);
+template class DialsSpotfinder<float>;
+template class DialsSpotfinder<double>;
+
+template <typename T>
+void DialsSpotfinder<T>::DialsSpotfinderImplDeleter::operator()(
+  DialsSpotfinderImpl *ptr) const {
+    delete ptr;
 }
-void no_tbx_spotfinder_free(void *context) {
-    delete reinterpret_cast<no_tbx::_spotfind_context<image_t_type, double> *>(context);
+
+template <typename T>
+class DialsSpotfinder<T>::DialsSpotfinderImpl {
+  public:
+    DialsSpotfinderImpl(size_t width, size_t height)
+        : width(width),
+          height(height),
+          results(width * height),
+          algorithm({static_cast<int>(width), static_cast<int>(height)},
+                    kernel_size_,
+                    nsig_b_,
+                    nsig_s_,
+                    threshold_,
+                    min_count_) {}
+
+    size_t width;
+    size_t height;
+    std::vector<uint8_t> results;
+    no_tbx::DispersionThreshold<T> algorithm;
+};
+
+template <typename T>
+DialsSpotfinder<T>::DialsSpotfinder(size_t width, size_t height) {
+    // Can't use make_unique with custom deleter
+    auto obj = new DialsSpotfinderImpl(width, height);
+    impl = std::unique_ptr<DialsSpotfinderImpl, DialsSpotfinderImplDeleter>(obj);
 }
 
-uint32_t no_tbx_spotfinder_standard_dispersion(void *context,
-                                               image_t *image,
-                                               bool **destination) {
-    auto ctx =
-      reinterpret_cast<no_tbx::_spotfind_context<image_t_type, double> *>(context);
+template <typename T>
+auto DialsSpotfinder<T>::standard_dispersion(const span<const T> image,
+                                             const span<const bool> mask)
+  -> span<bool> {
+    auto results =
+      span<bool>{reinterpret_cast<bool *>(impl->results.data()), impl->results.size()};
 
-    // mask needs to convert uint8_t to bool
-    // auto mask = af::const_ref<bool>(
-    //   reinterpret_cast<bool *>(image->mask)(ctx->size[0], ctx->size[1]));
-    auto mask = span<bool>{reinterpret_cast<bool *>(image->mask),
-                           static_cast<size_t>(ctx->size[0] * ctx->size[1])};
+    impl->algorithm.threshold(image, mask, results);
 
-    // Convert all items from the source image type to double
-    for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
-        ctx->_src_converted_store[i] = image->data[i];
-    }
-
-    ctx->threshold(ctx->_src_converted_store, mask);
-
-    // Let's count the number of destination pixels for now
-    uint32_t pixel_count = 0;
-    for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
-        pixel_count += ctx->_dest_store[i];
-    }
-
-    if (destination != nullptr)
-        *destination = reinterpret_cast<bool *>(ctx->_dest_store.data());
-
-    return pixel_count;
+    return results;
 }

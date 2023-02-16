@@ -2,9 +2,12 @@
 
 #include <cassert>
 #include <iostream>
+#include <type_traits>
+#include <vector>
 
 #include "baseline.h"
 #include "h5read.h"
+#include "no_tbx.h"
 #include "spotfind_test_utils.h"
 
 // We might be on an implementation that doesn't have <span>, so use a backport
@@ -138,5 +141,31 @@ static void BM_C_API_dispersion(benchmark::State& state) {
     spotfinder_free(finder);
 }
 BENCHMARK(BM_C_API_dispersion)->Unit(benchmark::kMillisecond);
+
+static void BM_Standalone_dispersion_copy(benchmark::State& state) {
+    ImageSource<uint16_t> src;
+    auto image = src.h5read_image();
+    auto finder = DialsSpotfinder<double>(src.fast(), src.slow());
+    std::vector<double> converted_image(src.fast() * src.slow());
+
+    for (auto _ : state) {
+        converted_image.assign(src.image_data().begin(), src.image_data().end());
+        finder.standard_dispersion(converted_image, src.mask_data());
+    }
+}
+BENCHMARK(BM_Standalone_dispersion_copy)->Unit(benchmark::kMillisecond);
+
+static void BM_Standalone_dispersion(benchmark::State& state) {
+    ImageSource<uint16_t> src;
+    auto image = src.h5read_image();
+    auto finder = DialsSpotfinder<double>(src.fast(), src.slow());
+    std::vector<double> converted_image(src.fast() * src.slow());
+    converted_image.assign(src.image_data().begin(), src.image_data().end());
+
+    for (auto _ : state) {
+        finder.standard_dispersion(converted_image, src.mask_data());
+    }
+}
+BENCHMARK(BM_Standalone_dispersion)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();
