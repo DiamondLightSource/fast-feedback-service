@@ -29,7 +29,9 @@ class StandaloneSpotfinder {
     StandaloneSpotfinder(size_t width, size_t height);
 
     auto standard_dispersion(const span<const T> image, const span<const bool> mask)
-      -> span<bool>;
+      -> span<const bool>;
+    auto standard_dispersion(const span<const T> image, const span<const uint8_t> mask)
+      -> span<const bool>;
 };
 
 // extern "C" {

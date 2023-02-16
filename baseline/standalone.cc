@@ -253,11 +253,24 @@ StandaloneSpotfinder<T>::StandaloneSpotfinder(size_t width, size_t height) {
 template <typename T>
 auto StandaloneSpotfinder<T>::standard_dispersion(const span<const T> image,
                                                   const span<const bool> mask)
-  -> span<bool> {
+  -> span<const bool> {
     auto results =
       span<bool>{reinterpret_cast<bool *>(impl->results.data()), impl->results.size()};
 
     impl->algorithm.threshold(image, mask, results);
+
+    return results;
+}
+template <typename T>
+auto StandaloneSpotfinder<T>::standard_dispersion(const span<const T> image,
+                                                  const span<const uint8_t> mask)
+  -> span<const bool> {
+    auto results =
+      span<bool>{reinterpret_cast<bool *>(impl->results.data()), impl->results.size()};
+
+    auto c_mask =
+      span<const bool>{reinterpret_cast<const bool *>(mask.data()), mask.size()};
+    impl->algorithm.threshold(image, c_mask, results);
 
     return results;
 }
