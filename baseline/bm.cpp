@@ -22,11 +22,12 @@ using std::span;
 using std::cout;
 using std::endl;
 
+#ifdef HAVE_DIALS
 using dials::algorithms::DispersionExtendedThreshold;
 using dials::algorithms::DispersionThreshold;
 
 namespace af = scitbx::af;
-
+#endif
 template <typename T = H5Read::image_type>
 class ImageSource {
   public:
@@ -120,7 +121,6 @@ static void BM_standard_dispersion(benchmark::State& state) {
 }
 BENCHMARK_TEMPLATE(BM_standard_dispersion, double)->Unit(benchmark::kMillisecond);
 BENCHMARK_TEMPLATE(BM_standard_dispersion, float)->Unit(benchmark::kMillisecond);
-#endif
 
 static void BM_C_API_dispersion(benchmark::State& state) {
     ImageSource<H5Read::image_type> src;
@@ -136,7 +136,9 @@ static void BM_C_API_dispersion(benchmark::State& state) {
 }
 BENCHMARK(BM_C_API_dispersion)->Unit(benchmark::kMillisecond);
 
-static void BM_Standalone_dispersion_copy(benchmark::State& state) {
+#endif
+
+static void BM_Standalone_dispersion_w_convert(benchmark::State& state) {
     ImageSource<uint16_t> src;
     auto image = src.h5read_image();
     auto finder = StandaloneSpotfinder<double>(src.fast(), src.slow());
@@ -147,7 +149,7 @@ static void BM_Standalone_dispersion_copy(benchmark::State& state) {
         finder.standard_dispersion(converted_image, src.mask_data());
     }
 }
-BENCHMARK(BM_Standalone_dispersion_copy)->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_Standalone_dispersion_w_convert)->Unit(benchmark::kMillisecond);
 
 static void BM_Standalone_dispersion(benchmark::State& state) {
     ImageSource<uint16_t> src;

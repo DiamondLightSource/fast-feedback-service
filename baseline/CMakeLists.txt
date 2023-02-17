@@ -26,13 +26,14 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     find_package(benchmark REQUIRED)
 
     add_executable(bm bm.cpp)
-    target_link_libraries(bm benchmark::benchmark baseline_dials standalone h5read)
+    target_link_libraries(bm benchmark::benchmark $<TARGET_NAME_IF_EXISTS:baseline_dials> standalone h5read)
 
-    add_executable(miniapp miniapp.cc)
-    target_link_libraries(miniapp PUBLIC $<TARGET_NAME_IF_EXISTS:baseline_dials> h5read)
-
+    
     # We can only build the comparison dials/no_tbx if we have dials
     if (Dials_FOUND)
+        add_executable(miniapp miniapp.cc)
+        target_link_libraries(miniapp PUBLIC baseline_dials h5read)
+
         add_executable(check_no_tbx check_no_tbx.cc)
         target_link_libraries(check_no_tbx PUBLIC baseline_dials h5read standalone)
     endif()
