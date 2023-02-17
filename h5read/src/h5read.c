@@ -210,8 +210,7 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
     } else if (n == 5) {
         // Image 3: "Random" background, zero on masks
 
-        pcg32_random_t state;
-
+        pcg32_random_t state = {0};
         memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
         for (int mody = 0; mody < E2XE_16M_NSLOW; ++mody) {
             // row0 is the row of the module top row

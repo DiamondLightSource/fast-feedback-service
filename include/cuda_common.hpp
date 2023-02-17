@@ -3,6 +3,7 @@
 
 #include <fmt/core.h>
 
+#include <algorithm>
 #include <argparse/argparse.hpp>
 #include <stdexcept>
 #include <string>
@@ -222,7 +223,7 @@ void draw_image_data(const T *data,
     std::vector<int> col_widths;
     for (int col = fast; col < fast + width; ++col) {
         size_t maxw = fmt::formatted_size("{:3}", col);
-        for (int row = slow; row < min(slow + height, data_height); ++row) {
+        for (int row = slow; row < std::min(slow + height, data_height); ++row) {
             auto val = data[col + data_width * row];
             auto fmt_spec = fmt::format("{{:{}}}", format_type);
             maxw = std::max(maxw, fmt::formatted_size(fmt_spec, val));
@@ -275,7 +276,7 @@ void draw_image_data(const T *data,
         }
     }
     fmt::print("\n");
-    for (int y = slow; y < min(slow + height, data_height); ++y) {
+    for (int y = slow; y < std::min(slow + height, data_height); ++y) {
         if (y == slow) {
             fmt::print("y = {:4d} {}", y, is_left ? "║" : "│");
         } else {
