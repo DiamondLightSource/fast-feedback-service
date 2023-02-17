@@ -14,6 +14,7 @@ int main(int argc, char **argv) {
 
     uint16_t image_slow = 0, image_fast = 0;
     void *spotfinder = NULL;
+    bool failed = false;
     for (size_t j = 0; j < n_images; j++) {
         image_t *image = h5read_get_image(obj, j);
         image_modules_t *modules = h5read_get_image_modules(obj, j);
@@ -46,17 +47,26 @@ int main(int argc, char **argv) {
             }
         }
 
-        printf("image %ld had %ld / %ld valid zero pixels, %" PRIu32 " strong pixels\n",
-               j,
-               zero,
-               zero_m,
-               strong_pixels);
-
+        auto col_mod = zero == zero_m ? "\033[32m" : "\033[1;31m";
+        printf(
+          "Image %ld had %s(%ld / %ld from modules)\033[0m valid zero pixels, %" PRIu32
+          " strong pixels\n",
+          j,
+          col_mod,
+          zero,
+          zero_m,
+          strong_pixels);
+        if (zero != zero_m) {
+            failed = true;
+            printf(
+              "    \033[1;31mError: Module zero count disagrees with non-module "
+              "%d\033[0m\n");
+        }
         h5read_free_image_modules(modules);
         h5read_free_image(image);
     }
     spotfinder_free(spotfinder);
     h5read_free(obj);
 
-    return 0;
+    return failed;
 }

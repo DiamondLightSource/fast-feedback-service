@@ -65,18 +65,27 @@ int main(int argc, char **argv) {
             }
         }
 
-        printf("\nImage %ld had %ld / %ld valid zero pixels, %" PRIu32
-               " strong pixels\n",
-               j,
-               zero,
-               zero_m,
-               strong_pixels);
+        auto col_mod = zero == zero_m ? "\033[32m" : "\033[1;31m";
+        printf(
+          "\nImage %ld had %s(%ld / %ld from modules)\033[0m valid zero pixels, "
+          "%" PRIu32 " strong pixels\n",
+          j,
+          col_mod,
+          zero,
+          zero_m,
+          strong_pixels);
         auto col = n_strong == n_strong_notbx ? "\033[32m" : "\033[1;31m";
         printf("    %sDIALS %5d %s %-5d standalone\033[0m\n",
                col,
                (int)n_strong,
                n_strong == n_strong_notbx ? "==" : "!=",
                (int)n_strong_notbx);
+        if (zero != zero_m) {
+            printf(
+              "    \033[1;31mError: Module zero count disagrees with non-module "
+              "%d\033[0m\n");
+            failed = true;
+        }
         if (first_incorrect_index != -1) {
             printf("    \033[1;31mError: Spotfinders disagree at %d\033[0m\n",
                    int(first_incorrect_index));
