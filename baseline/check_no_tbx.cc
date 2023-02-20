@@ -36,9 +36,6 @@ int main(int argc, char **argv) {
                         .fast = image_fast};
         uint32_t strong_pixels =
           spotfinder_standard_dispersion(spotfinder, &c_image, &strong_spotfinder);
-        // uint32_t strong_pixels_no_tbx = no_tbx_spotfinder_standard_dispersion(
-        //   no_tbx_spotfinder, image, &strong_no_tbx_spotfinder);
-        // standalone_spotfinder.standard_dispersion(image, )
         image_double.assign(image.data.begin(), image.data.end());
         auto standalone_strong_pixels = standalone_spotfinder.standard_dispersion(
           image_double, {reinterpret_cast<bool *>(mask.data()), mask.size()});
@@ -47,9 +44,8 @@ int main(int argc, char **argv) {
         size_t n_strong = count_nonzero(strong_spotfinder, image_fast, image_slow);
         size_t n_strong_notbx =
           count_nonzero(standalone_strong_pixels, image_fast, image_slow);
-        // size_t first_incorrect_index_fast = 0;
-        // size_t first_incorrect_index_slow = 0;
         size_t first_incorrect_index = 0;
+        // x, y positions of disagreement
         size_t mismatch_x = 0, mismatch_y = 0;
 
         bool result = compare_results(strong_spotfinder,
@@ -60,21 +56,14 @@ int main(int argc, char **argv) {
                                       image_slow,
                                       &mismatch_x,
                                       &mismatch_y);
-        first_incorrect_index = mismatch_y * image_fast + mismatch_x;
 
+        // Count zeros in the image data
         for (size_t i = 0; i < (image_fast * image_slow); i++) {
             if (image.data[i] == 0 && image.mask[i] == 1) {
                 zero++;
             }
         }
-        //     if (strong_spotfinder[i]) ++n_strong;
-        //     if (standalone_strong_pixels[i]) ++n_strong_notbx;
-        //     if (strong_spotfinder[i] != standalone_strong_pixels[i]
-        //         && first_incorrect_index == -1) {
-        //         first_incorrect_index = i;
-        //     }
-        // }
-
+        // Count zeros from using masks
         size_t zero_m = 0;
         for (size_t i = 0; i < (modules.fast * modules.slow * modules.n_modules); i++) {
             if (modules.data[i] == 0 && modules.mask[i] == 1) {
@@ -103,13 +92,15 @@ int main(int argc, char **argv) {
               "%d\033[0m\n");
             failed = true;
         }
-        if (first_incorrect_index > 0) {
-            printf("    \033[1;31mError: Spotfinders disagree at %d\033[0m\n",
-                   int(first_incorrect_index));
+        if (!result) {
+            printf(
+              "    \033[1;31mError: Spotfinders disagree at x, y = (%d, %d)\033[0m\n",
+              int(mismatch_x),
+              int(mismatch_y));
             failed = true;
         }
         if (!result) {
-            // Draw tables of disagreement
+            // If the sources don't match, draw tables of disagreement
             size_t x = std::max(0, (int)mismatch_x - 6);
             size_t y = std::max(0, (int)mismatch_y - 6);
             fmt::print("Image Data:\n");
