@@ -14,11 +14,11 @@ using std::span;
 
 template <typename T = double>
 class StandaloneSpotfinder {
-    // Make sure this is a type we predeclare
+    // Make sure this is a type that we predeclare in the implementation
     static_assert(
       std::is_same<T, float>::value || std::is_same<T, double>::value,
       "Only float or double is supported for Dials spotfinder internal implementation");
-    // PIMPL-wrap the internals so that we don't need to put the algorithm everywhere
+    // PIMPL-wrap the internals so that we don't need to include the algorithm here
     class StandaloneSpotfinderImpl;
     struct StandaloneSpotfinderImplDeleter {
         void operator()(StandaloneSpotfinderImpl*) const;
@@ -34,11 +34,4 @@ class StandaloneSpotfinder {
       -> span<const bool>;
 };
 
-// extern "C" {
-// void* no_tbx_spotfinder_create(size_t width, size_t height);
-// void no_tbx_spotfinder_free(void* context);
-// uint32_t no_tbx_spotfinder_standard_dispersion(void* context,
-//                                                image_t* image,
-//                                                bool** destination = nullptr);
-// }
 #endif
