@@ -229,7 +229,7 @@ class StandaloneSpotfinder<T>::StandaloneSpotfinderImpl {
         : width(width),
           height(height),
           results(width * height),
-          algorithm({static_cast<int>(width), static_cast<int>(height)},
+          algorithm({static_cast<int>(height), static_cast<int>(width)},
                     kernel_size_,
                     nsig_b_,
                     nsig_s_,
