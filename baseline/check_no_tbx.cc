@@ -6,6 +6,7 @@
 #include <cinttypes>
 
 #include "baseline.h"
+#include "common.hpp"
 #include "h5read.h"
 #include "standalone.h"
 
@@ -43,20 +44,36 @@ int main(int argc, char **argv) {
           image_double, {reinterpret_cast<bool *>(mask.data()), mask.size()});
 
         size_t zero = 0;
-        size_t n_strong = 0;
-        size_t n_strong_notbx = 0;
-        long first_incorrect_index = -1;
+        size_t n_strong = count_nonzero(strong_spotfinder, image_fast, image_slow);
+        size_t n_strong_notbx =
+          count_nonzero(standalone_strong_pixels, image_fast, image_slow);
+        // size_t first_incorrect_index_fast = 0;
+        // size_t first_incorrect_index_slow = 0;
+        size_t first_incorrect_index = 0;
+        size_t mismatch_x = 0, mismatch_y = 0;
+
+        bool result = compare_results(strong_spotfinder,
+                                      image_fast,
+                                      standalone_strong_pixels.data(),
+                                      image_fast,
+                                      image_fast,
+                                      image_slow,
+                                      &mismatch_x,
+                                      &mismatch_y);
+        first_incorrect_index = mismatch_y * image_fast + mismatch_x;
+
         for (size_t i = 0; i < (image_fast * image_slow); i++) {
             if (image.data[i] == 0 && image.mask[i] == 1) {
                 zero++;
             }
-            if (strong_spotfinder[i]) ++n_strong;
-            if (standalone_strong_pixels[i]) ++n_strong_notbx;
-            if (strong_spotfinder[i] != standalone_strong_pixels[i]
-                && first_incorrect_index == -1) {
-                first_incorrect_index = i;
-            }
         }
+        //     if (strong_spotfinder[i]) ++n_strong;
+        //     if (standalone_strong_pixels[i]) ++n_strong_notbx;
+        //     if (strong_spotfinder[i] != standalone_strong_pixels[i]
+        //         && first_incorrect_index == -1) {
+        //         first_incorrect_index = i;
+        //     }
+        // }
 
         size_t zero_m = 0;
         for (size_t i = 0; i < (modules.fast * modules.slow * modules.n_modules); i++) {
@@ -86,10 +103,27 @@ int main(int argc, char **argv) {
               "%d\033[0m\n");
             failed = true;
         }
-        if (first_incorrect_index != -1) {
+        if (first_incorrect_index > 0) {
             printf("    \033[1;31mError: Spotfinders disagree at %d\033[0m\n",
                    int(first_incorrect_index));
             failed = true;
+        }
+        if (!result) {
+            // Draw tables of disagreement
+            size_t x = std::max(0, (int)mismatch_x - 6);
+            size_t y = std::max(0, (int)mismatch_y - 6);
+            fmt::print("Image Data:\n");
+            draw_image_data(
+              image.data, x, y, (size_t)12, (size_t)12, image_fast, image_slow);
+            fmt::print("Mask:\n");
+            draw_image_data(
+              image.mask, x, y, (size_t)12, (size_t)12, image_fast, image_slow);
+
+            fmt::print("C API DIALS Spotfinder:\n");
+            draw_image_data(strong_spotfinder, x, y, 12, 12, image_fast, image_slow);
+            fmt::print("Standalone Spotfinder:\n");
+            draw_image_data(
+              standalone_strong_pixels, x, y, 12, 12, image_fast, image_slow);
         }
     }
     spotfinder_free(spotfinder);

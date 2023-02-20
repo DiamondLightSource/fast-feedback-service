@@ -12,6 +12,7 @@ include(AlwaysColourCompilation)
 find_package(Dials)
 
 add_subdirectory(../h5read h5read)
+add_subdirectory(../dependencies/fmt fmt)
 
 if (Dials_FOUND)
     add_library(baseline_dials SHARED baseline.cpp )
@@ -35,6 +36,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         target_link_libraries(miniapp PUBLIC baseline_dials h5read)
 
         add_executable(check_no_tbx check_no_tbx.cc)
-        target_link_libraries(check_no_tbx PUBLIC baseline_dials h5read standalone)
+        target_link_libraries(check_no_tbx PUBLIC baseline_dials h5read standalone fmt)
     endif()
 endif()
