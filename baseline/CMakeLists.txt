@@ -11,6 +11,8 @@ include(AlwaysColourCompilation)
 
 find_package(Dials)
 
+include_directories(../common/include)
+
 add_subdirectory(../h5read h5read)
 add_subdirectory(../dependencies/fmt fmt)
 
