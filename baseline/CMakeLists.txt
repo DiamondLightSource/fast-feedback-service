@@ -13,8 +13,12 @@ find_package(Dials)
 
 include_directories(../common/include)
 
-add_subdirectory(../h5read h5read)
-add_subdirectory(../dependencies/fmt fmt)
+if (NOT TARGET h5read)
+    add_subdirectory(../h5read h5read)
+endif()
+if (NOT TARGET fmt)
+    add_subdirectory(../dependencies/fmt fmt)
+endif()
 
 if (Dials_FOUND)
     add_library(baseline_dials SHARED baseline.cpp )
@@ -23,14 +27,16 @@ endif()
 
 add_library(standalone SHARED standalone.cc )
 target_link_libraries(standalone PUBLIC h5read)
+target_include_directories(standalone PUBLIC .)
 
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    find_package(benchmark REQUIRED)
+    find_package(benchmark)
 
-    add_executable(bm bm.cpp)
-    target_link_libraries(bm benchmark::benchmark $<TARGET_NAME_IF_EXISTS:baseline_dials> standalone h5read)
-
+    if (benchmark_FOUND)
+        add_executable(bm bm.cpp)
+        target_link_libraries(bm benchmark::benchmark $<TARGET_NAME_IF_EXISTS:baseline_dials> standalone h5read)
+    endif()
     
     # We can only build the comparison dials/no_tbx if we have dials
     if (Dials_FOUND)
