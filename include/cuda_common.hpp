@@ -5,6 +5,7 @@
 
 #include <argparse/argparse.hpp>
 #include <stdexcept>
+#include <type_traits>
 
 #include "../../../common/include/common.hpp"
 
@@ -159,32 +160,36 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
 
 template <typename T>
 auto make_cuda_malloc(size_t num_items = 1) {
-    T *obj = nullptr;
-    if (cudaMalloc(&obj, sizeof(T) * num_items) != cudaSuccess || obj == nullptr) {
+    using Tb = typename std::remove_extent<T>::type;
+    Tb *obj = nullptr;
+    if (cudaMalloc(&obj, sizeof(Tb) * num_items) != cudaSuccess || obj == nullptr) {
         throw std::bad_alloc{};
     }
-    auto deleter = [](T *ptr) { cudaFree(ptr); };
+    auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
 
 template <typename T>
 auto make_cuda_managed_malloc(size_t num_items) {
-    T *obj = nullptr;
-    if (cudaMallocManaged(&obj, sizeof(T) * num_items) != cudaSuccess
+    using Tb = typename std::remove_extent<T>::type;
+    Tb *obj = nullptr;
+    if (cudaMallocManaged(&obj, sizeof(Tb) * num_items) != cudaSuccess
         || obj == nullptr) {
         throw std::bad_alloc{};
     }
-    auto deleter = [](T *ptr) { cudaFree(ptr); };
+    auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
+
 /// Allocate memory using cudaMallocHost
 template <typename T>
 auto make_cuda_pinned_malloc(size_t num_items = 1) {
-    T *obj = nullptr;
-    if (cudaMallocHost(&obj, sizeof(T) * num_items) != cudaSuccess || obj == nullptr) {
+    using Tb = typename std::remove_extent<T>::type;
+    Tb *obj = nullptr;
+    if (cudaMallocHost(&obj, sizeof(Tb) * num_items) != cudaSuccess || obj == nullptr) {
         throw std::bad_alloc{};
     }
-    auto deleter = [](T *ptr) { cudaFreeHost(ptr); };
+    auto deleter = [](Tb *ptr) { cudaFreeHost(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
 
