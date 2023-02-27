@@ -45,6 +45,7 @@ struct CUDAArguments {
     std::string file;
 
     int device_index = 0;
+    std::optional<size_t> image_number;
 
     cudaDeviceProp device;
 
@@ -68,6 +69,13 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
           .action([&](const std::string &value) {
               _arguments.device_index = std::stoi(value);
               return _arguments.device_index;
+          });
+        this->add_argument("--image")
+          .help("Single image number to analyse, if not all")
+          .metavar("NUM")
+          .action([&](const std::string &value) {
+              _arguments.image_number = std::stoi(value);
+              return _arguments.image_number;
           });
         this->add_argument("--list-devices")
           .help("List the order of CUDA devices, then quit.")
