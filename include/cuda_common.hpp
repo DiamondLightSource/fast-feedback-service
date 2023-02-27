@@ -4,6 +4,8 @@
 #include <fmt/core.h>
 
 #include <argparse/argparse.hpp>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <type_traits>
 
@@ -97,8 +99,27 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
     }
 
     auto parse_args(int argc, char **argv) -> CUDAArguments {
+        // Convert these to std::string
+        std::vector<std::string> args{argv, argv + argc};
+        // Look for a "common.args" file in the current folder. If
+        // present, add each line as an argument.
+        std::ifstream common("common.args");
+        std::filesystem::path argfile{"common.args"};
+        if (std::filesystem::exists(argfile)) {
+            fmt::print("File {} exists, loading default args:\n",
+                       bold(argfile.string()));
+            std::fstream f{argfile};
+            std::string arg;
+            while (std::getline(f, arg)) {
+                if (arg.size() > 0) {
+                    fmt::print("    {}\n", arg);
+                    args.push_back(arg);
+                }
+            }
+        }
+
         try {
-            ArgumentParser::parse_args(argc, argv);
+            ArgumentParser::parse_args(args);
         } catch (std::runtime_error &e) {
             fmt::print("{}: {}\n{}\n",
                        bold(red("Error")),
