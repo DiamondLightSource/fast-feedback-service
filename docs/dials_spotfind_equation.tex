@@ -1,0 +1,88 @@
+\documentclass[10pt]{article}
+\usepackage[usenames]{color} %used for font color
+\usepackage{amssymb} %maths
+\usepackage{amsmath} %maths
+\usepackage{hyperref}
+\usepackage[utf8]{inputenc} %useful to type directly diacritic characters
+
+\begin{document}
+\title{Spotfinding implementation details}
+\maketitle
+\subsection*{Dispersion Algorithm}
+\subsubsection*{Reducing paper equations to code form}
+Threshold condition for rejecting background pixels in paper (equation 2):
+\begin{equation}
+    D > G \left[1 + \sigma_b\left(\frac{2}{N-1}\right)^{1/2}\right].
+\end{equation}
+Let's show how this is represented in code. With the dispersion equation
+\begin{equation}
+    D = \frac{\sigma^2}{\mu}.
+\end{equation}
+Expanding variance
+\begin{align}
+    \sigma^2 &= \frac{1}{N-1}\sum_i\left(c_i-\mu\right)^2 \\
+    &= \frac{1}{N-1}\left[\sum_i c_i^2 - N\mu^2\right] \\
+    % \sigma^2 &= 
+    % \sigma^2 &= \frac{1}{N-1}\left(\sum_i c_i^2 - N\mu^2\right)
+    % & = \frac{1}{N-1}\left(\sum_i c_i^2 - N\left(\\right)^2\right) \\
+\end{align}
+and with the substitutions
+\begin{align}
+    x & = \sum_i c_i \\
+    y & = \sum_i c_i^2 \\
+\end{align}
+and given that $\mu = \frac{\sum_i c_i}{N} = \frac{x}{N}$ this can be rearranged to
+\begin{equation}
+    \sigma^2 = \frac{N\cdot y - x^2 }{N(N-1)}.
+\end{equation}
+Dividing by the mean to calculate the dispersion then becomes:
+\begin{align}
+    D &= \frac{\sigma^2}{\mu} = \frac{N}{x} \cdot \frac{N\cdot y - x^2}{N(N-1)} \\
+      &= \frac{N\cdot y - x^2}{x(N-1)}
+\end{align}
+Algorithm as implemented in code (\url{https://github.com/dials/dials/blob/e7f981bdaa8ecedfbbebd30b90a56020435b1213/algorithms/image/threshold/local.h#L567-L571})
+multiplies through by the $x(N-1)$ so becomes
+\begin{align}
+    N \cdot y - x^2 &> G \cdot x \cdot (N-1) \left[1 + \sigma_s\cdot\sqrt{\frac{2}{N-1}}\right] \\
+    &> G \cdot x \cdot \left[(N - 1) + \sigma_b\cdot\sqrt{2(N-1)}\right]
+\end{align}
+
+Which gives the actual implementation in code (code splits left and
+right into a, c and uses m instead of $N$):
+\begin{equation}
+    \boxed{
+        N \cdot y - x^2 > G \cdot x \cdot \left[N - 1 + \sigma_b\cdot\sqrt{2(N-1)}\right]
+    }
+\end{equation}
+\subsubsection{Signal Selection}
+The previous equation is for rejecting the background, by excluding
+kernel areas that do not have an excessive dispersion. In addition,
+pixels are individually selected based upon their significance compared
+to the pure local mean (equation 3):
+
+\begin{equation}
+    c_i > \mu + \sigma_s\left(G\mu\right)^{1/2}
+\end{equation}
+
+In our representation:
+\begin{equation}
+    c_i > \frac{x}{N} + \sigma_s\sqrt{\frac{Gx}{N}}
+\end{equation}
+
+Multiplying through by $N$ and moving the reference to x to the left side:
+\begin{equation}
+    N c_i - x > \sigma_s N \sqrt{\frac{Gx}{N}}
+\end{equation}
+And then the final form in the code, with b, d for left and right parts of:
+\begin{equation}
+    \boxed{
+        N c_i - x > \sigma_s \sqrt{G x N}
+    }
+\end{equation}
+
+
+
+
+
+\subsection{\emph{Extended} Dispersion Algorithm}
+\end{document}
