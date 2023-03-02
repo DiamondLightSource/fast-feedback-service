@@ -212,8 +212,8 @@ bool compare_results(const T *left,
                 fmt::print("First mismatch at ({}, {}), Left {} != {} Right\n",
                            x,
                            y,
-                           lval,
-                           rval);
+                           (int)lval,
+                           (int)rval);
                 return false;
             }
         }
