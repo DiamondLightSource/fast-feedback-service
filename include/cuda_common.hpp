@@ -3,6 +3,7 @@
 
 #include <fmt/core.h>
 
+#include <algorithm>
 #include <argparse/argparse.hpp>
 #include <filesystem>
 #include <fstream>
@@ -119,6 +120,12 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
             std::fstream f{argfile};
             std::string arg;
             while (std::getline(f, arg)) {
+                // Make sure this argument isn't already set
+                // if(std::find(vector.begin(), vector.end(), item)!=vector.end()){
+                // Found the item
+                if (std::find(args.begin(), args.end(), arg) != args.end()) {
+                    continue;
+                }
                 if (arg.size() > 0) {
                     fmt::print("    {}\n", arg);
                     args.push_back(arg);
