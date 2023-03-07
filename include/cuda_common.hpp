@@ -191,8 +191,10 @@ template <typename T>
 auto make_cuda_malloc(size_t num_items = 1) {
     using Tb = typename std::remove_extent<T>::type;
     Tb *obj = nullptr;
-    if (cudaMalloc(&obj, sizeof(Tb) * num_items) != cudaSuccess || obj == nullptr) {
-        throw std::bad_alloc{};
+    auto err = cudaMalloc(&obj, sizeof(Tb) * num_items);
+    if (err != cudaSuccess || obj == nullptr) {
+        throw cuda_error(
+          fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
     }
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
@@ -202,10 +204,12 @@ template <typename T>
 auto make_cuda_managed_malloc(size_t num_items) {
     using Tb = typename std::remove_extent<T>::type;
     Tb *obj = nullptr;
-    if (cudaMallocManaged(&obj, sizeof(Tb) * num_items) != cudaSuccess
-        || obj == nullptr) {
-        throw std::bad_alloc{};
+    auto err = cudaMallocManaged(&obj, sizeof(Tb) * num_items);
+    if (err != cudaSuccess || obj == nullptr) {
+        throw cuda_error(
+          fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
     }
+
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
@@ -215,8 +219,10 @@ template <typename T>
 auto make_cuda_pinned_malloc(size_t num_items = 1) {
     using Tb = typename std::remove_extent<T>::type;
     Tb *obj = nullptr;
-    if (cudaMallocHost(&obj, sizeof(Tb) * num_items) != cudaSuccess || obj == nullptr) {
-        throw std::bad_alloc{};
+    auto err = cudaMallocHost(&obj, sizeof(Tb) * num_items);
+    if (err != cudaSuccess || obj == nullptr) {
+        throw cuda_error(
+          fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
     }
     auto deleter = [](Tb *ptr) { cudaFreeHost(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
@@ -226,10 +232,12 @@ template <typename T>
 auto make_cuda_pitched_malloc(size_t width, size_t height) {
     size_t pitch = 0;
     T *obj = nullptr;
-    if (cudaMallocPitch(&obj, &pitch, width * sizeof(T), height) != cudaSuccess
-        || obj == nullptr) {
-        throw std::bad_alloc{};
+    auto err = cudaMallocPitch(&obj, &pitch, width * sizeof(T), height);
+    if (err != cudaSuccess || obj == nullptr) {
+        throw cuda_error(
+          fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
     }
+
     auto deleter = [](T *ptr) { cudaFree(ptr); };
     return std::make_pair(std::unique_ptr<T[], decltype(deleter)>{obj, deleter},
                           pitch / sizeof(T));
