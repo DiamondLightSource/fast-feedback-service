@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
+#include <cassert>
 extern "C" {
 #endif
 
@@ -149,6 +150,13 @@ class H5Read {
     /// Read image data into an existing buffer
     void get_image_into(size_t index, uint16_t *data) {
         h5read_get_image_into(_handle.get(), index, data);
+    }
+    /// Read image data into an existing buffer
+    void get_image_into(size_t index, SPAN<uint16_t> data) {
+#ifndef NDEBUG
+        assert(data.size() >= get_image_slow() * get_image_fast());
+#endif
+        h5read_get_image_into(_handle.get(), index, data.data());
     }
 
     SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) {

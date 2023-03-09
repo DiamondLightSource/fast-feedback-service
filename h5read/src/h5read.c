@@ -273,6 +273,13 @@ void h5read_get_raw_chunk(h5read_handle *obj,
         exit(1);
     }
 
+    hid_t datatype = H5Dget_type(current->dataset);
+    hsize_t datasize = H5Tget_size(datatype);
+    if (datasize != 2) {
+        fprintf(stderr, "Error: Unexpected datasize\n");
+        exit(1);
+    }
+
     uint32_t filter = 0;
     herr_t err = H5Dread_chunk(current->dataset, H5P_DEFAULT, offset, &filter, data);
     if (err < 0) {

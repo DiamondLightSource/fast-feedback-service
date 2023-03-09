@@ -1,3 +1,5 @@
+#include <bitshuffle.h>
+
 #include <chrono>
 #include <cstdio>
 #include <vector>
@@ -8,14 +10,18 @@ int main(int argc, char **argv) {
     auto reader = H5Read(argc, argv);
 
     size_t n_images = reader.get_number_of_images();
+    size_t num_pixels = reader.get_image_slow() * reader.get_image_fast();
 
-    size_t buffer_max =
-      reader.get_image_slow() * reader.get_image_fast() * sizeof(H5Read::image_type);
-    auto buffer = std::vector<uint8_t>(buffer_max);
+    auto buffer = std::vector<uint8_t>(num_pixels * 2);
+    auto image = std::vector<H5Read::image_type>(num_pixels);
 
     auto start_time = std::chrono::high_resolution_clock::now();
     for (size_t j = 0; j < n_images; j++) {
         auto data = reader.get_raw_chunk(j, buffer);
+
+        // Decompress this
+        bshuf_decompress_lz4(buffer.data() + 12, image.data(), num_pixels, 2, 0);
+
         printf("Read Image %d chunk of %zu KBytes\n", j, data.size() / 1024);
     }
 
