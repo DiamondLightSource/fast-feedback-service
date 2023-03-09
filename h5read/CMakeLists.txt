@@ -40,4 +40,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   add_executable(read_chunks src/read_chunks.c)
   target_link_libraries(read_chunks PUBLIC h5read)
+
+  add_executable(read_chunks_cpp src/read_chunks.cc)
+  target_link_libraries(read_chunks_cpp PUBLIC h5read)
 endif()

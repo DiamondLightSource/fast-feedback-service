@@ -64,11 +64,11 @@ void h5read_free_image(image_t *image);
  */
 void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data);
 
-void h5read_get_chunk_data(h5read_handle *obj,
-                           size_t index,
-                           size_t *size,
-                           uint8_t *data,
-                           size_t max_size);
+void h5read_get_raw_chunk(h5read_handle *obj,
+                          size_t index,
+                          size_t *size,
+                          uint8_t *data,
+                          size_t max_size);
 
 /// Read an image from a dataset, split up into modules
 image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t frame_number);
@@ -149,6 +149,16 @@ class H5Read {
     /// Read image data into an existing buffer
     void get_image_into(size_t index, uint16_t *data) {
         h5read_get_image_into(_handle.get(), index, data);
+    }
+
+    SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
+        size_t chunk_bytes;
+        h5read_get_raw_chunk(_handle.get(),
+                             index,
+                             &chunk_bytes,
+                             destination.data(),
+                             destination.size_bytes());
+        return {destination.data(), chunk_bytes};
     }
 
     Image get_image(size_t index) {

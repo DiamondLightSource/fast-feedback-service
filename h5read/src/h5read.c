@@ -246,11 +246,11 @@ int _find_data_file_for_image(h5read_handle *obj, size_t index) {
     return data_file;
 }
 
-void h5read_get_chunk_data(h5read_handle *obj,
-                           size_t index,
-                           size_t *size,
-                           uint8_t *data,
-                           size_t max_size) {
+void h5read_get_raw_chunk(h5read_handle *obj,
+                          size_t index,
+                          size_t *size,
+                          uint8_t *data,
+                          size_t max_size) {
     if (obj->data_files == 0) {
         fprintf(stderr, "Error: Cannot do direct chunk read with sample data\n", index);
         exit(1);

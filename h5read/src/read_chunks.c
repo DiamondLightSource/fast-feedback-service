@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
         // image_t *image = h5read_get_image(obj, j);
         // h5read_get_image_into(obj, j, buffer);
         size_t data_size = 0;
-        h5read_get_chunk_data(obj, j, &data_size, chunk_data, max_compressed_bytes);
+        h5read_get_raw_chunk(obj, j, &data_size, chunk_data, max_compressed_bytes);
         printf("Read Image %d chunk in %zu KBytes\n", j, data_size / 1024);
 
         bool success = true;
