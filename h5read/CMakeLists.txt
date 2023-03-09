@@ -4,6 +4,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(h5read LANGUAGES C CXX)
 
+set(CMAKE_C_STANDARD 99)
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../cmake/Modules")
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
@@ -35,4 +37,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   add_executable(read_h5read_cpp src/read_h5read.cc)
   target_link_libraries(read_h5read_cpp PUBLIC h5read)
+
+  add_executable(read_chunks src/read_chunks.c)
+  target_link_libraries(read_chunks PUBLIC h5read)
 endif()

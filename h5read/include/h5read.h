@@ -64,6 +64,12 @@ void h5read_free_image(image_t *image);
  */
 void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data);
 
+void h5read_get_chunk_data(h5read_handle *obj,
+                           size_t index,
+                           size_t *size,
+                           uint8_t *data,
+                           size_t max_size);
+
 /// Read an image from a dataset, split up into modules
 image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t frame_number);
 /// Free an image read as modules

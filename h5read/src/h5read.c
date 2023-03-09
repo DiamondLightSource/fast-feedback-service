@@ -10,6 +10,7 @@
 
 #ifdef HAVE_HDF5
 #include <hdf5.h>
+#include <hdf5_hl.h>
 #else
 typedef uint8_t hid_t;
 #endif
@@ -232,6 +233,55 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
     }
 }
 
+/// Find the data file index for a particular image number.
+/// If the image isn't found on any data files, returns obj->data_file_count
+int _find_data_file_for_image(h5read_handle *obj, size_t index) {
+    int data_file = 0;
+    for (; data_file < obj->data_file_count; data_file++) {
+        if ((index - obj->data_files[data_file].offset)
+            < obj->data_files[data_file].frames) {
+            break;
+        }
+    }
+    return data_file;
+}
+
+void h5read_get_chunk_data(h5read_handle *obj,
+                           size_t index,
+                           size_t *size,
+                           uint8_t *data,
+                           size_t max_size) {
+    if (obj->data_files == 0) {
+        fprintf(stderr, "Error: Cannot do direct chunk read with sample data\n", index);
+        exit(1);
+    }
+#ifdef HAVE_HDF5
+    int data_file = _find_data_file_for_image(obj, index);
+    if (data_file == obj->data_file_count) {
+        fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
+        exit(1);
+    }
+    h5_data_file *current = &(obj->data_files[data_file]);
+
+    hsize_t offset[3] = {index - current->offset, 0, 0};
+    hsize_t chunk_size = 0;
+    H5Dget_chunk_storage_size(current->dataset, offset, &chunk_size);
+    *size = chunk_size;
+
+    if (chunk_size > max_size) {
+        fprintf(stderr, "Error: Not enough room to store compressed chunk\n");
+        exit(1);
+    }
+
+    uint32_t filter = 0;
+    herr_t err = H5Dread_chunk(current->dataset, H5P_DEFAULT, offset, &filter, data);
+    if (err < 0) {
+        fprintf(stderr, "Error: Failed to read chunk\n");
+        exit(1);
+    }
+#endif
+}
+
 void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data) {
     if (index >= obj->frames) {
         fprintf(stderr,
@@ -250,13 +300,7 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
 #ifdef HAVE_HDF5
     /* first find the right data file - having to do this lookup is annoying
        but probably cheap */
-    int data_file;
-    for (data_file = 0; data_file < obj->data_file_count; data_file++) {
-        if ((index - obj->data_files[data_file].offset)
-            < obj->data_files[data_file].frames) {
-            break;
-        }
-    }
+    int data_file = _find_data_file_for_image(obj, index);
 
     if (data_file == obj->data_file_count) {
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
