@@ -12,8 +12,6 @@ include(AlwaysColourCompilation)
 include(UseSpanBackportIfNeeded)
 
 find_package(HDF5)
-find_package(LZ4)
-find_package(Bitshuffle)
 
 add_library(h5read src/h5read.c src/h5read.cc)
 target_include_directories(h5read PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include )
@@ -34,14 +32,17 @@ endif()
 
 # Only build the example reader as a root script
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  add_executable(read_h5read src/read_h5read.c)
-  target_link_libraries(read_h5read PUBLIC h5read)
+    add_executable(read_h5read src/read_h5read.c)
+    target_link_libraries(read_h5read PUBLIC h5read)
 
-  add_executable(read_h5read_cpp src/read_h5read.cc)
-  target_link_libraries(read_h5read_cpp PUBLIC h5read)
+    add_executable(read_h5read_cpp src/read_h5read.cc)
+    target_link_libraries(read_h5read_cpp PUBLIC h5read)
 
-  add_executable(read_chunks src/read_chunks.c)
-  target_link_libraries(read_chunks PUBLIC h5read)
+    add_executable(read_chunks src/read_chunks.c)
+    target_link_libraries(read_chunks PUBLIC h5read)
+
+    find_package(LZ4)
+    find_package(Bitshuffle)
 
     if (LZ4_FOUND AND Bitshuffle_FOUND)
         add_executable(read_chunks_cpp src/read_chunks.cc)
