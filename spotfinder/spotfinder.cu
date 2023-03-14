@@ -5,6 +5,7 @@
  * 
  */
 
+#include <bitshuffle.h>
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 #include <fmt/core.h>
@@ -40,14 +41,14 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t mask_pitch,
                                      int width,
                                      int height,
-                                     int *result_sum,
-                                     size_t *result_sumsq,
-                                     uint8_t *result_n,
+                                     //  int *result_sum,
+                                     //  size_t *result_sumsq,
+                                     //  uint8_t *result_n,
                                      uint8_t *result_strong) {
     image = image + (image_pitch * height * blockIdx.z);
-    result_sum = result_sum + (image_pitch * height * blockIdx.z);
-    result_sumsq = result_sumsq + (image_pitch * height * blockIdx.z);
-    result_n = result_n + (mask_pitch * height * blockIdx.z);
+    // result_sum = result_sum + (image_pitch * height * blockIdx.z);
+    // result_sumsq = result_sumsq + (image_pitch * height * blockIdx.z);
+    // result_n = result_n + (mask_pitch * height * blockIdx.z);
     result_strong = result_strong + (mask_pitch * height * blockIdx.z);
 
     auto block = cg::this_thread_block();
@@ -87,9 +88,9 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     }
 
     if (x < width && y < height) {
-        result_sum[x + image_pitch * y] = sum;
-        result_sumsq[x + image_pitch * y] = sumsq;
-        result_n[x + mask_pitch * y] = n;
+        // result_sum[x + image_pitch * y] = sum;
+        // result_sumsq[x + image_pitch * y] = sumsq;
+        // result_n[x + mask_pitch * y] = n;
 
         // Calculate the thresholding
         if (px_is_valid) {
@@ -117,6 +118,7 @@ __global__ void do_spotfinding_naive(pixel_t *image,
 template <typename T>
 struct PitchedMalloc {
   public:
+    using value_type = T;
     PitchedMalloc(std::shared_ptr<T[]> data, size_t width, size_t height, size_t pitch)
         : _data(data), width(width), height(height), pitch(pitch) {}
 
@@ -128,6 +130,12 @@ struct PitchedMalloc {
 
     auto get() {
         return _data.get();
+    }
+    auto size_bytes() -> size_t const {
+        return pitch * height * sizeof(T);
+    }
+    auto pitch_bytes() -> size_t const {
+        return pitch * sizeof(T);
     }
 
     std::shared_ptr<T[]> _data;
@@ -251,7 +259,6 @@ int main(int argc, char **argv) {
         print("Error: Thread count must be >= 1\n");
         std::exit(1);
     }
-    uint32_t batch_size = 1;
 
     auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
     auto reader_mutex = std::mutex{};
@@ -290,9 +297,17 @@ int main(int argc, char **argv) {
     std::vector<std::jthread> threads;
     for (int i = 0; i < num_cpu_threads; ++i) {
         threads.emplace_back([&, i](std::stop_token stop_token) {
+            CudaStream stream;
+
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
+            auto host_results = make_cuda_pinned_malloc<uint8_t>(width * height);
             auto device_image = PitchedMalloc<pixel_t>(width, height);
             auto device_results = make_cuda_pinned_malloc<uint8_t>(mask.pitch * height);
+
+            // Buffer for reading compressed chunk data in
+            auto raw_chunk_buffer =
+              std::vector<uint8_t>(width * height * sizeof(pixel_t));
+
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
 
@@ -301,13 +316,46 @@ int main(int argc, char **argv) {
                 if (image_num >= reader.get_number_of_images()) {
                     break;
                 }
-                // Load this image
+                // Sized buffer for the actual data read from file
+                SPAN<uint8_t> buffer;
+                // Fetch the image data from the reader
                 {
                     std::scoped_lock lock(reader_mutex);
-                    reader.get_image_into(image_num, host_image.get());
+                    buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
                 }
-                print(
-                  "Thread {:2d} read image {:4d} and released lock\n", i, image_num);
+                // Decompress this data, outside of the mutex
+                bshuf_decompress_lz4(
+                  buffer.data() + 12, host_image.get(), width * height, 2, 0);
+                // Copy the image to GPU
+                CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
+                                             device_image.pitch_bytes(),
+                                             host_image.get(),
+                                             width * sizeof(pixel_t),
+                                             width * sizeof(pixel_t),
+                                             height,
+                                             cudaMemcpyHostToDevice,
+                                             stream));
+                // When done, launch the spotfind kernel
+                do_spotfinding_naive<<<blocks_dims, gpu_thread_block_size, 0, stream>>>(
+                  device_image.get(),
+                  device_image.pitch,
+                  mask.get(),
+                  mask.pitch,
+                  width,
+                  height,
+                  device_results.get());
+                // Now, copy the results buffer back to the CPU
+                CUDA_CHECK(cudaMemcpy2DAsync(host_results.get(),
+                                             width * sizeof(uint8_t),
+                                             device_results.get(),
+                                             mask.pitch_bytes(),
+                                             width * sizeof(uint8_t),
+                                             height,
+                                             cudaMemcpyDeviceToHost,
+                                             stream));
+                // Now, wait for stream to finish
+                CUDA_CHECK(cudaStreamSynchronize(stream));
+                print("Thread {:2d} finished image {:4d}\n", i, image_num);
             }
         });
     }

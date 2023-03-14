@@ -19,6 +19,10 @@ add_subdirectory(../../h5read h5read)
 add_subdirectory(../../dependencies/argparse argparse)
 add_subdirectory(../../baseline baseline)
 
+find_package(LZ4 REQUIRED)
+find_package(Bitshuffle REQUIRED)
+
+
 add_executable(spotfinder spotfinder.cu)
-target_link_libraries(spotfinder PRIVATE fmt h5read argparse standalone)
+target_link_libraries(spotfinder PRIVATE fmt h5read argparse standalone LZ4::LZ4 Bitshuffle::bitshuffle)
 target_compile_options(spotfinder PRIVATE "$<$<CONFIG:Debug>:-G>")

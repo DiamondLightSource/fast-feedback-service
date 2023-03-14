@@ -29,6 +29,14 @@ auto cuda_error_string(cudaError_t err) {
     const char *err_str = cudaGetErrorString(err);
     return fmt::format("{}: {}", std::string{err_name}, std::string{err_str});
 }
+auto _cuda_check_error(cudaError_t err, const char *file, int line_num) {
+    if (err != cudaSuccess) {
+        throw cuda_error(
+          fmt::format("{}:{}: {}", file, line_num, cuda_error_string(err)));
+    }
+}
+
+#define CUDA_CHECK(x) _cuda_check_error((x), __FILE__, __LINE__)
 
 /// Raise an exception IF CUDA is in an error state, with the name and description
 auto cuda_throw_error() -> void {
@@ -251,6 +259,21 @@ auto make_cuda_pitched_malloc(size_t width, size_t height) {
 
     return std::make_pair(std::shared_ptr<T[]>(obj, deleter), pitch / sizeof(T));
 }
+
+class CudaStream {
+    cudaStream_t _stream;
+
+  public:
+    CudaStream() {
+        cudaStreamCreate(&_stream);
+    }
+    ~CudaStream() {
+        cudaStreamDestroy(_stream);
+    }
+    operator cudaStream_t() {
+        return _stream;
+    }
+};
 
 class CudaEvent {
     cudaEvent_t event;
