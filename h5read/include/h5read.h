@@ -6,6 +6,7 @@
 
 #ifdef __cplusplus
 #include <cassert>
+#include <mutex>
 extern "C" {
 #endif
 
@@ -201,6 +202,8 @@ class H5Read {
     std::array<size_t, 2> image_shape() const {
         return {get_image_slow(), get_image_fast()};
     }
+
+    std::mutex mutex;
 
   protected:
     std::shared_ptr<h5read_handle> _handle;

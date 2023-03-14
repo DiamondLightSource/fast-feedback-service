@@ -237,6 +237,8 @@ auto make_cuda_pinned_malloc(size_t num_items = 1) {
 
 template <typename T>
 auto make_cuda_pitched_malloc(size_t width, size_t height) {
+    static_assert(!std::is_unbounded_array_v<T>,
+                  "T automatically returns unbounded array pointer");
     size_t pitch = 0;
     T *obj = nullptr;
     auto err = cudaMallocPitch(&obj, &pitch, width * sizeof(T), height);
@@ -246,8 +248,8 @@ auto make_cuda_pitched_malloc(size_t width, size_t height) {
     }
 
     auto deleter = [](T *ptr) { cudaFree(ptr); };
-    return std::make_pair(std::unique_ptr<T[], decltype(deleter)>{obj, deleter},
-                          pitch / sizeof(T));
+
+    return std::make_pair(std::shared_ptr<T[]>(obj, deleter), pitch / sizeof(T));
 }
 
 class CudaEvent {
