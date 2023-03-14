@@ -344,6 +344,7 @@ int main(int argc, char **argv) {
                   width,
                   height,
                   device_results.get());
+
                 // Now, copy the results buffer back to the CPU
                 CUDA_CHECK(cudaMemcpy2DAsync(host_results.get(),
                                              width * sizeof(uint8_t),
@@ -355,7 +356,39 @@ int main(int argc, char **argv) {
                                              stream));
                 // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
-                print("Thread {:2d} finished image {:4d}\n", i, image_num);
+
+                if (do_validate) {
+                    auto spotfinder = StandaloneSpotfinder(width, height);
+                    // Read the image into a vector
+                    auto converted_image = std::vector<double>{
+                      host_image.get(), host_image.get() + width * height};
+                    auto dials_strong = spotfinder.standard_dispersion(
+                      converted_image, reader.get_mask().value_or(span<uint8_t>{}));
+                    size_t mismatch_x = 0, mismatch_y = 0;
+                    bool validation_matches = compare_results(dials_strong.data(),
+                                                              width,
+                                                              host_results.get(),
+                                                              width,
+                                                              width,
+                                                              height,
+                                                              &mismatch_x,
+                                                              &mismatch_y);
+                    if (validation_matches) {
+                        print(
+                          "Thread {:2d}, Image {:4d}: Compared: \033[32mMatch\033[0m\n",
+                          i,
+                          image_num);
+                    } else {
+                        print(
+                          "Thread {:2d}, Image {:4d}: Compared: "
+                          "\033[1;31mMismatch\033[0m\n",
+                          i,
+                          image_num);
+                    }
+
+                } else {
+                    print("Thread {:2d} finished image {:4d}\n", i, image_num);
+                }
             }
         });
     }
