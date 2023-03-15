@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(spotfinder CXX CUDA)
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CUDA_STANDARD 17)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../../cmake/Modules")
@@ -23,7 +24,7 @@ find_package(LZ4 REQUIRED)
 find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
-add_executable(spotfinder spotfinder.cu)
+add_executable(spotfinder spotfinder.cc spotfinder.cu)
 target_link_libraries(spotfinder
     PRIVATE
     fmt
@@ -32,6 +33,7 @@ target_link_libraries(spotfinder
     standalone
     LZ4::LZ4
     Bitshuffle::bitshuffle
+    CUDA::cudart
     CUDA::nppif
 )
 target_compile_options(spotfinder PRIVATE "$<$<CONFIG:Debug>:-G>")

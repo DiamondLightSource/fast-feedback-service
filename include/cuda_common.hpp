@@ -36,7 +36,17 @@ auto _cuda_check_error(cudaError_t err, const char *file, int line_num) {
     }
 }
 
+template <typename T>
+void _npp_check_error(T status, const char *file, int line_num) {
+    if (status != NPP_SUCCESS) {
+        throw cuda_error(fmt::format("{}:{}: NPP returned non-successful status ({})",
+                                     file,
+                                     line_num,
+                                     static_cast<int>(status)));
+    }
+}
 #define CUDA_CHECK(x) _cuda_check_error((x), __FILE__, __LINE__)
+#define NPP_CHECK(x) _npp_check_error((x), __FILE__, __LINE__)
 
 /// Raise an exception IF CUDA is in an error state, with the name and description
 auto cuda_throw_error() -> void {
@@ -240,7 +250,7 @@ auto make_cuda_pinned_malloc(size_t num_items = 1) {
           fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
     }
     auto deleter = [](Tb *ptr) { cudaFreeHost(ptr); };
-    return std::unique_ptr<T[], decltype(deleter)>{obj, deleter};
+    return std::shared_ptr<T[]>{obj, deleter};
 }
 
 template <typename T>
@@ -270,7 +280,7 @@ class CudaStream {
     ~CudaStream() {
         cudaStreamDestroy(_stream);
     }
-    operator cudaStream_t() {
+    operator cudaStream_t() const {
         return _stream;
     }
 };
