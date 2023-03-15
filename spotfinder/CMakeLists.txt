@@ -21,8 +21,17 @@ add_subdirectory(../../baseline baseline)
 
 find_package(LZ4 REQUIRED)
 find_package(Bitshuffle REQUIRED)
-
+find_package(CUDAToolkit REQUIRED)
 
 add_executable(spotfinder spotfinder.cu)
-target_link_libraries(spotfinder PRIVATE fmt h5read argparse standalone LZ4::LZ4 Bitshuffle::bitshuffle)
+target_link_libraries(spotfinder
+    PRIVATE
+    fmt
+    h5read
+    argparse
+    standalone
+    LZ4::LZ4
+    Bitshuffle::bitshuffle
+    CUDA::nppif
+)
 target_compile_options(spotfinder PRIVATE "$<$<CONFIG:Debug>:-G>")

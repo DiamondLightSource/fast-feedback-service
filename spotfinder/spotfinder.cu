@@ -9,6 +9,7 @@
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 #include <fmt/core.h>
+#include <nppi_filtering_functions.h>
 
 #include <array>
 #include <atomic>
