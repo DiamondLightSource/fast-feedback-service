@@ -240,7 +240,7 @@ auto make_cuda_pinned_malloc(size_t num_items = 1) {
           fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
     }
     auto deleter = [](Tb *ptr) { cudaFreeHost(ptr); };
-    return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
+    return std::unique_ptr<T[], decltype(deleter)>{obj, deleter};
 }
 
 template <typename T>

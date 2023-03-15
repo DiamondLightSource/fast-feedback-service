@@ -303,7 +303,7 @@ int main(int argc, char **argv) {
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
             auto host_results = make_cuda_pinned_malloc<uint8_t>(width * height);
             auto device_image = PitchedMalloc<pixel_t>(width, height);
-            auto device_results = make_cuda_pinned_malloc<uint8_t>(mask.pitch * height);
+            auto device_results = make_cuda_malloc<uint8_t>(mask.pitch * height);
 
             // Buffer for reading compressed chunk data in
             auto raw_chunk_buffer =
@@ -359,6 +359,15 @@ int main(int argc, char **argv) {
                 CUDA_CHECK(cudaStreamSynchronize(stream));
 
                 if (do_validate) {
+                    // Count the number of pixels
+                    size_t num_strong_pixels = 0;
+                    for (int y = 0; y < height; ++y) {
+                        for (int x = 0; x < width; ++x) {
+                            if (host_results[x + width * y]) {
+                                ++num_strong_pixels;
+                            }
+                        }
+                    }
                     auto spotfinder = StandaloneSpotfinder(width, height);
                     // Read the image into a vector
                     auto converted_image = std::vector<double>{
@@ -376,15 +385,18 @@ int main(int argc, char **argv) {
                                                               &mismatch_y);
                     if (validation_matches) {
                         print(
-                          "Thread {:2d}, Image {:4d}: Compared: \033[32mMatch\033[0m\n",
+                          "Thread {:2d}, Image {:4d}: Compared: \033[32mMatch {} "
+                          "px\033[0m\n",
                           i,
-                          image_num);
+                          image_num,
+                          num_strong_pixels);
                     } else {
                         print(
                           "Thread {:2d}, Image {:4d}: Compared: "
-                          "\033[1;31mMismatch\033[0m\n",
+                          "\033[1;31mMismatch ({} px from kernel)\033[0m\n",
                           i,
-                          image_num);
+                          image_num,
+                          num_strong_pixels);
                     }
 
                 } else {
