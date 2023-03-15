@@ -1,6 +1,8 @@
 #ifndef SPOTFINDER_H
 #define SPOTFINDER_H
 
+#include <builtin_types.h>
+
 #include "h5read.h"
 
 using pixel_t = H5Read::image_type;
