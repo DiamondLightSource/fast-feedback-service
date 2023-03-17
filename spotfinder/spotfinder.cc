@@ -212,6 +212,7 @@ int main(int argc, char **argv) {
 
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
+            CudaEvent start, copy, post, end;
 
             while (!stop_token.stop_requested()) {
                 auto image_num = next_image.fetch_add(1);
@@ -228,6 +229,7 @@ int main(int argc, char **argv) {
                 // Decompress this data, outside of the mutex
                 bshuf_decompress_lz4(
                   buffer.data() + 12, host_image.get(), width * height, 2, 0);
+                start.record(stream);
                 // Copy the image to GPU
                 CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
                                              device_image.pitch_bytes(),
@@ -237,6 +239,7 @@ int main(int argc, char **argv) {
                                              height,
                                              cudaMemcpyHostToDevice,
                                              stream));
+                copy.record(stream);
                 // When done, launch the spotfind kernel
                 // do_spotfinding_naive<<<blocks_dims, gpu_thread_block_size, 0, stream>>>(
                 call_do_spotfinding_naive(blocks_dims,
@@ -250,6 +253,7 @@ int main(int argc, char **argv) {
                                           width,
                                           height,
                                           device_results.get());
+                post.record(stream);
 
                 // Do the connected component calculations
                 NPP_CHECK(nppiLabelMarkersUF_8u32u_C1R_Ctx(device_results.get(),
@@ -260,6 +264,7 @@ int main(int argc, char **argv) {
                                                            nppiNormL1,
                                                            device_label_buffer.get(),
                                                            npp_context));
+                end.record(stream);
 
                 if (do_validate) {
                     // Now, copy the results buffer back to the CPU
@@ -317,7 +322,24 @@ int main(int argc, char **argv) {
                     }
 
                 } else {
-                    print("Thread {:2d} finished image {:4d}\n", i, image_num);
+                    if (num_cpu_threads == 1) {
+                        print(
+                          "Thread {:2d} finished image {:4d}\n"
+                          "       Copy: {:5.1f} ms\n"
+                          "     Kernel: {:5.1f} ms\n"
+                          "       Post: {:5.1f} ms\n"
+                          "             ════════\n"
+                          "     Total:  {:5.1f} ms ({:.1f} GBps)\n",
+                          i,
+                          image_num,
+                          copy.elapsed_time(start),
+                          post.elapsed_time(start),
+                          end.elapsed_time(post),
+                          end.elapsed_time(start),
+                          GBps<pixel_t>(end.elapsed_time(start), width * height));
+                    } else {
+                        print("Thread {:2d} finished image {:4d}\n", i, image_num);
+                    }
                 }
             }
         });
