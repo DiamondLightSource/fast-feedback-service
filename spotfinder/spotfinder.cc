@@ -153,7 +153,6 @@ int main(int argc, char **argv) {
       .implicit_value(true);
     parser.add_argument("--images")
       .help("Maximum number of images to process")
-      .default_value<uint32_t>(1)
       .metavar("NUM")
       .scan<'u', uint32_t>();
     auto args = parser.parse_args(argc, argv);
@@ -163,10 +162,12 @@ int main(int argc, char **argv) {
         print("Error: Thread count must be >= 1\n");
         std::exit(1);
     }
-    uint32_t num_images = parser.get<uint32_t>("images");
 
     auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
     auto reader_mutex = std::mutex{};
+
+    uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
+                                                   : reader.get_number_of_images();
 
     int height = reader.image_shape()[0];
     int width = reader.image_shape()[1];
