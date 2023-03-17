@@ -122,6 +122,7 @@ auto upload_mask(H5Read &reader) -> PitchedMalloc<uint8_t> {
     };
 }
 
+/// Handle setting up an NppStreamContext from a specific stream
 auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContext {
     NppStreamContext npp_context;
     npp_context.hStream = stream;
