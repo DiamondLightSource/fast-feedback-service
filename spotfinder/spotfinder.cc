@@ -141,7 +141,11 @@ int main(int argc, char **argv) {
       .help("Run DIALS standalone validation")
       .default_value(false)
       .implicit_value(true);
-
+    parser.add_argument("--images")
+      .help("Maximum number of images to process")
+      .default_value<uint32_t>(1)
+      .metavar("NUM")
+      .scan<'u', uint32_t>();
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
@@ -149,6 +153,7 @@ int main(int argc, char **argv) {
         print("Error: Thread count must be >= 1\n");
         std::exit(1);
     }
+    uint32_t num_images = parser.get<uint32_t>("images");
 
     auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
     auto reader_mutex = std::mutex{};
@@ -216,7 +221,7 @@ int main(int argc, char **argv) {
 
             while (!stop_token.stop_requested()) {
                 auto image_num = next_image.fetch_add(1);
-                if (image_num >= reader.get_number_of_images()) {
+                if (image_num >= num_images) {
                     break;
                 }
                 // Sized buffer for the actual data read from file
@@ -538,10 +543,9 @@ int main(int argc, char **argv) {
       std::chrono::duration_cast<std::chrono::duration<double>>(
         std::chrono::high_resolution_clock::now() - all_images_start_time)
         .count();
-    print(
-      "{} images in {:.2f} s ({:.2f} GBps) ({:.1f} fps)\n",
-      reader.get_number_of_images(),
-      total_time,
-      GBps<pixel_t>(total_time * 1000, width * height * reader.get_number_of_images()),
-      reader.get_number_of_images() / total_time);
+    print("{} images in {:.2f} s ({:.2f} GBps) ({:.1f} fps)\n",
+          num_images,
+          total_time,
+          GBps<pixel_t>(total_time * 1000, width * height * num_images),
+          num_images / total_time);
 }
