@@ -572,6 +572,10 @@ int main(int argc, char **argv) {
       "(\033[1;34m{:.1f} fps\033[0m)\n",
       completed_images,
       total_time,
-      GBps<pixel_t>(total_time * 1000, width * height * completed_images),
-      completed_images / total_time);
+      GBps<pixel_t>(
+        total_time * 1000,
+        static_cast<size_t>(width) * static_cast<size_t>(height) * completed_images),
+      completed_images / total_time,
+      width,
+      height);
 }
