@@ -17,7 +17,9 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <csignal>
 #include <memory>
+#include <stop_token>
 #include <thread>
 #include <utility>
 
@@ -27,6 +29,14 @@
 
 using namespace fmt;
 using namespace std::chrono_literals;
+
+// Global stop token for picking up user cancellation
+std::stop_source global_stop;
+
+extern "C" void stop_processing(int sig) {
+    print("Running interrupted by user request\n");
+    global_stop.request_stop();
+}
 
 template <typename T>
 struct PitchedMalloc {
@@ -161,6 +171,8 @@ int main(int argc, char **argv) {
     int height = reader.image_shape()[0];
     int width = reader.image_shape()[1];
 
+    std::signal(SIGINT, stop_processing);
+
     // Work out how many blocks this is
     dim3 gpu_thread_block_size{32, 16};
     dim3 blocks_dims{
@@ -185,13 +197,15 @@ int main(int argc, char **argv) {
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
 
     auto next_image = std::atomic<int>(0);
+    auto completed_images = std::atomic<int>(0);
 
     auto cpu_sync = std::barrier{num_cpu_threads};
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
     for (int i = 0; i < num_cpu_threads; ++i) {
-        threads.emplace_back([&, i](std::stop_token stop_token) {
+        threads.emplace_back([&, i]() {
+            auto stop_token = global_stop.get_token();
             CudaStream stream;
 
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
@@ -346,6 +360,8 @@ int main(int argc, char **argv) {
                         print("Thread {:2d} finished image {:4d}\n", i, image_num);
                     }
                 }
+                // auto image_num = next_image.fetch_add(1);
+                completed_images += 1;
             }
         });
     }
@@ -543,9 +559,11 @@ int main(int argc, char **argv) {
       std::chrono::duration_cast<std::chrono::duration<double>>(
         std::chrono::high_resolution_clock::now() - all_images_start_time)
         .count();
-    print("{} images in {:.2f} s ({:.2f} GBps) ({:.1f} fps)\n",
-          num_images,
-          total_time,
-          GBps<pixel_t>(total_time * 1000, width * height * num_images),
-          num_images / total_time);
+    print(
+      "\n{} images in {:.2f} s (\033[1;34m{:.2f} GBps\033[0m) "
+      "(\033[1;34m{:.1f} fps\033[0m)\n",
+      completed_images,
+      total_time,
+      GBps<pixel_t>(total_time * 1000, width * height * completed_images),
+      completed_images / total_time);
 }
