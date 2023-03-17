@@ -23,6 +23,7 @@ add_subdirectory(../../baseline baseline)
 find_package(LZ4 REQUIRED)
 find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
+find_package(Boost REQUIRED COMPONENTS graph)
 
 add_executable(spotfinder spotfinder.cc spotfinder.cu)
 target_link_libraries(spotfinder
@@ -35,5 +36,6 @@ target_link_libraries(spotfinder
     Bitshuffle::bitshuffle
     CUDA::cudart
     CUDA::nppif
+    Boost::graph
 )
-target_compile_options(spotfinder PRIVATE "$<$<CONFIG:Debug>:-G>")
+target_compile_options(spotfinder PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")

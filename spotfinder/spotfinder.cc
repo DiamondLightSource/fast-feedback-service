@@ -11,9 +11,12 @@
 #include <fmt/core.h>
 #include <nppi_filtering_functions.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <barrier>
+#include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/connected_components.hpp>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -43,6 +46,17 @@ extern "C" void stop_processing(int sig) {
         global_stop.request_stop();
     }
 }
+
+auto operator==(const int2 &left, const int2 &right) -> bool {
+    return left.x == right.x && left.y == right.y;
+}
+auto operator<=(const int2 &left, const int2 &right) -> bool {
+    return left.x <= right.x && left.y <= right.y;
+}
+
+struct bbox {
+    int l, t, r, b;
+};
 
 template <typename T>
 struct PitchedMalloc {
@@ -211,8 +225,8 @@ int main(int argc, char **argv) {
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
-    for (int i = 0; i < num_cpu_threads; ++i) {
-        threads.emplace_back([&, i]() {
+    for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
+        threads.emplace_back([&, thread_id]() {
             auto stop_token = global_stop.get_token();
             CudaStream stream;
 
@@ -237,9 +251,13 @@ int main(int argc, char **argv) {
             auto raw_chunk_buffer =
               std::vector<uint8_t>(width * height * sizeof(pixel_t));
 
+            // Allocate buffers for DIALS-style extraction
+            auto px_coords = std::vector<int2>();
+            auto px_values = std::vector<pixel_t>();
+
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
-            CudaEvent start, copy, post, end;
+            CudaEvent start, copy, post, postcopy, end;
 
             while (!stop_token.stop_requested()) {
                 auto image_num = next_image.fetch_add(1);
@@ -282,28 +300,113 @@ int main(int argc, char **argv) {
                                           device_results.get());
                 post.record(stream);
 
-                // Do the connected component calculations
-                NPP_CHECK(nppiLabelMarkersUF_8u32u_C1R_Ctx(device_results.get(),
-                                                           device_results.pitch,
-                                                           device_label_dest.get(),
-                                                           device_label_dest.pitch,
-                                                           {width, height},
-                                                           nppiNormL1,
-                                                           device_label_buffer.get(),
-                                                           npp_context));
-                end.record(stream);
+                // Copy the results buffer back to the CPU
+                CUDA_CHECK(cudaMemcpy2DAsync(host_results.get(),
+                                             width * sizeof(uint8_t),
+                                             device_results.get(),
+                                             device_results.pitch_bytes(),
+                                             width * sizeof(uint8_t),
+                                             height,
+                                             cudaMemcpyDeviceToHost,
+                                             stream));
+                postcopy.record(stream);
+                // Now, wait for stream to finish
+                CUDA_CHECK(cudaStreamSynchronize(stream));
 
-                if (do_validate) {
-                    // Now, copy the results buffer back to the CPU
-                    CUDA_CHECK(cudaMemcpy2DAsync(host_results.get(),
-                                                 width * sizeof(uint8_t),
-                                                 device_results.get(),
-                                                 device_results.pitch_bytes(),
-                                                 width * sizeof(uint8_t),
-                                                 height,
-                                                 cudaMemcpyDeviceToHost,
-                                                 stream));
+                // Manually reproduce what the DIALS connected components does
+                // Start with the behaviour of the PixelList class:
+                size_t num_strong_pixels = 0;
+                px_values.clear();
+                px_coords.clear();
+
+                for (int y = 0, k = 0; y < height; ++y) {
+                    for (int x = 0; x < width; ++x, ++k) {
+                        if (host_results[k]) {
+                            px_coords.emplace_back(x, y);
+                            px_values.push_back(host_image[k]);
+                            ++num_strong_pixels;
+                        }
+                    }
                 }
+
+                auto graph =
+                  boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS>{
+                    px_values.size()};
+
+                // for (auto coord : px_coords) {
+
+                // }
+                for (int i = 0; i < static_cast<int>(px_coords.size()) - 1; ++i) {
+                    auto coord = px_coords[i];
+                    auto coord_right = int2{coord.x + 1, coord.y};
+                    if (px_coords[i + 1] == coord_right) {
+                        // Since we generate strong pixels coordinates horizontally,
+                        // if there is a pixel to the right then it is guaranteed
+                        // to be the next one in the list. Connect these.
+                        boost::add_edge(i, i + 1, graph);
+                    }
+                    // Now, check the pixel directly below this one. We need to scan
+                    // to find it, because _if_ there is a matching strong pixel,
+                    // then we don't know how far ahead it is in the coordinates array
+                    if (coord.y < height - 1) {
+                        auto coord_below = int2{coord.x, coord.y + 1};
+                        int idx = i + 1;
+                        while (idx < px_coords.size() - 1
+                               && px_coords[idx] <= coord_below) {
+                            ++idx;
+                        }
+                        // Either we've got the pixel below, past that - or the
+                        // last pixel in the coordinate set.
+                        if (px_coords[idx] == coord_below) {
+                            boost::add_edge(i, idx, graph);
+                        }
+                    }
+                }
+                auto labels = std::vector<int>(boost::num_vertices(graph));
+                auto num_labels = boost::connected_components(graph, labels.data());
+                // print("Found {} labels for {} pixels\n",
+                //       num_labels,
+                //       boost::num_vertices(graph));
+
+                auto boxes = std::vector<bbox>(num_labels, {width, height, 0, 0});
+                auto num_pixels = std::vector<int>(num_labels, 0);
+                // print("{} boxes, {}, {}, {}, {}\n",
+                //       boxes.size(),
+                //       boxes[0].l,
+                //       boxes[0].b,
+                //       boxes[0].r,
+                //       boxes[0].t);
+                assert(labels.size() == px_coords.size());
+                for (int i = 0; i < labels.size(); ++i) {
+                    auto label = labels[i];
+                    auto coord = px_coords[label];
+                    bbox &box = boxes[label];
+                    box.l = std::min(box.l, coord.x);
+                    box.r = std::max(box.r, coord.x);
+                    box.t = std::min(box.t, coord.y);
+                    box.b = std::max(box.b, coord.y);
+                    num_pixels[label] += 1;
+                }
+                // print("All {} bounding boxes:\n", num_labels);
+                // for (int i = 0; i < boxes.size(); ++i) {
+                //     print("    {:2d} px in [{}, {}, {}, {}]\n",
+                //           num_pixels[i],
+                //           boxes[i].l,
+                //           boxes[i].t,
+                //           boxes[i].r,
+                //           boxes[i].b);
+                // }
+
+                // // Do the connected component calculations
+                // NPP_CHECK(nppiLabelMarkersUF_8u32u_C1R_Ctx(device_results.get(),
+                //                                            device_results.pitch,
+                //                                            device_label_dest.get(),
+                //                                            device_label_dest.pitch,
+                //                                            {width, height},
+                //                                            nppiNormL1,
+                //                                            device_label_buffer.get(),
+                //                                            npp_context));
+                end.record(stream);
                 // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
 
@@ -336,14 +439,14 @@ int main(int argc, char **argv) {
                         print(
                           "Thread {:2d}, Image {:4d}: Compared: \033[32mMatch {} "
                           "px\033[0m\n",
-                          i,
+                          thread_id,
                           image_num,
                           num_strong_pixels);
                     } else {
                         print(
                           "Thread {:2d}, Image {:4d}: Compared: "
                           "\033[1;31mMismatch ({} px from kernel)\033[0m\n",
-                          i,
+                          thread_id,
                           image_num,
                           num_strong_pixels);
                     }
@@ -354,18 +457,26 @@ int main(int argc, char **argv) {
                           "Thread {:2d} finished image {:4d}\n"
                           "       Copy: {:5.1f} ms\n"
                           "     Kernel: {:5.1f} ms\n"
+                          "  Post Copy: {:5.1f} ms\n"
                           "       Post: {:5.1f} ms\n"
                           "             ════════\n"
                           "     Total:  {:5.1f} ms ({:.1f} GBps)\n",
-                          i,
+                          thread_id,
                           image_num,
                           copy.elapsed_time(start),
                           post.elapsed_time(start),
-                          end.elapsed_time(post),
+                          postcopy.elapsed_time(post),
+                          end.elapsed_time(postcopy),
                           end.elapsed_time(start),
                           GBps<pixel_t>(end.elapsed_time(start), width * height));
                     } else {
-                        print("Thread {:2d} finished image {:4d}\n", i, image_num);
+                        print(
+                          "Thread {:2d} finished image {:4d} with {} pixels in {} "
+                          "reflections\n",
+                          thread_id,
+                          image_num,
+                          num_strong_pixels,
+                          num_labels);
                     }
                 }
                 // auto image_num = next_image.fetch_add(1);
