@@ -460,7 +460,8 @@ int main(int argc, char **argv) {
                           "  Post Copy: {:5.1f} ms\n"
                           "       Post: {:5.1f} ms\n"
                           "             ════════\n"
-                          "     Total:  {:5.1f} ms ({:.1f} GBps)\n",
+                          "     Total:  {:5.1f} ms ({:.1f} GBps)\n"
+                          "    {} strong pixels in {} reflections\n",
                           thread_id,
                           image_num,
                           copy.elapsed_time(start),
@@ -468,7 +469,9 @@ int main(int argc, char **argv) {
                           postcopy.elapsed_time(post),
                           end.elapsed_time(postcopy),
                           end.elapsed_time(start),
-                          GBps<pixel_t>(end.elapsed_time(start), width * height));
+                          GBps<pixel_t>(end.elapsed_time(start), width * height),
+                          bold(num_strong_pixels),
+                          bold(num_labels));
                     } else {
                         print(
                           "Thread {:2d} finished image {:4d} with {} pixels in {} "
