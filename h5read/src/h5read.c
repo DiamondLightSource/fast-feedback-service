@@ -481,12 +481,6 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
     plist = H5Dget_create_plist(dataset);
 
     status = H5Pget_virtual_count(plist, &vds_count);
-    if (vds_count > 1) {
-        fprintf(stderr,
-                "\033[1;31m*** Warning: More than one VDS but only using first "
-                "***\033[0m\n\n");
-        vds_count = 1;
-    }
 
     *data_files_array = calloc(vds_count, sizeof(h5_data_file));
     // Used to use vds parameter directly - put here so no mass-changes
