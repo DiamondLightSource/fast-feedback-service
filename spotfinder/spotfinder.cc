@@ -23,6 +23,7 @@
 #include <cmath>
 #include <csignal>
 #include <memory>
+#include <ranges>
 #include <stop_token>
 #include <thread>
 #include <utility>
@@ -53,8 +54,9 @@ auto operator==(const int2 &left, const int2 &right) -> bool {
     return left.x == right.x && left.y == right.y;
 }
 
-struct bbox {
+struct Reflection {
     int l, t, r, b;
+    int num_pixels = 0;
 };
 
 template <typename T>
@@ -179,6 +181,11 @@ int main(int argc, char **argv) {
       .help("Write diagnostic output images")
       .default_value(false)
       .implicit_value(true);
+    parser.add_argument("--min-spot-size")
+      .help("Reflections with a pixel count below this will be discarded.")
+      .metavar("N")
+      .default_value<uint32_t>(2)
+      .scan<'u', uint32_t>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -188,6 +195,8 @@ int main(int argc, char **argv) {
         print("Error: Thread count must be >= 1\n");
         std::exit(1);
     }
+    uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
+    print("Discarding reflections below {} pixels\n", min_spot_size);
 
     auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
     auto reader_mutex = std::mutex{};
@@ -381,21 +390,30 @@ int main(int argc, char **argv) {
                 auto labels = std::vector<int>(boost::num_vertices(graph));
                 auto num_labels = boost::connected_components(graph, labels.data());
 
-                auto boxes = std::vector<bbox>(num_labels, {width, height, 0, 0});
-                auto num_pixels = std::vector<int>(num_labels, 0);
+                auto boxes = std::vector<Reflection>(num_labels, {width, height, 0, 0});
 
                 assert(labels.size() == px_coords.size());
                 for (int i = 0; i < labels.size(); ++i) {
                     auto label = labels[i];
                     auto coord = px_coords[i];
-                    bbox &box = boxes[label];
+                    Reflection &box = boxes[label];
                     box.l = std::min(box.l, coord.x);
                     box.r = std::max(box.r, coord.x);
                     box.t = std::min(box.t, coord.y);
                     box.b = std::max(box.b, coord.y);
-                    num_pixels[label] += 1;
+                    box.num_pixels += 1;
                 }
 
+                // Filter shoeboxes
+                if (min_spot_size > 0) {
+                    std::vector<Reflection> filtered_boxes;
+                    for (auto &box : boxes) {
+                        if (box.num_pixels >= min_spot_size) {
+                            filtered_boxes.emplace_back(box);
+                        }
+                    }
+                    boxes = std::move(filtered_boxes);
+                }
                 // // Do the connected component calculations
                 // NPP_CHECK(nppiLabelMarkersUF_8u32u_C1R_Ctx(device_results.get(),
                 //                                            device_results.pitch,
@@ -410,9 +428,6 @@ int main(int argc, char **argv) {
                 CUDA_CHECK(cudaStreamSynchronize(stream));
 
                 if (do_writeout) {
-                    int num_g1 = 0;
-                    int num_g2 = 0;
-                    int num_g3 = 0;
                     // Build an image buffer
                     auto buffer =
                       std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
@@ -432,7 +447,6 @@ int main(int argc, char **argv) {
                     // for (auto box : boxes) {
                     for (int i = 0; i < boxes.size(); ++i) {
                         auto &box = boxes[i];
-                        auto npx = num_pixels[i];
                         constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
 
                         // edgeMin/edgeMax define how thick the border is
@@ -447,15 +461,7 @@ int main(int argc, char **argv) {
                                 buffer[width * y + box.r + edge] = color_shoebox;
                             }
                         }
-                        if (npx > 1) ++num_g1;
-                        if (npx > 2) ++num_g2;
-                        if (npx > 3) ++num_g3;
                     }
-                    print("Reflections: {}, {}>1, {}>2, {}>3\n",
-                          boxes.size(),
-                          num_g1,
-                          num_g2,
-                          num_g3);
                     lodepng::encode(format("image_{:05d}.png", image_num),
                                     reinterpret_cast<uint8_t *>(buffer.data()),
                                     width,
@@ -523,7 +529,7 @@ int main(int argc, char **argv) {
                           end.elapsed_time(start),
                           GBps<pixel_t>(end.elapsed_time(start), width * height),
                           bold(num_strong_pixels),
-                          bold(num_labels));
+                          bold(boxes.size()));
                     } else {
                         print(
                           "Thread {:2d} finished image {:4d} with {} pixels in {} "
@@ -531,7 +537,7 @@ int main(int argc, char **argv) {
                           thread_id,
                           image_num,
                           num_strong_pixels,
-                          num_labels);
+                          boxes.size());
                     }
                 }
                 // auto image_num = next_image.fetch_add(1);
