@@ -48,11 +48,9 @@ extern "C" void stop_processing(int sig) {
     }
 }
 
+/// Very basic comparison operator for convenience
 auto operator==(const int2 &left, const int2 &right) -> bool {
     return left.x == right.x && left.y == right.y;
-}
-auto operator<=(const int2 &left, const int2 &right) -> bool {
-    return left.x <= right.x && left.y <= right.y;
 }
 
 struct bbox {
@@ -263,6 +261,7 @@ int main(int argc, char **argv) {
             // Allocate buffers for DIALS-style extraction
             auto px_coords = std::vector<int2>();
             auto px_values = std::vector<pixel_t>();
+            auto px_kvals = std::vector<size_t>();
 
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
@@ -327,12 +326,14 @@ int main(int argc, char **argv) {
                 size_t num_strong_pixels = 0;
                 px_values.clear();
                 px_coords.clear();
+                px_kvals.clear();
 
                 for (int y = 0, k = 0; y < height; ++y) {
                     for (int x = 0; x < width; ++x, ++k) {
                         if (host_results[k]) {
                             px_coords.emplace_back(x, y);
                             px_values.push_back(host_image[k]);
+                            px_kvals.push_back(k);
                             ++num_strong_pixels;
                         }
                     }
@@ -342,12 +343,11 @@ int main(int argc, char **argv) {
                   boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS>{
                     px_values.size()};
 
-                // for (auto coord : px_coords) {
-
-                // }
                 for (int i = 0; i < static_cast<int>(px_coords.size()) - 1; ++i) {
                     auto coord = px_coords[i];
                     auto coord_right = int2{coord.x + 1, coord.y};
+                    auto k = px_kvals[i];
+
                     if (px_coords[i + 1] == coord_right) {
                         // Since we generate strong pixels coordinates horizontally,
                         // if there is a pixel to the right then it is guaranteed
@@ -359,9 +359,9 @@ int main(int argc, char **argv) {
                     // then we don't know how far ahead it is in the coordinates array
                     if (coord.y < height - 1) {
                         auto coord_below = int2{coord.x, coord.y + 1};
+                        auto k_below = k + width;
                         int idx = i + 1;
-                        while (idx < px_coords.size() - 1
-                               && px_coords[idx] <= coord_below) {
+                        while (idx < px_coords.size() - 1 && px_kvals[idx] < k_below) {
                             ++idx;
                         }
                         // Either we've got the pixel below, past that - or the
@@ -373,22 +373,14 @@ int main(int argc, char **argv) {
                 }
                 auto labels = std::vector<int>(boost::num_vertices(graph));
                 auto num_labels = boost::connected_components(graph, labels.data());
-                // print("Found {} labels for {} pixels\n",
-                //       num_labels,
-                //       boost::num_vertices(graph));
 
                 auto boxes = std::vector<bbox>(num_labels, {width, height, 0, 0});
                 auto num_pixels = std::vector<int>(num_labels, 0);
-                // print("{} boxes, {}, {}, {}, {}\n",
-                //       boxes.size(),
-                //       boxes[0].l,
-                //       boxes[0].b,
-                //       boxes[0].r,
-                //       boxes[0].t);
+
                 assert(labels.size() == px_coords.size());
                 for (int i = 0; i < labels.size(); ++i) {
                     auto label = labels[i];
-                    auto coord = px_coords[label];
+                    auto coord = px_coords[i];
                     bbox &box = boxes[label];
                     box.l = std::min(box.l, coord.x);
                     box.r = std::max(box.r, coord.x);
@@ -396,15 +388,6 @@ int main(int argc, char **argv) {
                     box.b = std::max(box.b, coord.y);
                     num_pixels[label] += 1;
                 }
-                // print("All {} bounding boxes:\n", num_labels);
-                // for (int i = 0; i < boxes.size(); ++i) {
-                //     print("    {:2d} px in [{}, {}, {}, {}]\n",
-                //           num_pixels[i],
-                //           boxes[i].l,
-                //           boxes[i].t,
-                //           boxes[i].r,
-                //           boxes[i].b);
-                // }
 
                 // // Do the connected component calculations
                 // NPP_CHECK(nppiLabelMarkersUF_8u32u_C1R_Ctx(device_results.get(),
@@ -420,6 +403,9 @@ int main(int argc, char **argv) {
                 CUDA_CHECK(cudaStreamSynchronize(stream));
 
                 if (do_writeout) {
+                    int num_g1 = 0;
+                    int num_g2 = 0;
+                    int num_g3 = 0;
                     // Build an image buffer
                     auto buffer =
                       std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
@@ -436,19 +422,33 @@ int main(int argc, char **argv) {
                         }
                     }
                     // Go over each shoebox and write a square
-                    for (auto box : boxes) {
+                    // for (auto box : boxes) {
+                    for (int i = 0; i < boxes.size(); ++i) {
+                        auto &box = boxes[i];
+                        auto npx = num_pixels[i];
                         constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
 
-                        constexpr int edge = 5;
-                        for (int x = box.l - edge; x <= box.r + edge; ++x) {
-                            buffer[width * (box.t - edge) + x] = color_shoebox;
-                            buffer[width * (box.b + edge) + x] = color_shoebox;
+                        // edgeMin/edgeMax define how thick the border is
+                        constexpr int edgeMin = 5, edgeMax = 7;
+                        for (int edge = edgeMin; edge <= edgeMax; ++edge) {
+                            for (int x = box.l - edge; x <= box.r + edge; ++x) {
+                                buffer[width * (box.t - edge) + x] = color_shoebox;
+                                buffer[width * (box.b + edge) + x] = color_shoebox;
+                            }
+                            for (int y = box.t - edge; y <= box.b + edge; ++y) {
+                                buffer[width * y + box.l - edge] = color_shoebox;
+                                buffer[width * y + box.r + edge] = color_shoebox;
+                            }
                         }
-                        for (int y = box.t - edge; y <= box.b + edge; ++y) {
-                            buffer[width * y + box.l - edge] = color_shoebox;
-                            buffer[width * y + box.r + edge] = color_shoebox;
-                        }
+                        if (npx > 1) ++num_g1;
+                        if (npx > 2) ++num_g2;
+                        if (npx > 3) ++num_g3;
                     }
+                    print("Reflections: {}, {}>1, {}>2, {}>3\n",
+                          boxes.size(),
+                          num_g1,
+                          num_g2,
+                          num_g3);
                     lodepng::encode(format("image_{:05d}.png", image_num),
                                     reinterpret_cast<uint8_t *>(buffer.data()),
                                     width,
