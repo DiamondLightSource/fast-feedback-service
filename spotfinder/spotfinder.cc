@@ -343,6 +343,12 @@ int main(int argc, char **argv) {
                   boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS>{
                     px_values.size()};
 
+                // Index for next pixel to search when looking for pixels
+                // below the current one. This will only ever increase, because
+                // we are guaranteed to always look for one after the last found
+                // pixel.
+                int idx_pixel_below = 1;
+
                 for (int i = 0; i < static_cast<int>(px_coords.size()) - 1; ++i) {
                     auto coord = px_coords[i];
                     auto coord_right = int2{coord.x + 1, coord.y};
@@ -360,14 +366,15 @@ int main(int argc, char **argv) {
                     if (coord.y < height - 1) {
                         auto coord_below = int2{coord.x, coord.y + 1};
                         auto k_below = k + width;
-                        int idx = i + 1;
-                        while (idx < px_coords.size() - 1 && px_kvals[idx] < k_below) {
-                            ++idx;
+                        // int idx = i + 1;
+                        while (idx_pixel_below < px_coords.size() - 1
+                               && px_kvals[idx_pixel_below] < k_below) {
+                            ++idx_pixel_below;
                         }
                         // Either we've got the pixel below, past that - or the
                         // last pixel in the coordinate set.
-                        if (px_coords[idx] == coord_below) {
-                            boost::add_edge(i, idx, graph);
+                        if (px_coords[idx_pixel_below] == coord_below) {
+                            boost::add_edge(i, idx_pixel_below, graph);
                         }
                     }
                 }
