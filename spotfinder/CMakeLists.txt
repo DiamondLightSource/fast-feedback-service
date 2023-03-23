@@ -20,6 +20,10 @@ add_subdirectory(../../h5read h5read)
 add_subdirectory(../../dependencies/argparse argparse)
 add_subdirectory(../../baseline baseline)
 
+add_library(lodepng STATIC ../../dependencies/lodepng/lodepng.cpp)
+target_include_directories(lodepng INTERFACE ../../dependencies/lodepng)
+target_compile_definitions(lodepng INTERFACE HAVE_LODEPNG)
+
 find_package(LZ4 REQUIRED)
 find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
@@ -37,5 +41,6 @@ target_link_libraries(spotfinder
     CUDA::cudart
     CUDA::nppif
     Boost::graph
+    lodepng
 )
 target_compile_options(spotfinder PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")

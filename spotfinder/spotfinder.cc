@@ -9,6 +9,7 @@
 
 #include <bitshuffle.h>
 #include <fmt/core.h>
+#include <lodepng.h>
 #include <nppi_filtering_functions.h>
 
 #include <algorithm>
@@ -176,8 +177,14 @@ int main(int argc, char **argv) {
       .help("Maximum number of images to process")
       .metavar("NUM")
       .scan<'u', uint32_t>();
+    parser.add_argument("--writeout")
+      .help("Write diagnostic output images")
+      .default_value(false)
+      .implicit_value(true);
+
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
+    bool do_writeout = parser.get<bool>("writeout");
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
         print("Error: Thread count must be >= 1\n");
@@ -222,6 +229,8 @@ int main(int argc, char **argv) {
     auto completed_images = std::atomic<int>(0);
 
     auto cpu_sync = std::barrier{num_cpu_threads};
+
+    auto png_write_mutex = std::mutex{};
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
@@ -410,6 +419,42 @@ int main(int argc, char **argv) {
                 // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
 
+                if (do_writeout) {
+                    // Build an image buffer
+                    auto buffer =
+                      std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
+                    constexpr std::array<uint8_t, 3> color_pixel{255, 0, 0};
+
+                    for (int y = 0, k = 0; y < height; ++y) {
+                        for (int x = 0; x < width; ++x, ++k) {
+                            uint8_t graysc_value = std::max(
+                              0.0f, 255.99f - static_cast<float>(host_image[k]) * 10);
+                            buffer[k] = {graysc_value, graysc_value, graysc_value};
+                            if (host_results[k]) {
+                                buffer[k] = color_pixel;
+                            }
+                        }
+                    }
+                    // Go over each shoebox and write a square
+                    for (auto box : boxes) {
+                        constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
+
+                        constexpr int edge = 5;
+                        for (int x = box.l - edge; x <= box.r + edge; ++x) {
+                            buffer[width * (box.t - edge) + x] = color_shoebox;
+                            buffer[width * (box.b + edge) + x] = color_shoebox;
+                        }
+                        for (int y = box.t - edge; y <= box.b + edge; ++y) {
+                            buffer[width * y + box.l - edge] = color_shoebox;
+                            buffer[width * y + box.r + edge] = color_shoebox;
+                        }
+                    }
+                    lodepng::encode(format("image_{:05d}.png", image_num),
+                                    reinterpret_cast<uint8_t *>(buffer.data()),
+                                    width,
+                                    height,
+                                    LCT_RGB);
+                }
                 if (do_validate) {
                     // Count the number of pixels
                     size_t num_strong_pixels = 0;
