@@ -1,10 +1,3 @@
-/**
- * Basic Naive Kernel
- * 
- * Does spotfinding in-kernel, without in-depth performance tweaking.
- * 
- */
-
 #include "spotfinder.h"
 
 #include <bitshuffle.h>
