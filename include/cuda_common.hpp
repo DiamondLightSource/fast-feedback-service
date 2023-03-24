@@ -219,7 +219,7 @@ auto make_cuda_malloc(size_t num_items = 1) {
     auto err = cudaMalloc(&obj, sizeof(Tb) * num_items);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
-          fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
+          fmt::format("Error in make_cuda_malloc: {}", cuda_error_string(err)));
     }
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
@@ -232,7 +232,7 @@ auto make_cuda_managed_malloc(size_t num_items) {
     auto err = cudaMallocManaged(&obj, sizeof(Tb) * num_items);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
-          fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
+          fmt::format("Error in make_cuda_managed_malloc: {}", cuda_error_string(err)));
     }
 
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
@@ -262,7 +262,7 @@ auto make_cuda_pitched_malloc(size_t width, size_t height) {
     auto err = cudaMallocPitch(&obj, &pitch, width * sizeof(T), height);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
-          fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
+          fmt::format("Error in make_cuda_pitched_malloc: {}", cuda_error_string(err)));
     }
 
     auto deleter = [](T *ptr) { cudaFree(ptr); };
