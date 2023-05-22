@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "watch_visit"
+version = "0.1.0"
+description = ""
+authors = ["Nicholas Devenish <ndevenish@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+requests = "^2.30.0"
+
+[tool.poetry.scripts]
+watch_visit = 'watch_visit:run'
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
