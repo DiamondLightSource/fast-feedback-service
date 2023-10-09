@@ -191,6 +191,17 @@ int main(int argc, char **argv) {
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
     print("Discarding reflections below {} pixels\n", min_spot_size);
 
+    // Wait until the file can be read
+    while (true) {
+        try {
+            H5Read(args.file);
+            break;
+        } catch (...) {
+            print("Can not open file {} yet, waiting\n", args.file);
+            std::this_thread::sleep_for(500ms);
+        }
+    }
+
     auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
     auto reader_mutex = std::mutex{};
 
@@ -273,6 +284,10 @@ int main(int argc, char **argv) {
                 auto image_num = next_image.fetch_add(1);
                 if (image_num >= num_images) {
                     break;
+                }
+                // Check that our image is available and wait if not
+                if (!reader.get_is_image_available(image_num)) {
+                    std::this_thread::sleep_for(100ms);
                 }
                 // Sized buffer for the actual data read from file
                 span<uint8_t> buffer;
