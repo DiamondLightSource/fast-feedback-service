@@ -246,6 +246,29 @@ int _find_data_file_for_image(h5read_handle *obj, size_t index) {
     return data_file;
 }
 
+size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
+    if (obj->data_files == 0) {
+        fprintf(stderr, "Error: Cannot do direct chunk read with sample data\n", index);
+        exit(1);
+    }
+#ifdef HAVE_HDF5
+    int data_file = _find_data_file_for_image(obj, index);
+    if (data_file == obj->data_file_count) {
+        fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
+        exit(1);
+    }
+    h5_data_file *current = &(obj->data_files[data_file]);
+
+    hsize_t offset[3] = {index - current->offset, 0, 0};
+    hsize_t chunk_size = 0;
+    H5Dget_chunk_storage_size(current->dataset, offset, &chunk_size);
+#endif
+    if (chunk_size < 0) {
+        return 0;
+    }
+    return (size_t)chunk_size;
+}
+
 void h5read_get_raw_chunk(h5read_handle *obj,
                           size_t index,
                           size_t *size,

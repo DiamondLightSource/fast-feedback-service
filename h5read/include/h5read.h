@@ -72,6 +72,8 @@ void h5read_get_raw_chunk(h5read_handle *obj,
                           uint8_t *data,
                           size_t max_size);
 
+size_t h5read_get_chunk_size(h5read_handle *obj, size_t index);
+
 /// Read an image from a dataset, split up into modules
 image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t frame_number);
 /// Free an image read as modules
@@ -158,6 +160,11 @@ class H5Read {
         assert(data.size() >= get_image_slow() * get_image_fast());
 #endif
         h5read_get_image_into(_handle.get(), index, data.data());
+    }
+
+    /// See if an image is available for raw chunk read
+    bool get_is_image_available(size_t index) {
+        return h5read_get_chunk_size(_handle.get(), index) > 0;
     }
 
     SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
