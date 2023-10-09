@@ -261,6 +261,7 @@ size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
 
     hsize_t offset[3] = {index - current->offset, 0, 0};
     hsize_t chunk_size = 0;
+    // H5Drefresh(current->dataset);
     H5Dget_chunk_storage_size(current->dataset, offset, &chunk_size);
 #endif
     if (chunk_size < 0) {
