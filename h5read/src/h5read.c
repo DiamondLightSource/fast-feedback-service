@@ -598,7 +598,7 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
 int unpack_vds(const char *filename, h5_data_file **data_files) {
     // TODO if we want this to become SWMR aware in the future will need to
     // allow for that here
-    hid_t file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    hid_t file = H5Fopen(filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
 
     if (file < 0) {
         fprintf(stderr, "Error: Opening for VDS read %s\n", filename);
@@ -656,7 +656,8 @@ void setup_data(h5read_handle *obj) {
 }
 
 h5read_handle *h5read_open(const char *master_filename) {
-    hid_t master_file = H5Fopen(master_filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    hid_t master_file =
+      H5Fopen(master_filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
 
     if (master_file < 0) {
         fprintf(stderr, "Error: Reading %s\n", master_filename);
@@ -680,12 +681,13 @@ h5read_handle *h5read_open(const char *master_filename) {
     file->frames = 0;
     h5_data_file *data_files = file->data_files;
     for (int j = 0; j < file->data_file_count; j++) {
-        data_files[j].file =
-          H5Fopen(data_files[j].filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+        data_files[j].file = H5Fopen(
+          data_files[j].filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
         if (data_files[j].file < 0) {
             fprintf(stderr, "Error: Opening child file %s\n", data_files[j].filename);
-            // Lots of code to cleanup here, so just quit for now
-            exit(1);
+            H5Fclose(master_file);
+            free(file);
+            return NULL;
         }
         data_files[j].dataset =
           H5Dopen(data_files[j].file, data_files[j].dsetname, H5P_DEFAULT);
@@ -693,8 +695,10 @@ h5read_handle *h5read_open(const char *master_filename) {
             fprintf(stderr,
                     "Error: Reading datasets of child file %s\n",
                     data_files[j].filename);
-            // Lots of code to cleanup here, so just quit for now
-            exit(1);
+            H5Fclose(data_files[j].file);
+            H5Fclose(master_file);
+            free(file);
+            return NULL;
         }
         file->frames += data_files[j].frames;
     }
