@@ -16,6 +16,7 @@
 #include <cmath>
 #include <csignal>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <ranges>
 #include <stop_token>
 #include <thread>
@@ -27,6 +28,11 @@
 
 using namespace fmt;
 using namespace std::chrono_literals;
+using json = nlohmann::json;
+
+// Should we read from /dev/shm instead of an H5 file
+
+#define IS_SHM
 
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
@@ -82,7 +88,8 @@ struct PitchedMalloc {
 };
 
 /// Copy the mask from a reader into a pitched GPU area
-auto upload_mask(H5Read &reader) -> PitchedMalloc<uint8_t> {
+template <typename T>
+auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
     size_t height = reader.image_shape()[0];
     size_t width = reader.image_shape()[1];
 
@@ -153,6 +160,63 @@ auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContex
     return npp_context;
 }
 
+class SHMRead {
+  private:
+    size_t _num_images;
+    std::array<size_t, 2> _image_shape;
+    const std::string _base_path;
+    std::vector<uint8_t> _mask;
+
+  public:
+    SHMRead(const std::string &path) : _base_path(path) {
+        // Read the header
+        auto header_path = path + "/headers.1";
+        std::ifstream f(header_path);
+        json data = json::parse(f);
+
+        _num_images = data["nimages"].template get<size_t>()
+                      * data["ntrigger"].template get<size_t>();
+        _image_shape = {
+          data["y_pixels_in_detector"].template get<size_t>(),
+          data["x_pixels_in_detector"].template get<size_t>(),
+        };
+
+        uint8_t bit_depth_image = data["bit_depth_image"].template get<uint8_t>();
+
+        if (bit_depth_image != 16) {
+            throw std::runtime_error(format(
+              "Can not read image with bit_depth_image={}, only 16", bit_depth_image));
+        }
+        // Read the mask
+        _mask.resize(2 * _image_shape[0] * _image_shape[1]);
+        std::ifstream f_mask(format("{}/headers.5", _base_path),
+                             std::ios::in | std::ios::binary);
+        f_mask.read(reinterpret_cast<char *>(_mask.data()), _mask.size());
+        // return {destination.data(), static_cast<size_t>(f.gcount())};
+    }
+
+    bool get_is_image_available(size_t index) {
+        return std::filesystem::exists(format("{}/{:06d}.2", _base_path, index));
+    }
+
+    SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
+        std::ifstream f(format("{}/{:06d}.2", _base_path, index),
+                        std::ios::in | std::ios::binary);
+        f.read(reinterpret_cast<char *>(destination.data()), destination.size());
+        return {destination.data(), static_cast<size_t>(f.gcount())};
+    }
+
+    size_t get_number_of_images() const {
+        return _num_images;
+    }
+    std::array<size_t, 2> image_shape() const {
+        return _image_shape;
+    };
+    std::optional<SPAN<const uint8_t>> get_mask() const {
+        return {{_mask.data(), _mask.size()}};
+    }
+};
+
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
@@ -179,10 +243,16 @@ int main(int argc, char **argv) {
       .metavar("N")
       .default_value<uint32_t>(2)
       .scan<'u', uint32_t>();
+    // parser.add_argument("--shm")
+    //   .help("This is a path to a /dev/shm ODIN dump folder")
+    //   .default_value(false)
+    //   .implicit_value(false);
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
+    // bool is_shm_source = parser.get<bool>("shm");
+
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
         print("Error: Thread count must be >= 1\n");
@@ -202,7 +272,11 @@ int main(int argc, char **argv) {
         }
     }
 
+#ifdef IS_SHM
+    auto reader = SHMRead(args.file);
+#else
     auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
+#endif
     auto reader_mutex = std::mutex{};
 
     uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
