@@ -27,10 +27,8 @@ progress = itertools.cycle(["▸▹▹▹▹", "▹▸▹▹▹", "▹▹▸▹�
 
 @lru_cache
 def _get_auth_headers() -> dict[str, str]:
-    _credentials = f"DCSERVER_CREDENTIALS{'_TEST' if 'test' in DCSERVER else ''}"
-
     try:
-        TOKEN = Path(os.environ[_credentials]).read_text().strip()
+        TOKEN = os.environ["DCSERVER_TOKEN"]
     except KeyError:
         sys.exit(f"{R}{BOLD}Error: No credentials file. Please set {_credentials}{NC}")
 
@@ -45,7 +43,7 @@ class DCIDFetcher:
         self.visit = visit
         self.highest_dcid = since
 
-    def fetch(self) -> list[int]:
+    def fetch(self) -> list[dict]:
         params = {}
         if self.highest_dcid is not None:
             params = {"since_dcid": self.highest_dcid}
@@ -59,6 +57,9 @@ class DCIDFetcher:
             sys.exit(f"{R}{BOLD}Error: Unauthorised: " + resp.json()["detail"] + NC)
         resp.raise_for_status()
         dcs = resp.json()
+        # Wait for the collection to be finished
+        dcs = [x for x in dcs if x.get("endTime")]
+        
         # If we got collections, update our latest DCID
         if dcs:
             self.highest_dcid = max(
