@@ -57,9 +57,7 @@ class DCIDFetcher:
             sys.exit(f"{R}{BOLD}Error: Unauthorised: " + resp.json()["detail"] + NC)
         resp.raise_for_status()
         dcs = resp.json()
-        # Wait for the collection to be finished
-        dcs = [x for x in dcs if x.get("endTime")]
-        
+
         # If we got collections, update our latest DCID
         if dcs:
             self.highest_dcid = max(
@@ -104,6 +102,9 @@ def run():
             return args.command + [str(image)]
 
     if args.command:
+        if not Path(args.command[0]).is_file():
+            sys.exit(f"Error: Command {args.command[0]} appears not to exist")
+        
         print(
             f"Running command on data collection:{BOLD}{P}",
             shlex.join(_prepare_command("<filename>")) + NC,
