@@ -243,6 +243,8 @@ int main(int argc, char **argv) {
 
     auto png_write_mutex = std::mutex{};
 
+    double time_waiting_for_images = 0.0;
+
     // Spawn the reader threads
     std::vector<std::jthread> threads;
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
@@ -285,9 +287,21 @@ int main(int argc, char **argv) {
                 if (image_num >= num_images) {
                     break;
                 }
-                // Check that our image is available and wait if not
-                if (!reader.get_is_image_available(image_num)) {
-                    std::this_thread::sleep_for(100ms);
+                {
+                    // Lock so we don't duplicate wait count, and also
+                    // because we don't know if the HDF5 function is threadsafe
+                    std::scoped_lock lock(reader_mutex);
+                    auto swmr_wait_start_time =
+                      std::chrono::high_resolution_clock::now();
+                    // Check that our image is available and wait if not
+                    while (!reader.get_is_image_available(image_num)) {
+                        std::this_thread::sleep_for(100ms);
+                    }
+                    time_waiting_for_images +=
+                      std::chrono::duration_cast<std::chrono::duration<double>>(
+                        std::chrono::high_resolution_clock::now()
+                        - swmr_wait_start_time)
+                        .count();
                 }
                 // Sized buffer for the actual data read from file
                 span<uint8_t> buffer;
@@ -573,4 +587,11 @@ int main(int argc, char **argv) {
       completed_images / total_time,
       width,
       height);
+    if (time_waiting_for_images < 10) {
+        print("Total time waiting for SWMR images to appear: {:.0f} ms\n",
+              time_waiting_for_images * 1000);
+    } else {
+        print("Total time waiting for SWMR images to appear: {:.2f} s\n",
+              time_waiting_for_images);
+    }
 }
