@@ -13,10 +13,12 @@
 _build/
 *ENV/
 *.pyc
-build/
+build*/
 .vscode/
 compile_commands.json
 
 .dials_build
 
 a.out
+
+_build*/
