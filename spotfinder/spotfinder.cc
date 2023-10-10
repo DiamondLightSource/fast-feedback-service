@@ -158,7 +158,7 @@ auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContex
 
 void wait_for_ready_for_read(const std::string &path,
                              std::function<bool(const std::string &)> checker,
-                             float timeout = 15.0f) {
+                             float timeout = 120.0f) {
     if (!checker(path)) {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto message_prefix =
