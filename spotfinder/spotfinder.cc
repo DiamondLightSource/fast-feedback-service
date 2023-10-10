@@ -176,7 +176,7 @@ void wait_for_ready_for_read(const std::string &path,
           "(●     )",
         };
         int i = 0;
-        while (true) {
+        while (!checker(path)) {
             auto wait_time = std::chrono::duration_cast<std::chrono::duration<double>>(
                                std::chrono::high_resolution_clock::now() - start_time)
                                .count();
