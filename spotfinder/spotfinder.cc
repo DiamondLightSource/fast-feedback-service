@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <ranges>
@@ -195,7 +196,7 @@ class SHMRead : public Reader {
         // return {destination.data(), static_cast<size_t>(f.gcount())};
     }
 
-    bool get_is_image_available(size_t index) {
+    bool is_image_available(size_t index) {
         return std::filesystem::exists(format("{}/{:06d}.2", _base_path, index));
     }
 
@@ -216,6 +217,47 @@ class SHMRead : public Reader {
         return {{_mask.data(), _mask.size()}};
     }
 };
+template <>
+bool is_ready_for_read<SHMRead>(const std::string &path) {
+    return true;
+}
+
+void wait_for_ready_for_read(const std::string &path,
+                             std::function<bool(const std::string &)> checker,
+                             float timeout = 15.0f) {
+    if (!checker(path)) {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        auto message_prefix =
+          format("Waiting for \033[1;35m{}\033[0m to be ready for read", path);
+        std::vector<std::string> ball = {
+          "( ●    )",
+          "(  ●   )",
+          "(   ●  )",
+          "(    ● )",
+          "(     ●)",
+          "(    ● )",
+          "(   ●  )",
+          "(  ●   )",
+          "( ●    )",
+          "(●     )",
+        };
+        int i = 0;
+        while (true) {
+            auto wait_time = std::chrono::duration_cast<std::chrono::duration<double>>(
+                               std::chrono::high_resolution_clock::now() - start_time)
+                               .count();
+            print("\r{}  {} [{:4.1f} s] ", message_prefix, ball[i], wait_time);
+            i = (i + 1) % ball.size();
+            std::cout << std::flush;
+
+            if (wait_time > timeout) {
+                print("\nError: Waited too long for read availability\n");
+                std::exit(1);
+            }
+            std::this_thread::sleep_for(80ms);
+        }
+    }
+}
 
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
@@ -243,10 +285,6 @@ int main(int argc, char **argv) {
       .metavar("N")
       .default_value<uint32_t>(2)
       .scan<'u', uint32_t>();
-    // parser.add_argument("--shm")
-    //   .help("This is a path to a /dev/shm ODIN dump folder")
-    //   .default_value(false)
-    //   .implicit_value(false);
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -259,24 +297,21 @@ int main(int argc, char **argv) {
         std::exit(1);
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
-    print("Discarding reflections below {} pixels\n", min_spot_size);
 
-#ifdef IS_SHM
-    auto reader = SHMRead(args.file);
-#else
-    // Wait until the file can be read
-    while (true) {
-        try {
-            H5Read(args.file);
-            break;
-        } catch (...) {
-            print("Can not open file {} yet, waiting\n", args.file);
-            std::this_thread::sleep_for(500ms);
-        }
+    std::unique_ptr<Reader> reader_ptr;
+
+    // Wait for read-readiness
+    if (std::filesystem::is_directory(args.file)) {
+        wait_for_ready_for_read(args.file, is_ready_for_read<SHMRead>);
+        reader_ptr = std::make_unique<SHMRead>(args.file);
+    } else {
+        wait_for_ready_for_read(args.file, is_ready_for_read<H5Read>);
+        reader_ptr = args.file.empty() ? std::make_unique<H5Read>()
+                                       : std::make_unique<H5Read>(args.file);
     }
+    // Bind this as a reference
+    Reader &reader = *reader_ptr;
 
-    auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
-#endif
     auto reader_mutex = std::mutex{};
 
     uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
@@ -368,7 +403,7 @@ int main(int argc, char **argv) {
                     auto swmr_wait_start_time =
                       std::chrono::high_resolution_clock::now();
                     // Check that our image is available and wait if not
-                    while (!reader.get_is_image_available(image_num)) {
+                    while (!reader.is_image_available(image_num)) {
                         std::this_thread::sleep_for(100ms);
                     }
                     time_waiting_for_images +=

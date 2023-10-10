@@ -143,7 +143,7 @@ class Reader {
   public:
     virtual ~Reader(){};
 
-    virtual bool get_is_image_available(size_t index) = 0;
+    virtual bool is_image_available(size_t index) = 0;
 
     virtual SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) = 0;
 
@@ -177,7 +177,7 @@ class H5Read : public Reader {
     }
 
     /// See if an image is available for raw chunk read
-    bool get_is_image_available(size_t index) {
+    bool is_image_available(size_t index) {
         return h5read_get_chunk_size(_handle.get(), index) > 0;
     }
 
@@ -229,6 +229,14 @@ class H5Read : public Reader {
   protected:
     std::shared_ptr<h5read_handle> _handle;
 };
+
+template <typename T>
+bool is_ready_for_read(const std::string &path);
+
+template <>
+inline bool is_ready_for_read<H5Read>(const std::string &path) {
+    return true;
+}
 #endif
 
 #endif
