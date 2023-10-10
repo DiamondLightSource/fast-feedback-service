@@ -17,7 +17,6 @@
 #include <csignal>
 #include <iostream>
 #include <memory>
-#include <nlohmann/json.hpp>
 #include <ranges>
 #include <stop_token>
 #include <thread>
@@ -25,15 +24,11 @@
 
 #include "common.hpp"
 #include "h5read.h"
+#include "shmread.hpp"
 #include "standalone.h"
 
 using namespace fmt;
 using namespace std::chrono_literals;
-using json = nlohmann::json;
-
-// Should we read from /dev/shm instead of an H5 file
-
-#define IS_SHM
 
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
@@ -161,74 +156,6 @@ auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContex
     return npp_context;
 }
 
-class SHMRead : public Reader {
-  private:
-    size_t _num_images;
-    std::array<size_t, 2> _image_shape;
-    const std::string _base_path;
-    std::vector<uint8_t> _mask;
-
-  public:
-    SHMRead(const std::string &path) : _base_path(path) {
-        // Read the header
-        auto header_path = path + "/headers.1";
-        std::ifstream f(header_path);
-        json data = json::parse(f);
-
-        _num_images = data["nimages"].template get<size_t>()
-                      * data["ntrigger"].template get<size_t>();
-        _image_shape = {
-          data["y_pixels_in_detector"].template get<size_t>(),
-          data["x_pixels_in_detector"].template get<size_t>(),
-        };
-
-        uint8_t bit_depth_image = data["bit_depth_image"].template get<uint8_t>();
-
-        if (bit_depth_image != 16) {
-            throw std::runtime_error(format(
-              "Can not read image with bit_depth_image={}, only 16", bit_depth_image));
-        }
-        // Read the mask
-        std::vector<int32_t> raw_mask;
-        _mask.resize(_image_shape[0] * _image_shape[1]);
-        std::ifstream f_mask(format("{}/headers.5", _base_path),
-                             std::ios::in | std::ios::binary);
-        f_mask.read(reinterpret_cast<char *>(_mask.data()), _mask.size());
-        _mask.reserve(_image_shape[0] * _image_shape[1]);
-        for (auto &v : raw_mask) {
-            _mask.push_back(v == 0 ? 1 : 0);
-        }
-        // return {destination.data(), static_cast<size_t>(f.gcount())};
-    }
-
-    bool is_image_available(size_t index) {
-        return std::filesystem::exists(format("{}/{:06d}.2", _base_path, index));
-    }
-
-    SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
-        std::ifstream f(format("{}/{:06d}.2", _base_path, index),
-                        std::ios::in | std::ios::binary);
-        f.read(reinterpret_cast<char *>(destination.data()), destination.size());
-        return {destination.data(), static_cast<size_t>(f.gcount())};
-    }
-
-    size_t get_number_of_images() const {
-        return _num_images;
-    }
-    std::array<size_t, 2> image_shape() const {
-        return _image_shape;
-    };
-    std::optional<SPAN<const uint8_t>> get_mask() const {
-        return {{_mask.data(), _mask.size()}};
-    }
-};
-template <>
-bool is_ready_for_read<SHMRead>(const std::string &path) {
-    // We need headers.1, and headers.5, to read the metadata
-    return std::filesystem::exists(format("{}/headers.1", path))
-           && std::filesystem::exists(format("{}/headers.5", path));
-}
-
 void wait_for_ready_for_read(const std::string &path,
                              std::function<bool(const std::string &)> checker,
                              float timeout = 15.0f) {
@@ -296,7 +223,6 @@ int main(int argc, char **argv) {
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
-    // bool is_shm_source = parser.get<bool>("shm");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {

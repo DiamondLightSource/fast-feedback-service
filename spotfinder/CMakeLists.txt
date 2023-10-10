@@ -32,7 +32,7 @@ find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
 
-add_executable(spotfinder spotfinder.cc spotfinder.cu)
+add_executable(spotfinder spotfinder.cc spotfinder.cu shmread.cc)
 target_link_libraries(spotfinder
     PRIVATE
     fmt
