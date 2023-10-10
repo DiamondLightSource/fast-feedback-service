@@ -189,10 +189,15 @@ class SHMRead : public Reader {
               "Can not read image with bit_depth_image={}, only 16", bit_depth_image));
         }
         // Read the mask
-        _mask.resize(2 * _image_shape[0] * _image_shape[1]);
+        std::vector<int32_t> raw_mask;
+        _mask.resize(_image_shape[0] * _image_shape[1]);
         std::ifstream f_mask(format("{}/headers.5", _base_path),
                              std::ios::in | std::ios::binary);
         f_mask.read(reinterpret_cast<char *>(_mask.data()), _mask.size());
+        _mask.reserve(_image_shape[0] * _image_shape[1]);
+        for (auto &v : raw_mask) {
+            _mask.push_back(v == 0 ? 1 : 0);
+        }
         // return {destination.data(), static_cast<size_t>(f.gcount())};
     }
 
