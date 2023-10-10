@@ -224,7 +224,9 @@ class SHMRead : public Reader {
 };
 template <>
 bool is_ready_for_read<SHMRead>(const std::string &path) {
-    return true;
+    // We need headers.1, and headers.5, to read the metadata
+    return std::filesystem::exists(format("{}/headers.1", path))
+           && std::filesystem::exists(format("{}/headers.5", path));
 }
 
 void wait_for_ready_for_read(const std::string &path,
