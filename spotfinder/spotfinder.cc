@@ -709,10 +709,10 @@ int main(int argc, char **argv) {
       width,
       height);
     if (time_waiting_for_images < 10) {
-        print("Total time waiting for SWMR images to appear: {:.0f} ms\n",
+        print("Total time waiting for images to appear: {:.0f} ms\n",
               time_waiting_for_images * 1000);
     } else {
-        print("Total time waiting for SWMR images to appear: {:.2f} s\n",
+        print("Total time waiting for images to appear: {:.2f} s\n",
               time_waiting_for_images);
     }
 }
