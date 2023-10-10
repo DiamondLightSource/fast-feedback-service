@@ -31,13 +31,15 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     }
     // Read the mask
     std::vector<int32_t> raw_mask;
-    _mask.resize(_image_shape[0] * _image_shape[1]);
+    raw_mask.resize(_image_shape[0] * _image_shape[1]);
     std::ifstream f_mask(format("{}/headers.5", _base_path),
                          std::ios::in | std::ios::binary);
-    f_mask.read(reinterpret_cast<char *>(_mask.data()), _mask.size());
+    f_mask.read(reinterpret_cast<char *>(raw_mask.data()),
+                raw_mask.size() * sizeof(decltype(raw_mask)::value_type));
+    // draw_image_data(raw_mask.data(), 0, 0, 20, 20, _image_shape[1], _image_shape[0]);
     _mask.reserve(_image_shape[0] * _image_shape[1]);
     for (auto &v : raw_mask) {
-        _mask.push_back(v == 0 ? 1 : 0);
+        _mask.push_back(!v);
     }
     // return {destination.data(), static_cast<size_t>(f.gcount())};
 }
