@@ -308,6 +308,11 @@ int main(int argc, char **argv) {
     std::unique_ptr<Reader> reader_ptr;
 
     // Wait for read-readiness
+    // Firstly: That the path exists
+    if (!std::filesystem::exists(args.file)) {
+        wait_for_ready_for_read(
+          args.file, [](const std::string &s) { return std::filesystem::exists(s); });
+    }
     if (std::filesystem::is_directory(args.file)) {
         wait_for_ready_for_read(args.file, is_ready_for_read<SHMRead>);
         reader_ptr = std::make_unique<SHMRead>(args.file);
