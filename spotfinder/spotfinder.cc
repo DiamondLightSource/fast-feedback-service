@@ -353,9 +353,21 @@ int main(int argc, char **argv) {
                 // Sized buffer for the actual data read from file
                 span<uint8_t> buffer;
                 // Fetch the image data from the reader
-                {
-                    std::scoped_lock lock(reader_mutex);
-                    buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
+                while (true) {
+                    {
+                        std::scoped_lock lock(reader_mutex);
+                        buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
+                    }
+                    // /dev/shm we might not have an atomic write
+                    if (buffer.size() == 0) {
+                        print(
+                          "\033[1mRace Condition?!?? Got buffer size 0 for image "
+                          "{image_num}. "
+                          "Sleeping.\033[0m\n");
+                        std::this_thread::sleep_for(100ms);
+                        continue;
+                    }
+                    break;
                 }
                 // Decompress this data, outside of the mutex
                 bshuf_decompress_lz4(
