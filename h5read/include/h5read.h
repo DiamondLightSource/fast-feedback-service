@@ -138,8 +138,22 @@ class ImageModules {
     const SPAN<SPAN<uint8_t>> masks;
 };
 
+/// Base class object to provide a unified reader interface
+class Reader {
+  public:
+    virtual ~Reader(){};
+
+    virtual bool get_is_image_available(size_t index) = 0;
+
+    virtual SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) = 0;
+
+    virtual size_t get_number_of_images() const = 0;
+    virtual std::array<size_t, 2> image_shape() const = 0;
+    virtual std::optional<SPAN<const uint8_t>> get_mask() const = 0;
+};
+
 // Declare a C++ "object" version so we don't have to keep track of allocations
-class H5Read {
+class H5Read : public Reader {
   public:
     using image_type = image_t_type;
 
@@ -181,7 +195,7 @@ class H5Read {
         return Image(_handle, index);
     }
 
-    std::optional<SPAN<uint8_t>> get_mask() const {
+    virtual std::optional<SPAN<const uint8_t>> get_mask() const {
         auto mask = h5read_get_mask(_handle.get());
         if (mask == nullptr) {
             return std::nullopt;
@@ -194,7 +208,7 @@ class H5Read {
     }
 
     /// Get the total number of image frames
-    size_t get_number_of_images() {
+    virtual size_t get_number_of_images() const {
         return h5read_get_number_of_images(_handle.get());
     }
     /// Get the number of pixels in the slow dimension
@@ -206,7 +220,7 @@ class H5Read {
         return h5read_get_image_fast(_handle.get());
     }
     /// Get the image shape, in (slow, fast) pixels
-    std::array<size_t, 2> image_shape() const {
+    virtual std::array<size_t, 2> image_shape() const {
         return {get_image_slow(), get_image_fast()};
     }
 

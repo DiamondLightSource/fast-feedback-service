@@ -160,7 +160,7 @@ auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContex
     return npp_context;
 }
 
-class SHMRead {
+class SHMRead : public Reader {
   private:
     size_t _num_images;
     std::array<size_t, 2> _image_shape;
@@ -261,6 +261,9 @@ int main(int argc, char **argv) {
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
     print("Discarding reflections below {} pixels\n", min_spot_size);
 
+#ifdef IS_SHM
+    auto reader = SHMRead(args.file);
+#else
     // Wait until the file can be read
     while (true) {
         try {
@@ -272,9 +275,6 @@ int main(int argc, char **argv) {
         }
     }
 
-#ifdef IS_SHM
-    auto reader = SHMRead(args.file);
-#else
     auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
 #endif
     auto reader_mutex = std::mutex{};
