@@ -221,7 +221,7 @@ int main(int argc, char **argv) {
       .default_value<uint32_t>(2)
       .scan<'u', uint32_t>();
     parser.add_argument("--start-index")
-      .help("Index of first image. Only used for CBF reading.")
+      .help("Index of first image. Only used for CBF reading, and can only be 0 or 1.")
       .metavar("N")
       .default_value<uint32_t>(0)
       .scan<'u', uint32_t>();
@@ -398,8 +398,11 @@ int main(int argc, char **argv) {
                     bshuf_decompress_lz4(
                       buffer.data() + 12, host_image.get(), width * height, 2, 0);
                     break;
-                case Reader::ChunkCompression::UNCOMPRESSED:
-                    std::copy(buffer.begin(), buffer.end(), host_image.get());
+                case Reader::ChunkCompression::BYTE_OFFSET_32:
+                    decompress_byte_offset<pixel_t>(buffer,
+                                                    {host_image.get(), width * height});
+                    // std::copy(buffer.begin(), buffer.end(), host_image.get());
+                    // std::exit(1);
                     break;
                 }
                 start.record(stream);

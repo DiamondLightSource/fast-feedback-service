@@ -142,8 +142,8 @@ class ImageModules {
 class Reader {
   public:
     enum ChunkCompression {
-        UNCOMPRESSED,
         BITSHUFFLE_LZ4,
+        BYTE_OFFSET_32,
     };
 
     virtual ~Reader(){};
