@@ -167,9 +167,10 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
 
         // cudaDeviceProp deviceProp;
         if (cudaSetDevice(_arguments.device_index) != cudaSuccess) {
-            fmt::print(red("{}: Could not select device ({})"),
-                       bold("Error"),
-                       cuda_error_string(cudaGetLastError()));
+            fmt::print(
+              "\033[1;31m{}\033[0m\033[31m: Could not select device ({})\033[0m\n",
+              "Error",
+              cuda_error_string(cudaGetLastError()));
             std::exit(1);
         }
         if (cudaGetDeviceProperties(&_arguments.device, _arguments.device_index)
