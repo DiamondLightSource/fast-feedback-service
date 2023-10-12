@@ -2,6 +2,8 @@
 
 #include "shmread.hpp"
 
+#include <fmt/core.h>
+
 #include <iostream>
 #include <nlohmann/json.hpp>
 

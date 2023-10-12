@@ -141,12 +141,17 @@ class ImageModules {
 /// Base class object to provide a unified reader interface
 class Reader {
   public:
+    enum ChunkCompression {
+        UNCOMPRESSED,
+        BITSHUFFLE_LZ4,
+    };
+
     virtual ~Reader(){};
 
     virtual bool is_image_available(size_t index) = 0;
 
     virtual SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) = 0;
-
+    virtual ChunkCompression get_raw_chunk_compression() = 0;
     virtual size_t get_number_of_images() const = 0;
     virtual std::array<size_t, 2> image_shape() const = 0;
     virtual std::optional<SPAN<const uint8_t>> get_mask() const = 0;
@@ -189,6 +194,10 @@ class H5Read : public Reader {
                              destination.data(),
                              destination.size_bytes());
         return {destination.data(), chunk_bytes};
+    }
+
+    virtual auto get_raw_chunk_compression() -> ChunkCompression {
+        return Reader::ChunkCompression::BITSHUFFLE_LZ4;
     }
 
     Image get_image(size_t index) {

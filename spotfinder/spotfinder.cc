@@ -22,6 +22,7 @@
 #include <thread>
 #include <utility>
 
+#include "cbfread.hpp"
 #include "common.hpp"
 #include "h5read.h"
 #include "shmread.hpp"
@@ -219,6 +220,11 @@ int main(int argc, char **argv) {
       .metavar("N")
       .default_value<uint32_t>(2)
       .scan<'u', uint32_t>();
+    parser.add_argument("--start-index")
+      .help("Index of first image. Only used for CBF reading.")
+      .metavar("N")
+      .default_value<uint32_t>(0)
+      .scan<'u', uint32_t>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -235,13 +241,21 @@ int main(int argc, char **argv) {
 
     // Wait for read-readiness
     // Firstly: That the path exists
-    if (!std::filesystem::exists(args.file)) {
-        wait_for_ready_for_read(
-          args.file, [](const std::string &s) { return std::filesystem::exists(s); });
-    }
+    // if (!std::filesystem::exists(args.file)) {
+    //     wait_for_ready_for_read(
+    //       args.file, [](const std::string &s) { return std::filesystem::exists(s); });
+    // }
     if (std::filesystem::is_directory(args.file)) {
         wait_for_ready_for_read(args.file, is_ready_for_read<SHMRead>);
         reader_ptr = std::make_unique<SHMRead>(args.file);
+    } else if (args.file.ends_with(".cbf")) {
+        if (!parser.is_used("images")) {
+            print("Error: CBF reading must specify --images\n");
+            std::exit(1);
+        }
+        reader_ptr = std::make_unique<CBFRead>(args.file,
+                                               parser.get<uint32_t>("images"),
+                                               parser.get<uint32_t>("start-index"));
     } else {
         wait_for_ready_for_read(args.file, is_ready_for_read<H5Read>);
         reader_ptr = args.file.empty() ? std::make_unique<H5Read>()
@@ -335,6 +349,12 @@ int main(int argc, char **argv) {
                     break;
                 }
                 {
+                    // TODO:
+                    //  - This loop does not handle the stop token
+                    //  - Counting time like this does not work efficiently
+                    //    because it might not be the "next" image that
+                    //    gets the lock.
+                    //
                     // Lock so we don't duplicate wait count, and also
                     // because we don't know if the HDF5 function is threadsafe
                     std::scoped_lock lock(reader_mutex);
@@ -369,9 +389,19 @@ int main(int argc, char **argv) {
                     }
                     break;
                 }
-                // Decompress this data, outside of the mutex
-                bshuf_decompress_lz4(
-                  buffer.data() + 12, host_image.get(), width * height, 2, 0);
+                // Decompress this data, outside of the mutex.
+                // We do this here rather than in the reader, because we
+                // anticipate that we will want to eventually offload
+                // the decompression
+                switch (reader.get_raw_chunk_compression()) {
+                case Reader::ChunkCompression::BITSHUFFLE_LZ4:
+                    bshuf_decompress_lz4(
+                      buffer.data() + 12, host_image.get(), width * height, 2, 0);
+                    break;
+                case Reader::ChunkCompression::UNCOMPRESSED:
+                    std::copy(buffer.begin(), buffer.end(), host_image.get());
+                    break;
+                }
                 start.record(stream);
                 // Copy the image to GPU
                 CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
