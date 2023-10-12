@@ -9,7 +9,7 @@ import sys
 import time
 from functools import lru_cache
 from pathlib import Path
-
+import shutil
 import requests
 
 R = "\033[31m"
@@ -36,7 +36,7 @@ def _get_auth_headers() -> dict[str, str]:
 
 
 class DCIDFetcher:
-    highest_dcid: int | None 
+    highest_dcid: int | None
     visit: str
 
     def __init__(self, visit: str, since: int | None):
@@ -73,7 +73,7 @@ def run():
     parser.add_argument("visit", help="The name of the visit to watch.")
     parser.add_argument(
         "command",
-        help="Command and arguments to run upon finding a new data collection. Use '{}' to interpose the image name.",
+        help="Command and arguments to run upon finding a new data collection. Use '{}' to interpose the image name. Use '{nimages}' to interpose the image count, and '{startimagenumber}' for the starting image number.",
         nargs=argparse.REMAINDER,
     )
     parser.add_argument(
@@ -94,20 +94,32 @@ def run():
     args = parser.parse_args()
 
     # Prepare the execute function
-    def _prepare_command(image: Path | str) -> list[str]:
-        if "{}" in args.command:
-            pt = args.command.index("{}")
-            return args.command[:pt] + [str(image)] + args.command[pt + 1 :]
-        else:
-            return args.command + [str(image)]
+    def _prepare_command(image: Path | str, nimages: str | int, startImageNumber: str | int) -> list[str]:
+        command = args.command[:]
+        has_image = False
+        for i in range(len(command)):
+            if "{nimages}" in command[i]:
+                command[i] = command[i].replace("{nimages}", str(nimages))
+            if "{nimages}" in command[i]:
+                command[i] = command[i].replace("{nimages}", str(nimages))
+            if "{startimagenumber}" in command[i]:
+                command[i] = command[i].replace("{startimagenumber}", str(startImageNumber))
+            if "{}" in command[i]:
+                command[i] = command[i].replace("{}", str(image))
+                has_image = True
+
+        if not has_image:
+            command.append(str(image))
+
+        return command
 
     if args.command:
-        if not Path(args.command[0]).is_file():
+        if not Path(args.command[0]).is_file() and not shutil.which(args.command[0]):
             sys.exit(f"Error: Command {args.command[0]} appears not to exist")
-        
+
         print(
             f"Running command on data collection:{BOLD}{P}",
-            shlex.join(_prepare_command("<filename>")) + NC,
+            shlex.join(_prepare_command("<filename>", "<nimages>", "<startimagenumber>")) + NC,
         )
 
     fetcher = DCIDFetcher(args.visit, since=args.since)
@@ -132,7 +144,9 @@ def run():
                 )
                 if args.command:
                     start = time.monotonic()
-                    _command = _prepare_command(image_path)
+                    _command = _prepare_command(
+                        image=image_path, nimages=dc["numberOfImages"], startImageNumber=dc["startImageNumber"],
+                    )
                     print("+", shlex.join(_command))
                     proc = subprocess.run(_command)
                     elapsed = time.monotonic() - start
