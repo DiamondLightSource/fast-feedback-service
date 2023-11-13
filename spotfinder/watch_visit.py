@@ -39,9 +39,12 @@ class DCIDFetcher:
     highest_dcid: int | None
     visit: str
 
-    def __init__(self, visit: str, since: int | None):
+    def __init__(
+        self, visit: str, since: int | None, *, end_of_collection: bool = False
+    ):
         self.visit = visit
         self.highest_dcid = since
+        self.end_of_collection = end_of_collection
 
     def fetch(self) -> list[dict]:
         params = {}
@@ -57,6 +60,8 @@ class DCIDFetcher:
             sys.exit(f"{R}{BOLD}Error: Unauthorised: " + resp.json()["detail"] + NC)
         resp.raise_for_status()
         dcs = resp.json()
+
+        dcs = [x for x in dcs if x.get("endTime")]
 
         # If we got collections, update our latest DCID
         if dcs:
@@ -91,10 +96,17 @@ def run():
     parser.add_argument(
         "--since", help="Ignore collections with DCIDs lower than this.", type=int
     )
+    parser.add_argument(
+        "--ended",
+        help="Only run once a collection has ended",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     # Prepare the execute function
-    def _prepare_command(image: Path | str, nimages: str | int, startImageNumber: str | int) -> list[str]:
+    def _prepare_command(
+        image: Path | str, nimages: str | int, startImageNumber: str | int
+    ) -> list[str]:
         command = args.command[:]
         has_image = False
         for i in range(len(command)):
@@ -103,7 +115,9 @@ def run():
             if "{nimages}" in command[i]:
                 command[i] = command[i].replace("{nimages}", str(nimages))
             if "{startimagenumber}" in command[i]:
-                command[i] = command[i].replace("{startimagenumber}", str(startImageNumber))
+                command[i] = command[i].replace(
+                    "{startimagenumber}", str(startImageNumber)
+                )
             if "{}" in command[i]:
                 command[i] = command[i].replace("{}", str(image))
                 has_image = True
@@ -119,10 +133,13 @@ def run():
 
         print(
             f"Running command on data collection:{BOLD}{P}",
-            shlex.join(_prepare_command("<filename>", "<nimages>", "<startimagenumber>")) + NC,
+            shlex.join(
+                _prepare_command("<filename>", "<nimages>", "<startimagenumber>")
+            )
+            + NC,
         )
 
-    fetcher = DCIDFetcher(args.visit, since=args.since)
+    fetcher = DCIDFetcher(args.visit, since=args.since, end_of_collection=args.ended)
 
     if not args.all:
         # Grab all existing DCIDs first, so we don't get overloaded
@@ -145,7 +162,9 @@ def run():
                 if args.command:
                     start = time.monotonic()
                     _command = _prepare_command(
-                        image=image_path, nimages=dc["numberOfImages"], startImageNumber=dc["startImageNumber"],
+                        image=image_path,
+                        nimages=dc["numberOfImages"],
+                        startImageNumber=dc["startImageNumber"],
                     )
                     print("+", shlex.join(_command))
                     proc = subprocess.run(_command)
