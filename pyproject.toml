@@ -10,7 +10,7 @@ requests = "^2.30.0"
 watchdir = "^1.0.0"
 
 [tool.poetry.scripts]
-watch_visit = 'watch_visit:run'
+watch_dc = 'watch_dc:run'
 watch_shm = 'watch_shm:run'
 
 [build-system]
