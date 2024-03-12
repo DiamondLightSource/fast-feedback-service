@@ -225,10 +225,16 @@ int main(int argc, char **argv) {
       .metavar("N")
       .default_value<uint32_t>(0)
       .scan<'u', uint32_t>();
+    parser.add_argument("-t", "--timeout")
+      .help("Amount of time (in seconds) to wait for new images before failing.")
+      .metavar("S")
+      .default_value<float>(30)
+      .scan<'f', float>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
+    float wait_timeout = parser.get<float>("timeout");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -240,13 +246,15 @@ int main(int argc, char **argv) {
     std::unique_ptr<Reader> reader_ptr;
 
     // Wait for read-readiness
-    // Firstly: That the path exists
-    // if (!std::filesystem::exists(args.file)) {
-    //     wait_for_ready_for_read(
-    //       args.file, [](const std::string &s) { return std::filesystem::exists(s); });
-    // }
+    // Firstly: That the path exists at all
+    if (!std::filesystem::exists(args.file)) {
+        wait_for_ready_for_read(
+          args.file,
+          [](const std::string &s) { return std::filesystem::exists(s); },
+          wait_timeout);
+    }
     if (std::filesystem::is_directory(args.file)) {
-        wait_for_ready_for_read(args.file, is_ready_for_read<SHMRead>);
+        wait_for_ready_for_read(args.file, is_ready_for_read<SHMRead>, wait_timeout);
         reader_ptr = std::make_unique<SHMRead>(args.file);
     } else if (args.file.ends_with(".cbf")) {
         if (!parser.is_used("images")) {
@@ -257,7 +265,7 @@ int main(int argc, char **argv) {
                                                parser.get<uint32_t>("images"),
                                                parser.get<uint32_t>("start-index"));
     } else {
-        wait_for_ready_for_read(args.file, is_ready_for_read<H5Read>);
+        wait_for_ready_for_read(args.file, is_ready_for_read<H5Read>, wait_timeout);
         reader_ptr = args.file.empty() ? std::make_unique<H5Read>()
                                        : std::make_unique<H5Read>(args.file);
     }
@@ -354,6 +362,8 @@ int main(int argc, char **argv) {
                     //  - Counting time like this does not work efficiently
                     //    because it might not be the "next" image that
                     //    gets the lock.
+                    //  - This freezes if the collection is stopped;
+                    //    continue implementing timout feature
                     //
                     // Lock so we don't duplicate wait count, and also
                     // because we don't know if the HDF5 function is threadsafe
