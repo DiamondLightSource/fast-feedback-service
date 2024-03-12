@@ -191,6 +191,7 @@ void wait_for_ready_for_read(const std::string &path,
             }
             std::this_thread::sleep_for(80ms);
         }
+        print("\n");
     }
 }
 
