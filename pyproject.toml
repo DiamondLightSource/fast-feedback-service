@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "watch_visit"
+name = "watch_dc"
 version = "0.1.0"
 description = ""
 authors = ["Nicholas Devenish <ndevenish@gmail.com>"]
@@ -8,10 +8,16 @@ authors = ["Nicholas Devenish <ndevenish@gmail.com>"]
 python = "^3.11"
 requests = "^2.30.0"
 watchdir = "^1.0.0"
+pyepics = "^3.5.2"
+zocalo = "^0.30.2"
 
 [tool.poetry.scripts]
 watch_dc = 'watch_dc:run'
 watch_shm = 'watch_shm:run'
+watch_rmq = "watch_rmq:run"
+
+[tool.poetry.plugins."workflows.services"]
+"GPUPerImageAnalysis" = "service:GPUPerImageAnalysis"
 
 [build-system]
 requires = ["poetry-core"]
