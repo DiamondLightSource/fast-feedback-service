@@ -14,7 +14,7 @@ using namespace fmt;
 
 SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     // Read the header
-    auto header_path = path + "/headers.1";
+    auto header_path = path + "/start_1";
     std::ifstream f(header_path);
     json data = json::parse(f);
 
@@ -34,7 +34,7 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     // Read the mask
     std::vector<int32_t> raw_mask;
     raw_mask.resize(_image_shape[0] * _image_shape[1]);
-    std::ifstream f_mask(format("{}/headers.5", _base_path),
+    std::ifstream f_mask(format("{}/start_5", _base_path),
                          std::ios::in | std::ios::binary);
     f_mask.read(reinterpret_cast<char *>(raw_mask.data()),
                 raw_mask.size() * sizeof(decltype(raw_mask)::value_type));
@@ -47,11 +47,11 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
 }
 
 bool SHMRead::is_image_available(size_t index) {
-    return std::filesystem::exists(format("{}/{:06d}.2", _base_path, index));
+    return std::filesystem::exists(format("{}/image_{:06d}_2", _base_path, index));
 }
 
 SPAN<uint8_t> SHMRead::get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
-    std::ifstream f(format("{}/{:06d}.2", _base_path, index),
+    std::ifstream f(format("{}/image_{:06d}_2", _base_path, index),
                     std::ios::in | std::ios::binary);
     f.read(reinterpret_cast<char *>(destination.data()), destination.size());
     return {destination.data(), static_cast<size_t>(f.gcount())};
@@ -60,6 +60,6 @@ SPAN<uint8_t> SHMRead::get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
 template <>
 bool is_ready_for_read<SHMRead>(const std::string &path) {
     // We need headers.1, and headers.5, to read the metadata
-    return std::filesystem::exists(format("{}/headers.1", path))
-           && std::filesystem::exists(format("{}/headers.5", path));
+    return std::filesystem::exists(format("{}/start_1", path))
+           && std::filesystem::exists(format("{}/start_5", path));
 }
