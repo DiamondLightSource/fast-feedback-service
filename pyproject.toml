@@ -22,3 +22,9 @@ watch_rmq = "watch_rmq:run"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+lint.ignore = ["E501", "E741"]
+line-length = 88
+lint.select = ["C9", "E", "F", "W", "I"]
+lint.unfixable = ["F841"]

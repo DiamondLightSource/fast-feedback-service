@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pprint import pprint, pformat
+from pprint import pformat
 
 import workflows.recipe
 from workflows.services.common_service import CommonService
