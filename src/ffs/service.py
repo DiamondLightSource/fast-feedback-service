@@ -25,7 +25,7 @@ def _setup_rich_logging(level=logging.DEBUG):
         # We want to replace the streamhandler
         if isinstance(handler, logging.StreamHandler):
             rootLogger.handlers.remove(handler)
-        # We also want to lower the output level
+        # We also want to lower the output level, so pin this to the existing
         handler.setLevel(rootLogger.level)
 
     rootLogger.handlers.append(
@@ -75,6 +75,10 @@ class GPUPerImageAnalysis(CommonService):
         if not SPOTFINDER.is_file():
             self.log.error("Could not find spotfinder executable: %s", SPOTFINDER)
             rw.transport.nack(header)
+            return
+
+        # Otherwise, assume that this will work for now and nack the message
+        rw.transport.ack(header)
 
         # Form the expected path for this dataset
         expected_path = f"/dev/shm/eiger/{parameters['filename']}"
