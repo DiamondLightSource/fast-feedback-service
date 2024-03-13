@@ -34,7 +34,7 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     // Read the mask
     std::vector<int32_t> raw_mask;
     raw_mask.resize(_image_shape[0] * _image_shape[1]);
-    std::ifstream f_mask(format("{}/start_5", _base_path),
+    std::ifstream f_mask(format("{}/start_4", _base_path),
                          std::ios::in | std::ios::binary);
     f_mask.read(reinterpret_cast<char *>(raw_mask.data()),
                 raw_mask.size() * sizeof(decltype(raw_mask)::value_type));
@@ -61,5 +61,5 @@ template <>
 bool is_ready_for_read<SHMRead>(const std::string &path) {
     // We need headers.1, and headers.5, to read the metadata
     return std::filesystem::exists(format("{}/start_1", path))
-           && std::filesystem::exists(format("{}/start_5", path));
+           && std::filesystem::exists(format("{}/start_4", path));
 }
