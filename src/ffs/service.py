@@ -55,6 +55,17 @@ class GPUPerImageAnalysis(CommonService):
         self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict
     ):
         parameters = rw.recipe_step["parameters"]
+
+        # Reject messages without the extra info
+        if parameters.get("filename", "{filename}") == "{filename}":
+            # We got a request, but didn't have required hyperion info
+            self.log.debug(
+                f"Rejecting PIA request for {parameters['dcid']}; no valid hyperion information"
+            )
+            # We just want to silently kill this message, as it wasn't for us
+            rw.transport.ack(header)
+            return
+
         self.log.debug(
             f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}\n"
             f"Parameters: {pformat(rw.recipe_step['parameters'])}\n"
