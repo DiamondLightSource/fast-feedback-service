@@ -54,8 +54,10 @@ class GPUPerImageAnalysis(CommonService):
     def gpu_per_image_analysis(
         self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict
     ):
+        parameters = rw.recipe_step["parameters"]
         self.log.debug(
-            f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}"
+            f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}\n"
+            f"Parameters: {pformat(rw.recipe_step['parameters'])}\n"
         )
 
         # Do sanity checks, then launch spotfinder
@@ -64,7 +66,7 @@ class GPUPerImageAnalysis(CommonService):
             rw.transport.nack(header)
 
         # Form the expected path for this dataset
-        expected_path = f"/dev/shm/{rw.payload['filename']}"
+        expected_path = f"/dev/shm/eiger/{parameters['filename']}"
 
         # Create a pipe for comms
         # TODO: Set up pipes for communication back from process
@@ -72,9 +74,9 @@ class GPUPerImageAnalysis(CommonService):
 
         # Now run the spotfinder
         command = [SPOTFINDER, str(expected_path)]
-        self.log.info(f"Running: {' '.join(command)}")
+        self.log.info(f"Running: {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
         _result = subprocess.run(command)
 
         duration = time.monotonic() - start_time
-        self.log.info(f"Analysis complete in {duration:.1} s")
+        self.log.info(f"Analysis complete in {duration:.1f} s")
