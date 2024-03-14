@@ -88,7 +88,15 @@ class GPUPerImageAnalysis(CommonService):
         # (pipe_r, pipe_w) = os.pipe()
 
         # Now run the spotfinder
-        command = [SPOTFINDER, str(expected_path)]
+        command = [
+            SPOTFINDER,
+            "--threads=20",
+            str(expected_path),
+            "--images",
+            parameters["number_of_frames"],
+            "--start-index",
+            parameters["start_index"],
+        ]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
         _result = subprocess.run(command)
