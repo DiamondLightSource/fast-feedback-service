@@ -1,0 +1,18 @@
+{
+    "1": {
+        "service": "GPU Gridscan",
+        "queue": "per_image_analysis.gpu",
+        "parameters": {
+            "filename": "{filename}",
+            "start_index": "{start_index}",
+            "number_of_frames": "{number_of_frames}",
+            "dcid": "{ispyb_dcid}"
+        }
+    },
+    "start": [
+        [
+            1,
+            []
+        ]
+    ]
+}
