@@ -17,6 +17,7 @@
 #include <csignal>
 #include <iostream>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <ranges>
 #include <stop_token>
 #include <thread>
@@ -195,6 +196,58 @@ void wait_for_ready_for_read(const std::string &path,
     }
 }
 
+/**
+ * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
+ */
+class PipeHandler {
+  private:
+    int pipe_fd;     // File descriptor for the pipe
+    std::mutex mtx;  // Mutex for synchronization
+
+  public:
+    /**
+     * @brief Constructor to initialize the PipeHandler object.
+     * @param pipe_fd The file descriptor for the pipe.
+     */
+    PipeHandler(int pipe_fd) : pipe_fd(pipe_fd) {
+        // Constructor to initialize the pipe handler
+        print("PipeHandler initialized with pipe_fd: {}\n", pipe_fd);
+    }
+
+    /**
+     * @brief Destructor to close the pipe.
+     */
+    ~PipeHandler() {
+        close(pipe_fd);
+    }
+
+    /**
+     * @brief Sends data through the pipe in a thread-safe manner.
+     * @param json_data A json object containing the data to be sent.
+     */
+    void sendData(const nlohmann::json &json_data) {
+        // Lock the mutex, to ensure that only one thread writes to the pipe at a time
+        // This unlocks the mutex when the function returns
+        std::lock_guard<std::mutex> lock(mtx);
+
+        // Convert the JSON object to a string
+        std::string stringified_json = json_data.dump() + "\n";
+
+        // Write the data to the pipe
+        // Returns the number of bytes written to the pipe
+        // Returns -1 if an error occurs
+        ssize_t bytes_written =
+          write(pipe_fd, stringified_json.c_str(), stringified_json.length());
+
+        // Check if an error occurred while writing to the pipe
+        if (bytes_written == -1) {
+            std::cerr << "Error writing to pipe: " << strerror(errno) << std::endl;
+        } else {
+            // print("Data sent through the pipe: {}\n", stringified_json);
+        }
+    }
+};
+
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
@@ -231,10 +284,16 @@ int main(int argc, char **argv) {
       .metavar("S")
       .default_value<float>(30)
       .scan<'f', float>();
+    parser.add_argument("-fd", "--pipe_fd")
+      .help("File descriptor for the pipe to output data through")
+      .metavar("FD")
+      .default_value<int>(-1)
+      .scan<'i', int>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
+    int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
@@ -314,6 +373,12 @@ int main(int argc, char **argv) {
     auto png_write_mutex = std::mutex{};
 
     double time_waiting_for_images = 0.0;
+
+    // Create a PipeHandler object if the pipe file descriptor is provided
+    std::unique_ptr<PipeHandler> pipeHandler = nullptr;
+    if (pipe_fd != -1) {
+        pipeHandler = std::make_unique<PipeHandler>(pipe_fd);
+    }
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
@@ -593,6 +658,18 @@ int main(int argc, char **argv) {
                                     height,
                                     LCT_RGB);
                 }
+
+                // Check if pipeHandler was initialized
+                if (pipeHandler != nullptr) {
+                    // Create a JSON object to store the data
+                    nlohmann::json json_data = {
+                      {"num_strong_pixels", num_strong_pixels},
+                      {"file", args.file},
+                      {"file-number", image_num}};
+                    // Send the JSON data through the pipe
+                    pipeHandler->sendData(json_data);
+                }
+
                 if (do_validate) {
                     // Count the number of pixels
                     size_t num_strong_pixels = 0;

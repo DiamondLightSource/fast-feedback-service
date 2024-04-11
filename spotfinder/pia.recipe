@@ -7,7 +7,14 @@
             "start_index": "{start_index}",
             "number_of_frames": "{number_of_frames}",
             "dcid": "{ispyb_dcid}"
-        }
+        },
+        "output": [
+            2
+        ]
+    },
+    "2": {
+        "service": "GPU Xray Centering",
+        "queue": "reduce.xray_centering.gpu"
     },
     "start": [
         [

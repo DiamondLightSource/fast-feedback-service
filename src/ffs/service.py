@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 from pprint import pformat
+from typing import Iterator
 
 import workflows.recipe
 from rich.logging import RichHandler
 from workflows.services.common_service import CommonService
 
 DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
-
-SPOTFINDER = Path(
-    "/dls/science/users/mep23677/cuda/miniapp/cuda/spotfinder/_build/spotfinder"
-)
 
 
 def _setup_rich_logging(level=logging.DEBUG):
@@ -36,7 +35,7 @@ def _setup_rich_logging(level=logging.DEBUG):
 class GPUPerImageAnalysis(CommonService):
     _service_name = "GPU Per-Image-Analysis"
     _logger_name = "spotfinder.service"
-
+    _spotfinder_executable: Path | None = None
     _spotfind_proc: subprocess.Popen | None = None
 
     def initializing(self):
@@ -50,9 +49,47 @@ class GPUPerImageAnalysis(CommonService):
             acknowledgement=True,
             log_extender=self.extend_log,
         )
+        self._spotfinder_executable = self._find_spotfinder()
+
+    def _find_spotfinder(self) -> Path:
+        """
+        Finds and sets the path to the spotfinder executable
+
+        Returns:
+            Path: The path to the spotfinder executable
+        """
+        # Try to get the path from the environment
+        spotfinder_path = os.getenv("SPOTFINDER")
+
+        # If environment variable is not set, check for directories
+        if spotfinder_path is None:
+            self.log.warn("SPOTFINDER environment variable not set")
+
+            # Check for the spotfinder executable in the build directories
+            if Path("build").exists():
+                self.log.info("SPOTFINDER found in build directory")
+                spotfinder_path = "build/spotfinder"
+            elif Path("_build").exists():
+                self.log.info("SPOTFINDER found in _build directory")
+                spotfinder_path = "_build/spotfinder"
+            else:
+                spotfinder_path = None
+                # Failing to find the executable is handled in the main function
+                # wherein we will nack the message and return.
+                # Hence we leave the spotfinder_path as the default None
+
+        # Convert to Path object
+        if spotfinder_path is not None:
+            spotfinder_path = Path(spotfinder_path)
+
+        return spotfinder_path
 
     def gpu_per_image_analysis(
-        self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict
+        self,
+        rw: workflows.recipe.RecipeWrapper,
+        header: dict,
+        message: dict,
+        base_path="/dev/shm/eiger",
     ):
         parameters = rw.recipe_step["parameters"]
 
@@ -72,34 +109,96 @@ class GPUPerImageAnalysis(CommonService):
         )
 
         # Do sanity checks, then launch spotfinder
-        if not SPOTFINDER.is_file():
-            self.log.error("Could not find spotfinder executable: %s", SPOTFINDER)
+        if not self._spotfinder_executable.is_file():
+            self.log.error(
+                "Could not find spotfinder executable: %s", self._spotfinder_executable
+            )
             rw.transport.nack(header)
             return
+        else:
+            self.log.info(f"Using SPOTFINDER: {self._spotfinder_executable}")
 
         # Otherwise, assume that this will work for now and nack the message
         rw.transport.ack(header)
 
         # Form the expected path for this dataset
-        expected_path = f"/dev/shm/eiger/{parameters['filename']}"
+        data_path = f"{base_path}/{parameters['filename']}"
 
         # Create a pipe for comms
-        # TODO: Set up pipes for communication back from process
-        # (pipe_r, pipe_w) = os.pipe()
+        read_fd, write_fd = os.pipe()
 
         # Now run the spotfinder
         command = [
-            SPOTFINDER,
-            "--threads=20",
-            str(expected_path),
+            self._spotfinder_executable,
+            str(data_path),
             "--images",
             parameters["number_of_frames"],
             "--start-index",
             parameters["start_index"],
+            "--threads",
+            str(40),
+            "--pipe_fd",
+            str(write_fd),
         ]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
-        _result = subprocess.run(command)
 
+        # Set the default channel for the result
+        rw.set_default_channel("result")
+
+        def pipe_output(read_fd: int) -> Iterator[str]:
+            """
+            Generator to read from the pipe and yield the output
+
+            Args:
+                read_fd: The file descriptor for the pipe
+
+            Yields:
+                str: A line of JSON output
+            """
+            # Reader function
+            with os.fdopen(read_fd, "r") as pipe_data:
+                # Process each line of JSON output
+                for line in pipe_data:
+                    line = line.strip()
+                    yield line
+
+        def read_and_send() -> None:
+            """
+            Read from the pipe and send the output to the result queue
+
+            This function is intended to be run in a separate thread
+
+            Returns:
+                None
+            """
+            # Read from the pipe and send to the result queue
+            for line in pipe_output(read_fd):
+                self.log.info(f"Received: {line}")  # Change log level to debug?
+                rw.send_to("result", line)
+
+            self.log.info("Results finished sending")
+
+        # Create a thread to read and send the output
+        read_and_send_data_thread = threading.Thread(target=read_and_send)
+
+        # Run the spotfinder
+        self._spotfind_proc = subprocess.Popen(command, pass_fds=[write_fd])
+
+        # Close the write end of the pipe (for this process)
+        # spotfind_process will hold the write end open until it is done
+        # This will allow the read end to detect the end of the output
+        os.close(write_fd)
+
+        # Start the read thread
+        read_and_send_data_thread.start()
+
+        # Wait for the process to finish
+        self._spotfind_proc.wait()
+
+        # Log the duration
         duration = time.monotonic() - start_time
         self.log.info(f"Analysis complete in {duration:.1f} s")
+
+        # Wait for the read thread to finish
+        read_and_send_data_thread.join()
