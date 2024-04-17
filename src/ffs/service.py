@@ -136,7 +136,7 @@ class GPUPerImageAnalysis(CommonService):
             "--images",
             parameters["number_of_frames"],
             "--start-index",
-            parameters["start_index"],
+            parameters["start_frame_index"],
             "--threads",
             str(40),
             "--pipe_fd",
