@@ -72,6 +72,8 @@ class GPUPerImageAnalysis(CommonService):
             elif Path("_build").exists():
                 self.log.info("SPOTFINDER found in _build directory")
                 spotfinder_path = "_build/spotfinder"
+            elif Path("spotfinder").exists():
+                spotfinder_path = "spotfinder"
             else:
                 spotfinder_path = None
                 # Failing to find the executable is handled in the main function
