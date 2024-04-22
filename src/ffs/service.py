@@ -50,6 +50,7 @@ class GPUPerImageAnalysis(CommonService):
             log_extender=self.extend_log,
         )
         self._spotfinder_executable = self._find_spotfinder()
+        self.expected_next_index = 0
 
     def _find_spotfinder(self) -> Path:
         """
@@ -109,6 +110,21 @@ class GPUPerImageAnalysis(CommonService):
             f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}\n"
             f"Parameters: {pformat(rw.recipe_step['parameters'])}\n"
         )
+
+        # Check if dataset is being processed in order
+        # First message
+        if parameters["message_index"] == 0:
+            self.expected_next_index = 1
+        # Subsequent messages
+        elif parameters["message_index"] == self.expected_next_index:
+            self.expected_next_index += 1
+        # Out of order message
+        elif parameters["message_index"] != self.expected_next_index:
+            self.log.info(
+                f"Expected message index {self.expected_next_index}, got {parameters['message_index']}"
+            )
+            rw.transport.nack(header)  # Nack the message -> requeue
+            return
 
         # Do sanity checks, then launch spotfinder
         if not self._spotfinder_executable.is_file():
