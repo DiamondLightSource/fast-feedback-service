@@ -112,18 +112,22 @@ class GPUPerImageAnalysis(CommonService):
         )
 
         # Check if dataset is being processed in order
+        received_index = int(parameters["message_index"])
         # First message
-        if parameters["message_index"] == 0:
+        if received_index == 0:
             self.expected_next_index = 1
         # Subsequent messages
-        elif parameters["message_index"] == self.expected_next_index:
+        elif received_index == self.expected_next_index:
             self.expected_next_index += 1
         # Out of order message
-        elif parameters["message_index"] != self.expected_next_index:
+        elif received_index != self.expected_next_index:
             self.log.info(
                 f"Expected message index {self.expected_next_index}, got {parameters['message_index']}"
             )
-            rw.transport.nack(header)  # Nack the message -> requeue
+            # Requeue the message with a checkpoint to reorder it
+            rw.checkpoint(message, header=header, delay=1)
+            time.sleep(10)
+            rw.transport.ack(header)
             return
 
         # Do sanity checks, then launch spotfinder
