@@ -10,8 +10,9 @@ from pathlib import Path
 from pprint import pformat
 from typing import Iterator
 
-import workflows.recipe
 from rich.logging import RichHandler
+
+import workflows.recipe
 from workflows.services.common_service import CommonService
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ def _find_spotfinder() -> Path:
         Path: The path to the spotfinder executable
     """
     # Try to get the path from the environment
-    spotfinder_path = os.getenv("SPOTFINDER")
+    spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
 
     # If environment variable is not set, check for directories
     if spotfinder_path is None:
@@ -83,7 +84,7 @@ def _find_spotfinder() -> Path:
 class GPUPerImageAnalysis(CommonService):
     _service_name = "GPU Per-Image-Analysis"
     _logger_name = "spotfinder.service"
-    _spotfinder_executable: Path | None = None
+    _spotfinder_executable: Path
     _spotfind_proc: subprocess.Popen | None = None
 
     def initializing(self):
