@@ -218,8 +218,12 @@ class GPUPerImageAnalysis(CommonService):
             """
             # Read from the pipe and send to the result queue
             for line in pipe_output(read_fd):
-                self.log.info(f"Received: {line}")  # Change log level to debug?
-                rw.send_to("result", json.loads(line))
+                data = json.loads(line)
+                data["file-seen-at"] = time.time()
+                # XRC has one-based-indexing
+                data["file-number"] += 1
+                self.log.info(f"Sending: {data}")
+                rw.send_to("result", data)
 
             self.log.info("Results finished sending")
 
