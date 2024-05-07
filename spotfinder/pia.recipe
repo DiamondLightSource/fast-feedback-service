@@ -16,7 +16,16 @@
     },
     "2": {
         "service": "GPU Xray Centering",
-        "queue": "reduce.xray_centering.gpu"
+        "queue": "reduce.xray_centering.gpu",
+        "gridinfo": "{$REPLACE:ispyb_dc_info[gridinfo]}",
+        "parameters": {
+            "dcid": "{ispyb_dcid}",
+            "experiment_type": "{ispyb_dcg_experiment_type}",
+            "output": "{ispyb_results_directory}/xray-centering/Dials5AResults.json",
+            "log": "{ispyb_results_directory}/xray-centering/Dials5AResults.txt",
+            "results_symlink": "xrc2",
+            "beamline": "{ispyb_beamline}"
+        }
     },
     "start": [
         [
