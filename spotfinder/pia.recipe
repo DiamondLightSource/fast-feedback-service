@@ -7,7 +7,8 @@
             "start_frame_index": "{start_frame_index}",
             "number_of_frames": "{number_of_frames}",
             "dcid": "{ispyb_dcid}",
-            "message_index": "{message_index}"
+            "message_index": "{message_index}",
+            "startTime": "{ispyb_dc_info[startTime]}"
         },
         "output": [
             2

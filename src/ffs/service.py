@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from pprint import pformat
 from typing import Iterator
@@ -107,7 +108,7 @@ class GPUPerImageAnalysis(CommonService):
         header: dict,
         message: dict,
         base_path="/dev/shm/eiger",
-    ):
+    ) -> None:
         parameters = rw.recipe_step["parameters"]
 
         self.log.debug(
@@ -148,21 +149,23 @@ class GPUPerImageAnalysis(CommonService):
             rw.transport.ack(header)
             return
 
-        # Do sanity checks, then launch spotfinder
-        if not self._spotfinder_executable.is_file():
-            self.log.error(
-                "Could not find spotfinder executable: %s", self._spotfinder_executable
-            )
-            rw.transport.nack(header)
-            return
-        else:
-            self.log.info(f"Using SPOTFINDER: {self._spotfinder_executable}")
+        # Form the expected path for this dataset
+        data_path = Path(f"{base_path}/{parameters['filename']}")
+
+        # Debugging: Reject messages that are "old", if the files are not on disk. This
+        # should help avoid sitting spending hours running through all messages (meaning
+        # that a manual purge is required).
+        if "startTime" in parameters:
+            start = datetime.fromisoformat(parameters["startTime"])
+            if (datetime.now() - start).total_seconds() > 60 and not data_path.is_dir():
+                self.log.warning(
+                    "Not processing message as too old (60s); and no data on disk indicating retrigger"
+                )
+                rw.transport.ack(header)
+                return
 
         # Otherwise, assume that this will work for now and nack the message
         rw.transport.ack(header)
-
-        # Form the expected path for this dataset
-        data_path = f"{base_path}/{parameters['filename']}"
 
         # Create a pipe for comms
         read_fd, write_fd = os.pipe()
