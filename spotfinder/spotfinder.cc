@@ -665,7 +665,8 @@ int main(int argc, char **argv) {
                     nlohmann::json json_data = {
                       {"num_strong_pixels", num_strong_pixels},
                       {"file", args.file},
-                      {"file-number", image_num}};
+                      {"file-number", image_num},
+                      {"n_spots_total", boxes.size()}};
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
