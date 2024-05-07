@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
@@ -218,7 +219,7 @@ class GPUPerImageAnalysis(CommonService):
             # Read from the pipe and send to the result queue
             for line in pipe_output(read_fd):
                 self.log.info(f"Received: {line}")  # Change log level to debug?
-                rw.send_to("result", line)
+                rw.send_to("result", json.loads(line))
 
             self.log.info("Results finished sending")
 
