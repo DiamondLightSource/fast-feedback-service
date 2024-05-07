@@ -96,6 +96,11 @@ class GPUPerImageAnalysis(CommonService):
     ):
         parameters = rw.recipe_step["parameters"]
 
+        self.log.debug(
+            f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}\n"
+            f"Parameters: {pformat(rw.recipe_step['parameters'])}\n"
+        )
+
         # Reject messages without the extra info
         if parameters.get("filename", "{filename}") == "{filename}":
             # We got a request, but didn't have required hyperion info
@@ -105,11 +110,6 @@ class GPUPerImageAnalysis(CommonService):
             # We just want to silently kill this message, as it wasn't for us
             rw.transport.ack(header)
             return
-
-        self.log.debug(
-            f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}\n"
-            f"Parameters: {pformat(rw.recipe_step['parameters'])}\n"
-        )
 
         # Check if dataset is being processed in order
         received_index = int(parameters["message_index"])

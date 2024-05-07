@@ -4,9 +4,10 @@
         "queue": "per_image_analysis.gpu",
         "parameters": {
             "filename": "{filename}",
-            "start_index": "{start_index}",
+            "start_frame_index": "{start_frame_index}",
             "number_of_frames": "{number_of_frames}",
-            "dcid": "{ispyb_dcid}"
+            "dcid": "{ispyb_dcid}",
+            "message_index": "{message_index}"
         },
         "output": [
             2
