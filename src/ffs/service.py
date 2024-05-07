@@ -139,15 +139,20 @@ class GPUPerImageAnalysis(CommonService):
         # Subsequent messages
         elif received_index == self.expected_next_index:
             self.expected_next_index += 1
-        # Out of order message
+        elif header.get("already_requeued", False):
+            # We already tried to delay this once, and it didn't appear.
+            # Don't ask questions and just try to analyse this.
+            self.log.info(
+                f"PIA requests out-of-order; Expected {self.expected_next_index}, got {parameters.message_index}. Already Requeued once, continuing analysis."
+            )
         elif received_index != self.expected_next_index:
             self.log.info(
-                f"Expected message index {self.expected_next_index}, got {parameters['message_index']}"
+                f"PIA requests out-of-order; Expected {self.expected_next_index}, got {parameters.message_index}. Requeueing."
             )
-            # Requeue the message with a checkpoint to reorder it
-            rw.checkpoint(message, header=header, delay=1)
-            time.sleep(10)
             rw.transport.ack(header)
+            # Requeue the message with a checkpoint to reorder it
+            # TODO: Should we add transactions to ack here? IIRC the AMQP transaction semantics wouldn't cover this?
+            rw.checkpoint(message, header=header | {"already_requeued": True}, delay=5)
             return
 
         # Form the expected path for this dataset
