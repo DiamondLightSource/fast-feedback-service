@@ -102,10 +102,14 @@ class GPUPerImageAnalysis(CommonService):
         )
 
         # Reject messages without the extra info
-        if parameters.get("filename", "{filename}") == "{filename}":
+        if (
+            parameters.get("filename", "{filename}") == "{filename}"
+            or parameters.get("start_frame_index", "{start_frame_index}")
+            == "{start_frame_index}"
+        ):
             # We got a request, but didn't have required hyperion info
             self.log.debug(
-                f"Rejecting PIA request for {parameters['dcid']}; no valid hyperion information"
+                f"Rejecting PIA request for {parameters['dcid']}; no complete hyperion information"
             )
             # We just want to silently kill this message, as it wasn't for us
             rw.transport.ack(header)
