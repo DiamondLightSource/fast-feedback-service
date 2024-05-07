@@ -10,8 +10,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 from pprint import pformat
-from typing import Iterator
+from typing import Iterator, Optional
 
+from pydantic import BaseModel, ValidationError
 from rich.logging import RichHandler
 
 import workflows.recipe
@@ -21,6 +22,15 @@ logger = logging.getLogger(__name__)
 logger.level = logging.DEBUG
 
 DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
+
+
+class PiaRequest(BaseModel):
+    dcid: int
+    filename: str
+    message_index: int
+    number_of_frames: int
+    start_frame_index: int
+    startTime: Optional[datetime] = None
 
 
 def _setup_rich_logging(level=logging.DEBUG):
@@ -110,29 +120,25 @@ class GPUPerImageAnalysis(CommonService):
         message: dict,
         base_path="/dev/shm/eiger",
     ) -> None:
-        parameters = rw.recipe_step["parameters"]
+        try:
+            parameters = PiaRequest(**rw.recipe_step["parameters"])
+        except ValidationError as e:
+            dcid = rw.recipe_step["parameters"].get("dcid", "(unknown DCID)")
+            self.log.warning(f"Rejecting PIA request for {dcid}: \n{e}")
+            rw.transport.nack(header, requeue=False)
+            return
 
+        self.log.debug(f"Got Request: {parameters!r}")
+
+        self.log.info(
+            f"Gotten PIA request for {parameters.dcid}/{parameters.message_index}: {parameters.filename}/:{parameters.start_frame_index}-{parameters.start_frame_index+parameters.number_of_frames}"
+        )
         self.log.debug(
             f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}\n"
             f"Parameters: {pformat(rw.recipe_step['parameters'])}\n"
         )
-
-        # Reject messages without the extra info
-        if (
-            parameters.get("filename", "{filename}") == "{filename}"
-            or parameters.get("start_frame_index", "{start_frame_index}")
-            == "{start_frame_index}"
-        ):
-            # We got a request, but didn't have required hyperion info
-            self.log.debug(
-                f"Rejecting PIA request for {parameters['dcid']}; no complete hyperion information"
-            )
-            # We just want to silently kill this message, as it wasn't for us
-            rw.transport.ack(header)
-            return
-
         # Check if dataset is being processed in order
-        received_index = int(parameters["message_index"])
+        received_index = int(parameters.message_index)
         # First message
         if received_index == 0:
             self.expected_next_index = 1
@@ -156,16 +162,16 @@ class GPUPerImageAnalysis(CommonService):
             return
 
         # Form the expected path for this dataset
-        data_path = Path(f"{base_path}/{parameters['filename']}")
+        data_path = Path(f"{base_path}/{parameters.filename}")
 
         # Debugging: Reject messages that are "old", if the files are not on disk. This
         # should help avoid sitting spending hours running through all messages (meaning
         # that a manual purge is required).
-        if "startTime" in parameters:
-            start = datetime.fromisoformat(parameters["startTime"])
-            if (datetime.now() - start).total_seconds() > 60 and not data_path.is_dir():
+        if parameters.startTime:
+            age_seconds = (datetime.now() - parameters.startTime).total_seconds()
+            if age_seconds > 60 and not data_path.is_dir():
                 self.log.warning(
-                    "Not processing message as too old (60s); and no data on disk indicating retrigger"
+                    f"Not processing message as too old ({age_seconds:.0f} s); and no data on disk indicating retrigger"
                 )
                 rw.transport.ack(header)
                 return
@@ -178,12 +184,12 @@ class GPUPerImageAnalysis(CommonService):
 
         # Now run the spotfinder
         command = [
-            self._spotfinder_executable,
+            str(self._spotfinder_executable),
             str(data_path),
             "--images",
-            parameters["number_of_frames"],
+            str(parameters.number_of_frames),
             "--start-index",
-            parameters["start_frame_index"],
+            str(parameters.start_frame_index),
             "--threads",
             str(40),
             "--pipe_fd",
