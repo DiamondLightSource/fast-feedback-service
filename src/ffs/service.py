@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -12,6 +13,9 @@ from typing import Iterator
 import workflows.recipe
 from rich.logging import RichHandler
 from workflows.services.common_service import CommonService
+
+logger = logging.getLogger(__name__)
+logger.level = logging.DEBUG
 
 DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
 
@@ -32,6 +36,50 @@ def _setup_rich_logging(level=logging.DEBUG):
     )
 
 
+def _find_spotfinder() -> Path:
+    """
+    Finds and sets the path to the spotfinder executable
+
+    Verifies that the spotfinder can run and enumerate devices.
+
+    Returns:
+        Path: The path to the spotfinder executable
+    """
+    # Try to get the path from the environment
+    spotfinder_path = os.getenv("SPOTFINDER")
+
+    # If environment variable is not set, check for directories
+    if spotfinder_path is None:
+        logger.warning("SPOTFINDER environment variable not set")
+
+        for path in {"build", "_build", "."}:
+            if Path(path).exists():
+                spotfinder_path = path
+            logger.debug("No spotfinder found at %s", path)
+
+    # This must be set, and must exist
+    if not spotfinder_path or not Path(spotfinder_path).is_file():
+        logger.fatal(
+            "Error: Could not find spotfinder executable. Please set SPOTFINDER environment variable."
+        )
+        sys.exit(1)
+
+    spotfinder_path = Path(spotfinder_path)
+
+    # Let's run this, to enumerate GPU and check it works
+    proc = subprocess.run(
+        [spotfinder_path, "--list-devices"], capture_output=True, text=True
+    )
+    if proc.returncode:
+        logger.fatal(
+            f"Error: Spotfinder at {spotfinder_path} failed to enumerate devices."
+        )
+        sys.exit(1)
+
+    logger.info(f"Using spotfinder: {spotfinder_path}")
+    return spotfinder_path
+
+
 class GPUPerImageAnalysis(CommonService):
     _service_name = "GPU Per-Image-Analysis"
     _logger_name = "spotfinder.service"
@@ -49,43 +97,8 @@ class GPUPerImageAnalysis(CommonService):
             acknowledgement=True,
             log_extender=self.extend_log,
         )
-        self._spotfinder_executable = self._find_spotfinder()
+        self._spotfinder_executable = _find_spotfinder()
         self.expected_next_index = 0
-
-    def _find_spotfinder(self) -> Path:
-        """
-        Finds and sets the path to the spotfinder executable
-
-        Returns:
-            Path: The path to the spotfinder executable
-        """
-        # Try to get the path from the environment
-        spotfinder_path = os.getenv("SPOTFINDER")
-
-        # If environment variable is not set, check for directories
-        if spotfinder_path is None:
-            self.log.warn("SPOTFINDER environment variable not set")
-
-            # Check for the spotfinder executable in the build directories
-            if Path("build").exists():
-                self.log.info("SPOTFINDER found in build directory")
-                spotfinder_path = "build/spotfinder"
-            elif Path("_build").exists():
-                self.log.info("SPOTFINDER found in _build directory")
-                spotfinder_path = "_build/spotfinder"
-            elif Path("spotfinder").exists():
-                spotfinder_path = "spotfinder"
-            else:
-                spotfinder_path = None
-                # Failing to find the executable is handled in the main function
-                # wherein we will nack the message and return.
-                # Hence we leave the spotfinder_path as the default None
-
-        # Convert to Path object
-        if spotfinder_path is not None:
-            spotfinder_path = Path(spotfinder_path)
-
-        return spotfinder_path
 
     def gpu_per_image_analysis(
         self,
