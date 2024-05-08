@@ -11,9 +11,10 @@
             "startTime": "{ispyb_dc_info[startTime]}",
             "dcgid": "{ispyb_dc_info[dataCollectionGroupId]}"
         },
-        "output": [
-            2
-        ]
+        "output": {
+            "result": 2,
+            "json_fudge": 3
+        }
     },
     "2": {
         "service": "GPU Xray Centering",
@@ -27,6 +28,16 @@
             "log": "{ispyb_results_directory}/xray-centering/Dials5AResults.txt",
             "results_symlink": "xrc2",
             "beamline": "{ispyb_beamline}"
+        },
+        "output": [
+            3
+        ]
+    },
+    "3": {
+        "service": "JSON Lines",
+        "queue": "jsonlines",
+        "parameters": {
+            "output_filename": "{ispyb_results_directory}/{ispyb_dcid}_xrc.json"
         }
     },
     "start": [
