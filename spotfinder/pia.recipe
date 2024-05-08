@@ -11,10 +11,9 @@
             "startTime": "{ispyb_dc_info[startTime]}",
             "dcgid": "{ispyb_dc_info[dataCollectionGroupId]}"
         },
-        "output": {
-            "result": 2,
-            "json_fudge": 3
-        }
+        "output": [
+            2
+        ]
     },
     "2": {
         "service": "GPU Xray Centering",

@@ -264,7 +264,7 @@ class GPUPerImageAnalysis(CommonService):
                 # XRC has one-based-indexing
                 data["file-number"] += 1
                 self.log.info(f"Sending: {data}")
-                rw.set_default_channel("results")
+                rw.set_default_channel("result")
                 rw.send_to("result", data)
 
             self.log.info("Results finished sending")
@@ -288,10 +288,6 @@ class GPUPerImageAnalysis(CommonService):
 
         # Log the duration
         duration = time.monotonic() - start_time
-
-        # Send 99 extra messages for one collection
-        for _ in range(99):
-            rw.send_to("json_fudge", {})
 
         self.log.info(f"Analysis complete in {duration:.1f} s")
 
