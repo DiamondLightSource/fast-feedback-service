@@ -174,6 +174,7 @@ class GPUPerImageAnalysis(CommonService):
             rw.transport.nack(header, requeue=False)
             return
 
+        start_time = time.monotonic()
         self.log.debug(f"Got Request: {parameters!r}")
 
         self.log.info(
@@ -226,7 +227,6 @@ class GPUPerImageAnalysis(CommonService):
             str(write_fd),
         ]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
-        start_time = time.monotonic()
 
         # Set the default channel for the result
         rw.set_default_channel("result")
