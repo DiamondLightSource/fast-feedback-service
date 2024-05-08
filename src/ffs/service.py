@@ -9,7 +9,6 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from pprint import pformat
 from typing import Iterator, Optional
 
 from pydantic import BaseModel, ValidationError
@@ -175,14 +174,8 @@ class GPUPerImageAnalysis(CommonService):
             return
 
         start_time = time.monotonic()
-        self.log.debug(f"Got Request: {parameters!r}")
-
         self.log.info(
             f"Gotten PIA request for {parameters.dcid}/{parameters.message_index}: {parameters.filename}/:{parameters.start_frame_index}-{parameters.start_frame_index+parameters.number_of_frames}"
-        )
-        self.log.debug(
-            f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}\n"
-            f"Parameters: {pformat(rw.recipe_step['parameters'])}\n"
         )
 
         if not self._order_resolver.should_handle_now(parameters, header):
@@ -190,6 +183,16 @@ class GPUPerImageAnalysis(CommonService):
             # Requeue the message with a checkpoint to reorder it
             # TODO: Should we add transactions to ack here? IIRC the AMQP transaction semantics wouldn't cover this?
             rw.checkpoint(message, header=header, delay=5)
+            return
+
+        # If we don't have a base path, then assume we don't have GPU mode turned on
+        # Ideally this would be tested directly, but I need to work out how to get PV
+        # access on the gpu-epu
+        if not Path(base_path).is_dir():
+            self.log.info(
+                f"Not running GPU analysis as parent dir {base_path} does not exist; Is DAQ in /dev/shm mode?"
+            )
+            rw.transport.ack(header)
             return
 
         # Form the expected path for this dataset
