@@ -26,6 +26,7 @@ DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
 
 class PiaRequest(BaseModel):
     dcid: int
+    dcgid: int
     filename: str
     message_index: int
     number_of_frames: int
@@ -93,6 +94,51 @@ def _find_spotfinder() -> Path:
     return spotfinder_path
 
 
+class MessageOrderResolver:
+    """
+    Handles logic over incoming message order
+
+    Because of race conditions for two messages sent at effectively the
+    same time, we can get a request for collection 1 before collection 0.
+    Softly enforce ordering by waiting the first time we get a request
+    for a specific message ID index.
+    """
+
+    _expected_next_message_id = 0
+    _current_dcgid = 0
+
+    def __init__(self, logger: logging.Logger):
+        self.log = logger
+
+    def should_handle_now(self, message: PiaRequest, header: dict) -> bool:
+        # If we've gotten a new group, reset the counter
+        if message.dcgid != self._current_dcgid:
+            if self._current_dcgid:
+                self.log.debug(
+                    f"Got new DCGID ({message.dcgid}); resetting expected index counter."
+                )
+            self._current_dcgid = message.dcgid
+            self._expected_next_message_id = 0
+
+        # Subsequent messages
+        if message.message_index == self._expected_next_message_id:
+            self._expected_next_message_id += 1
+        elif header.get("already_requeued", False):
+            # We already tried to delay this once, and it didn't appear.
+            # Don't ask questions and just try to analyse this.
+            self.log.info(
+                f"PIA requests out-of-order; Expected {self._expected_next_message_id}, got {message.message_index}. Already Requeued once, continuing analysis."
+            )
+        elif message.message_index != self._expected_next_message_id:
+            self.log.info(
+                f"PIA requests out-of-order; Expected {self._expected_next_message_id}, got {message.message_index}. Requeueing."
+            )
+            header["already_requeued"] = True
+            return False
+
+        return True
+
+
 class GPUPerImageAnalysis(CommonService):
     _service_name = "GPU Per-Image-Analysis"
     _logger_name = "spotfinder.service"
@@ -111,7 +157,7 @@ class GPUPerImageAnalysis(CommonService):
             log_extender=self.extend_log,
         )
         self._spotfinder_executable = _find_spotfinder()
-        self.expected_next_index = 0
+        self._order_resolver = MessageOrderResolver(self.log)
 
     def gpu_per_image_analysis(
         self,
@@ -137,28 +183,12 @@ class GPUPerImageAnalysis(CommonService):
             f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}\n"
             f"Parameters: {pformat(rw.recipe_step['parameters'])}\n"
         )
-        # Check if dataset is being processed in order
-        received_index = int(parameters.message_index)
-        # First message
-        if received_index == 0:
-            self.expected_next_index = 1
-        # Subsequent messages
-        elif received_index == self.expected_next_index:
-            self.expected_next_index += 1
-        elif header.get("already_requeued", False):
-            # We already tried to delay this once, and it didn't appear.
-            # Don't ask questions and just try to analyse this.
-            self.log.info(
-                f"PIA requests out-of-order; Expected {self.expected_next_index}, got {parameters.message_index}. Already Requeued once, continuing analysis."
-            )
-        elif received_index != self.expected_next_index:
-            self.log.info(
-                f"PIA requests out-of-order; Expected {self.expected_next_index}, got {parameters.message_index}. Requeueing."
-            )
+
+        if not self._order_resolver.should_handle_now(parameters, header):
             rw.transport.ack(header)
             # Requeue the message with a checkpoint to reorder it
             # TODO: Should we add transactions to ack here? IIRC the AMQP transaction semantics wouldn't cover this?
-            rw.checkpoint(message, header=header | {"already_requeued": True}, delay=5)
+            rw.checkpoint(message, header=header, delay=5)
             return
 
         # Form the expected path for this dataset
