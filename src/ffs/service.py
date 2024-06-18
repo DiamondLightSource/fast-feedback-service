@@ -11,10 +11,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
+import workflows.recipe
 from pydantic import BaseModel, ValidationError
 from rich.logging import RichHandler
-
-import workflows.recipe
 from workflows.services.common_service import CommonService
 
 logger = logging.getLogger(__name__)
@@ -31,6 +30,21 @@ class PiaRequest(BaseModel):
     number_of_frames: int
     start_frame_index: int
     startTime: Optional[datetime] = None
+    wavelength: float
+    xBeam: float
+    yBeam: float
+    detector_distance: float
+
+
+class DetectorGeometry(BaseModel):
+    pixel_size_x: float = 0.075  # Default value for Eiger
+    pixel_size_y: float = 0.075  # Default value for Eiger
+    distance: float
+    beam_center_x: float
+    beam_center_y: float
+
+    def to_json(self):
+        return json.dumps(self.dict(), indent=4)
 
 
 def _setup_rich_logging(level=logging.DEBUG):
@@ -172,6 +186,20 @@ class GPUPerImageAnalysis(CommonService):
             self.log.warning(f"Rejecting PIA request for {dcid}: \n{e}")
             rw.transport.nack(header, requeue=False)
             return
+        try:
+            # Create a detector geometry object
+            detector_geometry = DetectorGeometry(
+                distance=parameters.detector_distance,
+                beam_center_x=parameters.xBeam,
+                beam_center_y=parameters.yBeam,
+            )
+            print()
+            print(detector_geometry.to_json())
+            print()
+        except ValidationError as e:
+            self.log.warning(
+                f"Rejecting PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): Invalid detector parameters \n{e}"
+            )
 
         start_time = time.monotonic()
         self.log.info(
@@ -228,6 +256,14 @@ class GPUPerImageAnalysis(CommonService):
             str(40),
             "--pipe_fd",
             str(write_fd),
+            "--dmin",
+            str(4.0),
+            "--dmax",
+            str(40.0),
+            "--wavelength",
+            str(parameters.wavelength),
+            "--detector",
+            detector_geometry.to_json(),
         ]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
 

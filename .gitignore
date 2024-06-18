@@ -12,6 +12,7 @@
 
 _build/
 *ENV/
+*ENV2/
 *.pyc
 build*/
 .vscode/
