@@ -20,7 +20,9 @@ exec 3> output_file.txt
   --pipe_fd 3 \
   --dmin 4 \
   --wavelength 0.976261 \
-  --detector "$(cat detector.json)"
+  --detector "$(cat detector.json)" \
+  --threads 1 \
+  --images 1
 
 # Close file descriptor 3
 exec 3>&-
