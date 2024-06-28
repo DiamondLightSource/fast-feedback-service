@@ -17,7 +17,6 @@
 #include <csignal>
 #include <iostream>
 #include <memory>
-#include <nlohmann/json.hpp>
 #include <ranges>
 #include <stop_token>
 #include <thread>
@@ -54,14 +53,6 @@ auto operator==(const int2 &left, const int2 &right) -> bool {
 struct Reflection {
     int l, t, r, b;
     int num_pixels = 0;
-
-    int center_x() const {
-        return (l + r) / 2;
-    }
-
-    int center_y() const {
-        return (t + b) / 2;
-    }
 };
 
 template <typename T>
@@ -143,6 +134,31 @@ auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
     };
 }
 
+void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
+                                int width,
+                                int height,
+                                float wavelength,
+                                detector_geometry detector,
+                                float dmin,
+                                float dmax) {
+    // Define the block size and grid size for the kernel
+    dim3 threadsPerBlock(32, 32);
+    dim3 numBlocks((width + threadsPerBlock.x - 1) / threadsPerBlock.x,
+                   (height + threadsPerBlock.y - 1) / threadsPerBlock.y);
+
+    // Set the parameters for the resolution mask kernel
+    ResolutionMaskParams params{.mask_pitch = mask.pitch,
+                                .width = width,
+                                .height = height,
+                                .wavelength = wavelength,
+                                .detector = detector,
+                                .dmin = dmin,
+                                .dmax = dmax};
+
+    // Launch the kernel to apply resolution filtering
+    call_apply_resolution_mask(numBlocks, threadsPerBlock, 0, 0, mask.get(), params);
+}
+
 /// Handle setting up an NppStreamContext from a specific stream
 auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContext {
     NppStreamContext npp_context;
@@ -205,45 +221,6 @@ void wait_for_ready_for_read(const std::string &path,
 }
 
 /**
- * @brief Struct to store the geometry of the detector.
-*/
-struct detector_geometry {
-    float pixel_size_x;
-    float pixel_size_y;
-    float beam_center_x;
-    float beam_center_y;
-    float distance;
-
-    /**
-     * @brief Constructor to initialize the detector geometry from a JSON object.
-     * @param geometry_data A JSON object containing the detector geometry data.
-     * The JSON object must have the following keys:
-     * - pixel_size_x: The pixel size of the detector in the x-direction in mm
-     * - pixel_size_y: The pixel size of the detector in the y-direction in mm
-     * - beam_center_x: The x-coordinate of the pixel beam center in the image
-     * - beam_center_y: The y-coordinate of the pixel beam center in the image
-     * - distance: The distance from the sample to the detector in mm
-    */
-    detector_geometry(nlohmann::json geometry_data) {
-        std::vector<std::string> required_keys = {
-          "pixel_size_x", "pixel_size_y", "beam_center_x", "beam_center_y", "distance"};
-
-        for (const auto &key : required_keys) {
-            if (geometry_data.find(key) == geometry_data.end()) {
-                throw std::invalid_argument("Key " + key
-                                            + " is missing from the input JSON");
-            }
-        }
-
-        pixel_size_x = geometry_data["pixel_size_x"];
-        pixel_size_y = geometry_data["pixel_size_y"];
-        beam_center_x = geometry_data["beam_center_x"];
-        beam_center_y = geometry_data["beam_center_y"];
-        distance = geometry_data["distance"];
-    }
-};
-
-/**
  * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
  */
 class PipeHandler {
@@ -272,7 +249,7 @@ class PipeHandler {
      * @brief Sends data through the pipe in a thread-safe manner.
      * @param json_data A json object containing the data to be sent.
      */
-    void sendData(const nlohmann::json &json_data) {
+    void sendData(const json &json_data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
         // This unlocks the mutex when the function returns
         std::lock_guard<std::mutex> lock(mtx);
@@ -294,53 +271,6 @@ class PipeHandler {
         }
     }
 };
-
-/**
- * @brief Function to calculate the distance of a pixel from the beam center.
- * @param x The x-coordinate of the pixel in the image
- * @param y The y-coordinate of the pixel in the image
- * @param center_x The x-coordinate of the pixel beam center in the image
- * @param center_y The y-coordinate of the pixel beam center in the image
- * @param pixel_size_x The pixel size of the detector in the x-direction in mm
- * @param pixel_size_y The pixel size of the detector in the y-direction in mm
- * @return The calculated distance from the beam center in mm
-*/
-float get_distance_from_centre(float x,
-                               float y,
-                               float center_x,
-                               float center_y,
-                               float pixel_size_x,
-                               float pixel_size_y) {
-    /*
-     * Since this calculation is for a broad, general exclusion, we can
-     * use basic Pythagoras to calculate the distance from the center.
-    */
-    float dx = pixel_size_x * (x - center_x);
-    float dy = pixel_size_y * (y - center_y);
-    float distance_from_center = sqrt(dx * dx + dy * dy);
-    return distance_from_center;
-}
-
-/**
- * @brief Function to calculate the interplanar distance of a reflection.
- * The interplanar distance is calculated using the formula:
- *         d = λ / (2 * sin(θ))
- * @param wavelength The wavelength of the X-ray beam in Å
- * @param distance_to_detector The distance from the sample to the detector in mm
- * @param distance_from_center The distance of the reflection from the beam center in mm
- * @return The calculated d value
-*/
-float get_resolution(float wavelength,
-                     float distance_to_detector,
-                     float distance_from_center) {
-    /*
-     * Since the angle calculated is, in fact, 2θ, we halve to get the
-     * proper value of θ
-    */
-    float theta = 0.5 * atan(distance_from_center / distance_to_detector);
-    float d = wavelength / (2 * sin(theta));
-    return d;
-}
 
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
@@ -409,7 +339,7 @@ int main(int argc, char **argv) {
     float dmax = parser.get<float>("dmax");
     float wavelength = parser.get<float>("wavelength");
     std::string detector_json = parser.get<std::string>("detector");
-    nlohmann::json detector_json_obj = nlohmann::json::parse(detector_json);
+    json detector_json_obj = json::parse(detector_json);
     detector_geometry detector = detector_geometry(detector_json_obj);
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
@@ -478,6 +408,42 @@ int main(int argc, char **argv) {
     print("Running with {} CPU threads\n", num_cpu_threads);
 
     auto mask = upload_mask(reader);
+
+    // If set, apply resolution filtering
+    if (dmin > 0 || dmax > 0) {
+        apply_resolution_filtering(
+          mask, width, height, wavelength, detector, dmin, dmax);
+
+        // Create a mask image for debugging
+        if (do_writeout) {
+            auto mask_buffer = std::vector<uint8_t>(width * height, 0);
+
+            // Copy the mask back from the GPU
+            cudaMemcpy2D(mask_buffer.data(),
+                         width,
+                         mask.get(),
+                         mask.pitch_bytes(),
+                         width,
+                         height,
+                         cudaMemcpyDeviceToHost);
+
+            // Convert the mask to a binary image
+            for (auto &pixel : mask_buffer) {
+                /*
+               * Since the mask is a binary image, 1 for valid, 0 for invalid,
+               * we can use a simple ternary operator to convert the mask to a
+               * binary - black and white - image.
+              */
+                pixel = pixel ? 255 : 0;
+            }
+
+            lodepng::encode("mask.png",
+                            reinterpret_cast<uint8_t *>(mask_buffer.data()),
+                            width,
+                            height,
+                            LCT_GREY);
+        }
+    }
 
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
 
@@ -710,43 +676,11 @@ int main(int argc, char **argv) {
                     box.num_pixels += 1;
                 }
 
-                // Filter shoeboxes based on minimum spot size and resolutions
-                size_t n_filtered_spots = 0;
-
                 if (min_spot_size > 0) {
                     std::vector<Reflection> filtered_boxes;
                     for (auto &box : boxes) {
                         if (box.num_pixels >= min_spot_size) {
-                            // Calculate the distance from the beam center
-                            float distance_from_center =
-                              get_distance_from_centre(box.center_x(),
-                                                       box.center_y(),
-                                                       detector.beam_center_x,
-                                                       detector.beam_center_y,
-                                                       detector.pixel_size_x,
-                                                       detector.pixel_size_y);
-
-                            // Calculate the resolution
-                            float resolution = get_resolution(
-                              wavelength, detector.distance, distance_from_center);
-
-                            // Filter based on resolution and count reflections
-
-                            // If dmin is set, filter out reflections with resolution < dmin
-                            if (dmin > 0 && resolution < dmin) {
-                                continue;
-                            }
-                            // Implicitly filter out reflections with resolution < 4 Å ⛔🧊
-                            else if (resolution < 4) {
-                                continue;
-                            }
-                            // If dmax is set, filter out reflections with resolution > dmax
-                            if (dmax > 0 && resolution > dmax) {
-                                continue;
-                            }
-
                             filtered_boxes.emplace_back(box);
-                            n_filtered_spots++;
                         }
                     }
                     boxes = std::move(filtered_boxes);
@@ -819,12 +753,10 @@ int main(int argc, char **argv) {
                 // Check if pipeHandler was initialized
                 if (pipeHandler != nullptr) {
                     // Create a JSON object to store the data
-                    nlohmann::json json_data = {
-                      {"num_strong_pixels", num_strong_pixels},
-                      {"file", args.file},
-                      {"file-number", image_num},
-                      {"n_spots_total", n_filtered_spots}};
-                    // {"n_spots_total", boxes.size()}};
+                    json json_data = {{"num_strong_pixels", num_strong_pixels},
+                                      {"file", args.file},
+                                      {"file-number", image_num},
+                                      {"n_spots_total", boxes.size()}};
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
