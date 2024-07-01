@@ -150,12 +150,6 @@ void call_apply_resolution_mask(dim3 blocks,
                                 cudaStream_t stream,
                                 uint8_t *mask,
                                 ResolutionMaskParams params) {
-    // Copy the parameters to device memory
-    ResolutionMaskParams *d_params;
-    cudaMalloc(&d_params, sizeof(ResolutionMaskParams));
-    cudaMemcpyAsync(
-      d_params, &params, sizeof(ResolutionMaskParams), cudaMemcpyHostToDevice, stream);
-    cudaStreamSynchronize(stream);
 
     // Launch the kernel
     apply_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
@@ -171,10 +165,6 @@ void call_apply_resolution_mask(dim3 blocks,
       params.detector.pixel_size_y,
       params.dmin,
       params.dmax);
-
-    // Sync and free the parameters
-    cudaStreamSynchronize(stream);
-    cudaFree(d_params);
 }
 
 __global__ void do_spotfinding_naive(pixel_t *image,
