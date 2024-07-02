@@ -560,8 +560,13 @@ int main(int argc, char **argv) {
                       buffer.data() + 12, host_image.get(), width * height, 2, 0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
-                    decompress_byte_offset<pixel_t>(buffer,
-                                                    {host_image.get(), width * height});
+                    // decompress_byte_offset<pixel_t>(buffer,
+                    //                                 {host_image.get(), width * height});
+                    decompress_byte_offset<pixel_t>(
+                      buffer,
+                      {host_image.get(),
+                       static_cast<tcb::span<short unsigned int>::size_type>(
+                         width * height)});
                     // std::copy(buffer.begin(), buffer.end(), host_image.get());
                     // std::exit(1);
                     break;
