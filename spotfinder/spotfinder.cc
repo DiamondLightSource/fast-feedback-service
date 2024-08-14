@@ -414,17 +414,36 @@ int main(int argc, char **argv) {
 
     auto mask = upload_mask(reader);
 
+    // Create a mask image for debugging
+    if (do_writeout) {
+        auto image_mask =
+          std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
+
+        // Write out the raw image mask
+        auto image_mask_source = reader.get_mask()->data();
+        for (int y = 0, k = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x, ++k) {
+                image_mask[k] = {255, 255, 255};
+                if (!image_mask_source[k]) {
+                    image_mask[k] = {255, 0, 0};
+                }
+            }
+        }
+        lodepng::encode("mask_source.png",
+                        reinterpret_cast<uint8_t *>(image_mask.data()),
+                        width,
+                        height,
+                        LCT_RGB);
+    }
+
     // If set, apply resolution filtering
     if (dmin > 0 || dmax > 0) {
         apply_resolution_filtering(
           mask, width, height, wavelength, detector, dmin, dmax);
-
-        // Create a mask image for debugging
         if (do_writeout) {
-            auto mask_buffer = std::vector<uint8_t>(width * height, 0);
-
             // Copy the mask back from the GPU
-            cudaMemcpy2D(mask_buffer.data(),
+            auto calculated_mask = std::vector<uint8_t>(width * height, 0);
+            cudaMemcpy2D(calculated_mask.data(),
                          width,
                          mask.get(),
                          mask.pitch_bytes(),
@@ -432,21 +451,22 @@ int main(int argc, char **argv) {
                          height,
                          cudaMemcpyDeviceToHost);
 
-            // Convert the mask to a binary image
-            for (auto &pixel : mask_buffer) {
-                /*
-               * Since the mask is a binary image, 1 for valid, 0 for invalid,
-               * we can use a simple ternary operator to convert the mask to a
-               * binary - black and white - image.
-              */
-                pixel = pixel ? 255 : 0;
-            }
+            auto image_mask =
+              std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
 
-            lodepng::encode("mask.png",
-                            reinterpret_cast<uint8_t *>(mask_buffer.data()),
+            for (int y = 0, k = 0; y < height; ++y) {
+                for (int x = 0; x < width; ++x, ++k) {
+                    image_mask[k] = {255, 255, 255};
+                    if (!calculated_mask[k]) {
+                        image_mask[k] = {255, 0, 0};
+                    }
+                }
+            }
+            lodepng::encode("mask_calculated.png",
+                            reinterpret_cast<uint8_t *>(image_mask.data()),
                             width,
                             height,
-                            LCT_GREY);
+                            LCT_RGB);
         }
     }
 
