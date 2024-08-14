@@ -157,7 +157,8 @@ void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
                                 .dmax = dmax};
 
     // Launch the kernel to apply resolution filtering
-    call_apply_resolution_mask(numBlocks, threadsPerBlock, 0, stream, mask.get(), params);
+    call_apply_resolution_mask(
+      numBlocks, threadsPerBlock, 0, stream, mask.get(), params);
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
 }
@@ -727,9 +728,6 @@ int main(int argc, char **argv) {
                             uint8_t graysc_value = std::max(
                               0.0f, 255.99f - static_cast<float>(host_image[k]) * 10);
                             buffer[k] = {graysc_value, graysc_value, graysc_value};
-                            if (host_results[k]) {
-                                buffer[k] = color_pixel;
-                            }
                         }
                     }
                     // Go over each shoebox and write a square
@@ -748,6 +746,14 @@ int main(int argc, char **argv) {
                             for (int y = box.t - edge; y <= box.b + edge; ++y) {
                                 buffer[width * y + box.l - edge] = color_shoebox;
                                 buffer[width * y + box.r + edge] = color_shoebox;
+                            }
+                        }
+                    }
+                    // Go over everything again, so that strong spots are visible over the boxes
+                    for (int y = 0, k = 0; y < height; ++y) {
+                        for (int x = 0; x < width; ++x, ++k) {
+                            if (host_results[k]) {
+                                buffer[k] = color_pixel;
                             }
                         }
                     }
