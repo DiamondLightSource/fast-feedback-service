@@ -61,7 +61,7 @@ ImageModules::ImageModules(std::shared_ptr<h5read_handle> handle, size_t i) noex
     // We build a hidden vector so that we can have a const span pointing to
     // the pre-reserved data
     for (int i = 0; i < _modules->modules; ++i) {
-        _modules_data[i] = SPAN{_modules->data + slow * fast * i, slow * fast};
-        _modules_masks[i] = SPAN{_modules->mask + slow * fast * i, slow * fast};
+        _modules_data[i] = std::span{_modules->data + slow * fast * i, slow * fast};
+        _modules_masks[i] = std::span{_modules->mask + slow * fast * i, slow * fast};
     }
 }

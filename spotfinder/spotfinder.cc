@@ -2,6 +2,7 @@
 
 #include <bitshuffle.h>
 #include <fmt/core.h>
+#include <fmt/os.h>
 #include <lodepng.h>
 #include <nppi_filtering_functions.h>
 
@@ -533,7 +534,7 @@ int main(int argc, char **argv) {
                         .count();
                 }
                 // Sized buffer for the actual data read from file
-                span<uint8_t> buffer;
+                std::span<uint8_t> buffer;
                 // Fetch the image data from the reader
                 while (true) {
                     {
@@ -566,7 +567,7 @@ int main(int argc, char **argv) {
                     decompress_byte_offset<pixel_t>(
                       buffer,
                       {host_image.get(),
-                       static_cast<tcb::span<short unsigned int>::size_type>(
+                       static_cast<std::span<short unsigned int>::size_type>(
                          width * height)});
                     // std::copy(buffer.begin(), buffer.end(), host_image.get());
                     // std::exit(1);
@@ -618,6 +619,9 @@ int main(int argc, char **argv) {
                 px_coords.clear();
                 px_kvals.clear();
 
+                auto out =
+                  fmt::output_file(fmt::format("pixels_{:05d}.txt", image_num));
+
                 for (int y = 0, k = 0; y < height; ++y) {
                     for (int x = 0; x < width; ++x, ++k) {
                         if (host_results[k]) {
@@ -625,6 +629,7 @@ int main(int argc, char **argv) {
                             px_values.push_back(host_image[k]);
                             px_kvals.push_back(k);
                             ++num_strong_pixels;
+                            out.print("{}, {}", x, y);
                         }
                     }
                 }
@@ -790,7 +795,8 @@ int main(int argc, char **argv) {
                     auto converted_image = std::vector<double>{
                       host_image.get(), host_image.get() + width * height};
                     auto dials_strong = spotfinder.standard_dispersion(
-                      converted_image, reader.get_mask().value_or(span<uint8_t>{}));
+                      converted_image,
+                      reader.get_mask().value_or(std::span<uint8_t>{}));
                     size_t mismatch_x = 0, mismatch_y = 0;
                     bool validation_matches = compare_results(dials_strong.data(),
                                                               width,

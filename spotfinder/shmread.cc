@@ -50,7 +50,8 @@ bool SHMRead::is_image_available(size_t index) {
     return std::filesystem::exists(format("{}/image_{:06d}_2", _base_path, index));
 }
 
-SPAN<uint8_t> SHMRead::get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
+std::span<uint8_t> SHMRead::get_raw_chunk(size_t index,
+                                          std::span<uint8_t> destination) {
     std::ifstream f(format("{}/image_{:06d}_2", _base_path, index),
                     std::ios::in | std::ios::binary);
     f.read(reinterpret_cast<char *>(destination.data()), destination.size());

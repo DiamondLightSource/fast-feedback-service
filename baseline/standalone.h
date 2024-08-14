@@ -1,15 +1,8 @@
 #ifndef NO_TBX_H
 #define NO_TBX_H
 
-#ifdef USE_SPAN_BACKPORT
-#include "span.hpp"
-using tcb::span;
-#else
-#include <span>
-using std::span;
-#endif
-
 #include <memory>
+#include <span>
 #include <type_traits>
 
 template <typename T = double>
@@ -28,10 +21,11 @@ class StandaloneSpotfinder {
   public:
     StandaloneSpotfinder(size_t width, size_t height);
 
-    auto standard_dispersion(const span<const T> image, const span<const bool> mask)
-      -> span<const bool>;
-    auto standard_dispersion(const span<const T> image, const span<const uint8_t> mask)
-      -> span<const bool>;
+    auto standard_dispersion(const std::span<const T> image,
+                             const std::span<const bool> mask) -> std::span<const bool>;
+    auto standard_dispersion(const std::span<const T> image,
+                             const std::span<const uint8_t> mask)
+      -> std::span<const bool>;
 };
 
 #endif

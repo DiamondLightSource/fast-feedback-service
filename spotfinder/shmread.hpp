@@ -19,7 +19,7 @@ class SHMRead : public Reader {
 
     bool is_image_available(size_t index);
 
-    SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination);
+    std::span<uint8_t> get_raw_chunk(size_t index, std::span<uint8_t> destination);
 
     virtual auto get_raw_chunk_compression() -> ChunkCompression {
         return Reader::ChunkCompression::BITSHUFFLE_LZ4;
@@ -31,7 +31,7 @@ class SHMRead : public Reader {
     std::array<size_t, 2> image_shape() const {
         return _image_shape;
     };
-    std::optional<SPAN<const uint8_t>> get_mask() const {
+    std::optional<std::span<const uint8_t>> get_mask() const {
         return {{_mask.data(), _mask.size()}};
     }
 };

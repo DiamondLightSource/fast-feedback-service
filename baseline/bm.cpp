@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <span>
 #include <type_traits>
 #include <vector>
 
@@ -9,15 +10,6 @@
 #include "h5read.h"
 #include "spotfind_test_utils.h"
 #include "standalone.h"
-
-// We might be on an implementation that doesn't have <span>, so use a backport
-#ifdef USE_SPAN_BACKPORT
-#include "span.hpp"
-using tcb::span;
-#else
-#include <span>
-using std::span;
-#endif
 
 using std::cout;
 using std::endl;
@@ -42,16 +34,16 @@ class ImageSource {
         _result = std::vector<uint8_t>(num_pixels);
     }
 
-    auto image_data() const -> const span<const T> {
+    auto image_data() const -> const std::span<const T> {
         return {_source.data(), _source.size()};
     }
 
-    auto mask_data() const -> const span<const bool> {
+    auto mask_data() const -> const std::span<const bool> {
         static_assert(sizeof(uint8_t) == sizeof(bool));
         return {reinterpret_cast<const bool*>(reader.get_mask().value().data()),
                 reader.get_image_fast() * reader.get_image_slow()};
     };
-    auto result_buffer() -> span<uint8_t> {
+    auto result_buffer() -> std::span<uint8_t> {
         return {_result.data(), slow() * fast()};
     }
 

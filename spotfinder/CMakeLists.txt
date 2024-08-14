@@ -6,7 +6,7 @@ cmake_policy(SET CMP0167 NEW) # 3.30 FindBoost removed
 
 project(spotfinder CXX CUDA)
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD 20)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../../cmake/Modules")

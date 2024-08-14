@@ -24,7 +24,7 @@ auto expand_template(const std::string &template_path, size_t index) -> std::str
 }
 
 // template <>
-// void decompress_byte_offset(const SPAN<uint8_t> in, SPAN<uint16_t> out);
+// void decompress_byte_offset(const std::span<uint8_t> in, std::span<uint16_t> out);
 
 /// Splits a header line by middle-space and returns the second value
 auto get_value_contents(const std::string &input) -> std::string {
@@ -89,7 +89,8 @@ bool CBFRead::is_image_available(size_t index) {
       expand_template(_template_path, index + _first_index));
 }
 
-SPAN<uint8_t> CBFRead::get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
+std::span<uint8_t> CBFRead::get_raw_chunk(size_t index,
+                                          std::span<uint8_t> destination) {
     auto filename = expand_template(_template_path, index + _first_index);
 
     // std::vector<char> file_data;
@@ -113,7 +114,7 @@ SPAN<uint8_t> CBFRead::get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
 
     assert(destination.size_bytes() >= (file_data.length() - data_start));
     // auto resized_span =
-    //   SPAN<uint8_t>(destination.begin(), file_data.length() - data_start);
+    //   std::span<uint8_t>(destination.begin(), file_data.length() - data_start);
     std::copy(file_data.begin() + data_start, file_data.end(), destination.begin());
 
     for (size_t i = data_start; i < file_data.length(); ++i) {

@@ -8,16 +8,10 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <span>
 #include <vector>
 
-// We might be on an implementation that doesn't have <span>, so use a backport
-#ifdef USE_SPAN_BACKPORT
-#include "span.hpp"
-using tcb::span;
-#else
-#include <span>
 using std::span;
-#endif
 
 const std::array<int, 2> kernel_size_{3, 3};
 const int min_count_ = 2;

@@ -106,7 +106,7 @@ unsigned int cbf_decompress(const char *packed,
 }
 
 template <typename Tout>
-void decompress_byte_offset(const SPAN<uint8_t> in, SPAN<Tout> out) {
+void decompress_byte_offset(const std::span<uint8_t> in, std::span<Tout> out) {
     cbf_decompress(reinterpret_cast<const char *>(in.data()),
                    in.size_bytes(),
                    out.data(),
@@ -126,7 +126,7 @@ class CBFRead : public Reader {
 
     bool is_image_available(size_t index);
 
-    SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination);
+    std::span<uint8_t> get_raw_chunk(size_t index, std::span<uint8_t> destination);
 
     ChunkCompression get_raw_chunk_compression() {
         return Reader::ChunkCompression::BYTE_OFFSET_32;
@@ -137,10 +137,10 @@ class CBFRead : public Reader {
     std::array<size_t, 2> image_shape() const {
         return _image_shape;
     };
-    std::optional<SPAN<const uint8_t>> get_mask() const {
+    std::optional<std::span<const uint8_t>> get_mask() const {
         return {{_mask.data(), _mask.size()}};
     }
 };
 
 template <typename Tout>
-void decompress_byte_offset(const SPAN<uint8_t> in, SPAN<Tout> out);
+void decompress_byte_offset(const std::span<uint8_t> in, std::span<Tout> out);

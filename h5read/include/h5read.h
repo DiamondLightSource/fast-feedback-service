@@ -89,17 +89,9 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv);
 #include <array>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
-
-// We might be on an implementation that doesn't have <span>, so use a backport
-#ifdef USE_SPAN_BACKPORT
-#include "span.hpp"
-#define SPAN tcb::span
-#else
-#include <span>
-#define SPAN std::span
-#endif
 
 class Image {
   private:
@@ -109,8 +101,8 @@ class Image {
   public:
     Image(std::shared_ptr<h5read_handle> reader, size_t i) noexcept;
 
-    const SPAN<image_t_type> data;
-    const SPAN<uint8_t> mask;
+    const std::span<image_t_type> data;
+    const std::span<uint8_t> mask;
     const size_t slow;
     const size_t fast;
 };
@@ -120,22 +112,22 @@ class ImageModules {
     std::shared_ptr<h5read_handle> _handle;
     std::shared_ptr<image_modules_t> _modules;
     // Mutable vectors to point to the appropriate parts of the module data
-    std::vector<SPAN<image_t_type>> _modules_data;
-    std::vector<SPAN<uint8_t>> _modules_masks;
+    std::vector<std::span<image_t_type>> _modules_data;
+    std::vector<std::span<uint8_t>> _modules_masks;
 
   public:
     ImageModules(std::shared_ptr<h5read_handle> handle, size_t i) noexcept;
 
-    const SPAN<image_t_type> data;
-    const SPAN<uint8_t> mask;
+    const std::span<image_t_type> data;
+    const std::span<uint8_t> mask;
 
     const size_t n_modules;  ///< Number of modules
     const size_t slow;       ///< Height of a module, in pixels
     const size_t fast;       ///< Width of a module, in pixels
     /// Convenience lookup to get data for a particular module
-    const SPAN<SPAN<image_t_type>> modules;
+    const std::span<std::span<image_t_type>> modules;
     /// Convenience lookup to get mask for a particular module
-    const SPAN<SPAN<uint8_t>> masks;
+    const std::span<std::span<uint8_t>> masks;
 };
 
 /// Base class object to provide a unified reader interface
@@ -150,11 +142,12 @@ class Reader {
 
     virtual bool is_image_available(size_t index) = 0;
 
-    virtual SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) = 0;
+    virtual std::span<uint8_t> get_raw_chunk(size_t index,
+                                             std::span<uint8_t> destination) = 0;
     virtual ChunkCompression get_raw_chunk_compression() = 0;
     virtual size_t get_number_of_images() const = 0;
     virtual std::array<size_t, 2> image_shape() const = 0;
-    virtual std::optional<SPAN<const uint8_t>> get_mask() const = 0;
+    virtual std::optional<std::span<const uint8_t>> get_mask() const = 0;
 };
 
 // Declare a C++ "object" version so we don't have to keep track of allocations
@@ -174,7 +167,7 @@ class H5Read : public Reader {
         h5read_get_image_into(_handle.get(), index, data);
     }
     /// Read image data into an existing buffer
-    void get_image_into(size_t index, SPAN<uint16_t> data) {
+    void get_image_into(size_t index, std::span<uint16_t> data) {
 #ifndef NDEBUG
         assert(data.size() >= get_image_slow() * get_image_fast());
 #endif
@@ -186,7 +179,7 @@ class H5Read : public Reader {
         return h5read_get_chunk_size(_handle.get(), index) > 0;
     }
 
-    SPAN<uint8_t> get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
+    std::span<uint8_t> get_raw_chunk(size_t index, std::span<uint8_t> destination) {
         size_t chunk_bytes;
         h5read_get_raw_chunk(_handle.get(),
                              index,
@@ -204,7 +197,7 @@ class H5Read : public Reader {
         return Image(_handle, index);
     }
 
-    virtual std::optional<SPAN<const uint8_t>> get_mask() const {
+    virtual std::optional<std::span<const uint8_t>> get_mask() const {
         auto mask = h5read_get_mask(_handle.get());
         if (mask == nullptr) {
             return std::nullopt;

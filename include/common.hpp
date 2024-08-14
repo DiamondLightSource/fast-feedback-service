@@ -5,18 +5,10 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
-
-// We might be on an implementation that doesn't have <span>, so use a backport
-#ifdef USE_SPAN_BACKPORT
-#include "span.hpp"
-using tcb::span;
-#else
-#include <span>
-using std::span;
-#endif
 
 template <typename T1, typename... TS>
 auto with_formatting(const std::string &code, const T1 &first, TS... args)
@@ -176,7 +168,7 @@ void draw_image_data(const std::unique_ptr<T, U> &data,
       static_cast<T *>(data.get()), fast, slow, width, height, data_width, data_height);
 }
 template <typename T>
-void draw_image_data(const span<T> data,
+void draw_image_data(const std::span<T> data,
                      size_t fast,
                      size_t slow,
                      size_t width,
@@ -237,7 +229,7 @@ auto count_nonzero(const T *data, I width, I height, I2 pitch = 0) -> size_t {
     return strong;
 }
 template <typename T, typename I, typename I2 = size_t>
-auto count_nonzero(const span<const T> data, I width, I height, I2 pitch = 0)
+auto count_nonzero(const std::span<const T> data, I width, I height, I2 pitch = 0)
   -> size_t {
     return count_nonzero(data.data(), width, height, pitch);
 }
