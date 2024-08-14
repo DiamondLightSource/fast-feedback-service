@@ -16,7 +16,7 @@ include_directories(../common/include)
 if (NOT TARGET h5read)
     add_subdirectory(../h5read h5read)
 endif()
-if (NOT TARGET fmt)
+if (NOT TARGET fmt::fmt)
     add_subdirectory(../dependencies/fmt fmt)
 endif()
 

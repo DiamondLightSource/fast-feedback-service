@@ -542,10 +542,10 @@ int main(int argc, char **argv) {
                     }
                     // /dev/shm we might not have an atomic write
                     if (buffer.size() == 0) {
-                        print(
+                        print(fmt::runtime(
                           "\033[1mRace Condition?!?? Got buffer size 0 for image "
                           "{image_num}. "
-                          "Sleeping.\033[0m\n");
+                          "Sleeping.\033[0m\n"));
                         std::this_thread::sleep_for(100ms);
                         continue;
                     }
@@ -862,9 +862,9 @@ int main(int argc, char **argv) {
         std::chrono::high_resolution_clock::now() - all_images_start_time)
         .count();
     print(
-      "\n{} images in {:.2f} s (\033[1;34m{:.2f} GBps\033[0m) "
-      "(\033[1;34m{:.1f} fps\033[0m)\n",
-      completed_images,
+      "\n{} images in {:.2f} s (\033[1;34m{:.2f} GBps\033[0m) (\033[1;34m{:.1f} "
+      "fps\033[0m)\n",
+      int(completed_images),
       total_time,
       GBps<pixel_t>(
         total_time * 1000,

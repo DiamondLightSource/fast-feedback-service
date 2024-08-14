@@ -21,7 +21,8 @@ using std::span;
 template <typename T1, typename... TS>
 auto with_formatting(const std::string &code, const T1 &first, TS... args)
   -> std::string {
-    return code + fmt::format(fmt::format("{}", first), args...) + "\033[0m";
+    return code + fmt::format(fmt::runtime(fmt::format("{}", first)), args...)
+           + "\033[0m";
 }
 
 template <typename... T>
@@ -77,7 +78,7 @@ void draw_image_data(const T *data,
         for (int row = slow; row < std::min(slow + height, data_height); ++row) {
             auto val = data[col + data_width * row];
             auto fmt_spec = fmt::format("{{:{}}}", format_type);
-            maxw = std::max(maxw, fmt::formatted_size(fmt_spec, val));
+            maxw = std::max(maxw, fmt::formatted_size(fmt::runtime(fmt_spec), val));
             accum = std::max(accum, val);
         }
         col_widths.push_back(maxw);
@@ -109,9 +110,9 @@ void draw_image_data(const T *data,
 
     for (int i = 0; i < width; ++i) {
         for (int j = 0; j < col_widths[i]; ++j) {
-            fmt::print(is_top ? "═" : "─");
+            fmt::print("{}", is_top ? "═" : "─");
         }
-        fmt::print(is_top ? "═" : "─");
+        fmt::print("{}", is_top ? "═" : "─");
     }
     if (is_top) {
         if (is_right) {
@@ -155,7 +156,7 @@ void draw_image_data(const T *data,
             }
             auto fmt_spec =
               fmt::format("{{:{}{}}} ", col_widths[i - fast], format_type);
-            fmt::print(fmt_spec, dat);
+            fmt::print(fmt::runtime(fmt_spec), dat);
             if (dat == accum) {
                 fmt::print("\033[0m");
             }

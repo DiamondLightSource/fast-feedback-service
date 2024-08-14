@@ -11,11 +11,21 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../../cmake/Modu
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
-include(UseSpanBackportIfNeeded)
+include(FetchContent)
 
 include_directories(../common/include)
+set(FETCHCONTENT_QUIET OFF)
+FetchContent_Declare(
+    fmt
+    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+    GIT_TAG        11.0.2
+    FIND_PACKAGE_ARGS
+)
+#find_package(fmt)
 
-add_subdirectory(../../dependencies/fmt fmt)
+FetchContent_MakeAvailable(fmt)
+
+#add_subdirectory(../../dependencies/fmt fmt)
 add_subdirectory(../../h5read h5read)
 add_subdirectory(../../dependencies/argparse argparse)
 add_subdirectory(../../baseline baseline)

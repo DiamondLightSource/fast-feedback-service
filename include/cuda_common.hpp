@@ -176,9 +176,9 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         }
         if (cudaGetDeviceProperties(&_arguments.device, _arguments.device_index)
             != cudaSuccess) {
-            fmt::print(red("{}: Could not inspect GPU ({})\n",
-                           bold("Error"),
-                           cuda_error_string(cudaGetLastError())));
+            fmt::print(fmt::runtime(red("{}: Could not inspect GPU ({})\n",
+                                        bold("Error"),
+                                        cuda_error_string(cudaGetLastError()))));
             std::exit(1);
         }
         fmt::print("Using {} (CUDA {}.{})\n\n",
