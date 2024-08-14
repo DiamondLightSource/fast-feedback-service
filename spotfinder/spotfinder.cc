@@ -619,9 +619,6 @@ int main(int argc, char **argv) {
                 px_coords.clear();
                 px_kvals.clear();
 
-                auto out =
-                  fmt::output_file(fmt::format("pixels_{:05d}.txt", image_num));
-
                 for (int y = 0, k = 0; y < height; ++y) {
                     for (int x = 0; x < width; ++x, ++k) {
                         if (host_results[k]) {
@@ -629,7 +626,6 @@ int main(int argc, char **argv) {
                             px_values.push_back(host_image[k]);
                             px_kvals.push_back(k);
                             ++num_strong_pixels;
-                            out.print("{}, {}", x, y);
                         }
                     }
                 }
@@ -767,6 +763,16 @@ int main(int argc, char **argv) {
                                     width,
                                     height,
                                     LCT_RGB);
+                    // Also write a list of pixels out here
+                    auto out =
+                      fmt::output_file(fmt::format("pixels_{:05d}.txt", image_num));
+                    for (int y = 0, k = 0; y < height; ++y) {
+                        for (int x = 0; x < width; ++x, ++k) {
+                            if (host_results[k]) {
+                                out.print("{:4d}, {:4d}\n", x, y);
+                            }
+                        }
+                    }
                 }
 
                 // Check if pipeHandler was initialized
