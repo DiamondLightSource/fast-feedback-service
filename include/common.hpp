@@ -4,6 +4,7 @@
 #include <fmt/core.h>
 
 #include <algorithm>
+#include <cinttypes>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
