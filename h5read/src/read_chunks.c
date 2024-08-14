@@ -16,6 +16,8 @@ int main(int argc, char **argv) {
 
     size_t n_images = h5read_get_number_of_images(obj);
 
+    printf("%lld images\n", n_images);
+
     // A buffer we own, to check reading image data into a preallocated buffer
     image_t_type *buffer = malloc(h5read_get_image_fast(obj)
                                   * h5read_get_image_slow(obj) * sizeof(image_t_type));

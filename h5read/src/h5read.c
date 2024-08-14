@@ -235,14 +235,19 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
 
 /// Find the data file index for a particular image number.
 /// If the image isn't found on any data files, returns obj->data_file_count
-int _find_data_file_for_image(h5read_handle *obj, size_t index) {
+/// FIXME returns updated in index in place
+int _find_data_file_for_image(h5read_handle *obj, size_t *index) {
     int data_file = 0;
+    size_t subtracted = *index;
     for (; data_file < obj->data_file_count; data_file++) {
-        if ((index - obj->data_files[data_file].offset)
-            < obj->data_files[data_file].frames) {
+        if ((subtracted + obj->data_files[data_file].offset)
+            < (obj->data_files[data_file].frames + obj->data_files[data_file].offset)) {
             break;
+        } else {
+            subtracted -= obj->data_files[data_file].frames;
         }
     }
+    *index = subtracted;
     return data_file;
 }
 
@@ -252,14 +257,14 @@ size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
         exit(1);
     }
 #ifdef HAVE_HDF5
-    int data_file = _find_data_file_for_image(obj, index);
+    int data_file = _find_data_file_for_image(obj, &index);
     if (data_file == obj->data_file_count) {
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
         exit(1);
     }
     h5_data_file *current = &(obj->data_files[data_file]);
 
-    hsize_t offset[3] = {index - current->offset, 0, 0};
+    hsize_t offset[3] = {index + current->offset, 0, 0};
     hsize_t chunk_size = 0;
     // H5Drefresh(current->dataset);
     H5Dget_chunk_storage_size(current->dataset, offset, &chunk_size);
@@ -280,14 +285,14 @@ void h5read_get_raw_chunk(h5read_handle *obj,
         exit(1);
     }
 #ifdef HAVE_HDF5
-    int data_file = _find_data_file_for_image(obj, index);
+    int data_file = _find_data_file_for_image(obj, &index);
     if (data_file == obj->data_file_count) {
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
         exit(1);
     }
     h5_data_file *current = &(obj->data_files[data_file]);
 
-    hsize_t offset[3] = {index - current->offset, 0, 0};
+    hsize_t offset[3] = {index + current->offset, 0, 0};
     hsize_t chunk_size = 0;
     H5Dget_chunk_storage_size(current->dataset, offset, &chunk_size);
     *size = chunk_size;
@@ -331,7 +336,7 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
 #ifdef HAVE_HDF5
     /* first find the right data file - having to do this lookup is annoying
        but probably cheap */
-    int data_file = _find_data_file_for_image(obj, index);
+    int data_file = _find_data_file_for_image(obj, &index);
 
     if (data_file == obj->data_file_count) {
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
@@ -344,7 +349,7 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
     hid_t datatype = H5Dget_type(current->dataset);
 
     hsize_t block[3] = {1, obj->slow, obj->fast};
-    hsize_t offset[3] = {index - current->offset, 0, 0};
+    hsize_t offset[3] = {index + current->offset, 0, 0};
 
     // select data to read #todo add status checks
     H5Sselect_hyperslab(space, H5S_SELECT_SET, offset, NULL, block, NULL);
@@ -514,7 +519,7 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
         hsize_t start[MAXDIM], stride[MAXDIM], count[MAXDIM], block[MAXDIM];
         size_t dims;
 
-        vds_source = H5Pget_virtual_vspace(plist, j);
+        vds_source = H5Pget_virtual_srcspace(plist, j);
         dims = H5Sget_simple_extent_ndims(vds_source);
 
         if (dims != 3) {
@@ -538,6 +543,7 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
 
         vds[j].frames = block[0];
         vds[j].offset = start[0];
+        printf("%lld %lld\n", block[0], start[0]);
 
         if ((strlen(vds[j].filename) == 1) && (vds[j].filename[0] == '.')) {
             H5L_info_t info;
@@ -579,6 +585,8 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
                    < MAXFILENAME);
             strcpy(vds[j].filename, scr);
         }
+
+        printf("%s\n", vds[j].filename);
 
         // do I want to open these here? Or when they are needed...
         vds[j].file = 0;
