@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 # Constraints on minimum version:
 # - h5read: FindHDF5 only creates interface targets on 3.20+
+cmake_policy(SET CMP0168 NEW) # 3.30 FetchContent in-tree if possible
+cmake_policy(SET CMP0167 NEW) # 3.30 FindBoost removed
 
 project(spotfinder CXX CUDA)
 set(CMAKE_CXX_STANDARD 20)
@@ -11,36 +13,43 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../../cmake/Modu
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
-include(FetchContent)
+
 
 include_directories(../common/include)
+
+# Dependency fetching
 set(FETCHCONTENT_QUIET OFF)
+include(FetchContent)
 FetchContent_Declare(
     fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
     GIT_TAG        11.0.2
     FIND_PACKAGE_ARGS
 )
-#find_package(fmt)
-
 FetchContent_MakeAvailable(fmt)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(nlohmann_json)
+FetchContent_Declare(
+    argparse
+    GIT_REPOSITORY  https://github.com/ndevenish/argparse
+    GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
+)
+FetchContent_MakeAvailable(argparse)
 
-#add_subdirectory(../../dependencies/fmt fmt)
+
 add_subdirectory(../../h5read h5read)
-add_subdirectory(../../dependencies/argparse argparse)
 add_subdirectory(../../baseline baseline)
-
-add_library(lodepng STATIC ../../dependencies/lodepng/lodepng.cpp)
-target_include_directories(lodepng INTERFACE ../../dependencies/lodepng)
-target_compile_definitions(lodepng INTERFACE HAVE_LODEPNG)
-
-add_library(json INTERFACE)
-target_include_directories(json INTERFACE ../../dependencies/json/include)
 
 find_package(LZ4 REQUIRED)
 find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
+find_package(lodepng)
 
 add_executable(spotfinder spotfinder.cc spotfinder.cu shmread.cc cbfread.cc)
 target_link_libraries(spotfinder
@@ -55,7 +64,7 @@ target_link_libraries(spotfinder
     CUDA::nppif
     Boost::graph
     lodepng
-    json
+    nlohmann_json::nlohmann_json
 )
 target_compile_options(spotfinder PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 
