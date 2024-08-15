@@ -20,6 +20,9 @@ int main(int argc, char **argv) {
     image_t_type *buffer = malloc(h5read_get_image_fast(obj)
                                   * h5read_get_image_slow(obj) * sizeof(image_t_type));
 
+    image_t_type max, min;
+    h5read_get_trusted_range(obj, &min, &max);
+    printf("Trusted pixel inclusive range: %hu → %hu\n", min, max);
     printf("               %8s / %s\n", "Image", "Module");
     for (size_t j = 0; j < n_images; j++) {
         image_t *image = h5read_get_image(obj, j);

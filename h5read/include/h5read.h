@@ -46,6 +46,8 @@ size_t h5read_get_number_of_images(h5read_handle *obj);
 size_t h5read_get_image_slow(h5read_handle *obj);
 /// Get the number of image pixels in the fast dimension
 size_t h5read_get_image_fast(h5read_handle *obj);
+/// Get the trusted range for this dataset
+void h5read_get_trusted_range(h5read_handle *obj, image_t_type *min, image_t_type *max);
 
 /** Borrow a pointer to the image mask.
  *
@@ -146,6 +148,7 @@ class Reader {
                                              std::span<uint8_t> destination) = 0;
     virtual ChunkCompression get_raw_chunk_compression() = 0;
     virtual size_t get_number_of_images() const = 0;
+    virtual std::array<image_t_type, 2> get_trusted_range() const = 0;
     virtual std::array<size_t, 2> image_shape() const = 0;
     virtual std::optional<std::span<const uint8_t>> get_mask() const = 0;
 };
@@ -224,6 +227,12 @@ class H5Read : public Reader {
     /// Get the image shape, in (slow, fast) pixels
     virtual std::array<size_t, 2> image_shape() const {
         return {get_image_slow(), get_image_fast()};
+    }
+    /// Get the (min, max) inclusive trusted range of pixel values
+    virtual std::array<image_t_type, 2> get_trusted_range() const {
+        image_t_type min, max;
+        h5read_get_trusted_range(_handle.get(), &min, &max);
+        return {min, max};
     }
 
     std::mutex mutex;

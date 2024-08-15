@@ -13,6 +13,8 @@ int main(int argc, char **argv) {
     // A buffer we own, to check reading image data into a preallocated buffer
     auto buffer = std::make_unique<H5Read::image_type[]>(reader.get_image_slow()
                                                          * reader.get_image_fast());
+    auto [px_min, px_max] = reader.get_trusted_range();
+    printf("Trusted pixel inclusive range: %hu → %hu\n", px_min, px_max);
 
     printf("               %8s / %s\n", "Image", "Module");
     for (size_t j = 0; j < n_images; j++) {

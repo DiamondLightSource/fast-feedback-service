@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(h5read LANGUAGES C CXX)
 
-set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 11)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../cmake/Modules")
 include(SetDefaultBuildRelWithDebInfo)

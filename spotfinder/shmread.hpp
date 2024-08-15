@@ -13,6 +13,7 @@ class SHMRead : public Reader {
     std::array<size_t, 2> _image_shape;
     const std::string _base_path;
     std::vector<uint8_t> _mask;
+    std::array<image_t_type, 2> _trusted_range;
 
   public:
     SHMRead(const std::string &path);
@@ -33,6 +34,9 @@ class SHMRead : public Reader {
     };
     std::optional<std::span<const uint8_t>> get_mask() const {
         return {{_mask.data(), _mask.size()}};
+    }
+    virtual std::array<image_t_type, 2> get_trusted_range() const {
+        return _trusted_range;
     }
 };
 

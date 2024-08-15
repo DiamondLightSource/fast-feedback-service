@@ -140,6 +140,9 @@ class CBFRead : public Reader {
     std::optional<std::span<const uint8_t>> get_mask() const {
         return {{_mask.data(), _mask.size()}};
     }
+    virtual std::array<image_t_type, 2> get_trusted_range() const {
+        return {0, std::numeric_limits<image_t_type>::max()};
+    }
 };
 
 template <typename Tout>

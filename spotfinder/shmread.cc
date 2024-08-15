@@ -31,6 +31,9 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
         throw std::runtime_error(format(
           "Can not read image with bit_depth_image={}, only 16", bit_depth_image));
     }
+    _trusted_range = {
+      0, data["countrate_correction_count_cutoff"].template get<image_t_type>()};
+
     // Read the mask
     std::vector<int32_t> raw_mask;
     raw_mask.resize(_image_shape[0] * _image_shape[1]);

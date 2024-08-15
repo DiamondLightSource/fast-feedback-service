@@ -390,6 +390,7 @@ int main(int argc, char **argv) {
 
     int height = reader.image_shape()[0];
     int width = reader.image_shape()[1];
+    auto trusted_px_max = reader.get_trusted_range()[1];
 
     std::signal(SIGINT, stop_processing);
 
@@ -616,6 +617,7 @@ int main(int argc, char **argv) {
                                           mask.pitch,
                                           width,
                                           height,
+                                          trusted_px_max,
                                           device_results.get());
                 post.record(stream);
 

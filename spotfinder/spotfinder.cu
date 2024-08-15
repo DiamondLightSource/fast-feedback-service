@@ -150,7 +150,6 @@ void call_apply_resolution_mask(dim3 blocks,
                                 cudaStream_t stream,
                                 uint8_t *mask,
                                 ResolutionMaskParams params) {
-
     // Launch the kernel
     apply_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
       mask,
@@ -173,6 +172,7 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t mask_pitch,
                                      int width,
                                      int height,
+                                     pixel_t max_valid_pixel_value,
                                      //  int *result_sum,
                                      //  size_t *result_sumsq,
                                      //  uint8_t *result_n,
@@ -196,8 +196,9 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
     // Don't calculate for masked pixels
-    bool px_is_valid = mask[y * mask_pitch + x] != 0;
     pixel_t this_pixel = image[y * image_pitch + x];
+    bool px_is_valid =
+      mask[y * mask_pitch + x] != 0 && this_pixel <= max_valid_pixel_value;
 
     if (px_is_valid) {
         for (int row = max(0, y - KERNEL_HEIGHT);
@@ -256,10 +257,18 @@ void call_do_spotfinding_naive(dim3 blocks,
                                size_t mask_pitch,
                                int width,
                                int height,
+                               pixel_t max_valid_pixel_value,
                                //  int *result_sum,
                                //  size_t *result_sumsq,
                                //  uint8_t *result_n,
                                uint8_t *result_strong) {
     do_spotfinding_naive<<<blocks, threads, shared_memory, stream>>>(
-      image, image_pitch, mask, mask_pitch, width, height, result_strong);
+      image,
+      image_pitch,
+      mask,
+      mask_pitch,
+      width,
+      height,
+      max_valid_pixel_value,
+      result_strong);
 }

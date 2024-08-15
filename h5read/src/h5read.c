@@ -43,6 +43,8 @@ struct _h5read_handle {
     uint8_t *mask;         ///< Shared image mask
     uint8_t *module_mask;  ///< Shared module mask
     size_t mask_size;      ///< Total size(in pixels) of mask
+    image_t_type trusted_range_min,
+      trusted_range_max;  ///< Trusted range of this dataset
 };
 
 void h5read_free(h5read_handle *obj) {
@@ -379,6 +381,17 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     return result;
 }
 
+void h5read_get_trusted_range(h5read_handle *obj,
+                              image_t_type *min,
+                              image_t_type *max) {
+    if (min != NULL) {
+        *min = obj->trusted_range_min;
+    }
+    if (max != NULL) {
+        *max = obj->trusted_range_max;
+    }
+}
+
 #ifdef HAVE_HDF5
 void read_mask(h5read_handle *obj) {
     char mask_path[] = "/entry/instrument/detector/pixel_mask";
@@ -492,6 +505,58 @@ void read_mask(h5read_handle *obj) {
     if (raw_mask) free(raw_mask);
     if (raw_mask_64) free(raw_mask_64);
     H5Dclose(mask_dataset);
+}
+
+/// Read a single value out of an HDF5 dataset
+image_t_type _read_single_value(hid_t dataset, const char *dataset_name) {
+    // assert(sizeof(image_t_type) == 2);
+    hid_t datatype = H5Dget_type(dataset);
+    size_t datatype_size = H5Tget_size(datatype);
+    hid_t dataspace = H5Dget_space(dataset);
+    size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
+
+    if (num_elements > 1) {
+        fprintf(
+          stderr, "Error: While reading %s: More than one element.\n", dataset_name);
+        exit(1);
+    }
+    if (datatype_size < sizeof(image_t_type)) {
+        fprintf(
+          stderr,
+          "Error: While reading %s: Value of size %zu is smaller than data type\n",
+          dataset_name,
+          datatype_size);
+        exit(1);
+    }
+    static_assert(sizeof(image_t_type) == 2);
+    image_t_type value;
+    if (H5Dread(dataset, H5T_NATIVE_UINT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value)
+        < 0) {
+        fprintf(stderr, "Error: While reading %s: Unspecified data reading error.\n");
+        exit(1);
+    }
+    return value;
+}
+
+void read_trusted_range(h5read_handle *obj) {
+    // char mask_path[] = ;
+    hid_t saturation_dataset = H5Dopen(
+      obj->master_file, "/entry/instrument/detector/saturation_value", H5P_DEFAULT);
+    hid_t underload_dataset = H5Dopen(
+      obj->master_file, "/entry/instrument/detector/underload_value", H5P_DEFAULT);
+    obj->trusted_range_min = 0;
+    obj->trusted_range_max = (image_t_type)(-1);
+
+    if (saturation_dataset >= 0) {
+        obj->trusted_range_max =
+          _read_single_value(saturation_dataset, "saturation_value");
+        H5Dclose(saturation_dataset);
+    }
+    if (underload_dataset >= 0) {
+        obj->trusted_range_min =
+          _read_single_value(underload_dataset, "underload_value");
+        H5Dclose(underload_dataset);
+    }
 }
 
 /// Get number of VDS and read info about all the sub-files.
@@ -709,6 +774,8 @@ h5read_handle *h5read_open(const char *master_filename) {
         file->frames += data_files[j].frames;
     }
 
+    read_trusted_range(file);
+
     read_mask(file);
 
     setup_data(file);
@@ -752,6 +819,8 @@ h5read_handle *h5read_generate_samples() {
     file->slow = E2XE_16M_SLOW;
     file->fast = E2XE_16M_FAST;
     file->mask = _generate_e2xe_16m_mask();
+    file->trusted_range_max = (image_t_type)(-1);
+    file->trusted_range_min = 0;
     // Module mask is just empty for now
     file->module_mask =
       malloc(E2XE_16M_NSLOW * E2XE_16M_NFAST * E2XE_MOD_FAST * E2XE_MOD_SLOW);
