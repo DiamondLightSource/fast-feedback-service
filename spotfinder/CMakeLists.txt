@@ -1,8 +1,6 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20...3.30)
 # Constraints on minimum version:
 # - h5read: FindHDF5 only creates interface targets on 3.20+
-cmake_policy(SET CMP0168 NEW) # 3.30 FetchContent in-tree if possible
-cmake_policy(SET CMP0167 NEW) # 3.30 FindBoost removed
 
 project(spotfinder CXX CUDA)
 set(CMAKE_CXX_STANDARD 20)
