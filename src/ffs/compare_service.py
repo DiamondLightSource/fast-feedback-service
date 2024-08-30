@@ -21,13 +21,19 @@ DEFAULT_QUEUE_NAME = "reduce.xray_centering.gpu.compare_results"
 Coordinate: TypeAlias = Tuple[int, int, int]
 
 
-class XrcResult(BaseModel):
+class XRCResult(BaseModel):
     centre_of_mass: list[float]
     max_voxel: list[int]
     max_count: int
     n_voxels: int
     total_count: int
     bounding_box: tuple[Coordinate, Coordinate]
+
+
+class XRCOutput(BaseModel):
+    results: list[XRCResult]
+    success: bool
+    type: str
 
 
 class Parameters(BaseModel):
@@ -37,7 +43,7 @@ class Parameters(BaseModel):
 
 class Result(BaseModel):
     timestamp: float
-    result: XrcResult
+    results: list[XRCResult]
     gpu: bool
     header: Any
 
@@ -82,12 +88,13 @@ class XRCResultCompare(CommonService):
         message: dict,
     ) -> None:
         try:
-            result = XrcResult.model_validate(message)
+            output = XRCOutput.model_validate(message)
             params: Parameters = Parameters.model_validate(rw.recipe_step["parameters"])
         except ValidationError as e:
             dcid = rw.recipe_step["parameters"].get("dcid", "(unknown DCID)")
             self.log.warning(f"Rejecting XRC result for {dcid}: \n{e}")
-            self.log.debug(f"Contents: {rw.recipe_step['parameters']:?}")
+            self.log.debug(f"Contents: {rw.recipe_step['parameters']=!r}")
+            self.log.debug(f"          {message=!r}")
             rw.transport.nack(header, requeue=False)
             return
 
@@ -97,10 +104,14 @@ class XRCResultCompare(CommonService):
             f"Gotten XRC Result for {params.dcid} ({'GPU' if is_gpu else 'CPU'})"
         )
 
+        result = Result(
+            timestamp=time.time(),
+            results=output.results,
+            gpu=is_gpu,
+            header=header,
+        )
         if params.dcid not in self._result:
-            self._result[params.dcid] = Result(
-                timestamp=time.time(), result=result, gpu=is_gpu, header=header
-            )
+            self._result[params.dcid] = result
             return
 
         other_result = self._result.pop(params.dcid)
@@ -111,6 +122,6 @@ class XRCResultCompare(CommonService):
             rw.transport.nack(header, requeue=False)
             rw.transport.nack(other_result.header, requeue=False)
 
-        self.log.info(f"Compared results:\n{result=}\n{other_result=}")
+        self.log.info(f"Compared results:\n{result.results=}\n{other_result.results=}")
         rw.transport.ack(header)
         rw.transport.ack(other_result.header)
