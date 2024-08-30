@@ -9,9 +9,9 @@ python = "^3.11"
 requests = "^2.30.0"
 watchdir = "^1.0.0"
 pyepics = "^3.5.2"
-zocalo = "^0.30.2"
+zocalo = "^1.1"
 rich = "^13.7.1"
-pydantic = "<2"
+pydantic = "^2"
 
 [tool.poetry.scripts]
 watch_dc = 'watch_dc:run'
