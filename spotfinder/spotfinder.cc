@@ -530,6 +530,7 @@ int main(int argc, char **argv) {
                 if (image_num >= num_images) {
                     break;
                 }
+                auto offset_image_num = image_num + parser.get<uint32_t>("start-index");
                 {
                     // TODO:
                     //  - This loop does not handle the stop token
@@ -545,7 +546,7 @@ int main(int argc, char **argv) {
                     auto swmr_wait_start_time =
                       std::chrono::high_resolution_clock::now();
                     // Check that our image is available and wait if not
-                    while (!reader.is_image_available(image_num)) {
+                    while (!reader.is_image_available(offset_image_num)) {
                         std::this_thread::sleep_for(100ms);
                     }
                     time_waiting_for_images +=
@@ -560,7 +561,9 @@ int main(int argc, char **argv) {
                 while (true) {
                     {
                         std::scoped_lock lock(reader_mutex);
-                        buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
+                        print("Reading image {} for {}\n", offset_image_num, image_num);
+                        buffer =
+                          reader.get_raw_chunk(offset_image_num, raw_chunk_buffer);
                     }
                     // /dev/shm we might not have an atomic write
                     if (buffer.size() == 0) {
