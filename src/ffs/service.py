@@ -187,7 +187,7 @@ class GPUPerImageAnalysis(CommonService):
         except ValidationError as e:
             dcid = rw.recipe_step["parameters"].get("dcid", "(unknown DCID)")
             self.log.warning(f"Rejecting PIA request for {dcid}: \n{e}")
-            self.log.debug(f"Contents: {rw.recipe_step['parameters']:?}")
+            self.log.debug(f"Contents: {rw.recipe_step['parameters']!r}")
             rw.transport.nack(header, requeue=False)
             return
         try:
