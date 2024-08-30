@@ -11,9 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
-import workflows.recipe
 from pydantic import BaseModel, ValidationError
 from rich.logging import RichHandler
+
+import workflows.recipe
 from workflows.services.common_service import CommonService
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,8 @@ class PiaRequest(BaseModel):
     xBeam: float
     yBeam: float
     detector_distance: float
+    d_min: float | None = None
+    d_max: float | None = None
 
 
 class DetectorGeometry(BaseModel):
@@ -184,6 +187,7 @@ class GPUPerImageAnalysis(CommonService):
         except ValidationError as e:
             dcid = rw.recipe_step["parameters"].get("dcid", "(unknown DCID)")
             self.log.warning(f"Rejecting PIA request for {dcid}: \n{e}")
+            self.log.debug(f"Contents: {rw.recipe_step['parameters']:?}")
             rw.transport.nack(header, requeue=False)
             return
         try:
@@ -193,9 +197,7 @@ class GPUPerImageAnalysis(CommonService):
                 beam_center_x=parameters.xBeam,
                 beam_center_y=parameters.yBeam,
             )
-            print()
-            print(detector_geometry.to_json())
-            print()
+            self.log.debug("{detector_geometry.to_json()=}")
         except ValidationError as e:
             self.log.warning(
                 f"Rejecting PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): Invalid detector parameters \n{e}"
@@ -256,15 +258,16 @@ class GPUPerImageAnalysis(CommonService):
             str(40),
             "--pipe_fd",
             str(write_fd),
-            "--dmin",
-            str(4.0),
-            "--dmax",
-            str(40.0),
             "--wavelength",
             str(parameters.wavelength),
             "--detector",
             detector_geometry.to_json(),
         ]
+        if parameters.d_min:
+            command.extend(["--dmin", str(parameters.d_min)])
+        if parameters.d_max:
+            command.extend(["--dmax", str(parameters.d_max)])
+
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
 
         # Set the default channel for the result
