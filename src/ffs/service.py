@@ -31,7 +31,7 @@ class PiaRequest(BaseModel):
     number_of_frames: int
     start_frame_index: int
     startTime: Optional[datetime] = None
-    wavelength: float
+    wavelength: float | None = None
     xBeam: float
     yBeam: float
     detector_distance: float
@@ -258,11 +258,11 @@ class GPUPerImageAnalysis(CommonService):
             str(40),
             "--pipe_fd",
             str(write_fd),
-            "--wavelength",
-            str(parameters.wavelength),
             "--detector",
             detector_geometry.to_json(),
         ]
+        if parameters.wavelength is not None:
+            command.extend(["--wavelength", str(parameters.wavelength)])
         if parameters.d_min:
             command.extend(["--dmin", str(parameters.d_min)])
         if parameters.d_max:
