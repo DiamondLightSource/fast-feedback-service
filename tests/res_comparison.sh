@@ -19,7 +19,6 @@ exec 3> output_file.txt
   --min-spot-size 3 \
   --pipe_fd 3 \
   --dmin 4 \
-  --wavelength 0.976261 \
   --detector "$(cat detector.json)" \
   --threads 1 \
   --images 1

@@ -143,6 +143,9 @@ class CBFRead : public Reader {
     virtual std::array<image_t_type, 2> get_trusted_range() const {
         return {0, std::numeric_limits<image_t_type>::max()};
     }
+    virtual std::optional<float> get_wavelength() const {
+        return std::nullopt;
+    }
 };
 
 template <typename Tout>

@@ -342,7 +342,6 @@ int main(int argc, char **argv) {
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
-    float wavelength = parser.get<float>("wavelength");
     std::string detector_json = parser.get<std::string>("detector");
     json detector_json_obj = json::parse(detector_json);
     detector_geometry detector = detector_geometry(detector_json_obj);
@@ -391,6 +390,21 @@ int main(int argc, char **argv) {
     int height = reader.image_shape()[0];
     int width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
+
+    float wavelength;
+    if (parser.is_used("wavelength")) {
+        wavelength = parser.get<float>("wavelength");
+    } else {
+        auto wavelength_opt = reader.get_wavelength();
+        if (!wavelength_opt) {
+            print(
+              "Error: No wavelength provided. Please pass wavelength using: "
+              "--wavelength\n");
+            std::exit(1);
+        }
+        wavelength = wavelength_opt.value();
+        printf("Got wavelength from file: %f Å\n", wavelength);
+    }
 
     std::signal(SIGINT, stop_processing);
 

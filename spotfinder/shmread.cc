@@ -34,6 +34,12 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     _trusted_range = {
       0, data["countrate_correction_count_cutoff"].template get<image_t_type>()};
 
+    if (data.contains("wavelength")) {
+        _wavelength = data["wavelength"].template get<float>();
+    } else {
+        _wavelength = std::nullopt;
+    }
+
     // Read the mask
     std::vector<int32_t> raw_mask;
     raw_mask.resize(_image_shape[0] * _image_shape[1]);

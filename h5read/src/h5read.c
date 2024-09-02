@@ -45,6 +45,7 @@ struct _h5read_handle {
     size_t mask_size;      ///< Total size(in pixels) of mask
     image_t_type trusted_range_min,
       trusted_range_max;  ///< Trusted range of this dataset
+    float wavelength;     ///< Wavelength of the X-ray beam
 };
 
 void h5read_free(h5read_handle *obj) {
@@ -392,6 +393,10 @@ void h5read_get_trusted_range(h5read_handle *obj,
     }
 }
 
+float h5read_get_wavelength(h5read_handle *obj) {
+    return obj->wavelength;
+}
+
 #ifdef HAVE_HDF5
 void read_mask(h5read_handle *obj) {
     char mask_path[] = "/entry/instrument/detector/pixel_mask";
@@ -528,10 +533,38 @@ image_t_type _read_single_value(hid_t dataset, const char *dataset_name) {
           datatype_size);
         exit(1);
     }
-    static_assert(sizeof(image_t_type) == 2);
+    assert(sizeof(image_t_type) == 2);
     image_t_type value;
     if (H5Dread(dataset, H5T_NATIVE_UINT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value)
         < 0) {
+        fprintf(stderr, "Error: While reading %s: Unspecified data reading error.\n");
+        exit(1);
+    }
+    return value;
+}
+
+/// @brief  Read a single float value out of an HDF5 dataset
+float _read_single_value_float(hid_t dataset, const char *dataset_name) {
+    hid_t datatype = H5Dget_type(dataset);
+    size_t datatype_size = H5Tget_size(datatype);
+    hid_t dataspace = H5Dget_space(dataset);
+    size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
+
+    float value;
+
+    if (num_elements > 1) {
+        fprintf(
+          stderr, "Error: While reading %s: More than one element.\n", dataset_name);
+        value = -1;
+    } else if (datatype_size < sizeof(float)) {
+        fprintf(
+          stderr,
+          "Error: While reading %s: Value of size %zu is smaller than data type\n",
+          dataset_name,
+          datatype_size);
+        value = -1;
+    } else if (H5Dread(dataset, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value)
+               < 0) {
         fprintf(stderr, "Error: While reading %s: Unspecified data reading error.\n");
         exit(1);
     }
@@ -557,6 +590,18 @@ void read_trusted_range(h5read_handle *obj) {
           _read_single_value(underload_dataset, "underload_value");
         H5Dclose(underload_dataset);
     }
+}
+
+void read_wavelength(h5read_handle *obj) {
+    hid_t dataset = H5Dopen(
+      obj->master_file, "/entry/instrument/beam/incident_wavelength", H5P_DEFAULT);
+    if (dataset < 0) {
+        fprintf(stderr, "No wavelength data found...\n");
+        obj->wavelength = -1;
+    } else {
+        obj->wavelength = _read_single_value_float(dataset, "incident_wavelength");
+    }
+    H5Dclose(dataset);
 }
 
 /// Get number of VDS and read info about all the sub-files.
@@ -775,6 +820,8 @@ h5read_handle *h5read_open(const char *master_filename) {
     }
 
     read_trusted_range(file);
+
+    read_wavelength(file);
 
     read_mask(file);
 
