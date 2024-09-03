@@ -539,6 +539,9 @@ int main(int argc, char **argv) {
             cpu_sync.arrive_and_wait();
             CudaEvent start, copy, post, postcopy, end;
 
+            // Get the time the lastimage was received to avoid waiting for too long
+            auto last_image_received = std::chrono::high_resolution_clock::now();
+
             while (!stop_token.stop_requested()) {
                 auto image_num = next_image.fetch_add(1);
                 if (image_num >= num_images) {
@@ -547,22 +550,42 @@ int main(int argc, char **argv) {
                 auto offset_image_num = image_num + parser.get<uint32_t>("start-index");
                 {
                     // TODO:
-                    //  - This loop does not handle the stop token
                     //  - Counting time like this does not work efficiently
                     //    because it might not be the "next" image that
                     //    gets the lock.
-                    //  - This freezes if the collection is stopped;
-                    //    continue implementing timout feature
-                    //
+
                     // Lock so we don't duplicate wait count, and also
                     // because we don't know if the HDF5 function is threadsafe
                     std::scoped_lock lock(reader_mutex);
                     auto swmr_wait_start_time =
                       std::chrono::high_resolution_clock::now();
+
                     // Check that our image is available and wait if not
-                    while (!reader.is_image_available(offset_image_num)) {
+                    while (!reader.is_image_available(offset_image_num)
+                           && !stop_token.stop_requested()) {
+                        auto current_time = std::chrono::high_resolution_clock::now();
+                        auto elapsed_wait_time =
+                          std::chrono::duration_cast<std::chrono::duration<double>>(
+                            current_time - last_image_received)
+                            .count();
+
+                        if (elapsed_wait_time > wait_timeout) {
+                            print("Timeout waiting for image {}\n", offset_image_num);
+                            global_stop.request_stop();
+                            break;
+                        }
+
+                        // Sleep for a bit to avoid busy-waiting
                         std::this_thread::sleep_for(100ms);
                     }
+
+                    if (stop_token.stop_requested()) {
+                        break;
+                    }
+
+                    // If the image is available, update the last image received time
+                    last_image_received = std::chrono::high_resolution_clock::now();
+
                     time_waiting_for_images +=
                       std::chrono::duration_cast<std::chrono::duration<double>>(
                         std::chrono::high_resolution_clock::now()
