@@ -27,6 +27,7 @@
 #include "common.hpp"
 #include "cuda_common.hpp"
 #include "h5read.h"
+#include "kernels/erosion.hu"
 #include "shmread.hpp"
 #include "standalone.h"
 
@@ -52,38 +53,25 @@ auto operator==(const int2 &left, const int2 &right) -> bool {
     return left.x == right.x && left.y == right.y;
 }
 
+// Don't force inclusion of npp headers
+#ifdef NV_NPPIDEFS_H
+template <typename T>
+inline void _npp_check_error(T status, const char *file, int line_num) {
+    if (status != NPP_SUCCESS) {
+        throw cuda_error(fmt::format("{}:{}: NPP returned non-successful status ({})",
+                                     file,
+                                     line_num,
+                                     static_cast<int>(status)));
+    }
+}
+#define NPP_CHECK(x) _npp_check_error((x), __FILE__, __LINE__)
+#endif
+
+enum class DispersionAlgorithm { DISPERSION, DISPERSION_EXTENDED };
+
 struct Reflection {
     int l, t, r, b;
     int num_pixels = 0;
-};
-
-template <typename T>
-struct PitchedMalloc {
-  public:
-    using value_type = T;
-    PitchedMalloc(std::shared_ptr<T[]> data, size_t width, size_t height, size_t pitch)
-        : _data(data), width(width), height(height), pitch(pitch) {}
-
-    PitchedMalloc(size_t width, size_t height) : width(width), height(height) {
-        auto [alloc, alloc_pitch] = make_cuda_pitched_malloc<T>(width, height);
-        _data = alloc;
-        pitch = alloc_pitch;
-    }
-
-    auto get() {
-        return _data.get();
-    }
-    auto size_bytes() -> size_t const {
-        return pitch * height * sizeof(T);
-    }
-    auto pitch_bytes() -> size_t const {
-        return pitch * sizeof(T);
-    }
-
-    std::shared_ptr<T[]> _data;
-    size_t width;
-    size_t height;
-    size_t pitch;
 };
 
 /// Copy the mask from a reader into a pitched GPU area
@@ -319,6 +307,10 @@ int main(int argc, char **argv) {
       .metavar("FD")
       .default_value<int>(-1)
       .scan<'i', int>();
+    parser.add_argument("-a", "--algorithm")
+      .help("Dispersion algorithm to use")
+      .metavar("ALGO")
+      .default_value("dispersion");
     parser.add_argument("--dmin")
       .help("Minimum resolution (Å)")
       .metavar("MIN D")
@@ -346,6 +338,25 @@ int main(int argc, char **argv) {
     std::string detector_json = parser.get<std::string>("detector");
     json detector_json_obj = json::parse(detector_json);
     detector_geometry detector = detector_geometry(detector_json_obj);
+
+    DispersionAlgorithm dispersion_algorithm;
+    {  // Parse the algorithm input
+        std::string dispersion_algorithm_str = parser.get<std::string>("algorithm");
+        std::transform(dispersion_algorithm_str.begin(),
+                       dispersion_algorithm_str.end(),
+                       dispersion_algorithm_str.begin(),
+                       ::tolower);
+        if (dispersion_algorithm_str == "dispersion") {
+            dispersion_algorithm = DispersionAlgorithm::DISPERSION;
+        } else if (dispersion_algorithm_str == "dispersion_extended") {
+            dispersion_algorithm = DispersionAlgorithm::DISPERSION_EXTENDED;
+        } else {
+            print("Error: Unknown dispersion algorithm '{}'\n",
+                  dispersion_algorithm_str);
+            std::exit(1);
+        }
+        print("Using dispersion algorithm: {}\n", dispersion_algorithm_str);
+    }
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -452,6 +463,7 @@ int main(int argc, char **argv) {
                         LCT_RGB);
     }
 
+#pragma region Resolution Filtering
     // If set, apply resolution filtering
     if (dmin > 0 || dmax > 0) {
         apply_resolution_filtering(
@@ -485,6 +497,7 @@ int main(int argc, char **argv) {
                             LCT_RGB);
         }
     }
+#pragma endregion Resolution Filtering
 
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
 
@@ -614,6 +627,7 @@ int main(int argc, char **argv) {
                     }
                     break;
                 }
+#pragma region Decompression
                 // Decompress this data, outside of the mutex.
                 // We do this here rather than in the reader, because we
                 // anticipate that we will want to eventually offload
@@ -646,20 +660,36 @@ int main(int argc, char **argv) {
                                              cudaMemcpyHostToDevice,
                                              stream));
                 copy.record(stream);
+#pragma endregion Decompression
+#pragma region Spotfinding
                 // When done, launch the spotfind kernel
-                // do_spotfinding_naive<<<blocks_dims, gpu_thread_block_size, 0, stream>>>(
-                call_do_spotfinding_naive(blocks_dims,
-                                          gpu_thread_block_size,
-                                          0,
-                                          stream,
-                                          device_image.get(),
-                                          device_image.pitch,
-                                          mask.get(),
-                                          mask.pitch,
-                                          width,
-                                          height,
-                                          trusted_px_max,
-                                          device_results.get());
+                switch (dispersion_algorithm) {
+                case DispersionAlgorithm::DISPERSION:
+                    call_do_spotfinding_dispersion(blocks_dims,
+                                                   gpu_thread_block_size,
+                                                   0,
+                                                   stream,
+                                                   device_image,
+                                                   mask,
+                                                   width,
+                                                   height,
+                                                   trusted_px_max,
+                                                   device_results.get());
+                    break;
+                case DispersionAlgorithm::DISPERSION_EXTENDED:
+                    call_do_spotfinding_extended(blocks_dims,
+                                                 gpu_thread_block_size,
+                                                 0,
+                                                 stream,
+                                                 device_image,
+                                                 mask,
+                                                 width,
+                                                 height,
+                                                 trusted_px_max,
+                                                 device_results.get(),
+                                                 do_writeout);
+                    break;
+                }
                 post.record(stream);
 
                 // Copy the results buffer back to the CPU
@@ -674,6 +704,7 @@ int main(int argc, char **argv) {
                 postcopy.record(stream);
                 // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
+#pragma endregion Spotfinding
 
                 // Manually reproduce what the DIALS connected components does
                 // Start with the behaviour of the PixelList class:

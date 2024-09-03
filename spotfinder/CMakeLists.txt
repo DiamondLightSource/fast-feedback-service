@@ -6,7 +6,13 @@ find_package(CUDAToolkit REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
 find_package(lodepng)
 
-add_executable(spotfinder spotfinder.cc spotfinder.cu shmread.cc cbfread.cc)
+add_executable(spotfinder
+    spotfinder.cc
+    spotfinder.cu
+    shmread.cc
+    cbfread.cc
+    kernels/erosion.cu
+)
 target_link_libraries(spotfinder
     PRIVATE
     fmt
@@ -22,5 +28,4 @@ target_link_libraries(spotfinder
     nlohmann_json::nlohmann_json
 )
 target_compile_options(spotfinder PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
-
-
+include_directories(./kernels)
