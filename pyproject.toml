@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "watch_dc"
+name = "ffs"
 version = "0.1.0"
 description = ""
 authors = ["Nicholas Devenish <ndevenish@gmail.com>"]
@@ -12,11 +12,6 @@ pyepics = "^3.5.2"
 zocalo = "^1.1"
 rich = "^13.7.1"
 pydantic = "^2"
-
-[tool.poetry.scripts]
-watch_dc = 'watch_dc:run'
-watch_shm = 'watch_shm:run'
-watch_rmq = "watch_rmq:run"
 
 [tool.poetry.plugins."workflows.services"]
 "GPUPerImageAnalysis" = "service:GPUPerImageAnalysis"
