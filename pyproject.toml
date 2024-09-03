@@ -14,7 +14,7 @@ rich = "^13.7.1"
 pydantic = "^2"
 
 [tool.poetry.plugins."workflows.services"]
-"GPUPerImageAnalysis" = "service:GPUPerImageAnalysis"
+"GPUPerImageAnalysis" = "ffs.service:GPUPerImageAnalysis"
 "XRCResultCompare" = "compare_service:XRCResultCompare"
 
 
