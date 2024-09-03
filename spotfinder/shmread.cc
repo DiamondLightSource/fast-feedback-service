@@ -7,7 +7,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 
-#include "common.hpp"
+#include "cuda_common.hpp"
 
 using json = nlohmann::json;
 using namespace fmt;

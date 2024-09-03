@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <type_traits>
 
-#include "../../../common/include/common.hpp"
+#include "common.hpp"
 
 #if __has_include(<hdf5.h>)
 #define HAS_HDF5

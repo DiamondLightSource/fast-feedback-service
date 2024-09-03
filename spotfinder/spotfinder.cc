@@ -25,6 +25,7 @@
 
 #include "cbfread.hpp"
 #include "common.hpp"
+#include "cuda_common.hpp"
 #include "h5read.h"
 #include "shmread.hpp"
 #include "standalone.h"
