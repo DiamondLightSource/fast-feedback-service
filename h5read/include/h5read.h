@@ -142,7 +142,7 @@ class Reader {
         BYTE_OFFSET_32,
     };
 
-    virtual ~Reader(){};
+    virtual ~Reader() {};
 
     virtual bool is_image_available(size_t index) = 0;
 

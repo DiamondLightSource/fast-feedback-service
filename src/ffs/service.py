@@ -11,10 +11,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
+import workflows.recipe
 from pydantic import BaseModel, ValidationError
 from rich.logging import RichHandler
-
-import workflows.recipe
 from workflows.services.common_service import CommonService
 
 logger = logging.getLogger(__name__)
