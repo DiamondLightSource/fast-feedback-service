@@ -16,6 +16,7 @@
 
 namespace cg = cooperative_groups;
 
+#pragma region Res Mask Functions
 /**
  * @brief Function to calculate the distance of a pixel from the beam center.
  * @param x The x-coordinate of the pixel in the image
@@ -60,7 +61,9 @@ __device__ float get_resolution(float wavelength,
     float theta = 0.5 * atanf(distance_from_centre / distance_to_detector);
     return wavelength / (2 * sinf(theta));
 }
+#pragma endregion Res Mask Functions
 
+#pragma region Mask Kernel
 /**
  * @brief CUDA kernel to apply a resolution mask for an image.
  *
@@ -165,7 +168,9 @@ void call_apply_resolution_mask(dim3 blocks,
       params.dmin,
       params.dmax);
 }
+#pragma endregion Mask Kernel
 
+#pragma region Spotfinding
 __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t image_pitch,
                                      uint8_t *mask,
@@ -272,3 +277,4 @@ void call_do_spotfinding_naive(dim3 blocks,
       max_valid_pixel_value,
       result_strong);
 }
+#pragma endregion Spotfinding

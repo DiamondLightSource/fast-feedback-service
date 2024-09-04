@@ -279,6 +279,7 @@ class PipeHandler {
 };
 
 int main(int argc, char **argv) {
+#pragma region Argument Parsing
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
     parser.add_h5read_arguments();
@@ -406,6 +407,7 @@ int main(int argc, char **argv) {
         wavelength = wavelength_opt.value();
         printf("Got wavelength from file: %f Å\n", wavelength);
     }
+#pragma endregion Argument Parsing
 
     std::signal(SIGINT, stop_processing);
 
@@ -452,6 +454,7 @@ int main(int argc, char **argv) {
                         LCT_RGB);
     }
 
+#pragma region Resolution Filtering
     // If set, apply resolution filtering
     if (dmin > 0 || dmax > 0) {
         apply_resolution_filtering(
@@ -485,6 +488,7 @@ int main(int argc, char **argv) {
                             LCT_RGB);
         }
     }
+#pragma endregion Resolution Filtering
 
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
 
@@ -614,6 +618,8 @@ int main(int argc, char **argv) {
                     }
                     break;
                 }
+
+#pragma region Decompression
                 // Decompress this data, outside of the mutex.
                 // We do this here rather than in the reader, because we
                 // anticipate that we will want to eventually offload
@@ -646,6 +652,9 @@ int main(int argc, char **argv) {
                                              cudaMemcpyHostToDevice,
                                              stream));
                 copy.record(stream);
+#pragma endregion Decompression
+
+#pragma region Spotfinding
                 // When done, launch the spotfind kernel
                 // do_spotfinding_naive<<<blocks_dims, gpu_thread_block_size, 0, stream>>>(
                 call_do_spotfinding_naive(blocks_dims,
@@ -674,7 +683,9 @@ int main(int argc, char **argv) {
                 postcopy.record(stream);
                 // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
+#pragma endregion Spotfinding
 
+#pragma region Connected Components
                 // Manually reproduce what the DIALS connected components does
                 // Start with the behaviour of the PixelList class:
                 size_t num_strong_pixels = 0;
@@ -837,6 +848,7 @@ int main(int argc, char **argv) {
                         }
                     }
                 }
+#pragma endregion Connected Components
 
                 // Check if pipeHandler was initialized
                 if (pipeHandler != nullptr) {
@@ -849,6 +861,7 @@ int main(int argc, char **argv) {
                     pipeHandler->sendData(json_data);
                 }
 
+#pragma region Validation
                 if (do_validate) {
                     // Count the number of pixels
                     size_t num_strong_pixels = 0;
@@ -922,6 +935,7 @@ int main(int argc, char **argv) {
                           boxes.size());
                     }
                 }
+#pragma endregion Validation
                 // auto image_num = next_image.fetch_add(1);
                 completed_images += 1;
             }
