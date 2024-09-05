@@ -267,6 +267,7 @@ class PipeHandler {
 };
 
 int main(int argc, char **argv) {
+#pragma region Argument Parsing
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
     parser.add_h5read_arguments();
@@ -417,6 +418,7 @@ int main(int argc, char **argv) {
         wavelength = wavelength_opt.value();
         printf("Got wavelength from file: %f Å\n", wavelength);
     }
+#pragma endregion Argument Parsing
 
     std::signal(SIGINT, stop_processing);
 
@@ -627,6 +629,7 @@ int main(int argc, char **argv) {
                     }
                     break;
                 }
+
 #pragma region Decompression
                 // Decompress this data, outside of the mutex.
                 // We do this here rather than in the reader, because we
@@ -661,6 +664,7 @@ int main(int argc, char **argv) {
                                              stream));
                 copy.record(stream);
 #pragma endregion Decompression
+
 #pragma region Spotfinding
                 // When done, launch the spotfind kernel
                 switch (dispersion_algorithm) {
@@ -706,6 +710,7 @@ int main(int argc, char **argv) {
                 CUDA_CHECK(cudaStreamSynchronize(stream));
 #pragma endregion Spotfinding
 
+#pragma region Connected Components
                 // Manually reproduce what the DIALS connected components does
                 // Start with the behaviour of the PixelList class:
                 size_t num_strong_pixels = 0;
@@ -868,6 +873,7 @@ int main(int argc, char **argv) {
                         }
                     }
                 }
+#pragma endregion Connected Components
 
                 // Check if pipeHandler was initialized
                 if (pipeHandler != nullptr) {
@@ -880,6 +886,7 @@ int main(int argc, char **argv) {
                     pipeHandler->sendData(json_data);
                 }
 
+#pragma region Validation
                 if (do_validate) {
                     // Count the number of pixels
                     size_t num_strong_pixels = 0;
@@ -953,6 +960,7 @@ int main(int argc, char **argv) {
                           boxes.size());
                     }
                 }
+#pragma endregion Validation
                 // auto image_num = next_image.fetch_add(1);
                 completed_images += 1;
             }
