@@ -527,4 +527,4 @@ void call_do_spotfinding_extended(dim3 blocks,
       result_strong);
     cudaStreamSynchronize(stream);
 }
-#pragma endregion Spotfinding Wrappers
+#pragma endregion Launch Wrappers
