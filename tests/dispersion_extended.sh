@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# This script tests the dispersion_extended algorithm on a test dataset
+# It is meant to be run from the build folder: working_directory/build
+
+# Ensure the output directory exists
+mkdir -p _debug_output
+
+# Change to the output directory
+cd _debug_output
+
 # Create a JSON file with the detector parameters
 cat << EOF > detector.json
 {
@@ -15,7 +24,7 @@ EOF
 exec 3> output_file.txt
 
 # Extended dispersion test dataset
-./spotfinder /dls/i24/data/2024/nr27313-319/gw/Test_Insulin/ins_big_15/ins_big_15_2_master.h5 \
+../bin/spotfinder /dls/i24/data/2024/nr27313-319/gw/Test_Insulin/ins_big_15/ins_big_15_2_master.h5 \
   --min-spot-size 3 \
   --pipe_fd 3 \
   --dmin 4 \
