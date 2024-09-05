@@ -315,7 +315,7 @@ void h5read_get_raw_chunk(h5read_handle *obj,
     hsize_t datasize = H5Tget_size(datatype);
     if (datasize != 2) {
         fprintf(stderr, "Error: Unexpected datasize\n");
-        exit(1);
+        // exit(1);
     }
 
     uint32_t filter = 0;
@@ -889,7 +889,7 @@ void setup_data(h5read_handle *obj) {
 
     if (H5Tget_size(datatype) != 2) {
         fprintf(stderr, "native data size != 2 (%ld)\n", H5Tget_size(datatype));
-        exit(1);
+        // exit(1);
     }
 
     hid_t space = H5Dget_space(dataset);

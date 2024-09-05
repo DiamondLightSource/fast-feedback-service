@@ -398,6 +398,7 @@ int main(int argc, char **argv) {
     ushort height = reader.image_shape()[0];
     ushort width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
+    trusted_px_max = 64000;  // Hardcoded for testing
 
     detector_geometry detector;
 
@@ -720,6 +721,9 @@ int main(int argc, char **argv) {
                 }
                 // Sized buffer for the actual data read from file
                 std::span<uint8_t> buffer;
+                // Buffer to hold decompressed 32-bit data
+                std::vector<uint32_t> decompressed_buffer(
+                  width * height);  // * sizeof(pixel_t));
                 // Fetch the image data from the reader
                 while (true) {
                     {
@@ -746,8 +750,12 @@ int main(int argc, char **argv) {
                 // the decompression
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4:
-                    bshuf_decompress_lz4(
-                      buffer.data() + 12, host_image.get(), width * height, 2, 0);
+                    printf("Decompressing with bitshuffle\n");
+                    bshuf_decompress_lz4(buffer.data() + 12,
+                                         decompressed_buffer.data(),
+                                         width * height,
+                                         4,
+                                         0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
                     // decompress_byte_offset<pixel_t>(buffer,
@@ -761,11 +769,41 @@ int main(int argc, char **argv) {
                     // std::exit(1);
                     break;
                 }
+                // Downcast the decompressed 32-bit data to 16-bit and store it in the host_image buffer
+                uint16_t *host_image_16bit = new uint16_t[width * height];
+                size_t truncation_count = 0;
+
+                for (size_t i = 0; i < width * height; ++i) {
+                    uint32_t original_value = decompressed_buffer[i];
+
+                    // Manually truncate to 16 bits by selecting the lower 16 bits
+                    // uint16_t truncated_value = original_value & 0xFFFF;
+                    uint16_t truncated_value = static_cast<uint16_t>(original_value);
+
+                    // Increment the counter if truncation occurs
+                    if (original_value != truncated_value) {
+                        ++truncation_count;
+                        truncated_value = trusted_px_max + 1;
+                    }
+
+                    // Assign the truncated value to the 16-bit image
+                    host_image_16bit[i] = truncated_value;
+
+                    // Optional: Print the first pixel value after truncation
+                    if (i == 1) {
+                        print("Pixel value after truncation: {}\n",
+                              host_image_16bit[i]);
+                    }
+                }
+
+                // After the loop, you can print the total number of truncated values
+                print("Total truncated values: {}\n", truncation_count);
+
                 start.record(stream);
                 // Copy the image to GPU
                 CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
                                              device_image.pitch_bytes(),
-                                             host_image.get(),
+                                             host_image_16bit,
                                              width * sizeof(pixel_t),
                                              width * sizeof(pixel_t),
                                              height,
