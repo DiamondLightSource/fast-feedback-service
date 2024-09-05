@@ -28,7 +28,6 @@ exec 3> output_file.txt
   --min-spot-size 3 \
   --pipe_fd 3 \
   --dmin 4 \
-  --wavelength 0.619901 \
   --detector "$(cat detector.json)" \
   --algorithm "dispersion_extended" \
   --images 1 \
