@@ -29,6 +29,7 @@ exec 3> output_file.txt
   --pipe_fd 3 \
   --dmin 4 \
   --detector "$(cat detector.json)" \
+  --algorithm "dispersion" \
   --threads 1 \
   --images 1
 
