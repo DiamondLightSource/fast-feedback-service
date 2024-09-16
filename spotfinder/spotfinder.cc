@@ -1,4 +1,4 @@
-#include "spotfinder.h"
+#include "spotfinder.cuh"
 
 #include <bitshuffle.h>
 #include <fmt/core.h>

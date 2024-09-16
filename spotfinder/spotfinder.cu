@@ -9,7 +9,7 @@
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 
-#include "spotfinder.h"
+#include "spotfinder.cuh"
 
 #define VALID_PIXEL 1
 #define MASKED_PIXEL 0
