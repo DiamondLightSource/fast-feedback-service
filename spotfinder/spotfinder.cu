@@ -10,7 +10,7 @@
 #include <cooperative_groups/reduce.h>
 #include <lodepng.h>
 
-#include "kernels/erosion.hu"
+#include "kernels/erosion.cuh"
 #include "spotfinder.cuh"
 
 namespace cg = cooperative_groups;

@@ -2,7 +2,7 @@
 #include <cooperative_groups/reduce.h>
 
 #include "../spotfinder.h"
-#include "erosion.hu"
+#include "erosion.cuh"
 
 namespace cg = cooperative_groups;
 
