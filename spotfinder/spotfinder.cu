@@ -11,7 +11,7 @@
 #include <lodepng.h>
 
 #include "kernels/erosion.hu"
-#include "spotfinder.h"
+#include "spotfinder.cuh"
 
 namespace cg = cooperative_groups;
 
