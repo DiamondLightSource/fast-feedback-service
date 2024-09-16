@@ -6,7 +6,6 @@
 #include <nlohmann/json.hpp>
 
 #include "common.hpp"
-#include "cuda_common.hpp"
 #include "h5read.h"
 
 using pixel_t = H5Read::image_type;
