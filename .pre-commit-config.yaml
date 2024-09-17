@@ -5,7 +5,7 @@ repos:
   - id: clang-format
     files: \.c(c|pp|xx|u)?$|\.h(pp)?$
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.6.4
+  rev: v0.6.5
   hooks:
     - id: ruff
       args: [--fix, --exit-non-zero-on-fix]
