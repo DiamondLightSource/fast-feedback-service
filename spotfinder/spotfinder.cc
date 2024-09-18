@@ -32,6 +32,7 @@
 
 using namespace fmt;
 using namespace std::chrono_literals;
+using json = nlohmann::json;
 
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
