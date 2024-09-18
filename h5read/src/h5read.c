@@ -512,96 +512,140 @@ void read_mask(h5read_handle *obj) {
     H5Dclose(mask_dataset);
 }
 
-/// Read a single value out of an HDF5 dataset
-image_t_type _read_single_value(hid_t dataset, const char *dataset_name) {
-    // assert(sizeof(image_t_type) == 2);
+/// Read a single float value out of an HDF5 dataset
+///
+/// If the dataset is present, but cannot be read, terminates the program.
+///
+/// @param      origin          The root file or group to read the path from
+/// @param      path            The path from the origin to open
+/// @param[out] destination     Where to write the output value to, if successful.
+///
+/// @return The HDF error code (negative) if opening the dataset failed, or 0
+herr_t _read_single_value_image_t_type(hid_t origin,
+                                       const char *dataset_path,
+                                       image_t_type *destination) {
+    hid_t dataset = H5Dopen(origin, dataset_path, H5P_DEFAULT);
+    if (dataset < 0) {
+        return dataset;
+    }
     hid_t datatype = H5Dget_type(dataset);
     size_t datatype_size = H5Tget_size(datatype);
     hid_t dataspace = H5Dget_space(dataset);
     size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
 
     if (num_elements > 1) {
-        fprintf(
-          stderr, "Error: While reading %s: More than one element.\n", dataset_name);
+        char name[256] = "\0";
+        H5Iget_name(origin, name, 256);
+
+        fprintf(stderr,
+                "Error: While reading %s%s: More than one element.\n",
+                name,
+                dataset_path);
         exit(1);
     }
     if (datatype_size < sizeof(image_t_type)) {
+        char name[256] = "\0";
+        H5Iget_name(origin, name, 256);
+
         fprintf(
           stderr,
-          "Error: While reading %s: Value of size %zu is smaller than data type\n",
-          dataset_name,
+          "Error: While reading %s%s: Value of size %zu is smaller than data type\n",
+          name,
+          dataset_path,
           datatype_size);
         exit(1);
     }
     assert(sizeof(image_t_type) == 2);
     image_t_type value;
-    if (H5Dread(dataset, H5T_NATIVE_UINT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value)
+    if (H5Dread(dataset, H5T_NATIVE_UINT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
         < 0) {
-        fprintf(stderr, "Error: While reading %s: Unspecified data reading error.\n");
+        char name[256] = "\0";
+        H5Iget_name(origin, name, 256);
+        fprintf(stderr,
+                "Error: While reading %s%s: Unspecified data reading error.\n",
+                name,
+                dataset_path);
         exit(1);
     }
-    return value;
+    H5Dclose(dataset);
+    return 0;
 }
 
-/// @brief  Read a single float value out of an HDF5 dataset
-float _read_single_value_float(hid_t dataset, const char *dataset_name) {
+/// Read a single float value out of an HDF5 dataset
+///
+/// If the dataset is present, but contains multiple elements, sets destination
+/// to -1. If an unknown error occurs, terminates the program.
+///
+/// @param      origin          The root file or group to read the path from
+/// @param      path            The path from the origin to open
+/// @param[out] destination     Where to write the output value to, if successful.
+///
+/// @return HDF error (negative) if opening the dataset failed. Othewise, 0.
+herr_t _read_single_value_float(hid_t origin, const char *path, float *destination) {
+    hid_t dataset = H5Dopen(origin, path, H5P_DEFAULT);
+    if (dataset < 0) {
+        return dataset;
+    }
     hid_t datatype = H5Dget_type(dataset);
     size_t datatype_size = H5Tget_size(datatype);
     hid_t dataspace = H5Dget_space(dataset);
     size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
 
-    float value;
-
     if (num_elements > 1) {
+        // Get the name of the origin for output
+        char name[256] = "\0";
+        H5Iget_name(origin, name, 256);
         fprintf(
-          stderr, "Error: While reading %s: More than one element.\n", dataset_name);
-        value = -1;
+          stderr, "Error: While reading %s/%s: More than one element.\n", name, path);
+        *destination = -1;
     } else if (datatype_size < sizeof(float)) {
+        // Get the name of the origin for output
+        char name[256] = "\0";
+        H5Iget_name(origin, name, 256);
+
         fprintf(
           stderr,
-          "Error: While reading %s: Value of size %zu is smaller than data type\n",
-          dataset_name,
+          "Error: While reading %s/%s: Value of size %zu is smaller than data type\n",
+          name,
+          path,
           datatype_size);
-        value = -1;
-    } else if (H5Dread(dataset, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value)
+        *destination = -1;
+    } else if (H5Dread(
+                 dataset, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
                < 0) {
-        fprintf(stderr, "Error: While reading %s: Unspecified data reading error.\n");
+        // Get the name of the origin for output
+        char name[256] = "\0";
+        H5Iget_name(origin, name, 256);
+
+        fprintf(stderr,
+                "Error: While reading %s/%s: Unspecified data reading error.\n",
+                name,
+                path);
         exit(1);
     }
-    return value;
+    H5Dclose(dataset);
+    return 0;
 }
 
 void read_trusted_range(h5read_handle *obj) {
-    // char mask_path[] = ;
-    hid_t saturation_dataset = H5Dopen(
-      obj->master_file, "/entry/instrument/detector/saturation_value", H5P_DEFAULT);
-    hid_t underload_dataset = H5Dopen(
-      obj->master_file, "/entry/instrument/detector/underload_value", H5P_DEFAULT);
     obj->trusted_range_min = 0;
     obj->trusted_range_max = (image_t_type)(-1);
-
-    if (saturation_dataset >= 0) {
-        obj->trusted_range_max =
-          _read_single_value(saturation_dataset, "saturation_value");
-        H5Dclose(saturation_dataset);
-    }
-    if (underload_dataset >= 0) {
-        obj->trusted_range_min =
-          _read_single_value(underload_dataset, "underload_value");
-        H5Dclose(underload_dataset);
-    }
+    _read_single_value_image_t_type(obj->master_file,
+                                    "/entry/instrument/detector/saturation_value",
+                                    &obj->trusted_range_max);
+    _read_single_value_image_t_type(obj->master_file,
+                                    "/entry/instrument/detector/underload_value",
+                                    &obj->trusted_range_min);
 }
 
 void read_wavelength(h5read_handle *obj) {
-    hid_t dataset = H5Dopen(
-      obj->master_file, "/entry/instrument/beam/incident_wavelength", H5P_DEFAULT);
-    if (dataset < 0) {
+    if (_read_single_value_float(obj->master_file,
+                                 "/entry/instrument/beam/incident_wavelength",
+                                 &obj->wavelength)
+        < 0) {
         fprintf(stderr, "No wavelength data found...\n");
         obj->wavelength = -1;
-    } else {
-        obj->wavelength = _read_single_value_float(dataset, "incident_wavelength");
     }
-    H5Dclose(dataset);
 }
 
 /// Get number of VDS and read info about all the sub-files.
