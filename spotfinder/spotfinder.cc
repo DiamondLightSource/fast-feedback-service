@@ -387,7 +387,8 @@ int main(int argc, char **argv) {
                     || !are_close(
                       detector.beam_center_y, beam_center.value()[0], 0.1))) {
                 print(
-                  "Warning: Beam center mismatched:\n    json:   {} px, {} px\n    "
+                  "Warning: Beam center mismatched:\n    json:   {} px, {} px (used)\n "
+                  "   "
                   "reader: "
                   "{} px, {} px\n",
                   detector.beam_center_x,
@@ -400,7 +401,8 @@ int main(int argc, char **argv) {
                     || !are_close(
                       detector.pixel_size_y, pixel_size.value()[0], 1e-9))) {
                 print(
-                  "Warning: Pixel size mismatched:\n    json:   {} µm, {} µm\n    "
+                  "Warning: Pixel size mismatched:\n    json:   {} µm, {} µm (used)\n  "
+                  "  "
                   "reader: "
                   "{} µm, {} µm\n",
                   detector.pixel_size_x,
@@ -410,7 +412,8 @@ int main(int argc, char **argv) {
             }
             if (distance && !are_close(distance.value(), detector.distance, 0.1e-6)) {
                 print(
-                  "Warning: Detector distance mismatched:\n    json:   {} m\n    "
+                  "Warning: Detector distance mismatched:\n    json:   {} m (used)\n   "
+                  " "
                   "reader: "
                   "{} m\n",
                   detector.distance,

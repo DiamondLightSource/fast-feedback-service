@@ -17,11 +17,11 @@ constexpr int KERNEL_HEIGHT = 3;
 
 /**
  * @brief Struct to store the geometry of the detector.
- * @param pixel_size_x The pixel size of the detector in the x-direction in mm.
- * @param pixel_size_y The pixel size of the detector in the y-direction in mm.
+ * @param pixel_size_x The pixel size of the detector in the x-direction in m.
+ * @param pixel_size_y The pixel size of the detector in the y-direction in m.
  * @param beam_center_x The x-coordinate of the beam center in the image.
  * @param beam_center_y The y-coordinate of the beam center in the image.
- * @param distanc The distance from the sample to the detector in mm.
+ * @param distanc The distance from the sample to the detector in m.
 */
 struct detector_geometry {
     float pixel_size_x;
@@ -62,11 +62,11 @@ struct detector_geometry {
             }
         }
 
-        pixel_size_x = geometry_data["pixel_size_x"];
-        pixel_size_y = geometry_data["pixel_size_y"];
-        beam_center_x = geometry_data["beam_center_x"];
-        beam_center_y = geometry_data["beam_center_y"];
-        distance = geometry_data["distance"];
+        pixel_size_x = geometry_data["pixel_size_x"].template get<float>() / 1000.0f;
+        pixel_size_y = geometry_data["pixel_size_y"].template get<float>() / 1000.0f;
+        beam_center_x = geometry_data["beam_center_x"].template get<float>();
+        beam_center_y = geometry_data["beam_center_y"].template get<float>();
+        distance = geometry_data["distance"].template get<float>() / 1000.0f;
     }
     detector_geometry(float distance,
                       std::array<float, 2> beam_center,

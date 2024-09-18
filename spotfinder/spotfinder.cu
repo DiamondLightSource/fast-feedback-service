@@ -23,9 +23,9 @@ namespace cg = cooperative_groups;
  * @param y The y-coordinate of the pixel in the image
  * @param center_x The x-coordinate of the pixel beam center in the image
  * @param center_y The y-coordinate of the pixel beam center in the image
- * @param pixel_size_x The pixel size of the detector in the x-direction in mm
- * @param pixel_size_y The pixel size of the detector in the y-direction in mm
- * @return The calculated distance from the beam center in mm
+ * @param pixel_size_x The pixel size of the detector in the x-direction in m
+ * @param pixel_size_y The pixel size of the detector in the y-direction in m
+ * @return The calculated distance from the beam center in m
 */
 __device__ float get_distance_from_centre(float x,
                                           float y,
@@ -47,8 +47,8 @@ __device__ float get_distance_from_centre(float x,
  * The interplanar distance is calculated using the formula:
  *         d = λ / (2 * sin(ϴ))
  * @param wavelength The wavelength of the X-ray beam in Å
- * @param distance_to_detector The distance from the sample to the detector in mm
- * @param distance_from_center The distance of the reflection from the beam center in mm
+ * @param distance_to_detector The distance from the sample to the detector in m
+ * @param distance_from_center The distance of the reflection from the beam center in m
  * @return The calculated d value
 */
 __device__ float get_resolution(float wavelength,
@@ -78,11 +78,11 @@ __device__ float get_resolution(float wavelength,
  * @param width The width of the image.
  * @param height The height of the image.
  * @param wavelength The wavelength of the X-ray beam in Ångströms.
- * @param distance_to_detector The distance from the sample to the detector in mm.
+ * @param distance_to_detector The distance from the sample to the detector in m.
  * @param beam_center_x The x-coordinate of the beam center in the image.
  * @param beam_center_y The y-coordinate of the beam center in the image.
- * @param pixel_size_x The pixel size of the detector in the x-direction in mm.
- * @param pixel_size_y The pixel size of the detector in the y-direction in mm.
+ * @param pixel_size_x The pixel size of the detector in the x-direction in m.
+ * @param pixel_size_y The pixel size of the detector in the y-direction in m.
  * @param dmin The minimum resolution (d-spacing) threshold.
  * @param dmax The maximum resolution (d-spacing) threshold.
  */
