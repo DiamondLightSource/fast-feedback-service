@@ -13,7 +13,6 @@
 #define MASKED_PIXEL 0
 
 using pixel_t = H5Read::image_type;
-using json = nlohmann::json;
 
 /**
  * @brief Struct to store the geometry of the detector.
@@ -51,7 +50,7 @@ struct detector_geometry {
      * - beam_center_y: The y-coordinate of the pixel beam center in the image
      * - distance: The distance from the sample to the detector in mm
     */
-    detector_geometry(json geometry_data) {
+    detector_geometry(nlohmann::json geometry_data) {
         std::vector<std::string> required_keys = {
           "pixel_size_x", "pixel_size_y", "beam_center_x", "beam_center_y", "distance"};
 
