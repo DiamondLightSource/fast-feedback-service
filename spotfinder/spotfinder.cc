@@ -382,8 +382,9 @@ int main(int argc, char **argv) {
                 && (detector.beam_center_x != beam_center.value()[1]
                     || detector.beam_center_y != beam_center.value()[0])) {
                 print(
-                  "Warning: Beam center mismatched:\n    json:   {}, {}\n    reader: "
-                  "{}, {}\n",
+                  "Warning: Beam center mismatched:\n    json:   {} px, {} px\n    "
+                  "reader: "
+                  "{} px, {} px\n",
                   detector.beam_center_x,
                   detector.beam_center_y,
                   beam_center.value()[1],
@@ -393,17 +394,19 @@ int main(int argc, char **argv) {
                 && (detector.pixel_size_x != pixel_size.value()[1]
                     || detector.pixel_size_y != pixel_size.value()[0])) {
                 print(
-                  "Warning: Pixel size mismatched:\n    json:   {}, {}\n    reader: "
-                  "{}, {}\n",
+                  "Warning: Pixel size mismatched:\n    json:   {} µm, {} µm\n    "
+                  "reader: "
+                  "{} µm, {} µm\n",
                   detector.pixel_size_x,
                   detector.pixel_size_y,
-                  pixel_size.value()[1],
-                  pixel_size.value()[0]);
+                  pixel_size.value()[1] * 1e6,
+                  pixel_size.value()[0] * 1e6);
             }
             if (distance && distance.value() != detector.distance) {
                 print(
-                  "Warning: Detector distance mismatched:\n    json:   {}\n    reader: "
-                  "{}\n",
+                  "Warning: Detector distance mismatched:\n    json:   {} m\n    "
+                  "reader: "
+                  "{} m\n",
                   detector.distance,
                   distance.value());
             }
@@ -438,6 +441,13 @@ int main(int argc, char **argv) {
     float wavelength;
     if (parser.is_used("wavelength")) {
         wavelength = parser.get<float>("wavelength");
+        if (do_validate && reader.get_wavelength()
+            && reader.get_wavelength().value() != wavelength) {
+            print(
+              "Warning: Wavelength mismatch:\n    Argument: {} Å\n    Reader:   {} Å\n",
+              wavelength,
+              reader.get_wavelength().value());
+        }
     } else {
         auto wavelength_opt = reader.get_wavelength();
         if (!wavelength_opt) {
