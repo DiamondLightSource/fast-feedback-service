@@ -40,6 +40,12 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
         _wavelength = std::nullopt;
     }
 
+    _detector_distance = data["detector_distance"].template get<float>() / 1000;
+    _pixel_size = {data["y_pixel_size"].template get<float>(),
+                   data["x_pixel_size"].template get<float>()};
+    _beam_center = {data["beam_center_y"].template get<float>(),
+                    data["beam_center_x"].template get<float>()};
+
     // Read the mask
     std::vector<int32_t> raw_mask;
     raw_mask.resize(_image_shape[0] * _image_shape[1]);
