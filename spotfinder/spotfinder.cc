@@ -52,6 +52,10 @@ auto operator==(const int2 &left, const int2 &right) -> bool {
     return left.x == right.x && left.y == right.y;
 }
 
+bool are_close(float a, float b, float tolerance) {
+    return std::fabs(a - b) < tolerance;
+}
+
 struct Reflection {
     int l, t, r, b;
     int num_pixels = 0;
@@ -367,7 +371,7 @@ int main(int argc, char **argv) {
     int width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
 
-    detector_geometry detector;  // = std::nullopt;
+    detector_geometry detector;
 
     if (parser.is_used("detector")) {
         std::string detector_json = parser.get<std::string>("detector");
@@ -379,8 +383,9 @@ int main(int argc, char **argv) {
             auto pixel_size = reader.get_pixel_size();
             auto distance = reader.get_detector_distance();
             if (beam_center
-                && (detector.beam_center_x != beam_center.value()[1]
-                    || detector.beam_center_y != beam_center.value()[0])) {
+                && (!are_close(detector.beam_center_x, beam_center.value()[1], 0.1)
+                    || !are_close(
+                      detector.beam_center_y, beam_center.value()[0], 0.1))) {
                 print(
                   "Warning: Beam center mismatched:\n    json:   {} px, {} px\n    "
                   "reader: "
@@ -391,8 +396,9 @@ int main(int argc, char **argv) {
                   beam_center.value()[0]);
             }
             if (pixel_size
-                && (detector.pixel_size_x != pixel_size.value()[1]
-                    || detector.pixel_size_y != pixel_size.value()[0])) {
+                && (!are_close(detector.pixel_size_x, pixel_size.value()[1], 1e-9)
+                    || !are_close(
+                      detector.pixel_size_y, pixel_size.value()[0], 1e-9))) {
                 print(
                   "Warning: Pixel size mismatched:\n    json:   {} µm, {} µm\n    "
                   "reader: "
@@ -402,7 +408,7 @@ int main(int argc, char **argv) {
                   pixel_size.value()[1] * 1e6,
                   pixel_size.value()[0] * 1e6);
             }
-            if (distance && distance.value() != detector.distance) {
+            if (distance && !are_close(distance.value(), detector.distance, 0.1e-6)) {
                 print(
                   "Warning: Detector distance mismatched:\n    json:   {} m\n    "
                   "reader: "
