@@ -38,19 +38,6 @@ inline auto _cuda_check_error(cudaError_t err, const char *file, int line_num) {
     }
 }
 
-// Don't force inclusion of npp headers
-#ifdef NV_NPPIDEFS_H
-template <typename T>
-inline void _npp_check_error(T status, const char *file, int line_num) {
-    if (status != NPP_SUCCESS) {
-        throw cuda_error(fmt::format("{}:{}: NPP returned non-successful status ({})",
-                                     file,
-                                     line_num,
-                                     static_cast<int>(status)));
-    }
-}
-#define NPP_CHECK(x) _npp_check_error((x), __FILE__, __LINE__)
-#endif
 #define CUDA_CHECK(x) _cuda_check_error((x), __FILE__, __LINE__)
 
 /// Raise an exception IF CUDA is in an error state, with the name and description

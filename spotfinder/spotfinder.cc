@@ -4,7 +4,6 @@
 #include <fmt/core.h>
 #include <fmt/os.h>
 #include <lodepng.h>
-#include <nppi_filtering_functions.h>
 
 #include <algorithm>
 #include <array>
@@ -164,29 +163,6 @@ void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
       numBlocks, threadsPerBlock, 0, stream, mask.get(), params);
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
-}
-
-/// Handle setting up an NppStreamContext from a specific stream
-auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContext {
-    NppStreamContext npp_context;
-    npp_context.hStream = stream;
-    CUDA_CHECK(cudaGetDevice(&npp_context.nCudaDeviceId));
-    CUDA_CHECK(cudaDeviceGetAttribute(&npp_context.nCudaDevAttrComputeCapabilityMajor,
-                                      cudaDevAttrComputeCapabilityMajor,
-                                      npp_context.nCudaDeviceId));
-    CUDA_CHECK(cudaDeviceGetAttribute(&npp_context.nCudaDevAttrComputeCapabilityMinor,
-                                      cudaDevAttrComputeCapabilityMinor,
-                                      npp_context.nCudaDeviceId));
-    CUDA_CHECK(cudaStreamGetFlags(npp_context.hStream, &npp_context.nStreamFlags));
-    cudaDeviceProp oDeviceProperties;
-    CUDA_CHECK(cudaGetDeviceProperties(&oDeviceProperties, npp_context.nCudaDeviceId));
-
-    npp_context.nMultiProcessorCount = oDeviceProperties.multiProcessorCount;
-    npp_context.nMaxThreadsPerMultiProcessor =
-      oDeviceProperties.maxThreadsPerMultiProcessor;
-    npp_context.nMaxThreadsPerBlock = oDeviceProperties.maxThreadsPerBlock;
-    npp_context.nSharedMemPerBlock = oDeviceProperties.sharedMemPerBlock;
-    return npp_context;
 }
 
 void wait_for_ready_for_read(const std::string &path,
@@ -524,14 +500,6 @@ int main(int argc, char **argv) {
                                      height,
                                      mask.pitch);
 
-            // Initialise NPP buffers
-            int npp_buffer_size = 0;
-            NPP_CHECK(nppiLabelMarkersUFGetBufferSize_32u_C1R({width, height},
-                                                              &npp_buffer_size));
-            auto device_label_buffer = make_cuda_malloc<Npp8u>(npp_buffer_size);
-            auto device_label_dest = PitchedMalloc<Npp32u>(width, height);
-            auto npp_context = create_npp_context_from_stream(stream);
-
             // Buffer for reading compressed chunk data in
             auto raw_chunk_buffer =
               std::vector<uint8_t>(width * height * sizeof(pixel_t));
@@ -780,15 +748,6 @@ int main(int argc, char **argv) {
                     //           box.b);
                     // }
                 }
-                // // Do the connected component calculations
-                // NPP_CHECK(nppiLabelMarkersUF_8u32u_C1R_Ctx(device_results.get(),
-                //                                            device_results.pitch,
-                //                                            device_label_dest.get(),
-                //                                            device_label_dest.pitch,
-                //                                            {width, height},
-                //                                            nppiNormL1,
-                //                                            device_label_buffer.get(),
-                //                                            npp_context));
                 end.record(stream);
                 // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
