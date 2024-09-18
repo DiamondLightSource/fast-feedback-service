@@ -321,9 +321,6 @@ int main(int argc, char **argv) {
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
-    std::string detector_json = parser.get<std::string>("detector");
-    json detector_json_obj = json::parse(detector_json);
-    detector_geometry detector = detector_geometry(detector_json_obj);
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -369,6 +366,74 @@ int main(int argc, char **argv) {
     int height = reader.image_shape()[0];
     int width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
+
+    detector_geometry detector;  // = std::nullopt;
+
+    if (parser.is_used("detector")) {
+        std::string detector_json = parser.get<std::string>("detector");
+        json detector_json_obj = json::parse(detector_json);
+        detector = detector_geometry(detector_json_obj);
+
+        if (do_validate) {
+            auto beam_center = reader.get_beam_center();
+            auto pixel_size = reader.get_pixel_size();
+            auto distance = reader.get_detector_distance();
+            if (beam_center
+                && (detector.beam_center_x != beam_center.value()[1]
+                    || detector.beam_center_y != beam_center.value()[0])) {
+                print(
+                  "Warning: Beam center mismatched:\n    json:   {}, {}\n    reader: "
+                  "{}, {}\n",
+                  detector.beam_center_x,
+                  detector.beam_center_y,
+                  beam_center.value()[1],
+                  beam_center.value()[0]);
+            }
+            if (pixel_size
+                && (detector.pixel_size_x != pixel_size.value()[1]
+                    || detector.pixel_size_y != pixel_size.value()[0])) {
+                print(
+                  "Warning: Pixel size mismatched:\n    json:   {}, {}\n    reader: "
+                  "{}, {}\n",
+                  detector.pixel_size_x,
+                  detector.pixel_size_y,
+                  pixel_size.value()[1],
+                  pixel_size.value()[0]);
+            }
+            if (distance && distance.value() != detector.distance) {
+                print(
+                  "Warning: Detector distance mismatched:\n    json:   {}\n    reader: "
+                  "{}\n",
+                  detector.distance,
+                  distance.value());
+            }
+        }
+    } else {
+        // Try to read detector geometry out of the reader
+        auto beam_center = reader.get_beam_center();
+        auto pixel_size = reader.get_pixel_size();
+        auto distance = reader.get_detector_distance();
+        if (!beam_center) {
+            print(
+              "Error: No beam center available from file. Please pass detector "
+              "metadata with --distance.\n");
+            std::exit(1);
+        }
+        if (!pixel_size) {
+            print(
+              "Error: No pixel size available from file. Please pass detector metadata "
+              "with --distance.\n");
+            std::exit(1);
+        }
+        if (!distance) {
+            print(
+              "Error: No detector distance available from file. Please pass metadata "
+              "with --distance.\n");
+            std::exit(1);
+        }
+        detector =
+          detector_geometry(distance.value(), beam_center.value(), pixel_size.value());
+    }
 
     float wavelength;
     if (parser.is_used("wavelength")) {

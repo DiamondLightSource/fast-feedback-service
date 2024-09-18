@@ -68,6 +68,14 @@ struct detector_geometry {
         beam_center_y = geometry_data["beam_center_y"];
         distance = geometry_data["distance"];
     }
+    detector_geometry(float distance,
+                      std::array<float, 2> beam_center,
+                      std::array<float, 2> pixel_size)
+        : pixel_size_x(pixel_size[1]),
+          pixel_size_y(pixel_size[0]),
+          beam_center_x(beam_center[1]),
+          beam_center_y(beam_center[0]),
+          distance(distance) {}
 };
 
 /**

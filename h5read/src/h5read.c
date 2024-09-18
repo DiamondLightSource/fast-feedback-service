@@ -46,6 +46,10 @@ struct _h5read_handle {
     image_t_type trusted_range_min,
       trusted_range_max;  ///< Trusted range of this dataset
     float wavelength;     ///< Wavelength of the X-ray beam
+
+    float pixel_size_x, pixel_size_y;
+    float detector_distance;
+    float beam_center_x, beam_center_y;
 };
 
 void h5read_free(h5read_handle *obj) {
@@ -397,6 +401,22 @@ float h5read_get_wavelength(h5read_handle *obj) {
     return obj->wavelength;
 }
 
+float h5read_get_pixel_size_slow(h5read_handle *obj) {
+    return obj->pixel_size_x;
+}
+float h5read_get_pixel_size_fast(h5read_handle *obj) {
+    return obj->pixel_size_y;
+}
+float h5read_get_detector_distance(h5read_handle *obj) {
+    return obj->detector_distance;
+}
+float h5read_get_beam_center_x(h5read_handle *obj) {
+    return obj->beam_center_x;
+}
+float h5read_get_beam_center_y(h5read_handle *obj) {
+    return obj->beam_center_y;
+}
+
 #ifdef HAVE_HDF5
 void read_mask(h5read_handle *obj) {
     char mask_path[] = "/entry/instrument/detector/pixel_mask";
@@ -648,6 +668,41 @@ void read_wavelength(h5read_handle *obj) {
     }
 }
 
+void read_detector_metadata(h5read_handle *obj) {
+    if (_read_single_value_float(obj->master_file,
+                                 "/entry/instrument/detector/x_pixel_size",
+                                 &obj->pixel_size_x)
+        < 0) {
+        obj->pixel_size_x = -1;
+    }
+    if (_read_single_value_float(obj->master_file,
+                                 "/entry/instrument/detector/y_pixel_size",
+                                 &obj->pixel_size_y)
+        < 0) {
+        obj->pixel_size_y = -1;
+    }
+    if (_read_single_value_float(obj->master_file,
+                                 "/entry/instrument/detector/beam_center_x",
+                                 &obj->beam_center_x)
+        < 0) {
+        obj->beam_center_x = -1;
+    }
+    if (_read_single_value_float(obj->master_file,
+                                 "/entry/instrument/detector/beam_center_y",
+                                 &obj->beam_center_y)
+        < 0) {
+        obj->beam_center_y = -1;
+    }
+    if (_read_single_value_float(obj->master_file,
+                                 "/entry/instrument/detector/distance",
+                                 &obj->detector_distance)
+        < 0) {
+        obj->detector_distance = 0;
+    }
+
+    printf("Read pixel size: %f\n", obj->pixel_size_x);
+}
+
 /// Get number of VDS and read info about all the sub-files.
 ///
 /// @param master           HDF5 File object pointing to the master file
@@ -867,6 +922,8 @@ h5read_handle *h5read_open(const char *master_filename) {
 
     read_wavelength(file);
 
+    read_detector_metadata(file);
+
     read_mask(file);
 
     setup_data(file);
@@ -912,6 +969,12 @@ h5read_handle *h5read_generate_samples() {
     file->mask = _generate_e2xe_16m_mask();
     file->trusted_range_max = (image_t_type)(-1);
     file->trusted_range_min = 0;
+    file->beam_center_x = E2XE_16M_FAST / 2.0;
+    file->beam_center_y = E2XE_16M_SLOW / 2.0;
+    file->pixel_size_x = 0.75e-6;
+    file->pixel_size_y = 0.75e-6;
+    file->detector_distance = 0.5;
+
     // Module mask is just empty for now
     file->module_mask =
       malloc(E2XE_16M_NSLOW * E2XE_16M_NFAST * E2XE_MOD_FAST * E2XE_MOD_SLOW);
