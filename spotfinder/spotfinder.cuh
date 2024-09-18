@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 
 #include "common.hpp"
+#include "cuda_common.hpp"
 #include "h5read.h"
 
 #define VALID_PIXEL 1
@@ -13,42 +14,6 @@
 
 using pixel_t = H5Read::image_type;
 using json = nlohmann::json;
-
-/**
- * @brief Function to allocate a pitched memory buffer on the GPU.
- * @param data The pointer to the allocated memory.
- * @param width The width of the buffer.
- * @param height The height of the buffer.
- * @param pitch The pitch of the buffer.
- */
-template <typename T>
-struct PitchedMalloc {
-  public:
-    using value_type = T;
-    PitchedMalloc(std::shared_ptr<T[]> data, size_t width, size_t height, size_t pitch)
-        : _data(data), width(width), height(height), pitch(pitch) {}
-
-    PitchedMalloc(size_t width, size_t height) : width(width), height(height) {
-        auto [alloc, alloc_pitch] = make_cuda_pitched_malloc<T>(width, height);
-        _data = alloc;
-        pitch = alloc_pitch;
-    }
-
-    auto get() {
-        return _data.get();
-    }
-    auto size_bytes() -> size_t const {
-        return pitch * height * sizeof(T);
-    }
-    auto pitch_bytes() -> size_t const {
-        return pitch * sizeof(T);
-    }
-
-    std::shared_ptr<T[]> _data;
-    size_t width;
-    size_t height;
-    size_t pitch;
-};
 
 /**
  * @brief Struct to store the geometry of the detector.
