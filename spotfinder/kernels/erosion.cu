@@ -187,8 +187,7 @@ __device__ bool determine_erasure(cg::thread_block block,
  * 
  * This kernel uses shared memory to store a local copy of the mask for each block.
  * 
- * @param mask Pointer to the mask data indicating valid pixels.
- * @param erosion_mask Pointer to the allocated output erosion mask.
+ * @param mask Pointer to the mask data indicating valid pixels to be eroded.
  * @param mask_pitch The pitch (width in bytes) of the mask data.
  * @param erosion_mask Pointer to the output erosion mask data. (Expected to be the same size as the mask)
  * @param width The width of the image.
@@ -196,8 +195,7 @@ __device__ bool determine_erasure(cg::thread_block block,
  * @param radius The radius around each masked pixel to also be masked.
  */
 __global__ void erosion_kernel(
-  const uint8_t __restrict__ *mask,
-  uint8_t __restrict__ *erosion_mask,
+  uint8_t __restrict__ *mask,
   // __restrict__ is a hint to the compiler that the two pointers are not
   // aliased, allowing the compiler to perform more agressive optimizations
   size_t mask_pitch,
@@ -229,7 +227,7 @@ __global__ void erosion_kernel(
 
     if (x >= width || y >= height) return;
     if (mask[y * mask_pitch + x] != VALID_PIXEL) {
-        erosion_mask[y * mask_pitch + x] = VALID_PIXEL;
+        mask[y * mask_pitch + x] = VALID_PIXEL;
         return;
     }
 
@@ -246,9 +244,11 @@ __global__ void erosion_kernel(
 
     // Update the erosion_mask based on erosion result
     if (should_erase) {
-        erosion_mask[y * mask_pitch + x] = MASKED_PIXEL;
+        mask[y * mask_pitch + x] = MASKED_PIXEL;
     } else {
-        erosion_mask[y * mask_pitch + x] = VALID_PIXEL;
+        printf("Survived erosion: mask[%d] = %d\n",
+               y * mask_pitch + x,
+               mask[y * mask_pitch + x]);
     }
 }
 #pragma endregion Kernel

@@ -409,8 +409,8 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   pixel_t max_valid_pixel_value,
                                   uint8_t *result_strong,
                                   bool do_writeout) {
-    // Allocate memory for the intermediate result buffer
-    PitchedMalloc<uint8_t> d_result_strong_buffer(width, height);
+    // Output from the first pass of spotfinding which gets eroded in place
+    PitchedMalloc<uint8_t> d_first_pass_strong_pixels(width, height);
 
     constexpr int first_pass_kernel_radius = 3;
 
@@ -426,7 +426,7 @@ void call_do_spotfinding_extended(dim3 blocks,
       max_valid_pixel_value,
       first_pass_kernel_radius,  // One-direction width of kernel. Total kernel span is (width * 2 + 1)
       first_pass_kernel_radius,  // One-direction height of kernel. Total kernel span is (height * 2 + 1)
-      d_result_strong_buffer.get());
+      d_first_pass_strong_pixels.get());
     cudaStreamSynchronize(stream);
 
     // Print the first pass result to png
@@ -434,8 +434,8 @@ void call_do_spotfinding_extended(dim3 blocks,
         auto buffer = std::vector<uint8_t>(width * height);
         cudaMemcpy2DAsync(buffer.data(),
                           width,
-                          d_result_strong_buffer.get(),
-                          d_result_strong_buffer.pitch_bytes(),
+                          d_first_pass_strong_pixels.get(),
+                          d_first_pass_strong_pixels.pitch_bytes(),
                           width,
                           height,
                           cudaMemcpyDeviceToHost,
@@ -451,11 +451,10 @@ void call_do_spotfinding_extended(dim3 blocks,
     }
 
     /*
-     * Allocate memory for the erosion mask. This is a mask of pixels that
-     * are considered strong in the first pass, but were removed in the
-     * upcoming erosion step.
+     * Erode the first pass results.
+     * The surviving pixels are then used as a mask to exclude them
+     * from the background calculation in the second pass.
     */
-    PitchedMalloc<uint8_t> d_erosion_mask(width, height);
 
     {  // Get erosion results
         dim3 threads_per_erosion_block(32, 32);
@@ -473,9 +472,8 @@ void call_do_spotfinding_extended(dim3 blocks,
         erosion_kernel<<<erosion_blocks,
                          threads_per_erosion_block,
                          erosion_shared_memory,
-                         stream>>>(d_result_strong_buffer.get(),
-                                   d_erosion_mask.get(),
-                                   d_erosion_mask.pitch_bytes(),
+                         stream>>>(d_first_pass_strong_pixels.get(),
+                                   d_first_pass_strong_pixels.pitch_bytes(),
                                    width,
                                    height,
                                    first_pass_kernel_radius);
@@ -486,8 +484,8 @@ void call_do_spotfinding_extended(dim3 blocks,
         auto mask_buffer = std::vector<uint8_t>(width * height);
         cudaMemcpy2DAsync(mask_buffer.data(),
                           width,
-                          d_erosion_mask.get(),
-                          d_erosion_mask.pitch_bytes(),
+                          d_first_pass_strong_pixels.get(),
+                          d_first_pass_strong_pixels.pitch_bytes(),
                           width,
                           height,
                           cudaMemcpyDeviceToHost,
@@ -520,7 +518,7 @@ void call_do_spotfinding_extended(dim3 blocks,
       image.get(),
       image.pitch,
       mask.get(),
-      d_erosion_mask.get(),
+      d_first_pass_strong_pixels.get(),
       mask.pitch,
       width,
       height,
