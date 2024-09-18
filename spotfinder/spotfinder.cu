@@ -213,10 +213,13 @@ __device__ void calculate_sums(pixel_t *image,
              ++col) {
             pixel_t pixel = image[row_offset + col];
             uint8_t mask_pixel = mask[mask_offset + col];
-            bool include_pixel = mask_pixel != 0;
+            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
             if (background_mask != nullptr) {
                 uint8_t background_mask_pixel = background_mask[mask_offset + col];
-                include_pixel = include_pixel && (background_mask_pixel == VALID_PIXEL);
+                include_pixel =
+                  include_pixel
+                  && (background_mask_pixel
+                      == VALID_PIXEL);  // And is NOT a survivor from the erosion process
             }
             if (include_pixel) {
                 sum += pixel;
