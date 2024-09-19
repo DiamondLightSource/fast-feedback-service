@@ -47,8 +47,8 @@ struct detector_geometry {
      * The JSON object must have the following keys:
      * - pixel_size_x: The pixel size of the detector in the x-direction in mm
      * - pixel_size_y: The pixel size of the detector in the y-direction in mm
-     * - beam_center_x: The x-coordinate of the pixel beam center in the image
-     * - beam_center_y: The y-coordinate of the pixel beam center in the image
+     * - beam_center_x: The x-coordinate of the pixel beam center in the image in mm
+     * - beam_center_y: The y-coordinate of the pixel beam center in the image in mm
      * - distance: The distance from the sample to the detector in mm
     */
     detector_geometry(nlohmann::json geometry_data) {
@@ -64,8 +64,11 @@ struct detector_geometry {
 
         pixel_size_x = geometry_data["pixel_size_x"].template get<float>() / 1000.0f;
         pixel_size_y = geometry_data["pixel_size_y"].template get<float>() / 1000.0f;
-        beam_center_x = geometry_data["beam_center_x"].template get<float>();
-        beam_center_y = geometry_data["beam_center_y"].template get<float>();
+        beam_center_x =
+          geometry_data["beam_center_x"].template get<float>() / (pixel_size_x * 1000);
+        beam_center_y =
+          geometry_data["beam_center_y"].template get<float>() / (pixel_size_y * 1000);
+        ;
         distance = geometry_data["distance"].template get<float>() / 1000.0f;
     }
     detector_geometry(float distance,
