@@ -1,6 +1,7 @@
 #include "spotfinder.cuh"
 
 #include <bitshuffle.h>
+#include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
 #include <lodepng.h>
@@ -35,6 +36,8 @@ using json = nlohmann::json;
 
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
+
+constexpr auto fmt_cyan = fmt::fg(fmt::terminal_color::cyan) | fmt::emphasis::bold;
 
 // Function for passing to std::signal to register the stop request
 extern "C" void stop_processing(int sig) {
@@ -446,7 +449,6 @@ int main(int argc, char **argv) {
         detector =
           detector_geometry(distance.value(), beam_center.value(), pixel_size.value());
     }
-
     float wavelength;
     if (parser.is_used("wavelength")) {
         wavelength = parser.get<float>("wavelength");
@@ -468,6 +470,16 @@ int main(int argc, char **argv) {
         wavelength = wavelength_opt.value();
         printf("Got wavelength from file: %f Å\n", wavelength);
     }
+    print(
+      "Detector geometry:\n"
+      "    Distance:    {0:.1f} mm\n"
+      "    Beam Center: {1:.1f} px {2:.1f} px\n"
+      "Beam Wavelength: {3:.2f} Å\n",
+      styled(detector.distance * 1000, fmt_cyan),
+      styled(detector.beam_center_x, fmt_cyan),
+      styled(detector.beam_center_y, fmt_cyan),
+      styled(wavelength, fmt_cyan));
+
 #pragma endregion Argument Parsing
 
     std::signal(SIGINT, stop_processing);
