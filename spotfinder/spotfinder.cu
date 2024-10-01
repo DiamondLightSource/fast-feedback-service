@@ -10,7 +10,7 @@
 #include <cooperative_groups/reduce.h>
 #include <lodepng.h>
 
-#include "kernels/erosion.cuh"
+#include "kernels/dilation.cuh"
 #include "spotfinder.cuh"
 
 namespace cg = cooperative_groups;
@@ -469,14 +469,14 @@ void call_do_spotfinding_extended(dim3 blocks,
           * sizeof(uint8_t);
 
         // Perform erosion
-        erosion_kernel<<<erosion_blocks,
-                         threads_per_erosion_block,
-                         erosion_shared_memory,
-                         stream>>>(d_first_pass_strong_pixels.get(),
-                                   d_first_pass_strong_pixels.pitch_bytes(),
-                                   width,
-                                   height,
-                                   first_pass_kernel_radius);
+        dilation_kernel<<<erosion_blocks,
+                          threads_per_erosion_block,
+                          erosion_shared_memory,
+                          stream>>>(d_first_pass_strong_pixels.get(),
+                                    d_first_pass_strong_pixels.pitch_bytes(),
+                                    width,
+                                    height,
+                                    first_pass_kernel_radius);
         cudaStreamSynchronize(stream);
     }
     if (do_writeout) {
