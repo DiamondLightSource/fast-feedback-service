@@ -11,7 +11,7 @@ add_executable(spotfinder
     spotfinder.cu
     shmread.cc
     cbfread.cc
-    kernels/erosion.cu
+    kernels/dilation.cu
 )
 target_link_libraries(spotfinder
     PRIVATE

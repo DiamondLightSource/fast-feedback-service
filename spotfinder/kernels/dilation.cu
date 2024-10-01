@@ -2,7 +2,7 @@
 #include <cooperative_groups/reduce.h>
 
 #include "../spotfinder.cuh"
-#include "erosion.cuh"
+#include "dilation.cuh"
 
 namespace cg = cooperative_groups;
 
@@ -90,38 +90,38 @@ __device__ void load_border_pixels(cg::thread_block block,
 }
 
 /**
- * @brief Determine if the current pixel should be erased based on the mask.
+ * @brief Determine if the current pixel should be included based on the surrounding pixels.
  * @param block The cooperative group for the current block.
  * @param shared_mask Pointer to the shared memory buffer.
  * @param radius The radius around each masked pixel to be considered.
- * @param distance_threshold The maximum Chebyshev distance for erasing the current pixel.
- * @return True if the current pixel should be erased, false otherwise.
+ * @param distance_threshold The maximum Chebyshev distance for including the current pixel.
+ * @return True if the current pixel should be included, false otherwise.
  */
-__device__ bool determine_erasure(cg::thread_block block,
-                                  const uint8_t *shared_mask,
-                                  int radius,
-                                  int distance_threshold) {
+__device__ bool determine_inclusion(cg::thread_block block,
+                                    const uint8_t *shared_mask,
+                                    int radius,
+                                    int distance_threshold) {
     int local_x = block.thread_index().x + radius;
     int local_y = block.thread_index().y + radius;
     int shared_width = block.group_dim().x + 2 * radius;
 
-    bool should_erase = false;
+    bool should_include = false;
     for (int i = -radius; i <= radius; ++i) {
         for (int j = -radius; j <= radius; ++j) {
             if (shared_mask[(local_y + j) * shared_width + (local_x + i)]
-                == MASKED_PIXEL) {
+                == VALID_PIXEL) {
                 int chebyshev_distance = max(abs(i), abs(j));
                 if (chebyshev_distance <= distance_threshold) {
-                    should_erase = true;
+                    should_include = true;
                     break;
                 }
             }
         }
-        if (should_erase) {
+        if (should_include) {
             break;
         }
     }
-    return should_erase;
+    return should_include;
 }
 
 // __global__ void determine_erasure_kernel(const uint8_t *shared_mask,
@@ -182,25 +182,11 @@ __device__ bool determine_erasure(cg::thread_block block,
 #pragma endregion Device Functions
 
 #pragma region Kernel
-/**
- * @brief CUDA kernel to apply erosion based on the mask and update the erosion_mask.
- * 
- * This kernel uses shared memory to store a local copy of the mask for each block.
- * 
- * @param mask Pointer to the mask data indicating valid pixels to be eroded.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
- * @param width The width of the image.
- * @param height The height of the image.
- * @param radius The radius around each masked pixel to also be masked.
- */
-__global__ void erosion_kernel(
-  uint8_t __restrict__ *mask,
-  // __restrict__ is a hint to the compiler that the two pointers are not
-  // aliased, allowing the compiler to perform more agressive optimizations
-  size_t mask_pitch,
-  int width,
-  int height,
-  int radius) {
+__global__ void dilation_kernel(uint8_t __restrict__ *mask,
+                                size_t mask_pitch,
+                                int width,
+                                int height,
+                                int radius) {
     // Declare shared memory to store a local copy of the mask for the block
     extern __shared__ uint8_t shared_mask[];
 
@@ -216,11 +202,6 @@ __global__ void erosion_kernel(
     // Synchronize threads to ensure all shared memory is loaded
     block.sync();
 
-    /*
-     * If the current pixel is outside the image bounds, return without doing anything.
-     * We do this after loading shared memory as it may be necessary for this thread 
-     * to load border pixels.
-    */
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
@@ -228,34 +209,16 @@ __global__ void erosion_kernel(
     if (x >= width || y >= height) return;
 
     /*
-     * If the current pixel is not a signal pixel, mark it as valid and return.
-     * We do not need to perform erosion on non-signal pixels, but we need them
-     * to be marked as valid in order to allow the background calculation to proceed.
-    */
-    if (mask[y * mask_pitch + x] == 0) {
+     * If the current pixel is a signal pixel, return as we do not want to change it.
+     */
+    if (mask[y * mask_pitch + x] == VALID_PIXEL) return;
+
+    // Determine if the current pixel should be included in the signal
+    bool should_include = determine_inclusion(block, shared_mask, radius, 2);
+
+    // Update the mask based on the dilation result
+    if (should_include) {
         mask[y * mask_pitch + x] = VALID_PIXEL;
-        return;
-    }
-
-    // Determine if the current pixel should be erased
-    bool should_erase = determine_erasure(
-      block, shared_mask, radius, 2);  // Use 2 as the Chebyshev distance threshold
-    // DIALS uses 2 as the Chebyshev distance threshold for erasing pixels
-
-    // dynamic parrelism based
-    // bool should_erase_gpu =
-    //   launch_determine_erasure_kernel(shared_mask,
-    //                                   threadParams,
-    //                                   radius,
-    //                                   2);  // Use 2 as the Chebyshev distance threshold
-
-    // Update the erosion_mask based on erosion result
-    if (should_erase) {
-        mask[y * mask_pitch + x] = MASKED_PIXEL;
-    } else {
-        printf("Survived erosion: mask[%d] = %d\n",
-               y * mask_pitch + x,
-               mask[y * mask_pitch + x]);
     }
 }
 #pragma endregion Kernel
