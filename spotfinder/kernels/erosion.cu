@@ -189,7 +189,6 @@ __device__ bool determine_erasure(cg::thread_block block,
  * 
  * @param mask Pointer to the mask data indicating valid pixels to be eroded.
  * @param mask_pitch The pitch (width in bytes) of the mask data.
- * @param erosion_mask Pointer to the output erosion mask data. (Expected to be the same size as the mask)
  * @param width The width of the image.
  * @param height The height of the image.
  * @param radius The radius around each masked pixel to also be masked.
@@ -225,8 +224,15 @@ __global__ void erosion_kernel(
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
+    // Return if the current pixel is outside the image bounds
     if (x >= width || y >= height) return;
-    if (mask[y * mask_pitch + x] != VALID_PIXEL) {
+
+    /*
+     * If the current pixel is not a signal pixel, mark it as valid and return.
+     * We do not need to perform erosion on non-signal pixels, but we need them
+     * to be marked as valid in order to allow the background calculation to proceed.
+    */
+    if (mask[y * mask_pitch + x] == 0) {
         mask[y * mask_pitch + x] = VALID_PIXEL;
         return;
     }
@@ -234,6 +240,7 @@ __global__ void erosion_kernel(
     // Determine if the current pixel should be erased
     bool should_erase = determine_erasure(
       block, shared_mask, radius, 2);  // Use 2 as the Chebyshev distance threshold
+    // DIALS uses 2 as the Chebyshev distance threshold for erasing pixels
 
     // dynamic parrelism based
     // bool should_erase_gpu =
