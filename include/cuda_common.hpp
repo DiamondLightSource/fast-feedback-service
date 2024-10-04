@@ -3,6 +3,8 @@
 
 #include <cuda_runtime.h>
 #include <fmt/core.h>
+#include <fmt/os.h>
+#include <lodepng.h>
 
 #include <algorithm>
 #include <argparse/argparse.hpp>
@@ -11,6 +13,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <type_traits>
+#include <vector>
 
 #include "common.hpp"
 
@@ -347,5 +350,105 @@ class CudaEvent {
         }
     }
 };
+
+/**
+ * @brief Save a 2D device array to a PNG file.
+ *
+ * @tparam PixelType The data type of the pixels (e.g., uint8_t).
+ * @tparam TransformFunc A callable object or lambda that performs the pixel transformation.
+ * @param device_ptr Pointer to the device array.
+ * @param device_pitch The pitch (width in bytes) of the device array.
+ * @param width The width of the image in pixels.
+ * @param height The height of the image in pixels.
+ * @param stream The CUDA stream to use for asynchronous copy and synchronization.
+ * @param output_filename The name of the output PNG file.
+ * @param transform_func The pixel transformation function (e.g., to invert pixel values).
+ */
+template <typename PixelType, typename TransformFunc>
+void save_device_data_to_png(PixelType *device_ptr,
+                             size_t device_pitch,
+                             int width,
+                             int height,
+                             cudaStream_t stream,
+                             const std::string &output_filename,
+                             TransformFunc transform_func) {
+    // Allocate host vector to hold the copied data
+    std::vector<PixelType> host_data(width * height);
+
+    // Copy data from device to host asynchronously
+    cudaMemcpy2DAsync(host_data.data(),
+                      width * sizeof(PixelType),  // Host pitch (bytes)
+                      device_ptr,
+                      device_pitch,               // Device pitch (bytes)
+                      width * sizeof(PixelType),  // Width (bytes)
+                      height,
+                      cudaMemcpyDeviceToHost,
+                      stream);
+
+    // Synchronize the stream to ensure the copy is complete
+    cudaStreamSynchronize(stream);
+
+    // Apply the transformation function to each pixel
+    for (auto &pixel : host_data) {
+        pixel = transform_func(pixel);
+    }
+
+    // Encode and save the image as a PNG file
+    lodepng::encode(fmt::format("{}.png", output_filename),
+                    reinterpret_cast<const unsigned char *>(host_data.data()),
+                    width,
+                    height,
+                    LCT_GREY);
+}
+
+/**
+ * @brief Save the coordinates of pixels that satisfy a condition to a text file.
+ *
+ * @tparam PixelType The data type of the pixels (e.g., uint8_t).
+ * @tparam ConditionFunc A callable object or lambda that determines which pixels should be logged.
+ * @param device_ptr Pointer to the device array.
+ * @param device_pitch The pitch (width in bytes) of the device array.
+ * @param width The width of the image in pixels.
+ * @param height The height of the image in pixels.
+ * @param stream The CUDA stream to use for asynchronous copy and synchronization.
+ * @param output_filename The name of the output text file.
+ * @param condition_func The condition function that returns true for pixels to be logged.
+ */
+template <typename PixelType, typename ConditionFunc>
+void save_device_data_to_txt(PixelType *device_ptr,
+                             size_t device_pitch,
+                             int width,
+                             int height,
+                             cudaStream_t stream,
+                             const std::string &output_filename,
+                             ConditionFunc condition_func) {
+    // Allocate host vector to hold the copied data
+    std::vector<PixelType> host_data(width * height);
+
+    // Copy data from device to host asynchronously
+    cudaMemcpy2DAsync(host_data.data(),
+                      width * sizeof(PixelType),  // Host pitch (bytes)
+                      device_ptr,
+                      device_pitch,               // Device pitch (bytes)
+                      width * sizeof(PixelType),  // Width (bytes)
+                      height,
+                      cudaMemcpyDeviceToHost,
+                      stream);
+
+    // Synchronize the stream to ensure the copy is complete
+    cudaStreamSynchronize(stream);
+
+    // Open an output file for the coordinates
+    auto out = fmt::output_file(fmt::format("{}.txt", output_filename));
+
+    // Write the coordinates of the pixels that satisfy the condition
+    for (int y = 0, k = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x, ++k) {
+            if (condition_func(host_data[k])) {
+                out.print("{}, {}\n", x, y);
+            }
+        }
+    }
+}
 
 #endif
