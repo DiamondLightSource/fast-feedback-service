@@ -714,48 +714,98 @@ void call_do_spotfinding_extended(dim3 blocks,
     constexpr int first_pass_kernel_radius = 3;
 
     // First pass: Perform the initial dispersion thresholding
-    compute_dispersion_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
-      image.get(),               // Image data pointer
-      mask.get(),                // Mask data pointer
-      d_dispersion_mask.get(),   // Output dispersion mask pointer
-      image.pitch,               // Image pitch
-      mask.pitch,                // Mask pitch
-      width,                     // Image width
-      height,                    // Image height
-      max_valid_pixel_value,     // Maximum valid pixel value
-      first_pass_kernel_radius,  // Kernel radius
-      first_pass_kernel_radius,  // Kernel radius
-      min_count,                 // Minimum count
-      nsig_b,                    // Background significance level
-      nsig_s                     // Signal significance level
-    );
-    cudaStreamSynchronize(
-      stream);  // Synchronize the CUDA stream to ensure the first pass is complete
+    {
+        printf("First pass\n");
+        // First pass: Perform the initial dispersion thresholding
+        compute_dispersion_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
+          image.get(),               // Image data pointer
+          mask.get(),                // Mask data pointer
+          d_dispersion_mask.get(),   // Output dispersion mask pointer
+          image.pitch,               // Image pitch
+          mask.pitch,                // Mask pitch
+          width,                     // Image width
+          height,                    // Image height
+          max_valid_pixel_value,     // Maximum valid pixel value
+          first_pass_kernel_radius,  // Kernel radius
+          first_pass_kernel_radius,  // Kernel radius
+          min_count,                 // Minimum count
+          nsig_b,                    // Background significance level
+          nsig_s                     // Signal significance level
+        );
+        cudaStreamSynchronize(
+          stream);  // Synchronize the CUDA stream to ensure the first pass is complete
 
-    // Optional: Write out the first pass result if needed
-    if (do_writeout) {
-        std::vector<uint8_t> host_dispersion_mask(width * height);
-        cudaMemcpy2DAsync(host_dispersion_mask.data(),
-                          width,
-                          d_dispersion_mask.get(),
-                          d_dispersion_mask.pitch_bytes(),
-                          width,
-                          height,
-                          cudaMemcpyDeviceToHost,
-                          stream);
-        cudaStreamSynchronize(stream);
-        for (auto &pixel : host_dispersion_mask) {
-            pixel = pixel ? 0 : 255;
+        printf("First pass complete\n");
+        // Optional: Write out the first pass result if needed
+        if (do_writeout) {
+            // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
+            auto invert_pixel = [](uint8_t pixel) -> uint8_t {
+                return pixel ? 0 : 255;
+            };
+
+            // Usage in your existing code
+            save_device_data_to_png(
+              d_dispersion_mask.get(),          // Device pointer to the 2D array
+              d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
+              width,                            // Width of the image
+              height,                           // Height of the image
+              stream,                           // CUDA stream
+              "first_pass_dispersion_result",   // Output filename
+              invert_pixel                      // Pixel transformation function
+            );
         }
-        lodepng::encode("first_pass_dispersion_result.png",
-                        reinterpret_cast<uint8_t *>(host_dispersion_mask.data()),
-                        width,
-                        height,
-                        LCT_GREY);
+    }
+
+    /*
+     * Erode the first pass results.
+     * The surviving pixels are then used as a mask to exclude them
+     * from the background calculation in the second pass.
+    */
+    {
+        dim3 threads_per_erosion_block(32, 32);
+        dim3 erosion_blocks(
+          (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
+          (height + threads_per_erosion_block.y - 1) / threads_per_erosion_block.y);
+
+        // Calculate the shared memory size for the erosion kernel
+        size_t erosion_shared_memory =
+          (threads_per_erosion_block.x + 2 * first_pass_kernel_radius)
+          * (threads_per_erosion_block.y + 2 * first_pass_kernel_radius)
+          * sizeof(uint8_t);
+
+        // Perform erosion
+        erosion_kernel<<<erosion_blocks,
+                         threads_per_erosion_block,
+                         erosion_shared_memory,
+                         stream>>>(d_dispersion_mask.get(),
+                                   d_dispersion_mask.pitch_bytes(),
+                                   width,
+                                   height,
+                                   first_pass_kernel_radius);
+        cudaStreamSynchronize(stream);
+
+        // Print the erosion result if needed
+        if (do_writeout) {
+            // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
+            auto invert_pixel = [](uint8_t pixel) -> uint8_t {
+                return pixel ? 0 : 255;
+            };
+
+            save_device_data_to_png(
+              d_dispersion_mask.get(),          // Device pointer to the 2D array
+              d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
+              width,                            // Width of the image
+              height,                           // Height of the image
+              stream,                           // CUDA stream
+              "eroded_dispersion_result",       // Output filename
+              invert_pixel                      // Pixel transformation function
+            );
+        }
     }
 
     constexpr int second_pass_kernel_radius = 5;
 
+    printf("Second pass\n");
     // Second pass: Perform the final thresholding using the dispersion mask
     compute_final_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
       image.get(),                // Image data pointer
@@ -775,26 +825,31 @@ void call_do_spotfinding_extended(dim3 blocks,
     cudaStreamSynchronize(
       stream);  // Synchronize the CUDA stream to ensure the second pass is complete
 
+    printf("Second pass complete\n");
     // Optional: Write out the final result if needed
     if (do_writeout) {
-        std::vector<uint8_t> host_final_result(width * height);
-        cudaMemcpy2DAsync(host_final_result.data(),
-                          width,
-                          result_strong,
-                          mask.pitch_bytes(),
-                          width,
-                          height,
-                          cudaMemcpyDeviceToHost,
-                          stream);
-        cudaStreamSynchronize(stream);
-        for (auto &pixel : host_final_result) {
-            pixel = pixel ? 0 : 255;
-        }
-        lodepng::encode("final_extended_threshold_result.png",
-                        reinterpret_cast<uint8_t *>(host_final_result.data()),
-                        width,
-                        height,
-                        LCT_GREY);
+        // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
+        auto invert_pixel = [](uint8_t pixel) -> uint8_t { return pixel ? 0 : 255; };
+
+        save_device_data_to_png(result_strong,       // Device pointer to the 2D array
+                                mask.pitch_bytes(),  // Device pitch in bytes
+                                width,               // Width of the image
+                                height,              // Height of the image
+                                stream,              // CUDA stream
+                                "final_extended_threshold_result",  // Output filename
+                                invert_pixel  // Pixel transformation function
+        );
+
+        auto is_valid_pixel = [](uint8_t pixel) { return pixel != 0; };
+
+        save_device_data_to_txt(result_strong,       // Device pointer to the 2D array
+                                mask.pitch_bytes(),  // Device pitch in bytes
+                                width,               // Width of the image
+                                height,              // Height of the image
+                                stream,              // CUDA stream
+                                "final_extended_threshold_result",  // Output filename
+                                is_valid_pixel  // Pixel condition function
+        );
     }
 }
 
