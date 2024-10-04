@@ -257,7 +257,7 @@ __device__ bool is_strong_pixel(uint sum, size_t sumsq, uint8_t n, pixel_t this_
 }
 #pragma endregion Spotfinding Functions
 
-#pragma region Spotfinding Kernel
+#pragma region Spotfinding Kernels
 /**
  * @brief CUDA kernel to perform spotfinding using a dispersion-based algorithm.
  * 
@@ -340,11 +340,271 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
         }
     }
 }
+/**
+ * @brief Kernel for computing the basic threshold based on variance and mean.
+ * @param image Pointer to the input image data.
+ * @param mask Pointer to the mask data indicating valid pixels.
+ * @param result_mask Pointer to the output mask data where results will be stored.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param max_valid_pixel_value The maximum valid trusted pixel value.
+ * @param min_count Minimum number of valid pixels required to be considered a valid spot.
+ * @param threshold The global threshold for intensity.
+ * @param n_sig_b Background noise significance level.
+ * @param n_sig_s Signal significance level.
+ */
+__global__ void compute_threshold_kernel(pixel_t *image,
+                                         uint8_t *mask,
+                                         uint8_t *result_mask,
+                                         size_t image_pitch,
+                                         size_t mask_pitch,
+                                         int width,
+                                         int height,
+                                         pixel_t max_valid_pixel_value,
+                                         int kernel_width,
+                                         int kernel_height,
+                                         int min_count,
+                                         float n_sig_b,
+                                         float n_sig_s) {
+    // Move pointers to the correct slice
+    image = image + (image_pitch * height * blockIdx.z);
+    result_mask = result_mask + (mask_pitch * height * blockIdx.z);
+
+    auto block = cg::this_thread_block();
+
+    // Initialize variables for computing the local sum and count
+    uint sum = 0;
+    size_t sumsq = 0;
+    uint8_t n = 0;
+
+    // Calculate the pixel coordinates
+    int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
+    int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
+
+    // Calculate the index of the pixel in the image and mask data
+    int index = y * image_pitch + x;
+    pixel_t this_pixel = image[index];
+
+    // Check if the pixel is masked and below the maximum valid pixel value
+    bool px_is_valid = mask[index] != 0 && this_pixel <= max_valid_pixel_value;
+
+    if (px_is_valid) {
+        calculate_sums(image,
+                       mask,
+                       nullptr,
+                       image_pitch,
+                       mask_pitch,
+                       width,
+                       height,
+                       x,
+                       y,
+                       kernel_width,
+                       kernel_height,
+                       sum,
+                       sumsq,
+                       n);
+    }
+
+    if (x < width && y < height) {
+        // Calculate the thresholding
+        if (px_is_valid && n > 1) {
+            float sum_f = static_cast<float>(sum);
+            float sumsq_f = static_cast<float>(sumsq);
+
+            float mean = sum_f / n;
+            float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
+            float dispersion = variance / mean;
+            float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
+            bool not_background = dispersion > background_threshold;
+            float signal_threshold = mean + n_sig_s * sqrt(mean);
+            bool is_signal = this_pixel > signal_threshold;
+
+            result_mask[x + mask_pitch * y] = not_background && is_signal;
+        } else {
+            result_mask[x + mask_pitch * y] = 0;
+        }
+    }
+}
+
+/**
+ * @brief Kernel for computing the dispersion threshold.
+ * @param image Pointer to the input image data.
+ * @param mask Pointer to the mask data indicating valid pixels.
+ * @param result_mask Pointer to the output mask data where results will be stored.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param max_valid_pixel_value The maximum valid trusted pixel value.
+ * @param kernel_width The radius of the kernel in the x-direction.
+ * @param kernel_height The radius of the kernel in the y-direction.
+ * @param min_count Minimum number of valid pixels required to be considered a valid spot.
+ * @param nsig_b Background noise significance level.
+ * @param nsig_s Signal significance level.
+ */
+__global__ void compute_dispersion_threshold_kernel(pixel_t *image,
+                                                    uint8_t *mask,
+                                                    uint8_t *result_mask,
+                                                    size_t image_pitch,
+                                                    size_t mask_pitch,
+                                                    int width,
+                                                    int height,
+                                                    pixel_t max_valid_pixel_value,
+                                                    int kernel_width,
+                                                    int kernel_height,
+                                                    int min_count,
+                                                    float n_sig_b,
+                                                    float n_sig_s) {
+    // Move pointers to the correct slice
+    image = image + (image_pitch * height * blockIdx.z);
+    result_mask = result_mask + (mask_pitch * height * blockIdx.z);
+
+    auto block = cg::this_thread_block();
+
+    // Initialize variables for computing the local sum and count
+    uint sum = 0;
+    size_t sumsq = 0;
+    uint8_t n = 0;
+
+    // Calculate the pixel coordinates
+    int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
+    int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
+
+    // Calculate the index of the pixel in the image and mask data
+    int index = y * image_pitch + x;
+    pixel_t this_pixel = image[index];
+
+    // Check if the pixel is masked and below the maximum valid pixel value
+    bool px_is_valid = mask[index] != 0 && this_pixel <= max_valid_pixel_value;
+
+    if (px_is_valid) {
+        calculate_sums(image,
+                       mask,
+                       nullptr,
+                       image_pitch,
+                       mask_pitch,
+                       width,
+                       height,
+                       x,
+                       y,
+                       kernel_width,
+                       kernel_height,
+                       sum,
+                       sumsq,
+                       n);
+    }
+
+    if (x < width && y < height) {
+        // Calculate the thresholding
+        if (px_is_valid && n > 1) {
+            float sum_f = static_cast<float>(sum);
+            float sumsq_f = static_cast<float>(sumsq);
+
+            float mean = sum_f / n;
+            float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
+            float dispersion = variance / mean;
+            float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
+            bool not_background = dispersion > background_threshold;
+
+            result_mask[x + mask_pitch * y] = not_background;
+        } else {
+            result_mask[x + mask_pitch * y] = 0;
+        }
+    }
+}
+
+/**
+ * @brief Kernel for computing the final threshold after dispersion mask.
+ * @param image Pointer to the input image data.
+ * @param mask Pointer to the mask data indicating valid pixels.
+ * @param dispersion_mask Pointer to the dispersion mask used for extended algorithm.
+ * @param result_mask Pointer to the output mask data where results will be stored.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param max_valid_pixel_value The maximum valid trusted pixel value.
+ * @param nsig_s Signal significance level.
+ * @param threshold Global threshold for the intensity.
+ */
+__global__ void compute_final_threshold_kernel(pixel_t *image,
+                                               uint8_t *mask,
+                                               uint8_t *dispersion_mask,
+                                               uint8_t *result_mask,
+                                               size_t image_pitch,
+                                               size_t mask_pitch,
+                                               int width,
+                                               int height,
+                                               pixel_t max_valid_pixel_value,
+                                               int kernel_width,
+                                               int kernel_height,
+                                               float n_sig_s,
+                                               float threshold) {
+    // Move pointers to the correct slice
+    image = image + (image_pitch * height * blockIdx.z);
+    result_mask = result_mask + (mask_pitch * height * blockIdx.z);
+
+    auto block = cg::this_thread_block();
+
+    // Initialize variables for computing the local sum and count
+    uint sum = 0;
+    size_t sumsq = 0;
+    uint8_t n = 0;
+
+    // Calculate the pixel coordinates
+    int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
+    int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
+
+    // Calculate the index of the pixel in the image and mask data
+    int index = y * image_pitch + x;
+    pixel_t this_pixel = image[index];
+
+    // Check if the pixel is masked and below the maximum valid pixel value
+    bool px_is_valid = mask[index] != 0 && this_pixel <= max_valid_pixel_value;
+
+    if (px_is_valid) {
+        calculate_sums(image,
+                       mask,
+                       dispersion_mask,
+                       image_pitch,
+                       mask_pitch,
+                       width,
+                       height,
+                       x,
+                       y,
+                       kernel_width,
+                       kernel_height,
+                       sum,
+                       sumsq,
+                       n);
+    }
+
+    if (x < width && y < height) {
+        // Calculate the thresholding
+        if (px_is_valid && n > 1) {
+            float sum_f = static_cast<float>(sum);
+
+            bool disp_mask = dispersion_mask[index] != 0;
+            bool global_mask = image[index] > threshold;
+            float mean = sum_f / n;
+            bool local_mask = image[index] >= (mean + n_sig_s * sqrtf(mean));
+
+            result_mask[index] = disp_mask && global_mask && local_mask;
+        } else {
+            result_mask[index] = 0;
+        }
+    }
+}
 #pragma endregion Spotfinding Kernel
 
 #pragma region Launch Wrappers
 /**
  * @brief Wrapper function to call the dispersion-based spotfinding algorithm.
+ * This function launches the `compute_dispersion_threshold_kernel` to perform
+ * the spotfinding based on the basic dispersion threshold.
+ *
  * @param blocks The dimensions of the grid of blocks.
  * @param threads The dimensions of the grid of threads within each block.
  * @param shared_memory The size of shared memory required per block (in bytes).
@@ -355,6 +615,9 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
  * @param height The height of the image.
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
  * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ * @param min_count The minimum number of valid pixels required in the local neighborhood. Default is 3.
+ * @param nsig_b The background noise significance level. Default is 6.0.
+ * @param nsig_s The signal significance level. Default is 3.0.
  */
 void call_do_spotfinding_dispersion(dim3 blocks,
                                     dim3 threads,
@@ -365,11 +628,31 @@ void call_do_spotfinding_dispersion(dim3 blocks,
                                     int width,
                                     int height,
                                     pixel_t max_valid_pixel_value,
-                                    uint8_t *result_strong) {
+                                    uint8_t *result_strong,
+                                    int min_count,
+                                    float nsig_b,
+                                    float nsig_s) {
     /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
     constexpr int basic_kernel_width = 3;
     /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
     constexpr int basic_kernel_height = 3;
+
+    // Launch the dispersion threshold kernel
+    // compute_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
+    //     image.get(),          // Image data pointer
+    //     mask.get(),           // Mask data pointer
+    //     result_strong,        // Output mask pointer
+    //     image.pitch,          // Image pitch
+    //     mask.pitch,           // Mask pitch
+    //     width,                // Image width
+    //     height,               // Image height
+    //     max_valid_pixel_value,// Maximum valid pixel value
+    //     basic_kernel_width,   // Kernel width
+    //     basic_kernel_height,  // Kernel height
+    //     min_count,            // Minimum count
+    //     nsig_b,               // Background significance level
+    //     nsig_s                // Signal significance level
+    // );
 
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
       image.get(),
@@ -383,10 +666,17 @@ void call_do_spotfinding_dispersion(dim3 blocks,
       basic_kernel_width,
       basic_kernel_height,
       result_strong);
+
+    cudaStreamSynchronize(
+      stream);  // Synchronize the CUDA stream to ensure the kernel is complete
 }
 
 /**
- * @brief Wrapper function to call the extended spotfinding algorithm.
+ * @brief Wrapper function to call the extended dispersion-based spotfinding algorithm.
+ * This function launches the `compute_final_threshold_kernel` for final thresholding
+ * after applying the dispersion mask and the `compute_dispersion_threshold_kernel`
+ * for initial thresholding.
+ *
  * @param blocks The dimensions of the grid of blocks.
  * @param threads The dimensions of the grid of threads within each block.
  * @param shared_memory The size of shared memory required per block (in bytes).
@@ -397,6 +687,11 @@ void call_do_spotfinding_dispersion(dim3 blocks,
  * @param height The height of the image.
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
  * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ * @param do_writeout Flag to indicate if the output should be written to file. Default is false.
+ * @param min_count The minimum number of valid pixels required in the local neighborhood. Default is 3.
+ * @param nsig_b The background noise significance level. Default is 6.0.
+ * @param nsig_s The signal significance level. Default is 3.0.
+ * @param threshold The global threshold for intensity values. Default is 10.0.
  */
 void call_do_spotfinding_extended(dim3 blocks,
                                   dim3 threads,
@@ -408,124 +703,99 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   int height,
                                   pixel_t max_valid_pixel_value,
                                   uint8_t *result_strong,
-                                  bool do_writeout) {
-    // Output from the first pass of spotfinding which gets eroded in place
-    PitchedMalloc<uint8_t> d_first_pass_strong_pixels(width, height);
+                                  bool do_writeout,
+                                  int min_count,
+                                  float nsig_b,
+                                  float nsig_s,
+                                  float threshold) {
+    // Allocate intermediate buffer for the dispersion mask on the device
+    PitchedMalloc<uint8_t> d_dispersion_mask(width, height);
 
     constexpr int first_pass_kernel_radius = 3;
 
-    // Do the first step of spotfinding
-    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
-      image.get(),
-      image.pitch,
-      mask.get(),
-      nullptr,  // No background mask
-      mask.pitch,
-      width,
-      height,
-      max_valid_pixel_value,
-      first_pass_kernel_radius,  // One-direction width of kernel. Total kernel span is (width * 2 + 1)
-      first_pass_kernel_radius,  // One-direction height of kernel. Total kernel span is (height * 2 + 1)
-      d_first_pass_strong_pixels.get());
-    cudaStreamSynchronize(stream);
+    // First pass: Perform the initial dispersion thresholding
+    compute_dispersion_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
+      image.get(),               // Image data pointer
+      mask.get(),                // Mask data pointer
+      d_dispersion_mask.get(),   // Output dispersion mask pointer
+      image.pitch,               // Image pitch
+      mask.pitch,                // Mask pitch
+      width,                     // Image width
+      height,                    // Image height
+      max_valid_pixel_value,     // Maximum valid pixel value
+      first_pass_kernel_radius,  // Kernel radius
+      first_pass_kernel_radius,  // Kernel radius
+      min_count,                 // Minimum count
+      nsig_b,                    // Background significance level
+      nsig_s                     // Signal significance level
+    );
+    cudaStreamSynchronize(
+      stream);  // Synchronize the CUDA stream to ensure the first pass is complete
 
-    // Print the first pass result to png
+    // Optional: Write out the first pass result if needed
     if (do_writeout) {
-        auto buffer = std::vector<uint8_t>(width * height);
-        cudaMemcpy2DAsync(buffer.data(),
+        std::vector<uint8_t> host_dispersion_mask(width * height);
+        cudaMemcpy2DAsync(host_dispersion_mask.data(),
                           width,
-                          d_first_pass_strong_pixels.get(),
-                          d_first_pass_strong_pixels.pitch_bytes(),
+                          d_dispersion_mask.get(),
+                          d_dispersion_mask.pitch_bytes(),
                           width,
                           height,
                           cudaMemcpyDeviceToHost,
                           stream);
-        for (auto &pixel : buffer) {
+        cudaStreamSynchronize(stream);
+        for (auto &pixel : host_dispersion_mask) {
             pixel = pixel ? 0 : 255;
         }
-        lodepng::encode("first_pass_result.png",
-                        reinterpret_cast<uint8_t *>(buffer.data()),
+        lodepng::encode("first_pass_dispersion_result.png",
+                        reinterpret_cast<uint8_t *>(host_dispersion_mask.data()),
                         width,
                         height,
                         LCT_GREY);
     }
 
-    /*
-     * Erode the first pass results.
-     * The surviving pixels are then used as a mask to exclude them
-     * from the background calculation in the second pass.
-    */
+    constexpr int second_pass_kernel_radius = 5;
 
-    {  // Get erosion results
-        dim3 threads_per_erosion_block(32, 32);
-        dim3 erosion_blocks(
-          (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
-          (height + threads_per_erosion_block.y - 1) / threads_per_erosion_block.y);
+    // Second pass: Perform the final thresholding using the dispersion mask
+    compute_final_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
+      image.get(),                // Image data pointer
+      mask.get(),                 // Mask data pointer
+      d_dispersion_mask.get(),    // Dispersion mask pointer
+      result_strong,              // Output result mask pointer
+      image.pitch,                // Image pitch
+      mask.pitch,                 // Mask pitch
+      width,                      // Image width
+      height,                     // Image height
+      max_valid_pixel_value,      // Maximum valid pixel value
+      second_pass_kernel_radius,  // Kernel radius
+      second_pass_kernel_radius,  // Kernel radius
+      nsig_s,                     // Signal significance level
+      threshold                   // Global threshold
+    );
+    cudaStreamSynchronize(
+      stream);  // Synchronize the CUDA stream to ensure the second pass is complete
 
-        // Calculate the shared memory size for the erosion kernel
-        size_t erosion_shared_memory =
-          (threads_per_erosion_block.x + 2 * first_pass_kernel_radius)
-          * (threads_per_erosion_block.y + 2 * first_pass_kernel_radius)
-          * sizeof(uint8_t);
-
-        // Perform erosion
-        erosion_kernel<<<erosion_blocks,
-                         threads_per_erosion_block,
-                         erosion_shared_memory,
-                         stream>>>(d_first_pass_strong_pixels.get(),
-                                   d_first_pass_strong_pixels.pitch_bytes(),
-                                   width,
-                                   height,
-                                   first_pass_kernel_radius);
-        cudaStreamSynchronize(stream);
-    }
+    // Optional: Write out the final result if needed
     if (do_writeout) {
-        // Print the erosion mask to png
-        auto mask_buffer = std::vector<uint8_t>(width * height);
-        cudaMemcpy2DAsync(mask_buffer.data(),
+        std::vector<uint8_t> host_final_result(width * height);
+        cudaMemcpy2DAsync(host_final_result.data(),
                           width,
-                          d_first_pass_strong_pixels.get(),
-                          d_first_pass_strong_pixels.pitch_bytes(),
+                          result_strong,
+                          mask.pitch_bytes(),
                           width,
                           height,
                           cudaMemcpyDeviceToHost,
                           stream);
-        // Create an RGB buffer to store the image data
-        auto image_mask =
-          std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
-
-        for (int y = 0, k = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x, ++k) {
-                image_mask[k] = {255, 0, 0};  // Default to white
-                if (mask_buffer[k]) {
-                    image_mask[k] = {
-                      255,
-                      255,
-                      255};  // Set to red if the pixel is part of the erosion mask
-                }
-            }
+        cudaStreamSynchronize(stream);
+        for (auto &pixel : host_final_result) {
+            pixel = pixel ? 0 : 255;
         }
-        lodepng::encode("erosion_mask.png",
-                        reinterpret_cast<uint8_t *>(image_mask.data()),
+        lodepng::encode("final_extended_threshold_result.png",
+                        reinterpret_cast<uint8_t *>(host_final_result.data()),
                         width,
                         height,
-                        LCT_RGB);
+                        LCT_GREY);
     }
-
-    constexpr int second_pass_kernel_radius = 5;
-    // Perform the second step of spotfinding
-    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
-      image.get(),
-      image.pitch,
-      mask.get(),
-      d_first_pass_strong_pixels.get(),
-      mask.pitch,
-      width,
-      height,
-      max_valid_pixel_value,
-      second_pass_kernel_radius,
-      second_pass_kernel_radius,
-      result_strong);
-    cudaStreamSynchronize(stream);
 }
+
 #pragma endregion Launch Wrappers
