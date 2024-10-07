@@ -390,21 +390,21 @@ __global__ void compute_threshold_kernel(pixel_t *image,
     // Check if the pixel is masked and below the maximum valid pixel value
     bool px_is_valid = mask[index] != 0 && this_pixel <= max_valid_pixel_value;
 
-    if (px_is_valid) {
-        calculate_sums(image,
-                       mask,
-                       nullptr,
-                       image_pitch,
-                       mask_pitch,
-                       width,
-                       height,
-                       x,
-                       y,
-                       kernel_width,
-                       kernel_height,
-                       sum,
-                       sumsq,
-                       n);
+    for (int row = max(0, y - kernel_height); row < min(y + kernel_height + 1, height);
+         ++row) {
+        int row_offset = image_pitch * row;
+        int mask_offset = mask_pitch * row;
+        for (int col = max(0, x - kernel_width); col < min(x + kernel_width + 1, width);
+             ++col) {
+            pixel_t pixel = image[row_offset + col];
+            uint8_t mask_pixel = mask[mask_offset + col];
+            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
+            if (include_pixel) {
+                sum += pixel;
+                sumsq += pixel * pixel;
+                n += 1;
+            }
+        }
     }
 
     if (x < width && y < height) {
@@ -479,21 +479,21 @@ __global__ void compute_dispersion_threshold_kernel(pixel_t *image,
     // Check if the pixel is masked and below the maximum valid pixel value
     bool px_is_valid = mask[index] != 0 && this_pixel <= max_valid_pixel_value;
 
-    if (px_is_valid) {
-        calculate_sums(image,
-                       mask,
-                       nullptr,
-                       image_pitch,
-                       mask_pitch,
-                       width,
-                       height,
-                       x,
-                       y,
-                       kernel_width,
-                       kernel_height,
-                       sum,
-                       sumsq,
-                       n);
+    for (int row = max(0, y - kernel_height); row < min(y + kernel_height + 1, height);
+         ++row) {
+        int row_offset = image_pitch * row;
+        int mask_offset = mask_pitch * row;
+        for (int col = max(0, x - kernel_width); col < min(x + kernel_width + 1, width);
+             ++col) {
+            pixel_t pixel = image[row_offset + col];
+            uint8_t mask_pixel = mask[mask_offset + col];
+            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
+            if (include_pixel) {
+                sum += pixel;
+                sumsq += pixel * pixel;
+                n += 1;
+            }
+        }
     }
 
     if (x < width && y < height) {
@@ -550,7 +550,6 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
 
     // Initialize variables for computing the local sum and count
     uint sum = 0;
-    size_t sumsq = 0;
     uint8_t n = 0;
 
     // Calculate the pixel coordinates
@@ -564,21 +563,20 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
     // Check if the pixel is masked and below the maximum valid pixel value
     bool px_is_valid = mask[index] != 0 && this_pixel <= max_valid_pixel_value;
 
-    if (px_is_valid) {
-        calculate_sums(image,
-                       mask,
-                       dispersion_mask,
-                       image_pitch,
-                       mask_pitch,
-                       width,
-                       height,
-                       x,
-                       y,
-                       kernel_width,
-                       kernel_height,
-                       sum,
-                       sumsq,
-                       n);
+    for (int row = max(0, y - kernel_height); row < min(y + kernel_height + 1, height);
+         ++row) {
+        int row_offset = image_pitch * row;
+        int mask_offset = mask_pitch * row;
+        for (int col = max(0, x - kernel_width); col < min(x + kernel_width + 1, width);
+             ++col) {
+            pixel_t pixel = image[row_offset + col];
+            uint8_t mask_pixel = mask[mask_offset + col];
+            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
+            if (include_pixel) {
+                sum += pixel;
+                n += 1;
+            }
+        }
     }
 
     if (x < width && y < height) {
