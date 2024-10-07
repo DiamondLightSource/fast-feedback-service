@@ -740,21 +740,38 @@ void call_do_spotfinding_extended(dim3 blocks,
         printf("First pass complete\n");
         // Optional: Write out the first pass result if needed
         if (do_writeout) {
-            // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
-            auto invert_pixel = [](uint8_t pixel) -> uint8_t {
-                return pixel ? 0 : 255;
-            };
+            // Write to PNG
+            {
+                // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
+                auto invert_pixel = [](uint8_t pixel) -> uint8_t {
+                    return pixel ? 0 : 255;
+                };
 
-            // Usage in your existing code
-            save_device_data_to_png(
-              d_dispersion_mask.get(),          // Device pointer to the 2D array
-              d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
-              width,                            // Width of the image
-              height,                           // Height of the image
-              stream,                           // CUDA stream
-              "first_pass_dispersion_result",   // Output filename
-              invert_pixel                      // Pixel transformation function
-            );
+                // Usage in your existing code
+                save_device_data_to_png(
+                  d_dispersion_mask.get(),          // Device pointer to the 2D array
+                  d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
+                  width,                            // Width of the image
+                  height,                           // Height of the image
+                  stream,                           // CUDA stream
+                  "first_pass_dispersion_result",   // Output filename
+                  invert_pixel                      // Pixel transformation function
+                );
+            }
+            // Write to TXT
+            {
+                auto is_valid_pixel = [](uint8_t pixel) { return pixel != 0; };
+
+                save_device_data_to_txt(
+                  d_dispersion_mask.get(),          // Device pointer to the 2D array
+                  d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
+                  width,                            // Width of the image
+                  height,                           // Height of the image
+                  stream,                           // CUDA stream
+                  "first_pass_dispersion_result",   // Output filename
+                  is_valid_pixel                    // Pixel condition function
+                );
+            }
         }
     }
 
