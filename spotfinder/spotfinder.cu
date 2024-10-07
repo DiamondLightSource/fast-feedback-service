@@ -444,8 +444,8 @@ __global__ void compute_threshold_kernel(pixel_t *image,
  * @param kernel_width The radius of the kernel in the x-direction.
  * @param kernel_height The radius of the kernel in the y-direction.
  * @param min_count Minimum number of valid pixels required to be considered a valid spot.
- * @param nsig_b Background noise significance level.
- * @param nsig_s Signal significance level.
+ * @param n_sig_b Background noise significance level.
+ * @param n_sig_s Signal significance level.
  */
 __global__ void compute_dispersion_threshold_kernel(pixel_t *image,
                                                     uint8_t *mask,
@@ -531,7 +531,7 @@ __global__ void compute_dispersion_threshold_kernel(pixel_t *image,
  * @param width The width of the image.
  * @param height The height of the image.
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
- * @param nsig_s Signal significance level.
+ * @param n_sig_s Signal significance level.
  * @param threshold Global threshold for the intensity.
  */
 __global__ void compute_final_threshold_kernel(pixel_t *image,
@@ -618,8 +618,8 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
  * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
  * @param min_count The minimum number of valid pixels required in the local neighborhood. Default is 3.
- * @param nsig_b The background noise significance level. Default is 6.0.
- * @param nsig_s The signal significance level. Default is 3.0.
+ * @param n_sig_b The background noise significance level. Default is 6.0.
+ * @param n_sig_s The signal significance level. Default is 3.0.
  */
 void call_do_spotfinding_dispersion(dim3 blocks,
                                     dim3 threads,
@@ -632,8 +632,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
                                     pixel_t max_valid_pixel_value,
                                     uint8_t *result_strong,
                                     int min_count,
-                                    float nsig_b,
-                                    float nsig_s) {
+                                    float n_sig_b,
+                                    float n_sig_s) {
     /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
     constexpr int basic_kernel_width = 3;
     /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
@@ -652,8 +652,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
     //     basic_kernel_width,   // Kernel width
     //     basic_kernel_height,  // Kernel height
     //     min_count,            // Minimum count
-    //     nsig_b,               // Background significance level
-    //     nsig_s                // Signal significance level
+    //     n_sig_b,               // Background significance level
+    //     n_sig_s                // Signal significance level
     // );
 
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
@@ -691,8 +691,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
  * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
  * @param do_writeout Flag to indicate if the output should be written to file. Default is false.
  * @param min_count The minimum number of valid pixels required in the local neighborhood. Default is 3.
- * @param nsig_b The background noise significance level. Default is 6.0.
- * @param nsig_s The signal significance level. Default is 3.0.
+ * @param n_sig_b The background noise significance level. Default is 6.0.
+ * @param n_sig_s The signal significance level. Default is 3.0.
  * @param threshold The global threshold for intensity values. Default is 10.0.
  */
 void call_do_spotfinding_extended(dim3 blocks,
@@ -707,8 +707,8 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   uint8_t *result_strong,
                                   bool do_writeout,
                                   int min_count,
-                                  float nsig_b,
-                                  float nsig_s,
+                                  float n_sig_b,
+                                  float n_sig_s,
                                   float threshold) {
     // Allocate intermediate buffer for the dispersion mask on the device
     PitchedMalloc<uint8_t> d_dispersion_mask(width, height);
@@ -731,8 +731,8 @@ void call_do_spotfinding_extended(dim3 blocks,
           first_pass_kernel_radius,  // Kernel radius
           first_pass_kernel_radius,  // Kernel radius
           min_count,                 // Minimum count
-          nsig_b,                    // Background significance level
-          nsig_s                     // Signal significance level
+          n_sig_b,                   // Background significance level
+          n_sig_s                    // Signal significance level
         );
         cudaStreamSynchronize(
           stream);  // Synchronize the CUDA stream to ensure the first pass is complete
@@ -821,7 +821,7 @@ void call_do_spotfinding_extended(dim3 blocks,
       max_valid_pixel_value,      // Maximum valid pixel value
       second_pass_kernel_radius,  // Kernel radius
       second_pass_kernel_radius,  // Kernel radius
-      nsig_s,                     // Signal significance level
+      n_sig_s,                    // Signal significance level
       threshold                   // Global threshold
     );
     cudaStreamSynchronize(
