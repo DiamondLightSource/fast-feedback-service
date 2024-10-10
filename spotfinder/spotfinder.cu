@@ -391,12 +391,17 @@ __global__ void compute_threshold_kernel(pixel_t *image,
     size_t sumsq = 0;
     uint8_t n = 0;
 
-    for (int row = max(0, y - kernel_height); row < min(y + kernel_height + 1, height);
-         ++row) {
+    int row_start = max(0, y - kernel_height);
+    int row_end = min(y + kernel_height + 1, height);
+
+    for (int row = row_start; row < row_end; ++row) {
         int row_offset = image_pitch * row;
         int mask_offset = mask_pitch * row;
-        for (int col = max(0, x - kernel_width); col < min(x + kernel_width + 1, width);
-             ++col) {
+
+        int col_start = max(0, x - kernel_width);
+        int col_end = min(x + kernel_width + 1, width);
+
+        for (int col = col_start; col < col_end; ++col) {
             pixel_t pixel = image[row_offset + col];
             uint8_t mask_pixel = mask[mask_offset + col];
             bool include_pixel = mask_pixel != 0;  // If the pixel is valid
@@ -489,12 +494,17 @@ __global__ void compute_dispersion_threshold_kernel(pixel_t *image,
     size_t sumsq = 0;
     uint8_t n = 0;
 
-    for (int row = max(0, y - kernel_height); row < min(y + kernel_height + 1, height);
-         ++row) {
+    int row_start = max(0, y - kernel_height);
+    int row_end = min(y + kernel_height + 1, height);
+
+    for (int row = row_start; row < row_end; ++row) {
         int row_offset = image_pitch * row;
         int mask_offset = mask_pitch * row;
-        for (int col = max(0, x - kernel_width); col < min(x + kernel_width + 1, width);
-             ++col) {
+
+        int col_start = max(0, x - kernel_width);
+        int col_end = min(x + kernel_width + 1, width);
+
+        for (int col = col_start; col < col_end; ++col) {
             pixel_t pixel = image[row_offset + col];
             uint8_t mask_pixel = mask[mask_offset + col];
             bool include_pixel = mask_pixel != 0;  // If the pixel is valid
@@ -575,12 +585,17 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
     uint sum = 0;
     uint8_t n = 0;
 
-    for (int row = max(0, y - kernel_height); row < min(y + kernel_height + 1, height);
-         ++row) {
+    int row_start = max(0, y - kernel_height);
+    int row_end = min(y + kernel_height + 1, height);
+
+    for (int row = row_start; row < row_end; ++row) {
         int row_offset = image_pitch * row;
         int mask_offset = mask_pitch * row;
-        for (int col = max(0, x - kernel_width); col < min(x + kernel_width + 1, width);
-             ++col) {
+
+        int col_start = max(0, x - kernel_width);
+        int col_end = min(x + kernel_width + 1, width);
+
+        for (int col = col_start; col < col_end; ++col) {
             pixel_t pixel = image[row_offset + col];
             uint8_t mask_pixel = mask[mask_offset + col];
             bool include_pixel = mask_pixel != 0;  // If the pixel is valid
