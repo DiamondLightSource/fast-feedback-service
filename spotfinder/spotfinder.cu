@@ -471,6 +471,12 @@ __global__ void compute_dispersion_threshold_kernel(pixel_t *image,
 
     if (x >= width || y >= height) return;  // Out of bounds guard
 
+    // if it is the first pixel in the image print the kernel width and height
+    if (x == 0 && y == 0) {
+        printf("Kernel width: %d, Kernel height: %d\n", kernel_width, kernel_height);
+        printf("Block Idx.z: %d\n", blockIdx.z);
+    }
+
     // Calculate the index of the pixel in the image and mask data
     int index = y * image_pitch + x;
     pixel_t this_pixel = image[index];
@@ -742,9 +748,9 @@ void call_do_spotfinding_extended(dim3 blocks,
         if (do_writeout) {
             // Write to PNG
             {
-                // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
+                // Function to transform the pixel values: if non-zero, set to 255, otherwise set to 0
                 auto invert_pixel = [](uint8_t pixel) -> uint8_t {
-                    return pixel ? 0 : 255;
+                    return pixel ? 255 : 0;
                 };
 
                 // Usage in your existing code
