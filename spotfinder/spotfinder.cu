@@ -380,12 +380,11 @@ __global__ void compute_threshold_kernel(pixel_t *image,
 
     if (x >= width || y >= height) return;  // Out of bounds guard
 
-    // Calculate the index of the pixel in the image and mask data
-    int index = y * image_pitch + x;
-    pixel_t this_pixel = image[index];
+    pixel_t this_pixel = image[y * image_pitch + x];
 
     // Check if the pixel is masked and below the maximum valid pixel value
-    bool px_is_valid = mask[index] != 0 && this_pixel <= max_valid_pixel_value;
+    bool px_is_valid =
+      mask[y * mask_pitch + x] != 0 && this_pixel <= max_valid_pixel_value;
 
     // Initialize variables for computing the local sum and count
     uint sum = 0;
@@ -484,12 +483,11 @@ __global__ void compute_dispersion_threshold_kernel(pixel_t *image,
         printf("Block Idx.z: %d\n", blockIdx.z);
     }
 
-    // Calculate the index of the pixel in the image and mask data
-    int index = y * image_pitch + x;
-    pixel_t this_pixel = image[index];
+    pixel_t this_pixel = image[y * image_pitch + x];
 
     // Check if the pixel is masked and below the maximum valid pixel value
-    bool px_is_valid = mask[index] != 0 && this_pixel <= max_valid_pixel_value;
+    bool px_is_valid =
+      mask[y * mask_pitch + x] != 0 && this_pixel <= max_valid_pixel_value;
 
     // Initialize variables for computing the local sum and count
     uint sum = 0;
@@ -532,9 +530,9 @@ __global__ void compute_dispersion_threshold_kernel(pixel_t *image,
         float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
         bool not_background = dispersion > background_threshold;
 
-        result_mask[x + mask_pitch * y] = not_background;
+        result_mask[x + result_pitch * y] = not_background;
     } else {
-        result_mask[x + mask_pitch * y] = 0;
+        result_mask[x + result_pitch * y] = 0;
     }
 }
 
@@ -749,6 +747,7 @@ void call_do_spotfinding_extended(dim3 blocks,
           d_dispersion_mask.get(),   // Output dispersion mask pointer
           image.pitch,               // Image pitch
           mask.pitch,                // Mask pitch
+          d_dispersion_mask.pitch,   // Output dispersion mask pitch
           width,                     // Image width
           height,                    // Image height
           max_valid_pixel_value,     // Maximum valid pixel value
