@@ -1,6 +1,7 @@
 #include "spotfinder.cuh"
 
 #include <bitshuffle.h>
+#include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
 #include <lodepng.h>
@@ -37,6 +38,8 @@ using json = nlohmann::json;
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
 
+constexpr auto fmt_cyan = fmt::fg(fmt::terminal_color::cyan) | fmt::emphasis::bold;
+
 // Function for passing to std::signal to register the stop request
 extern "C" void stop_processing(int sig) {
     if (global_stop.stop_requested()) {
@@ -54,6 +57,10 @@ auto operator==(const int2 &left, const int2 &right) -> bool {
 }
 
 enum class DispersionAlgorithm { DISPERSION, DISPERSION_EXTENDED };
+
+bool are_close(float a, float b, float tolerance) {
+    return std::fabs(a - b) < tolerance;
+}
 
 struct Reflection {
     int l, t, r, b;
@@ -299,9 +306,6 @@ int main(int argc, char **argv) {
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
-    std::string detector_json = parser.get<std::string>("detector");
-    json detector_json_obj = json::parse(detector_json);
-    detector_geometry detector = detector_geometry(detector_json_obj);
 
     DispersionAlgorithm dispersion_algorithm;
     {  // Parse the algorithm input
@@ -367,9 +371,91 @@ int main(int argc, char **argv) {
     int width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
 
+    detector_geometry detector;
+
+    if (parser.is_used("detector")) {
+        std::string detector_json = parser.get<std::string>("detector");
+        json detector_json_obj = json::parse(detector_json);
+        detector = detector_geometry(detector_json_obj);
+
+        if (do_validate) {
+            auto beam_center = reader.get_beam_center();
+            auto pixel_size = reader.get_pixel_size();
+            auto distance = reader.get_detector_distance();
+            if (beam_center
+                && (!are_close(detector.beam_center_x, beam_center.value()[1], 0.1)
+                    || !are_close(
+                      detector.beam_center_y, beam_center.value()[0], 0.1))) {
+                print(
+                  "Warning: Beam center mismatched:\n    json:   {} px, {} px (used)\n "
+                  "   "
+                  "reader: "
+                  "{} px, {} px\n",
+                  detector.beam_center_x,
+                  detector.beam_center_y,
+                  beam_center.value()[1],
+                  beam_center.value()[0]);
+            }
+            if (pixel_size
+                && (!are_close(detector.pixel_size_x, pixel_size.value()[1], 1e-9)
+                    || !are_close(
+                      detector.pixel_size_y, pixel_size.value()[0], 1e-9))) {
+                print(
+                  "Warning: Pixel size mismatched:\n    json:   {} µm, {} µm (used)\n  "
+                  "  "
+                  "reader: "
+                  "{} µm, {} µm\n",
+                  detector.pixel_size_x,
+                  detector.pixel_size_y,
+                  pixel_size.value()[1] * 1e6,
+                  pixel_size.value()[0] * 1e6);
+            }
+            if (distance && !are_close(distance.value(), detector.distance, 0.1e-6)) {
+                print(
+                  "Warning: Detector distance mismatched:\n    json:   {} m (used)\n   "
+                  " "
+                  "reader: "
+                  "{} m\n",
+                  detector.distance,
+                  distance.value());
+            }
+        }
+    } else {
+        // Try to read detector geometry out of the reader
+        auto beam_center = reader.get_beam_center();
+        auto pixel_size = reader.get_pixel_size();
+        auto distance = reader.get_detector_distance();
+        if (!beam_center) {
+            print(
+              "Error: No beam center available from file. Please pass detector "
+              "metadata with --distance.\n");
+            std::exit(1);
+        }
+        if (!pixel_size) {
+            print(
+              "Error: No pixel size available from file. Please pass detector metadata "
+              "with --distance.\n");
+            std::exit(1);
+        }
+        if (!distance) {
+            print(
+              "Error: No detector distance available from file. Please pass metadata "
+              "with --distance.\n");
+            std::exit(1);
+        }
+        detector =
+          detector_geometry(distance.value(), beam_center.value(), pixel_size.value());
+    }
     float wavelength;
     if (parser.is_used("wavelength")) {
         wavelength = parser.get<float>("wavelength");
+        if (do_validate && reader.get_wavelength()
+            && reader.get_wavelength().value() != wavelength) {
+            print(
+              "Warning: Wavelength mismatch:\n    Argument: {} Å\n    Reader:   {} Å\n",
+              wavelength,
+              reader.get_wavelength().value());
+        }
     } else {
         auto wavelength_opt = reader.get_wavelength();
         if (!wavelength_opt) {
@@ -381,6 +467,16 @@ int main(int argc, char **argv) {
         wavelength = wavelength_opt.value();
         printf("Got wavelength from file: %f Å\n", wavelength);
     }
+    print(
+      "Detector geometry:\n"
+      "    Distance:    {0:.1f} mm\n"
+      "    Beam Center: {1:.1f} px {2:.1f} px\n"
+      "Beam Wavelength: {3:.2f} Å\n",
+      styled(detector.distance * 1000, fmt_cyan),
+      styled(detector.beam_center_x, fmt_cyan),
+      styled(detector.beam_center_y, fmt_cyan),
+      styled(wavelength, fmt_cyan));
+
 #pragma endregion Argument Parsing
 
     std::signal(SIGINT, stop_processing);
