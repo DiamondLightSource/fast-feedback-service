@@ -729,7 +729,7 @@ int main(int argc, char **argv) {
                                                    width,
                                                    height,
                                                    trusted_px_max,
-                                                   device_results.get());
+                                                   &device_results);
                     break;
                 case DispersionAlgorithm::DISPERSION_EXTENDED:
                     call_do_spotfinding_extended(blocks_dims,
@@ -741,7 +741,7 @@ int main(int argc, char **argv) {
                                                  width,
                                                  height,
                                                  trusted_px_max,
-                                                 device_results.get(),
+                                                 &device_results,
                                                  do_writeout);
                     break;
                 }
