@@ -27,6 +27,7 @@
 #include "common.hpp"
 #include "cuda_common.hpp"
 #include "h5read.h"
+#include "kernels/erosion.cuh"
 #include "shmread.hpp"
 #include "standalone.h"
 
@@ -55,6 +56,8 @@ auto operator==(const int2 &left, const int2 &right) -> bool {
     return left.x == right.x && left.y == right.y;
 }
 
+enum class DispersionAlgorithm { DISPERSION, DISPERSION_EXTENDED };
+
 bool are_close(float a, float b, float tolerance) {
     return std::fabs(a - b) < tolerance;
 }
@@ -62,35 +65,6 @@ bool are_close(float a, float b, float tolerance) {
 struct Reflection {
     int l, t, r, b;
     int num_pixels = 0;
-};
-
-template <typename T>
-struct PitchedMalloc {
-  public:
-    using value_type = T;
-    PitchedMalloc(std::shared_ptr<T[]> data, size_t width, size_t height, size_t pitch)
-        : _data(data), width(width), height(height), pitch(pitch) {}
-
-    PitchedMalloc(size_t width, size_t height) : width(width), height(height) {
-        auto [alloc, alloc_pitch] = make_cuda_pitched_malloc<T>(width, height);
-        _data = alloc;
-        pitch = alloc_pitch;
-    }
-
-    auto get() {
-        return _data.get();
-    }
-    auto size_bytes() -> size_t const {
-        return pitch * height * sizeof(T);
-    }
-    auto pitch_bytes() -> size_t const {
-        return pitch * sizeof(T);
-    }
-
-    std::shared_ptr<T[]> _data;
-    size_t width;
-    size_t height;
-    size_t pitch;
 };
 
 /// Copy the mask from a reader into a pitched GPU area
@@ -304,6 +278,10 @@ int main(int argc, char **argv) {
       .metavar("FD")
       .default_value<int>(-1)
       .scan<'i', int>();
+    parser.add_argument("-a", "--algorithm")
+      .help("Dispersion algorithm to use")
+      .metavar("ALGO")
+      .default_value("dispersion");
     parser.add_argument("--dmin")
       .help("Minimum resolution (Å)")
       .metavar("MIN D")
@@ -328,6 +306,25 @@ int main(int argc, char **argv) {
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
+
+    DispersionAlgorithm dispersion_algorithm;
+    {  // Parse the algorithm input
+        std::string dispersion_algorithm_str = parser.get<std::string>("algorithm");
+        std::transform(dispersion_algorithm_str.begin(),
+                       dispersion_algorithm_str.end(),
+                       dispersion_algorithm_str.begin(),
+                       ::tolower);
+        if (dispersion_algorithm_str == "dispersion") {
+            dispersion_algorithm = DispersionAlgorithm::DISPERSION;
+        } else if (dispersion_algorithm_str == "dispersion_extended") {
+            dispersion_algorithm = DispersionAlgorithm::DISPERSION_EXTENDED;
+        } else {
+            print("Error: Unknown dispersion algorithm '{}'\n",
+                  dispersion_algorithm_str);
+            std::exit(1);
+        }
+        print("Using dispersion algorithm: {}\n", dispersion_algorithm_str);
+    }
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -721,19 +718,33 @@ int main(int argc, char **argv) {
 
 #pragma region Spotfinding
                 // When done, launch the spotfind kernel
-                // do_spotfinding_naive<<<blocks_dims, gpu_thread_block_size, 0, stream>>>(
-                call_do_spotfinding_naive(blocks_dims,
-                                          gpu_thread_block_size,
-                                          0,
-                                          stream,
-                                          device_image.get(),
-                                          device_image.pitch,
-                                          mask.get(),
-                                          mask.pitch,
-                                          width,
-                                          height,
-                                          trusted_px_max,
-                                          device_results.get());
+                switch (dispersion_algorithm) {
+                case DispersionAlgorithm::DISPERSION:
+                    call_do_spotfinding_dispersion(blocks_dims,
+                                                   gpu_thread_block_size,
+                                                   0,
+                                                   stream,
+                                                   device_image,
+                                                   mask,
+                                                   width,
+                                                   height,
+                                                   trusted_px_max,
+                                                   device_results.get());
+                    break;
+                case DispersionAlgorithm::DISPERSION_EXTENDED:
+                    call_do_spotfinding_extended(blocks_dims,
+                                                 gpu_thread_block_size,
+                                                 0,
+                                                 stream,
+                                                 device_image,
+                                                 mask,
+                                                 width,
+                                                 height,
+                                                 trusted_px_max,
+                                                 device_results.get(),
+                                                 do_writeout);
+                    break;
+                }
                 post.record(stream);
 
                 // Copy the results buffer back to the CPU
