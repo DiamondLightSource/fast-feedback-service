@@ -16,11 +16,11 @@ using pixel_t = H5Read::image_type;
 
 /**
  * @brief Struct to store the geometry of the detector.
- * @param pixel_size_x The pixel size of the detector in the x-direction in mm.
- * @param pixel_size_y The pixel size of the detector in the y-direction in mm.
+ * @param pixel_size_x The pixel size of the detector in the x-direction in m.
+ * @param pixel_size_y The pixel size of the detector in the y-direction in m.
  * @param beam_center_x The x-coordinate of the beam center in the image.
  * @param beam_center_y The y-coordinate of the beam center in the image.
- * @param distanc The distance from the sample to the detector in mm.
+ * @param distanc The distance from the sample to the detector in m.
 */
 struct detector_geometry {
     float pixel_size_x;
@@ -46,8 +46,8 @@ struct detector_geometry {
      * The JSON object must have the following keys:
      * - pixel_size_x: The pixel size of the detector in the x-direction in mm
      * - pixel_size_y: The pixel size of the detector in the y-direction in mm
-     * - beam_center_x: The x-coordinate of the pixel beam center in the image
-     * - beam_center_y: The y-coordinate of the pixel beam center in the image
+     * - beam_center_x: The x-coordinate of the pixel beam center in the image in mm
+     * - beam_center_y: The y-coordinate of the pixel beam center in the image in mm
      * - distance: The distance from the sample to the detector in mm
     */
     detector_geometry(nlohmann::json geometry_data) {
@@ -61,12 +61,23 @@ struct detector_geometry {
             }
         }
 
-        pixel_size_x = geometry_data["pixel_size_x"];
-        pixel_size_y = geometry_data["pixel_size_y"];
-        beam_center_x = geometry_data["beam_center_x"];
-        beam_center_y = geometry_data["beam_center_y"];
-        distance = geometry_data["distance"];
+        pixel_size_x = geometry_data["pixel_size_x"].template get<float>() / 1000.0f;
+        pixel_size_y = geometry_data["pixel_size_y"].template get<float>() / 1000.0f;
+        beam_center_x =
+          geometry_data["beam_center_x"].template get<float>() / (pixel_size_x * 1000);
+        beam_center_y =
+          geometry_data["beam_center_y"].template get<float>() / (pixel_size_y * 1000);
+        ;
+        distance = geometry_data["distance"].template get<float>() / 1000.0f;
     }
+    detector_geometry(float distance,
+                      std::array<float, 2> beam_center,
+                      std::array<float, 2> pixel_size)
+        : pixel_size_x(pixel_size[1]),
+          pixel_size_y(pixel_size[0]),
+          beam_center_x(beam_center[1]),
+          beam_center_y(beam_center[0]),
+          distance(distance) {}
 };
 
 /**

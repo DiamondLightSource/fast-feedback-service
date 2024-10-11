@@ -15,6 +15,9 @@ class SHMRead : public Reader {
     std::vector<uint8_t> _mask;
     std::array<image_t_type, 2> _trusted_range;
     std::optional<float> _wavelength;
+    std::array<float, 2> _beam_center;
+    std::array<float, 2> _pixel_size;
+    float _detector_distance;
 
   public:
     SHMRead(const std::string &path);
@@ -41,6 +44,15 @@ class SHMRead : public Reader {
     }
     std::optional<float> get_wavelength() const {
         return _wavelength;
+    }
+    virtual std::optional<std::array<float, 2>> get_pixel_size() const {
+        return {_pixel_size};
+    }
+    virtual std::optional<std::array<float, 2>> get_beam_center() const {
+        return {_beam_center};
+    }
+    virtual std::optional<float> get_detector_distance() const {
+        return _detector_distance;
     }
 };
 

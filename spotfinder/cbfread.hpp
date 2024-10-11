@@ -146,6 +146,15 @@ class CBFRead : public Reader {
     virtual std::optional<float> get_wavelength() const {
         return std::nullopt;
     }
+    virtual std::optional<std::array<float, 2>> get_pixel_size() const {
+        return std::nullopt;
+    };
+    virtual std::optional<std::array<float, 2>> get_beam_center() const {
+        return std::nullopt;
+    };
+    virtual std::optional<float> get_detector_distance() const {
+        return std::nullopt;
+    };
 };
 
 template <typename Tout>

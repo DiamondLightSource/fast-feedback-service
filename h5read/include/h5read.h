@@ -50,6 +50,12 @@ size_t h5read_get_image_fast(h5read_handle *obj);
 void h5read_get_trusted_range(h5read_handle *obj, image_t_type *min, image_t_type *max);
 /// Get the wavelength for this dataset
 float h5read_get_wavelength(h5read_handle *obj);
+/// Get the pixel size for this dataset
+float h5read_get_pixel_size_slow(h5read_handle *obj);
+float h5read_get_pixel_size_fast(h5read_handle *obj);
+float h5read_get_detector_distance(h5read_handle *obj);
+float h5read_get_beam_center_x(h5read_handle *obj);
+float h5read_get_beam_center_y(h5read_handle *obj);
 
 /** Borrow a pointer to the image mask.
  *
@@ -154,6 +160,12 @@ class Reader {
     virtual std::array<size_t, 2> image_shape() const = 0;
     virtual std::optional<std::span<const uint8_t>> get_mask() const = 0;
     virtual std::optional<float> get_wavelength() const = 0;
+    virtual std::optional<std::array<float, 2>> get_pixel_size()
+      const = 0;  ///< Pixel size (y, x), in meters
+    virtual std::optional<std::array<float, 2>> get_beam_center()
+      const = 0;  ///< Beam center (y, x), in pixels
+    virtual std::optional<float> get_detector_distance()
+      const = 0;  ///< Distance to detector, in meters.
 };
 
 // Declare a C++ "object" version so we don't have to keep track of allocations
@@ -248,6 +260,18 @@ class H5Read : public Reader {
         }
     }
 
+    virtual std::optional<std::array<float, 2>> get_pixel_size() const {
+        return {{h5read_get_pixel_size_slow(_handle.get()),
+                 h5read_get_pixel_size_fast(_handle.get())}};
+    }
+
+    virtual std::optional<std::array<float, 2>> get_beam_center() const {
+        return {{h5read_get_beam_center_y(_handle.get()),
+                 h5read_get_beam_center_x(_handle.get())}};
+    }
+    virtual std::optional<float> get_detector_distance() const {
+        return {h5read_get_detector_distance(_handle.get())};
+    }
     std::mutex mutex;
 
   protected:

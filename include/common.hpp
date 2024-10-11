@@ -11,9 +11,8 @@
 #include <type_traits>
 
 template <typename T1, typename... TS>
-auto with_formatting(const std::string &code,
-                     const T1 &first,
-                     TS... args) -> std::string {
+auto with_formatting(const std::string &code, const T1 &first, TS... args)
+  -> std::string {
     return code + fmt::format(fmt::runtime(fmt::format("{}", first)), args...)
            + "\033[0m";
 }
