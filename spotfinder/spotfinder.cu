@@ -599,7 +599,10 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
         for (int col = col_start; col < col_end; ++col) {
             pixel_t pixel = image[row_offset + col];
             uint8_t mask_pixel = mask[mask_offset + col];
-            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
+            uint8_t disp_mask_pixel =
+              dispersion_mask[row * dispersion_mask_pitch + col];
+            bool include_pixel =
+              mask_pixel != 0 && disp_mask_pixel;  // If the pixel is valid
             if (include_pixel) {
                 sum += pixel;
                 n += 1;
@@ -611,7 +614,7 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
     if (px_is_valid && n > 1) {
         float sum_f = static_cast<float>(sum);
 
-        bool disp_mask = dispersion_mask[y * dispersion_mask_pitch + x];
+        bool disp_mask = !dispersion_mask[y * dispersion_mask_pitch + x];
         bool global_mask = image[y * image_pitch + x] > threshold;
         float mean = sum_f / n;
         bool local_mask = image[y * image_pitch + x] >= (mean + n_sig_s * sqrtf(mean));
