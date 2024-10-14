@@ -662,35 +662,35 @@ void call_do_spotfinding_dispersion(dim3 blocks,
     constexpr int basic_kernel_height = 3;
 
     // Launch the dispersion threshold kernel
-    // compute_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
-    //     image.get(),          // Image data pointer
-    //     mask.get(),           // Mask data pointer
-    //     result_strong.get(),  // Output mask pointer
-    //     image.pitch,          // Image pitch
-    //     mask.pitch,           // Mask pitch
-    //     result_strong.pitch,  // Output mask pitch
-    //     width,                // Image width
-    //     height,               // Image height
-    //     max_valid_pixel_value,// Maximum valid pixel value
-    //     basic_kernel_width,   // Kernel width
-    //     basic_kernel_height,  // Kernel height
-    //     min_count,            // Minimum count
-    //     n_sig_b,               // Background significance level
-    //     n_sig_s                // Signal significance level
-    // );
+    compute_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
+      image.get(),            // Image data pointer
+      mask.get(),             // Mask data pointer
+      result_strong->get(),   // Output mask pointer
+      image.pitch,            // Image pitch
+      mask.pitch,             // Mask pitch
+      result_strong->pitch,   // Output mask pitch
+      width,                  // Image width
+      height,                 // Image height
+      max_valid_pixel_value,  // Maximum valid pixel value
+      basic_kernel_width,     // Kernel width
+      basic_kernel_height,    // Kernel height
+      min_count,              // Minimum count
+      n_sig_b,                // Background significance level
+      n_sig_s                 // Signal significance level
+    );
 
-    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
-      image.get(),
-      image.pitch,
-      mask.get(),
-      nullptr,  // No background mask
-      mask.pitch,
-      width,
-      height,
-      max_valid_pixel_value,
-      basic_kernel_width,
-      basic_kernel_height,
-      result_strong->get());
+    // do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+    //   image.get(),
+    //   image.pitch,
+    //   mask.get(),
+    //   nullptr,  // No background mask
+    //   mask.pitch,
+    //   width,
+    //   height,
+    //   max_valid_pixel_value,
+    //   basic_kernel_width,
+    //   basic_kernel_height,
+    //   result_strong->get());
 
     cudaStreamSynchronize(
       stream);  // Synchronize the CUDA stream to ensure the kernel is complete
