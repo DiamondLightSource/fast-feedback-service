@@ -737,7 +737,12 @@ void call_do_spotfinding_extended(dim3 blocks,
 
     constexpr int first_pass_kernel_radius = 3;
 
-    // First pass: Perform the initial dispersion thresholding
+    /*
+     * First pass
+     * Perform the initial dispersion thresholding only on the background
+     * threshold. The surviving pixels are then used as a mask later to
+     * exclude them from the background calculation in the second pass.
+    */
     {
         printf("First pass\n");
         // First pass: Perform the initial dispersion thresholding
@@ -799,6 +804,7 @@ void call_do_spotfinding_extended(dim3 blocks,
     }
 
     /*
+     * Erosion pass
      * Erode the first pass results.
      * The surviving pixels are then used as a mask to exclude them
      * from the background calculation in the second pass.
@@ -847,51 +853,61 @@ void call_do_spotfinding_extended(dim3 blocks,
 
     constexpr int second_pass_kernel_radius = 5;
 
-    printf("Second pass\n");
-    // Second pass: Perform the final thresholding using the dispersion mask
-    compute_final_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
-      image.get(),                // Image data pointer
-      mask.get(),                 // Mask data pointer
-      d_dispersion_mask.get(),    // Dispersion mask pointer
-      result_strong->get(),       // Output result mask pointer
-      image.pitch,                // Image pitch
-      mask.pitch,                 // Mask pitch
-      width,                      // Image width
-      height,                     // Image height
-      max_valid_pixel_value,      // Maximum valid pixel value
-      second_pass_kernel_radius,  // Kernel radius
-      second_pass_kernel_radius,  // Kernel radius
-      n_sig_s,                    // Signal significance level
-      threshold                   // Global threshold
-    );
-    cudaStreamSynchronize(
-      stream);  // Synchronize the CUDA stream to ensure the second pass is complete
-
-    printf("Second pass complete\n");
-    // Optional: Write out the final result if needed
-    if (do_writeout) {
-        // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
-        auto invert_pixel = [](uint8_t pixel) -> uint8_t { return pixel ? 0 : 255; };
-
-        save_device_data_to_png(result_strong->get(),  // Device pointer to the 2D array
-                                mask.pitch_bytes(),    // Device pitch in bytes
-                                width,                 // Width of the image
-                                height,                // Height of the image
-                                stream,                // CUDA stream
-                                "final_extended_threshold_result",  // Output filename
-                                invert_pixel  // Pixel transformation function
+    /*
+     * Second pass
+     * Perform the final thresholding using the dispersion mask.
+    */
+    {
+        printf("Second pass\n");
+        // Second pass: Perform the final thresholding using the dispersion mask
+        compute_final_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
+          image.get(),                // Image data pointer
+          mask.get(),                 // Mask data pointer
+          d_dispersion_mask.get(),    // Dispersion mask pointer
+          result_strong->get(),       // Output result mask pointer
+          image.pitch,                // Image pitch
+          mask.pitch,                 // Mask pitch
+          width,                      // Image width
+          height,                     // Image height
+          max_valid_pixel_value,      // Maximum valid pixel value
+          second_pass_kernel_radius,  // Kernel radius
+          second_pass_kernel_radius,  // Kernel radius
+          n_sig_s,                    // Signal significance level
+          threshold                   // Global threshold
         );
+        cudaStreamSynchronize(
+          stream);  // Synchronize the CUDA stream to ensure the second pass is complete
 
-        auto is_valid_pixel = [](uint8_t pixel) { return pixel != 0; };
+        printf("Second pass complete\n");
+        // Optional: Write out the final result if needed
+        if (do_writeout) {
+            // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
+            auto invert_pixel = [](uint8_t pixel) -> uint8_t {
+                return pixel ? 0 : 255;
+            };
 
-        save_device_data_to_txt(result_strong->get(),  // Device pointer to the 2D array
-                                mask.pitch_bytes(),    // Device pitch in bytes
-                                width,                 // Width of the image
-                                height,                // Height of the image
-                                stream,                // CUDA stream
-                                "final_extended_threshold_result",  // Output filename
-                                is_valid_pixel  // Pixel condition function
-        );
+            save_device_data_to_png(
+              result_strong->get(),               // Device pointer to the 2D array
+              mask.pitch_bytes(),                 // Device pitch in bytes
+              width,                              // Width of the image
+              height,                             // Height of the image
+              stream,                             // CUDA stream
+              "final_extended_threshold_result",  // Output filename
+              invert_pixel                        // Pixel transformation function
+            );
+
+            auto is_valid_pixel = [](uint8_t pixel) { return pixel != 0; };
+
+            save_device_data_to_txt(
+              result_strong->get(),               // Device pointer to the 2D array
+              mask.pitch_bytes(),                 // Device pitch in bytes
+              width,                              // Width of the image
+              height,                             // Height of the image
+              stream,                             // CUDA stream
+              "final_extended_threshold_result",  // Output filename
+              is_valid_pixel                      // Pixel condition function
+            );
+        }
     }
 }
 
