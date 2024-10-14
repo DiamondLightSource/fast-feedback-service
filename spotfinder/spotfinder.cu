@@ -430,9 +430,9 @@ __global__ void compute_threshold_kernel(pixel_t *image,
         // Check if the pixel is a strong pixel
         bool is_signal = this_pixel > signal_threshold;
 
-        result_mask[x + mask_pitch * y] = not_background && is_signal;
+        result_mask[x + result_pitch * y] = not_background && is_signal;
     } else {
-        result_mask[x + mask_pitch * y] = 0;
+        result_mask[x + result_pitch * y] = 0;
     }
 }
 
