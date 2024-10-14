@@ -15,8 +15,8 @@ cd _debug_output
 #     "pixel_size_x": 0.075,
 #     "pixel_size_y": 0.075,
 #     "distance": 150,
-#     "beam_center_x": 1008.13,
-#     "beam_center_y": 1066.0
+#     "beam_center_x": 75.60975,
+#     "beam_center_y": 79.95
 # }
 # EOF
 
