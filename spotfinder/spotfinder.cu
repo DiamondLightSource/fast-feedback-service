@@ -772,8 +772,13 @@ void call_do_spotfinding_extended(dim3 blocks,
             // Write to PNG
             {
                 // Function to transform the pixel values: if non-zero, set to 255, otherwise set to 0
-                auto invert_pixel = [](uint8_t pixel) -> uint8_t {
-                    return pixel ? 255 : 0;
+                auto convert_pixel = [](uint8_t pixel) -> uint8_t {
+                    // return pixel ? 255 : 0;
+                    if (pixel == MASKED_PIXEL) {
+                        return 0;
+                    } else {  // if (pixel == VALID_PIXEL)
+                        return 255;
+                    }
                 };
 
                 // Usage in your existing code
@@ -784,7 +789,7 @@ void call_do_spotfinding_extended(dim3 blocks,
                   height,                           // Height of the image
                   stream,                           // CUDA stream
                   "first_pass_dispersion_result",   // Output filename
-                  invert_pixel                      // Pixel transformation function
+                  convert_pixel                     // Pixel transformation function
                 );
             }
             // Write to TXT
@@ -835,9 +840,12 @@ void call_do_spotfinding_extended(dim3 blocks,
 
         // Print the erosion result if needed
         if (do_writeout) {
-            // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
-            auto invert_pixel = [](uint8_t pixel) -> uint8_t {
-                return pixel ? 0 : 255;
+            auto show_masked = [](uint8_t pixel) -> uint8_t {
+                if (pixel == MASKED_PIXEL) {
+                    return 255;
+                } else {  // if (pixel == VALID_PIXEL)
+                    return 0;
+                }
             };
 
             save_device_data_to_png(
@@ -847,7 +855,7 @@ void call_do_spotfinding_extended(dim3 blocks,
               height,                           // Height of the image
               stream,                           // CUDA stream
               "eroded_dispersion_result",       // Output filename
-              invert_pixel                      // Pixel transformation function
+              show_masked                       // Pixel transformation function
             );
         }
     }
@@ -884,9 +892,12 @@ void call_do_spotfinding_extended(dim3 blocks,
         printf("Second pass complete\n");
         // Optional: Write out the final result if needed
         if (do_writeout) {
-            // Function to transform the pixel values: if non-zero, set to 0, otherwise set to 255
-            auto invert_pixel = [](uint8_t pixel) -> uint8_t {
-                return pixel ? 0 : 255;
+            auto convert_pixel = [](uint8_t pixel) -> uint8_t {
+                if (pixel == VALID_PIXEL) {
+                    return 255;
+                } else {
+                    return 0;
+                }
             };
 
             save_device_data_to_png(
@@ -896,7 +907,7 @@ void call_do_spotfinding_extended(dim3 blocks,
               height,                             // Height of the image
               stream,                             // CUDA stream
               "final_extended_threshold_result",  // Output filename
-              invert_pixel                        // Pixel transformation function
+              convert_pixel                       // Pixel transformation function
             );
 
             auto is_valid_pixel = [](uint8_t pixel) { return pixel != 0; };
