@@ -281,7 +281,7 @@ int main(int argc, char **argv) {
     parser.add_argument("-a", "--algorithm")
       .help("Dispersion algorithm to use")
       .metavar("ALGO")
-      .default_value("dispersion");
+      .default_value("dispersion_extended");
     parser.add_argument("--dmin")
       .help("Minimum resolution (Å)")
       .metavar("MIN D")
