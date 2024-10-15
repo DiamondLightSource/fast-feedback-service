@@ -27,7 +27,7 @@ DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
 class PiaRequest(BaseModel):
     dcid: int
     dcgid: int
-    filename: str
+    filename: Path
     message_index: int
     number_of_frames: int
     start_frame_index: int
@@ -216,18 +216,21 @@ class GPUPerImageAnalysis(CommonService):
             rw.checkpoint(message, header=header, delay=5)
             return
 
-        # If we don't have a base path, then assume we don't have GPU mode turned on
-        # Ideally this would be tested directly, but I need to work out how to get PV
-        # access on the gpu-epu
-        if not Path(base_path).is_dir():
-            self.log.info(
-                f"Not running GPU analysis as parent dir {base_path} does not exist; Is DAQ in /dev/shm mode?"
-            )
-            rw.transport.ack(header)
-            return
+        if parameters.filename.is_absolute():
+            data_path = parameters.filename
+        else:
+            # If we don't have a base path, then assume we don't have GPU mode turned on
+            # Ideally this would be tested directly, but I need to work out how to get PV
+            # access on the gpu-epu
+            if not Path(base_path).is_dir():
+                self.log.info(
+                    f"Not running GPU analysis as parent dir {base_path} does not exist; Is DAQ in /dev/shm mode?"
+                )
+                rw.transport.ack(header)
+                return
 
-        # Form the expected path for this dataset
-        data_path = Path(f"{base_path}/{parameters.filename}")
+            # Form the expected path for this dataset
+            data_path = base_path / parameters.filename
 
         # Debugging: Reject messages that are "old", if the files are not on disk. This
         # should help avoid sitting spending hours running through all messages (meaning
