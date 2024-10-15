@@ -668,7 +668,6 @@ int main(int argc, char **argv) {
                 while (true) {
                     {
                         std::scoped_lock lock(reader_mutex);
-                        print("Reading image {} for {}\n", offset_image_num, image_num);
                         buffer =
                           reader.get_raw_chunk(offset_image_num, raw_chunk_buffer);
                     }
