@@ -287,7 +287,7 @@ int main(int argc, char **argv) {
     parser.add_argument("--min-spot-size")
       .help("Reflections with a pixel count below this will be discarded.")
       .metavar("N")
-      .default_value<uint32_t>(2)
+      .default_value<uint32_t>(3)
       .scan<'u', uint32_t>();
     parser.add_argument("--start-index")
       .help("Index of first image. Only used for CBF reading, and can only be 0 or 1.")
