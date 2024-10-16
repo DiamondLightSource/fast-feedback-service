@@ -36,8 +36,16 @@ __device__ float get_distance_from_centre(float x,
      * Since this calculation is for a broad, general exclusion, we can
      * use basic Pythagoras to calculate the distance from the center.
     */
-    float dx = (x - centre_x) * pixel_size_x;
-    float dy = (y - centre_y) * pixel_size_y;
+    // float dx = (x - centre_x) * pixel_size_x;
+    // float dy = (y - centre_y) * pixel_size_y;
+
+    /*
+     * TODO: Check if the calculation should be done from the center of the pixel
+     * or the corner of the pixel. The current calculation is from the center.
+     * If the calculation should be from the corner, the calculation should be:
+    */
+    float dx = ((x + 0.5f) - centre_x) * pixel_size_x;
+    float dy = ((y + 0.5f) - centre_y) * pixel_size_y;
     return sqrtf(dx * dx + dy * dy);
 }
 
