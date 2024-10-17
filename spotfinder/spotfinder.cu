@@ -81,7 +81,7 @@ __device__ float get_resolution(float wavelength,
  * the pixel to 0 in the mask data.
  *
  * @param mask Pointer to the mask data indicating valid pixels.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param mask_pitch The pitch of the mask data.
  * @param width The width of the image.
  * @param height The height of the image.
  * @param wavelength The wavelength of the X-ray beam in Ångströms.
@@ -183,14 +183,14 @@ void call_apply_resolution_mask(dim3 blocks,
  * @param image Device pointer to the image data.
  * @param mask Device pointer to the mask data indicating valid pixels.
  * @param background_mask (Optional) Device pointer to the background mask data. If nullptr, all pixels are considered for background calculation.
- * @param image_pitch The pitch (width in bytes) of the image data.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param image_pitch The pitch of the image data.
+ * @param mask_pitch The pitch of the mask data.
  * @param width The width of the image.
  * @param height The height of the image.
  * @param x The x-coordinate of the current pixel.
  * @param y The y-coordinate of the current pixel.
- * @param kernel_width The radius of the kernel in the x-direction.
- * @param kernel_height The radius of the kernel in the y-direction.
+ * @param kernel_width The half-width of the kernel (kernel size in x-direction).
+ * @param kernel_height The half-height of the kernel (kernel size in y-direction).
  * @param sum (Output) The sum of the valid pixels in the neighborhood.
  * @param sumsq (Output) The sum of squares of the valid pixels in the neighborhood.
  * @param n (Output) The count of valid pixels in the neighborhood.
@@ -272,10 +272,10 @@ __device__ bool is_strong_pixel(uint sum, size_t sumsq, uint8_t n, pixel_t this_
  * This kernel identifies strong pixels in the image based on analysis of the pixel neighborhood.
  * 
  * @param image Device pointer to the image data.
- * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param image_pitch The pitch of the image data.
  * @param mask Device pointer to the mask data indicating valid pixels.
  * @param background_mask (Optional) Device pointer to the background mask data. If nullptr, all pixels are considered for background calculation.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param mask_pitch The pitch of the mask data.
  * @param width The width of the image.
  * @param height The height of the image.
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
@@ -353,8 +353,9 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
  * @param image Pointer to the input image data.
  * @param mask Pointer to the mask data indicating valid pixels.
  * @param result_mask Pointer to the output mask data where results will be stored.
- * @param image_pitch The pitch (width in bytes) of the image data.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param image_pitch The pitch of the image data.
+ * @param mask_pitch The pitch of the mask data.
+ * @param result_pitch The pitch of the result mask data.
  * @param width The width of the image.
  * @param height The height of the image.
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
@@ -449,8 +450,9 @@ __global__ void compute_threshold_kernel(pixel_t *image,
  * @param image Pointer to the input image data.
  * @param mask Pointer to the mask data indicating valid pixels.
  * @param result_mask Pointer to the output mask data where results will be stored.
- * @param image_pitch The pitch (width in bytes) of the image data.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param image_pitch The pitch of the image data.
+ * @param mask_pitch The pitch of the mask data.
+ * @param result_pitch The pitch of the result mask data.
  * @param width The width of the image.
  * @param height The height of the image.
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
@@ -550,8 +552,10 @@ __global__ void compute_dispersion_threshold_kernel(pixel_t *image,
  * @param mask Pointer to the mask data indicating valid pixels.
  * @param dispersion_mask Pointer to the dispersion mask used for extended algorithm.
  * @param result_mask Pointer to the output mask data where results will be stored.
- * @param image_pitch The pitch (width in bytes) of the image data.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param image_pitch The pitch of the image data.
+ * @param mask_pitch The pitch of the mask data.
+ * @param dispersion_mask_pitch The pitch of the dispersion mask data.
+ * @param result_mask_pitch The pitch of the result mask data.
  * @param width The width of the image.
  * @param height The height of the image.
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
