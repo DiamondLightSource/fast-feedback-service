@@ -568,23 +568,42 @@ void call_do_spotfinding_extended(dim3 blocks,
 
         // Print the erosion result if needed
         if (do_writeout) {
-            auto show_masked = [](uint8_t pixel) -> uint8_t {
-                if (pixel == MASKED_PIXEL) {
-                    return 255;
-                } else {  // if (pixel == VALID_PIXEL)
-                    return 0;
-                }
-            };
+            // Write to PNG
+            {
+                auto show_masked = [](uint8_t pixel) -> uint8_t {
+                    if (pixel == MASKED_PIXEL) {
+                        return 255;
+                    } else {  // if (pixel == VALID_PIXEL)
+                        return 0;
+                    }
+                };
 
-            save_device_data_to_png(
-              d_dispersion_mask.get(),          // Device pointer to the 2D array
-              d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
-              width,                            // Width of the image
-              height,                           // Height of the image
-              stream,                           // CUDA stream
-              "eroded_dispersion_result",       // Output filename
-              show_masked                       // Pixel transformation function
-            );
+                save_device_data_to_png(
+                  d_dispersion_mask.get(),          // Device pointer to the 2D array
+                  d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
+                  width,                            // Width of the image
+                  height,                           // Height of the image
+                  stream,                           // CUDA stream
+                  "eroded_dispersion_result",       // Output filename
+                  show_masked                       // Pixel transformation function
+                );
+            }
+            // Write to TXT
+            {
+                auto is_masked_pixel = [](uint8_t pixel) {
+                    return pixel == MASKED_PIXEL;
+                };
+
+                save_device_data_to_txt(
+                  d_dispersion_mask.get(),          // Device pointer to the 2D array
+                  d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
+                  width,                            // Width of the image
+                  height,                           // Height of the image
+                  stream,                           // CUDA stream
+                  "eroded_dispersion_result",       // Output filename
+                  is_masked_pixel                   // Pixel condition function
+                );
+            }
         }
     }
 
