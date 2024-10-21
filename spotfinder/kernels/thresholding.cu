@@ -278,8 +278,13 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
             uint8_t mask_pixel = mask[mask_offset + col];
             uint8_t disp_mask_pixel =
               dispersion_mask[row * dispersion_mask_pitch + col];
+            /*
+               * Check if the pixel is valid. That means that it is not
+               * masked and was not marked as potentially signal in the
+               * dispersion mask.
+              */
             bool include_pixel =
-              mask_pixel != 0 && disp_mask_pixel;  // If the pixel is valid
+              mask_pixel != MASKED_PIXEL && disp_mask_pixel != MASKED_PIXEL;
             if (include_pixel) {
                 sum += pixel;
                 n += 1;
@@ -291,9 +296,13 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
     if (px_is_valid && n > 0) {
         float sum_f = static_cast<float>(sum);
 
-        bool disp_mask = !dispersion_mask[y * dispersion_mask_pitch + x];
+        // The pixel must have been marked as potentially signal in the dispersion mask
+        bool disp_mask = dispersion_mask[y * dispersion_mask_pitch + x] == MASKED_PIXEL;
+        // The pixel must be above the global threshold
         bool global_mask = image[y * image_pitch + x] > threshold;
+        // Calculate the local mean
         float mean = (n > 1 ? sum_f / n : 0);  // If n is less than 1, set mean to 0
+        // The pixel must be above the local threshold
         bool local_mask = image[y * image_pitch + x] >= (mean + n_sig_s * sqrtf(mean));
 
         result_mask[y * result_mask_pitch + x] = disp_mask && global_mask && local_mask;
