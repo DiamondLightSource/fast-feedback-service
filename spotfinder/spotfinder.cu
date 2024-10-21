@@ -572,9 +572,9 @@ void call_do_spotfinding_extended(dim3 blocks,
             {
                 auto show_masked = [](uint8_t pixel) -> uint8_t {
                     if (pixel == MASKED_PIXEL) {
-                        return 255;
-                    } else {  // if (pixel == VALID_PIXEL)
                         return 0;
+                    } else {  // if (pixel == VALID_PIXEL)
+                        return 255;
                     }
                 };
 
