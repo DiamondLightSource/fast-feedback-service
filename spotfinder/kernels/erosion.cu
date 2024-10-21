@@ -181,7 +181,7 @@ __device__ bool determine_erasure(cg::thread_block block,
 // }
 #pragma endregion Device Functions
 
-#pragma region Kernel
+#pragma region Erosion kernel(s)
 /**
  * @brief CUDA kernel to apply erosion based on the mask and update the erosion_mask.
  * 
