@@ -5,10 +5,12 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <memory>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 template <typename T1, typename... TS>
 auto with_formatting(const std::string &code, const T1 &first, TS... args)
