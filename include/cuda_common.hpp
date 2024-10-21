@@ -445,7 +445,7 @@ void save_device_data_to_txt(PixelType *device_ptr,
     for (int y = 0, k = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x, ++k) {
             if (condition_func(host_data[k])) {
-                out.print("{}, {}\n", x, y);
+                out.print("{}, {}, {}\n", x, y, host_data[k]);
             }
         }
     }

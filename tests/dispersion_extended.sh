@@ -15,8 +15,8 @@ cat << EOF > detector.json
     "pixel_size_x": 0.075,
     "pixel_size_y": 0.075,
     "distance": 306.765,
-    "beam_center_x": 1597.11,
-    "beam_center_y": 1691.12
+    "beam_center_x": 119.78325,
+    "beam_center_y": 126.834
 }
 EOF
 

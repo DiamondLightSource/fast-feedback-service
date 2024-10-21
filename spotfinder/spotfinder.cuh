@@ -116,7 +116,10 @@ void call_do_spotfinding_dispersion(dim3 blocks,
                                     int width,
                                     int height,
                                     pixel_t max_valid_pixel_value,
-                                    uint8_t *result_strong);
+                                    PitchedMalloc<uint8_t> *result_strong,
+                                    int min_count = 3,
+                                    float nsig_b = 6.0f,
+                                    float nsig_s = 3.0f);
 
 void call_do_spotfinding_extended(dim3 blocks,
                                   dim3 threads,
@@ -127,7 +130,11 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   int width,
                                   int height,
                                   pixel_t max_valid_pixel_value,
-                                  uint8_t *result_strong,
-                                  bool do_writeout = false);
+                                  PitchedMalloc<uint8_t> *result_strong,
+                                  bool do_writeout = false,
+                                  int min_count = 3,
+                                  float nsig_b = 6.0f,
+                                  float nsig_s = 3.0f,
+                                  float threshold = 10.0f);  
 
 #endif

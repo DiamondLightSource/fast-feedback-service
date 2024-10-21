@@ -251,11 +251,22 @@ __global__ void erosion_kernel(
 
     // Update the erosion_mask based on erosion result
     if (should_erase) {
-        mask[y * mask_pitch + x] = MASKED_PIXEL;
+        /*
+         * Erase the pixel from the background mask. This is done by setting the pixel
+         * as valid (i.e. not masked) in the mask data. This allows the pixel to be
+         * considered as a background pixel in the background calculation as it is not
+         * considered part of the signal.
+        */
+        mask[y * mask_pitch + x] = VALID_PIXEL;
     } else {
-        printf("Survived erosion: mask[%d] = %d\n",
-               y * mask_pitch + x,
-               mask[y * mask_pitch + x]);
+        /*
+         * If the pixel should not be erased, this means that it is part of the signal.
+         * and needs to be marked as masked in the mask data. This prevents the pixel
+         * from being considered as part of the background in the background calculation.
+        */
+
+        // Invert 'valid' signal spot to 'masked' background spots
+        mask[y * mask_pitch + x] = !mask[y * mask_pitch + x];
     }
 }
 #pragma endregion Kernel
