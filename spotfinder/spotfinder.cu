@@ -205,8 +205,8 @@ __device__ void calculate_sums(pixel_t *image,
                                int height,
                                int x,
                                int y,
-                               int kernel_width,
-                               int kernel_height,
+                               uint8_t kernel_width,
+                               uint8_t kernel_height,
                                uint &sum,
                                size_t &sumsq,
                                uint8_t &n) {
@@ -292,8 +292,8 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
                                           int width,
                                           int height,
                                           pixel_t max_valid_pixel_value,
-                                          int kernel_width,
-                                          int kernel_height,
+                                          uint8_t kernel_width,
+                                          uint8_t kernel_height,
                                           uint8_t *result_strong) {
     image = image + (image_pitch * height * blockIdx.z);
     // result_sum = result_sum + (image_pitch * height * blockIdx.z);
@@ -381,13 +381,11 @@ void call_do_spotfinding_dispersion(dim3 blocks,
                                     int height,
                                     pixel_t max_valid_pixel_value,
                                     PitchedMalloc<uint8_t> *result_strong,
-                                    int min_count,
+                                    uint8_t min_count,
                                     float n_sig_b,
                                     float n_sig_s) {
-    /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
-    constexpr int basic_kernel_width = 3;
-    /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
-    constexpr int basic_kernel_height = 3;
+    /// One-direction width of kernel. Total kernel span is (K * 2 + 1)
+    constexpr uint8_t basic_kernel_radius = 3;
 
     // Launch the dispersion threshold kernel
     compute_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
@@ -400,8 +398,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
       width,                  // Image width
       height,                 // Image height
       max_valid_pixel_value,  // Maximum valid pixel value
-      basic_kernel_width,     // Kernel width
-      basic_kernel_height,    // Kernel height
+      basic_kernel_radius,    // Kernel width
+      basic_kernel_radius,    // Kernel height
       min_count,              // Minimum count
       n_sig_b,                // Background significance level
       n_sig_s                 // Signal significance level
@@ -416,8 +414,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
     //   width,
     //   height,
     //   max_valid_pixel_value,
-    //   basic_kernel_width,
-    //   basic_kernel_height,
+    //   basic_kernel_radius,
+    //   basic_kernel_radius,
     //   result_strong->get());
 
     cudaStreamSynchronize(
@@ -457,14 +455,14 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   pixel_t max_valid_pixel_value,
                                   PitchedMalloc<uint8_t> *result_strong,
                                   bool do_writeout,
-                                  int min_count,
+                                  uint8_t min_count,
                                   float n_sig_b,
                                   float n_sig_s,
                                   float threshold) {
     // Allocate intermediate buffer for the dispersion mask on the device
     PitchedMalloc<uint8_t> d_dispersion_mask(width, height);
 
-    constexpr int first_pass_kernel_radius = 3;
+    constexpr uint8_t first_pass_kernel_radius = 3;
 
     /*
      * First pass
@@ -607,7 +605,7 @@ void call_do_spotfinding_extended(dim3 blocks,
         }
     }
 
-    constexpr int second_pass_kernel_radius = 5;
+    constexpr uint8_t second_pass_kernel_radius = 5;
 
     /*
      * Second pass

@@ -200,7 +200,7 @@ __global__ void erosion_kernel(
   size_t mask_pitch,
   int width,
   int height,
-  int radius) {
+  uint8_t radius) {
     // Declare shared memory to store a local copy of the mask for the block
     extern __shared__ uint8_t shared_mask[];
 
@@ -237,9 +237,11 @@ __global__ void erosion_kernel(
         return;
     }
 
+    constexpr uint8_t chebyshev_distance_threshold = 2;
+
     // Determine if the current pixel should be erased
-    bool should_erase = determine_erasure(
-      block, shared_mask, radius, 2);  // Use 2 as the Chebyshev distance threshold
+    bool should_erase =
+      determine_erasure(block, shared_mask, radius, chebyshev_distance_threshold);
     // DIALS uses 2 as the Chebyshev distance threshold for erasing pixels
 
     // dynamic parrelism based
