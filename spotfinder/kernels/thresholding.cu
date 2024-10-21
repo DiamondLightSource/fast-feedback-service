@@ -276,7 +276,10 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
         for (int col = col_start; col < col_end; ++col) {
             pixel_t pixel = image[row_offset + col];
             uint8_t mask_pixel = mask[mask_offset + col];
-            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
+            uint8_t disp_mask_pixel =
+              dispersion_mask[row * dispersion_mask_pitch + col];
+            bool include_pixel =
+              mask_pixel != 0 && disp_mask_pixel;  // If the pixel is valid
             if (include_pixel) {
                 sum += pixel;
                 n += 1;
