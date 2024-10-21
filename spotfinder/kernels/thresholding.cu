@@ -288,7 +288,7 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
     }
 
     // Calculate the thresholding
-    if (px_is_valid && n > 1) {
+    if (px_is_valid && n > 0) {
         float sum_f = static_cast<float>(sum);
 
         bool disp_mask = !dispersion_mask[y * dispersion_mask_pitch + x];
