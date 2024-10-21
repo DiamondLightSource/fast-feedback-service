@@ -293,7 +293,7 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
 
         bool disp_mask = !dispersion_mask[y * dispersion_mask_pitch + x];
         bool global_mask = image[y * image_pitch + x] > threshold;
-        float mean = sum_f / n;
+        float mean = (n > 1 ? sum_f / n : 0);
         bool local_mask = image[y * image_pitch + x] >= (mean + n_sig_s * sqrtf(mean));
 
         result_mask[y * result_mask_pitch + x] = disp_mask && global_mask && local_mask;
