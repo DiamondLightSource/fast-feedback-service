@@ -244,7 +244,7 @@ __global__ void compute_final_threshold_kernel(pixel_t *image,
                                                float threshold) {
     // Move pointers to the correct slice
     image = image + (image_pitch * height * blockIdx.z);
-    result_mask = result_mask + (mask_pitch * height * blockIdx.z);
+    result_mask = result_mask + (result_mask_pitch * height * blockIdx.z);
 
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
