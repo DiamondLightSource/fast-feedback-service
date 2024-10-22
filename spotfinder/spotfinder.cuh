@@ -135,6 +135,6 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   uint8_t min_count = 3,
                                   float nsig_b = 6.0f,
                                   float nsig_s = 3.0f,
-                                  float threshold = 10.0f);  
+                                  float threshold = 0.0f);  
 
 #endif
