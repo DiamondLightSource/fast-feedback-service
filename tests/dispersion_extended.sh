@@ -15,10 +15,18 @@ cat << EOF > detector.json
     "pixel_size_x": 0.075,
     "pixel_size_y": 0.075,
     "distance": 306.765,
-    "beam_center_x": 119.78325,
-    "beam_center_y": 126.834
+    "beam_center_x": 119.78358,
+    "beam_center_y": 126.83430
 }
 EOF
+
+# Old incorrect values
+# "beam_center_x": 119.78325,
+#     "beam_center_y": 126.834
+
+# New accurate values
+# "beam_center_x": 119.78358,
+#     "beam_center_y": 126.83430
 
 # Open file descriptor 3 for writing to output_file.txt
 exec 3> output_file.txt
