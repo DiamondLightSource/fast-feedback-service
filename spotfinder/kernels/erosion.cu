@@ -34,7 +34,7 @@ __device__ void load_central_pixels(cg::thread_block block,
     if (x < width && y < height) {
         shared_mask[local_y * shared_width + local_x] = mask[y * mask_pitch + x];
     } else {
-        shared_mask[local_y * shared_width + local_x] = MASKED_PIXEL;
+        shared_mask[local_y * shared_width + local_x] = VALID_PIXEL;
     }
 }
 
@@ -55,37 +55,73 @@ __device__ void load_border_pixels(cg::thread_block block,
                                    int width,
                                    int height,
                                    int radius) {
+    // Calculate the global x and y coordinates for the current thread
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
+
+    // Calculate the x and y coordinates in shared memory, including the border
     int local_x = block.thread_index().x + radius;
     int local_y = block.thread_index().y + radius;
+
+    // Calculate the width and height of the shared memory buffer, including the border
     int shared_width = block.group_dim().x + 2 * radius;
     int shared_height = block.group_dim().y + 2 * radius;
 
-    // Load border pixels into shared memory
-    for (int i = block.thread_index().x; i < shared_width; i += block.group_dim().x) {
-        for (int j = block.thread_index().y; j < shared_height;
-             j += block.group_dim().y) {
-            int global_x = x + (i - local_x);
-            int global_y = y + (j - local_y);
+    // Load top and bottom borders.
+    if (block.thread_index().y < radius) {  // If the thread is in the top border region
+        // Top border: Load pixels from the rows above the central block region into shared memory.
+        // Use max(y - radius, 0) to ensure that we don't read outside the image boundary.
+        int border_y = max(y - radius, 0);
+        shared_mask[(block.thread_index().y) * shared_width + local_x] =
+          mask[border_y * mask_pitch + x];
 
-            bool is_within_central_region =
-              (i >= radius && i < shared_width - radius && j >= radius
-               && j < shared_height - radius);
-            bool is_global_x_in_bounds = (global_x >= 0 && global_x < width);
-            bool is_global_y_in_bounds = (global_y >= 0 && global_y < height);
+        // Bottom border: Load pixels from the rows below the central block region into shared memory.
+        // Use min(y + block.group_dim().y, height - 1) to ensure that we don't read beyond the image.
+        border_y = min(y + block.group_dim().y, height - 1);
+        shared_mask[(local_y + block.group_dim().y) * shared_width + local_x] =
+          mask[border_y * mask_pitch + x];
+    }
 
-            if (is_within_central_region) {
-                continue;
-            }
+    // Load left and right borders.
+    if (block.thread_index().x
+        < radius) {  // If the thread is in the left border region
+        // Left border: Load pixels from columns to the left of the central block region into shared memory.
+        // Use max(x - radius, 0) to ensure that we don't read outside the image boundary.
+        int border_x = max(x - radius, 0);
+        shared_mask[local_y * shared_width + block.thread_index().x] =
+          mask[y * mask_pitch + border_x];
 
-            if (is_global_x_in_bounds && is_global_y_in_bounds) {
-                shared_mask[j * shared_width + i] =
-                  mask[global_y * mask_pitch + global_x];
-            } else {
-                shared_mask[j * shared_width + i] = MASKED_PIXEL;
-            }
-        }
+        // Right border: Load pixels from columns to the right of the central block region into shared memory.
+        // Use min(x + block.group_dim().x, width - 1) to ensure that we don't read beyond the image.
+        border_x = min(x + block.group_dim().x, width - 1);
+        shared_mask[local_y * shared_width + (local_x + block.group_dim().x)] =
+          mask[y * mask_pitch + border_x];
+    }
+
+    // Load corner pixels to fill in the gaps at the corners of the shared memory region.
+    // This ensures that the entire shared memory area surrounding the central region is populated.
+    if (block.thread_index().x < radius && block.thread_index().y < radius) {
+        // Top-left corner: Load the pixel at the intersection of the top row and left column.
+        int border_x = max(x - radius, 0);
+        int border_y = max(y - radius, 0);
+        shared_mask[block.thread_index().y * shared_width + block.thread_index().x] =
+          mask[border_y * mask_pitch + border_x];
+
+        // Top-right corner: Load the pixel at the intersection of the top row and right column.
+        border_x = min(x + block.group_dim().x, width - 1);
+        shared_mask[block.thread_index().y * shared_width
+                    + (local_x + block.group_dim().x)] =
+          mask[border_y * mask_pitch + border_x];
+
+        // Bottom-left corner: Load the pixel at the intersection of the bottom row and left column.
+        border_y = min(y + block.group_dim().y, height - 1);
+        shared_mask[(local_y + block.group_dim().y) * shared_width
+                    + block.thread_index().x] = mask[border_y * mask_pitch + border_x];
+
+        // Bottom-right corner: Load the pixel at the intersection of the bottom row and right column.
+        shared_mask[(local_y + block.group_dim().y) * shared_width
+                    + (local_x + block.group_dim().x)] =
+          mask[border_y * mask_pitch + border_x];
     }
 }
 
@@ -223,6 +259,11 @@ __global__ void erosion_kernel(
     */
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
+
+    if (x == 0 && y == 0) {
+        printf("group dim x: %d\n", block.group_dim().x);
+        printf("group dim y: %d\n", block.group_dim().y);
+    }
 
     // Return if the current pixel is outside the image bounds
     if (x >= width || y >= height) return;
