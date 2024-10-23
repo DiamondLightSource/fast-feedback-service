@@ -174,6 +174,44 @@ void call_apply_resolution_mask(dim3 blocks,
 }
 #pragma endregion Res Mask Kernel
 
+#pragma region Device functions
+/**
+ * @brief Device function for writing out debug information in PNG and TXT formats.
+ *
+ * This function writes the specified device data to both PNG and TXT files,
+ * applying a pixel conversion function for PNG output and a condition function
+ * for TXT output.
+ *
+ * @tparam PixelTransformFunc A callable object that takes a pixel value and returns a transformed value.
+ * @tparam PixelConditionFunc A callable object that checks a condition on a pixel.
+ * @param device_data Pointer to the device data.
+ * @param pitch_bytes The pitch of the data in bytes.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param stream The CUDA stream.
+ * @param filename The base filename for the output.
+ * @param pixel_transform The function to transform pixel values for PNG output.
+ * @param condition The function to check pixel conditions for TXT output.
+ */
+template <typename PixelTransformFunc, typename PixelConditionFunc>
+void debug_writeout(uint8_t *device_data,
+                    size_t pitch_bytes,
+                    int width,
+                    int height,
+                    cudaStream_t stream,
+                    const char *filename,
+                    PixelTransformFunc pixel_transform,
+                    PixelConditionFunc condition) {
+    // Write to PNG using the pixel transformation function
+    save_device_data_to_png(
+      device_data, pitch_bytes, width, height, stream, filename, pixel_transform);
+
+    // Write to TXT using the condition function
+    save_device_data_to_txt(
+      device_data, pitch_bytes, width, height, stream, filename, condition);
+}
+#pragma endregion Device functions
+
 #pragma region Launch Wrappers
 /**
  * @brief Wrapper function to call the dispersion-based spotfinding algorithm.
@@ -281,7 +319,6 @@ void call_do_spotfinding_extended(dim3 blocks,
      * exclude them from the background calculation in the second pass.
     */
     {
-        printf("First pass\n");
         // First pass: Perform the initial dispersion thresholding
         compute_dispersion_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
           image.get(),               // Image data pointer
@@ -302,46 +339,17 @@ void call_do_spotfinding_extended(dim3 blocks,
         cudaStreamSynchronize(
           stream);  // Synchronize the CUDA stream to ensure the first pass is complete
 
-        printf("First pass complete\n");
-        // Optional: Write out the first pass result if needed
         if (do_writeout) {
-            // Write to PNG
-            {
-                // Function to transform the pixel values: if non-zero, set to 255, otherwise set to 0
-                auto convert_pixel = [](uint8_t pixel) -> uint8_t {
-                    // return pixel ? 255 : 0;
-                    if (pixel == MASKED_PIXEL) {
-                        return 0;
-                    } else {  // if (pixel == VALID_PIXEL)
-                        return 255;
-                    }
-                };
-
-                // Usage in your existing code
-                save_device_data_to_png(
-                  d_dispersion_mask.get(),          // Device pointer to the 2D array
-                  d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
-                  width,                            // Width of the image
-                  height,                           // Height of the image
-                  stream,                           // CUDA stream
-                  "first_pass_dispersion_result",   // Output filename
-                  convert_pixel                     // Pixel transformation function
-                );
-            }
-            // Write to TXT
-            {
-                auto is_valid_pixel = [](uint8_t pixel) { return pixel != 0; };
-
-                save_device_data_to_txt(
-                  d_dispersion_mask.get(),          // Device pointer to the 2D array
-                  d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
-                  width,                            // Width of the image
-                  height,                           // Height of the image
-                  stream,                           // CUDA stream
-                  "first_pass_dispersion_result",   // Output filename
-                  is_valid_pixel                    // Pixel condition function
-                );
-            }
+            printf("First pass complete\n");
+            debug_writeout(
+              d_dispersion_mask.get(),
+              d_dispersion_mask.pitch_bytes(),
+              width,
+              height,
+              stream,
+              "first_pass_dispersion_result",
+              [](uint8_t pixel) { return pixel == MASKED_PIXEL ? 0 : 255; },
+              [](uint8_t pixel) { return pixel != 0; });
         }
     }
 
@@ -352,7 +360,8 @@ void call_do_spotfinding_extended(dim3 blocks,
      * from the background calculation in the second pass.
     */
     PitchedMalloc<uint8_t> d_erosion_mask(width, height);
-    {
+
+    {  // Scope for erosion pass launch parameters
         dim3 threads_per_erosion_block(32, 32);
         dim3 erosion_blocks(
           (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
@@ -377,46 +386,20 @@ void call_do_spotfinding_extended(dim3 blocks,
                                    width,
                                    height,
                                    first_pass_kernel_radius);
-        cudaStreamSynchronize(stream);
+        cudaStreamSynchronize(
+          stream);  // Synchronize the CUDA stream to ensure the erosion pass is complete
 
-        // Print the erosion result if needed
         if (do_writeout) {
-            // Write to PNG
-            {
-                auto show_masked = [](uint8_t pixel) -> uint8_t {
-                    if (pixel == MASKED_PIXEL) {
-                        return 0;
-                    } else {  // if (pixel == VALID_PIXEL)
-                        return 255;
-                    }
-                };
-
-                save_device_data_to_png(
-                  d_erosion_mask.get(),          // Device pointer to the 2D array
-                  d_erosion_mask.pitch_bytes(),  // Device pitch in bytes
-                  width,                         // Width of the image
-                  height,                        // Height of the image
-                  stream,                        // CUDA stream
-                  "eroded_dispersion_result",    // Output filename
-                  show_masked                    // Pixel transformation function
-                );
-            }
-            // Write to TXT
-            {
-                auto is_masked_pixel = [](uint8_t pixel) {
-                    return pixel == MASKED_PIXEL;
-                };
-
-                save_device_data_to_txt(
-                  d_erosion_mask.get(),          // Device pointer to the 2D array
-                  d_erosion_mask.pitch_bytes(),  // Device pitch in bytes
-                  width,                         // Width of the image
-                  height,                        // Height of the image
-                  stream,                        // CUDA stream
-                  "eroded_dispersion_result",    // Output filename
-                  is_masked_pixel                // Pixel condition function
-                );
-            }
+            printf("Erosion pass complete\n");
+            debug_writeout(
+              d_erosion_mask.get(),
+              d_erosion_mask.pitch_bytes(),
+              width,
+              height,
+              stream,
+              "eroded_dispersion_result",
+              [](uint8_t pixel) { return pixel == MASKED_PIXEL ? 0 : 255; },
+              [](uint8_t pixel) { return pixel == MASKED_PIXEL; });
         }
     }
 
@@ -449,38 +432,17 @@ void call_do_spotfinding_extended(dim3 blocks,
         cudaStreamSynchronize(
           stream);  // Synchronize the CUDA stream to ensure the second pass is complete
 
-        printf("Second pass complete\n");
-        // Optional: Write out the final result if needed
         if (do_writeout) {
-            auto convert_pixel = [](uint8_t pixel) -> uint8_t {
-                if (pixel == VALID_PIXEL) {
-                    return 255;
-                } else {
-                    return 0;
-                }
-            };
-
-            save_device_data_to_png(
-              result_strong->get(),               // Device pointer to the 2D array
-              mask.pitch_bytes(),                 // Device pitch in bytes
-              width,                              // Width of the image
-              height,                             // Height of the image
-              stream,                             // CUDA stream
-              "final_extended_threshold_result",  // Output filename
-              convert_pixel                       // Pixel transformation function
-            );
-
-            auto is_valid_pixel = [](uint8_t pixel) { return pixel != 0; };
-
-            save_device_data_to_txt(
-              result_strong->get(),               // Device pointer to the 2D array
-              mask.pitch_bytes(),                 // Device pitch in bytes
-              width,                              // Width of the image
-              height,                             // Height of the image
-              stream,                             // CUDA stream
-              "final_extended_threshold_result",  // Output filename
-              is_valid_pixel                      // Pixel condition function
-            );
+            printf("Second pass complete\n");
+            debug_writeout(
+              result_strong->get(),
+              mask.pitch_bytes(),
+              width,
+              height,
+              stream,
+              "final_extended_threshold_result",
+              [](uint8_t pixel) { return pixel == VALID_PIXEL ? 255 : 0; },
+              [](uint8_t pixel) { return pixel != 0; });
         }
     }
 }
