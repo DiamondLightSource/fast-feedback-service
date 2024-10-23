@@ -319,7 +319,7 @@ void call_do_spotfinding_extended(dim3 blocks,
      * exclude them from the background calculation in the second pass.
     */
     {
-        // First pass: Perform the initial dispersion thresholding
+        // First pass 🔎 Perform the initial dispersion thresholding
         compute_dispersion_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
           image.get(),               // Image data pointer
           mask.get(),                // Mask data pointer
@@ -354,7 +354,7 @@ void call_do_spotfinding_extended(dim3 blocks,
     }
 
     /*
-     * Erosion pass
+     * Erosion pass ✂
      * Erode the first pass results.
      * The surviving pixels are then used as a mask to exclude them
      * from the background calculation in the second pass.
@@ -406,7 +406,7 @@ void call_do_spotfinding_extended(dim3 blocks,
     constexpr uint8_t second_pass_kernel_radius = 5;
 
     /*
-     * Second pass
+     * Second pass 🎯
      * Perform the final thresholding using the dispersion mask.
     */
     {
