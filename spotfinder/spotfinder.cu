@@ -537,6 +537,7 @@ void call_do_spotfinding_extended(dim3 blocks,
      * The surviving pixels are then used as a mask to exclude them
      * from the background calculation in the second pass.
     */
+    PitchedMalloc<uint8_t> d_erosion_mask(width, height);
     {
         dim3 threads_per_erosion_block(32, 32);
         dim3 erosion_blocks(
@@ -554,7 +555,11 @@ void call_do_spotfinding_extended(dim3 blocks,
                          threads_per_erosion_block,
                          erosion_shared_memory,
                          stream>>>(d_dispersion_mask.get(),
-                                   d_dispersion_mask.pitch_bytes(),
+                                   d_erosion_mask.get(),
+                                   mask.get(),
+                                   d_dispersion_mask.pitch,
+                                   d_erosion_mask.pitch,
+                                   mask.pitch,
                                    width,
                                    height,
                                    first_pass_kernel_radius);
@@ -573,13 +578,13 @@ void call_do_spotfinding_extended(dim3 blocks,
                 };
 
                 save_device_data_to_png(
-                  d_dispersion_mask.get(),          // Device pointer to the 2D array
-                  d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
-                  width,                            // Width of the image
-                  height,                           // Height of the image
-                  stream,                           // CUDA stream
-                  "eroded_dispersion_result",       // Output filename
-                  show_masked                       // Pixel transformation function
+                  d_erosion_mask.get(),          // Device pointer to the 2D array
+                  d_erosion_mask.pitch_bytes(),  // Device pitch in bytes
+                  width,                         // Width of the image
+                  height,                        // Height of the image
+                  stream,                        // CUDA stream
+                  "eroded_dispersion_result",    // Output filename
+                  show_masked                    // Pixel transformation function
                 );
             }
             // Write to TXT
@@ -589,13 +594,13 @@ void call_do_spotfinding_extended(dim3 blocks,
                 };
 
                 save_device_data_to_txt(
-                  d_dispersion_mask.get(),          // Device pointer to the 2D array
-                  d_dispersion_mask.pitch_bytes(),  // Device pitch in bytes
-                  width,                            // Width of the image
-                  height,                           // Height of the image
-                  stream,                           // CUDA stream
-                  "eroded_dispersion_result",       // Output filename
-                  is_masked_pixel                   // Pixel condition function
+                  d_erosion_mask.get(),          // Device pointer to the 2D array
+                  d_erosion_mask.pitch_bytes(),  // Device pitch in bytes
+                  width,                         // Width of the image
+                  height,                        // Height of the image
+                  stream,                        // CUDA stream
+                  "eroded_dispersion_result",    // Output filename
+                  is_masked_pixel                // Pixel condition function
                 );
             }
         }
@@ -613,11 +618,11 @@ void call_do_spotfinding_extended(dim3 blocks,
         compute_final_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
           image.get(),                // Image data pointer
           mask.get(),                 // Mask data pointer
-          d_dispersion_mask.get(),    // Dispersion mask pointer
+          d_erosion_mask.get(),       // Dispersion mask pointer
           result_strong->get(),       // Output result mask pointer
           image.pitch,                // Image pitch
           mask.pitch,                 // Mask pitch
-          d_dispersion_mask.pitch,    // Dispersion mask pitch
+          d_erosion_mask.pitch,       // Dispersion mask pitch
           result_strong->pitch,       // Output result mask pitch
           width,                      // Image width
           height,                     // Image height
