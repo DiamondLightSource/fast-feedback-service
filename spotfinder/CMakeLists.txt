@@ -28,4 +28,3 @@ target_link_libraries(spotfinder
     nlohmann_json::nlohmann_json
 )
 target_compile_options(spotfinder PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
-include_directories(./kernels)
