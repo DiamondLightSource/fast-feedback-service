@@ -11,6 +11,7 @@ add_executable(spotfinder
     spotfinder.cu
     shmread.cc
     cbfread.cc
+    kernels/masking.cu
     kernels/erosion.cu
     kernels/thresholding.cu
 )
@@ -29,4 +30,3 @@ target_link_libraries(spotfinder
     nlohmann_json::nlohmann_json
 )
 target_compile_options(spotfinder PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
-include_directories(./kernels)
