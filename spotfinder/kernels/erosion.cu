@@ -29,25 +29,24 @@ __global__ void erosion_kernel(
 
     // Guards
     if (x >= width || y >= height) return;  // Out of bounds guard
-    bool is_background = dispersion_mask[y * dispersion_mask_pitch + x] == 0;
+
+    bool is_background = dispersion_mask[y * dispersion_mask_pitch + x] == MASKED_PIXEL;
     if (is_background) {
         /*
          * If the pixel is masked, we want to set it to VALID_PIXEL
-         * in order to invert the mask. However, this cannot be done
-         * before the erosion step is complete, as the mask is used
-         * to determine whether to erode. Instead, this thread skips
-         * the unecessary processing and does this at the end.
+         * in order to invert the mask.
         */
-        erosion_mask[y * erosion_mask_pitch + x] = 1;
+        erosion_mask[y * erosion_mask_pitch + x] = VALID_PIXEL;
         return;
     }
+
     // Calculate the bounds of the erosion kernel
     int x_start = max(0, x - radius);
     int x_end = min(x + radius + 1, width);
     int y_start = max(0, y - radius);
     int y_end = min(y + radius + 1, height);
 
-    bool should_erase = false;
+    bool should_erase = false;  // Flag to determine if the pixel should be erased
     constexpr uint8_t chebyshev_distance_threshold = 2;
 
     // Iterate over the kernel bounds
@@ -55,11 +54,15 @@ __global__ void erosion_kernel(
         for (int kernel_y = y_start; kernel_y < y_end; ++kernel_y) {
             /*
              * TODO: Investigate whether we should be doing this or not!
+             * Intuition says that we should be considering the mask,
+             * however DIALS does not do this. May be a bug, may be on
+             * purpose? Investigate!
             */
             // if (mask[kernel_y * mask_pitch + kernel_x] == 0) {
             //     continue;
             // }
-            if (dispersion_mask[kernel_y * dispersion_mask_pitch + kernel_x] == 0) {
+            if (dispersion_mask[kernel_y * dispersion_mask_pitch + kernel_x]
+                == MASKED_PIXEL) {
                 // If the current pixel is background, check the Chebyshev distance
                 uint8_t chebyshev_distance = max(abs(kernel_x - x), abs(kernel_y - y));
 
@@ -75,8 +78,21 @@ __global__ void erosion_kernel(
 
 termination:
     if (should_erase) {
-        erosion_mask[y * erosion_mask_pitch + x] = 1;
+        /*
+         * Erase the pixel from the background mask. This is done by setting the pixel
+         * as valid (i.e. not masked) in the erosion_mask data. This allows the pixel to be
+         * considered as a background pixel in the background calculation as it is not
+         * considered part of the signal.
+        */
+        erosion_mask[y * erosion_mask_pitch + x] = VALID_PIXEL;
     } else {
+        /*
+         * If the pixel should not be erased, this means that it is part of the signal.
+         * and needs to be marked as masked in the erosion_mask data. This prevents the pixel
+         * from being considered as part of the background in the background calculation.
+        */
+
+        // Invert 'valid' signal spot to 'masked' background spots
         erosion_mask[y * erosion_mask_pitch + x] =
           !dispersion_mask[y * dispersion_mask_pitch + x];
     }
