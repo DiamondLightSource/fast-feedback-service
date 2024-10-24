@@ -845,9 +845,8 @@ int main(int argc, char **argv) {
                     //           box.r,
                     //           box.b);
                     // }
-                }
-                else {
-                  num_strong_pixels_filtered = num_strong_pixels;
+                } else {
+                    num_strong_pixels_filtered = num_strong_pixels;
                 }
                 end.record(stream);
                 // Now, wait for stream to finish
