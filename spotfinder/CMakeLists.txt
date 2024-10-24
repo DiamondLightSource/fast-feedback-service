@@ -12,6 +12,8 @@ add_executable(spotfinder
     shmread.cc
     cbfread.cc
     kernels/masking.cu
+    kernels/thresholding.cu
+    kernels/erosion.cu
 )
 target_link_libraries(spotfinder
     PRIVATE
