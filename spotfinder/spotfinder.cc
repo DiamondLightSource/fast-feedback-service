@@ -40,6 +40,7 @@ using json = nlohmann::json;
 std::stop_source global_stop;
 
 constexpr auto fmt_cyan = fmt::fg(fmt::terminal_color::cyan) | fmt::emphasis::bold;
+constexpr auto fmt_green = fmt::fg(fmt::terminal_color::green) | fmt::emphasis::bold;
 
 // Function for passing to std::signal to register the stop request
 extern "C" void stop_processing(int sig) {
@@ -324,7 +325,7 @@ int main(int argc, char **argv) {
                   dispersion_algorithm_str);
             std::exit(1);
         }
-        print("Using dispersion algorithm: {}\n", dispersion_algorithm_str);
+        print("Algorithm: {}\n", styled(dispersion_algorithm_str, fmt_green));
     }
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
