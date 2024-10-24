@@ -10,23 +10,15 @@ mkdir -p _debug_output
 cd _debug_output
 
 # Create a JSON file with the detector parameters
-cat << EOF > detector.json
-{
-    "pixel_size_x": 0.075,
-    "pixel_size_y": 0.075,
-    "distance": 306.765,
-    "beam_center_x": 119.78358,
-    "beam_center_y": 126.83430
-}
-EOF
-
-# Old incorrect values
-# "beam_center_x": 119.78325,
-#     "beam_center_y": 126.834
-
-# New accurate values
-# "beam_center_x": 119.78358,
+# cat << EOF > detector.json
+# {
+#     "pixel_size_x": 0.075,
+#     "pixel_size_y": 0.075,
+#     "distance": 306.765,
+#     "beam_center_x": 119.78358,
 #     "beam_center_y": 126.83430
+# }
+# EOF
 
 # Open file descriptor 3 for writing to output_file.txt
 exec 3> output_file.txt
@@ -38,7 +30,6 @@ exec 3> output_file.txt
   --min-spot-size 3 \
   --pipe_fd 3 \
   --dmin 4 \
-  --detector "$(cat detector.json)" \
   --algorithm "dispersion_extended" \
   --images 1 \
   --writeout
@@ -47,4 +38,4 @@ exec 3> output_file.txt
 exec 3>&-
 
 # Delete the JSON file
-rm detector.json
+# rm detector.json
