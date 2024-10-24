@@ -754,6 +754,7 @@ int main(int argc, char **argv) {
                 // Manually reproduce what the DIALS connected components does
                 // Start with the behaviour of the PixelList class:
                 size_t num_strong_pixels = 0;
+                size_t num_strong_pixels_filtered = 0;
                 px_values.clear();
                 px_coords.clear();
                 px_kvals.clear();
@@ -830,6 +831,7 @@ int main(int argc, char **argv) {
                     for (auto &box : boxes) {
                         if (box.num_pixels >= min_spot_size) {
                             filtered_boxes.emplace_back(box);
+                            num_strong_pixels_filtered += box.num_pixels;
                         }
                     }
                     boxes = std::move(filtered_boxes);
@@ -843,6 +845,9 @@ int main(int argc, char **argv) {
                     //           box.r,
                     //           box.b);
                     // }
+                }
+                else {
+                  num_strong_pixels_filtered = num_strong_pixels;
                 }
                 end.record(stream);
                 // Now, wait for stream to finish
@@ -970,7 +975,8 @@ int main(int argc, char **argv) {
                           "       Post: {:5.1f} ms\n"
                           "             ════════\n"
                           "     Total:  {:5.1f} ms ({:.1f} GBps)\n"
-                          "    {} strong pixels in {} reflections\n",
+                          "    {} strong pixels\n"
+                          "    {} filtered reflections ({} pixels)\n",
                           thread_id,
                           image_num,
                           copy.elapsed_time(start),
@@ -980,15 +986,17 @@ int main(int argc, char **argv) {
                           end.elapsed_time(start),
                           GBps<pixel_t>(end.elapsed_time(start), width * height),
                           bold(num_strong_pixels),
-                          bold(boxes.size()));
+                          bold(boxes.size()),
+                          bold(num_strong_pixels_filtered));
                     } else {
                         print(
-                          "Thread {:2d} finished image {:4d} with {} pixels in {} "
-                          "reflections\n",
+                          "Thread {:2d} finished image {:4d} with {:5d} strong pixels, "
+                          "{:4d} filtered reflections ({} pixels)\n",
                           thread_id,
                           image_num,
                           num_strong_pixels,
-                          boxes.size());
+                          boxes.size(),
+                          num_strong_pixels_filtered);
                     }
                 }
 #pragma endregion Validation
