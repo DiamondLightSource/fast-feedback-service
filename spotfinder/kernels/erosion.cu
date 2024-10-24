@@ -4,9 +4,6 @@
 #include "../spotfinder.cuh"
 #include "erosion.cuh"
 
-// Macro to get the value of a pitched array
-#define GET_PITCHED_VALUE(array, pitch, x, y) (array[y * pitch + x])
-
 namespace cg = cooperative_groups;
 
 #pragma region Erosion kernel
