@@ -50,7 +50,6 @@ void debug_writeout(uint8_t *device_data,
     save_device_data_to_txt(
       device_data, pitch_bytes, width, height, stream, filename, condition);
 }
-#pragma endregion Device functions
 
 #pragma region Launch Wrappers
 /**
