@@ -1,3 +1,23 @@
+/**
+ * @file erosion.cu
+ * @brief Contains the CUDA kernel implementation for performing
+ *        morphological erosion on an image using a given kernel radius
+ *        and Chebyshev distance threshold.
+ *
+ * This kernel processes a dispersion mask containing potential signal
+ * spots and background pixels. The kernel processes each pixel in the
+ * mask and iterates over its local neighbourhood defined by a given
+ * kernel radius. The kernel then checks if each pixel is within a given
+ * Chebyshev distance threshold of a background pixel. If the pixel is
+ * within the threshold, it is considered part of the background and is
+ * marked as a background pixel in the erosion mask. Therefore eroding
+ * the edges of the signal spots.
+ * 
+ * @note The __restrict__ keyword is used to indicate to the compiler
+ *       that the two pointers are not aliased, allowing the compiler to
+ *       perform more aggressive optimizations.
+ */
+
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 
@@ -7,18 +27,15 @@
 namespace cg = cooperative_groups;
 
 #pragma region Erosion kernel
-__global__ void erosion_kernel(
-  uint8_t __restrict__ *dispersion_mask,
-  uint8_t __restrict__ *erosion_mask,
-  uint8_t __restrict__ *mask,
-  // __restrict__ is a hint to the compiler that the two pointers are not
-  // aliased, allowing the compiler to perform more agressive optimizations
-  size_t dispersion_mask_pitch,
-  size_t erosion_mask_pitch,
-  size_t mask_pitch,
-  int width,
-  int height,
-  uint8_t radius) {
+__global__ void erosion_kernel(uint8_t __restrict__ *dispersion_mask,
+                               uint8_t __restrict__ *erosion_mask,
+                               uint8_t __restrict__ *mask,
+                               size_t dispersion_mask_pitch,
+                               size_t erosion_mask_pitch,
+                               size_t mask_pitch,
+                               int width,
+                               int height,
+                               uint8_t radius) {
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;

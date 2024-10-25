@@ -1,3 +1,19 @@
+/**
+ * @file thresholding.cu
+ * @brief Contains CUDA kernel implementations for thresholding image 
+ *        data.
+ *
+ * This file contains CUDA kernels for thresholding image data based on
+ * the variance and mean of the local neighbourhood of each pixel. These
+ * thresholds are used to identify potential signal spots against a
+ * background in the input image based on local variance, mean, and
+ * user-defined significance levels.
+ * 
+ * @note The __restrict__ keyword is used to indicate to the compiler
+ *       that the two pointers are not aliased, allowing the compiler to
+ *       perform more aggressive optimizations.
+ */
+
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 
