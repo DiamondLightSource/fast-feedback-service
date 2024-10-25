@@ -1,3 +1,22 @@
+/**
+ * @file masking.cu
+ * @brief Contains CUDA device functions and kernel implementations for
+ *        applying a resolution mask to an image based on pixel 
+ *        distances and beam properties.
+ *
+ * This file modifies a mask based on the resolution of each pixel in an
+ * image. The resolution is calculated based on the distance of the
+ * pixel from the beam center and the detector's properties. Pixels
+ * with resolutions outside a specified range are set as masked.
+ * 
+ * The `apply_resolution_mask` kernel is complemented by a host function 
+ * `call_apply_resolution_mask`, which prepares the CUDA execution
+ * configuration and launches the kernel.
+ * 
+ * @note The distance from center calculation is done with the
+ *       assumption that the detector is perpendicular to the beam.
+ */
+
 #include "masking.cuh"
 
 #define VALID_PIXEL 1
