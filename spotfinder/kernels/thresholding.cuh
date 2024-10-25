@@ -2,9 +2,9 @@
 
 #include "../spotfinder.cuh"
 
-__global__ void compute_threshold_kernel(pixel_t *image,
-                                         uint8_t *mask,
-                                         uint8_t *result_mask,
+__global__ void compute_threshold_kernel(pixel_t __restrict__ *image,
+                                         uint8_t __restrict__ *mask,
+                                         uint8_t __restrict__ *result_mask,
                                          size_t image_pitch,
                                          size_t mask_pitch,
                                          size_t result_pitch,
@@ -17,9 +17,9 @@ __global__ void compute_threshold_kernel(pixel_t *image,
                                          float n_sig_b,
                                          float n_sig_s);
 
-__global__ void compute_dispersion_threshold_kernel(pixel_t *image,
-                                                    uint8_t *mask,
-                                                    uint8_t *result_mask,
+__global__ void compute_dispersion_threshold_kernel(pixel_t __restrict__ *image,
+                                                    uint8_t __restrict__ *mask,
+                                                    uint8_t __restrict__ *result_mask,
                                                     size_t image_pitch,
                                                     size_t mask_pitch,
                                                     size_t result_pitch,
@@ -32,10 +32,10 @@ __global__ void compute_dispersion_threshold_kernel(pixel_t *image,
                                                     float n_sig_b,
                                                     float n_sig_s);
 
-__global__ void compute_final_threshold_kernel(pixel_t *image,
-                                               uint8_t *mask,
-                                               uint8_t *dispersion_mask,
-                                               uint8_t *result_mask,
+__global__ void compute_final_threshold_kernel(pixel_t __restrict__ *image,
+                                               uint8_t __restrict__ *mask,
+                                               uint8_t __restrict__ *dispersion_mask,
+                                               uint8_t __restrict__ *result_mask,
                                                size_t image_pitch,
                                                size_t mask_pitch,
                                                size_t dispersion_mask_pitch,
