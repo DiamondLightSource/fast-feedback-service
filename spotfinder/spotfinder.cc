@@ -27,7 +27,6 @@
 #include "common.hpp"
 #include "cuda_common.hpp"
 #include "h5read.h"
-#include "kernels/erosion.cuh"
 #include "kernels/masking.cuh"
 #include "shmread.hpp"
 #include "standalone.h"
