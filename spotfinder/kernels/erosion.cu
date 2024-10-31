@@ -21,7 +21,7 @@
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 
-#include "../spotfinder.cuh"
+#include "cuda_common.hpp"
 #include "erosion.cuh"
 
 namespace cg = cooperative_groups;

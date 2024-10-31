@@ -1,6 +1,8 @@
 #pragma once
 
-#include "../spotfinder.cuh"
+#include "h5read.h"
+
+using pixel_t = H5Read::image_type;
 
 __global__ void compute_threshold_kernel(pixel_t __restrict__ *image,
                                          uint8_t __restrict__ *mask,
