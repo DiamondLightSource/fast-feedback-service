@@ -925,7 +925,7 @@ int main(int argc, char **argv) {
                     for (int y = 0, k = 0; y < height; ++y) {
                         for (int x = 0; x < width; ++x, ++k) {
                             if (host_results[k]) {
-                                out.print("{:d}, {:d}\n", x, y);
+                                out.print("{:4d}, {:4d}\n", x, y);
                             }
                         }
                     }
