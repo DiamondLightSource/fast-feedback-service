@@ -200,15 +200,14 @@ struct DispersionAlgorithm {
         this->algorithm_str = input;
         std::transform(input.begin(), input.end(), input.begin(), ::tolower);
         if (input == "dispersion") {
+            this->algorithm_str = "Dispersion";
             this->algorithm = Algorithm::DISPERSION;
         } else if (input == "dispersion_extended") {
+            this->algorithm_str = "Dispersion Extended";  // ✨
             this->algorithm = Algorithm::DISPERSION_EXTENDED;
         } else {
             throw std::invalid_argument("Invalid algorithm specified");
         }
-
-        // Capitalize the first letter of the algorithm string✨
-        this->algorithm_str[0] = std::toupper(this->algorithm_str[0]);
     }
 };
 
