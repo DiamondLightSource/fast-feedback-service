@@ -103,6 +103,8 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv);
 #include <string>
 #include <vector>
 
+std::vector<double> read_xyzobs_data(std::string filename, std::string array_name);
+
 class Image {
   private:
     std::shared_ptr<h5read_handle> _handle;
