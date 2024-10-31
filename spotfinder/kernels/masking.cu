@@ -33,7 +33,7 @@
  * @param pixel_size_y The pixel size of the detector in the y-direction in m
  * @return The calculated distance from the beam center in m
 */
-__device__ float get_distance_from_centre(float x,
+__device__ float get_distance_from_center(float x,
                                           float y,
                                           float center_x,
                                           float center_y,
@@ -120,7 +120,7 @@ __global__ void apply_resolution_mask(uint8_t *mask,
         return;
     }
 
-    float distance_from_centre = get_distance_from_centre(
+    float distance_from_centre = get_distance_from_center(
       x, y, beam_center_x, beam_center_y, pixel_size_x, pixel_size_y);
     float resolution =
       get_resolution(wavelength, distance_to_detector, distance_from_centre);
