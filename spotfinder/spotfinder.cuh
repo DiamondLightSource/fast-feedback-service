@@ -3,12 +3,8 @@
 
 #include <builtin_types.h>
 
-#include "common.hpp"
 #include "cuda_common.hpp"
 #include "h5read.h"
-
-#define VALID_PIXEL 1
-#define MASKED_PIXEL 0
 
 using pixel_t = H5Read::image_type;
 

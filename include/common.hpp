@@ -12,6 +12,9 @@
 #include <type_traits>
 #include <vector>
 
+#define VALID_PIXEL 1
+#define MASKED_PIXEL 0
+
 template <typename T1, typename... TS>
 auto with_formatting(const std::string &code, const T1 &first, TS... args)
   -> std::string {
