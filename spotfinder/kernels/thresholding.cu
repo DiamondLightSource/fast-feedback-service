@@ -168,12 +168,6 @@ __global__ void compute_dispersion_threshold_kernel(pixel_t __restrict__ *image,
 
     if (x >= width || y >= height) return;  // Out of bounds guard
 
-    // if it is the first pixel in the image print the kernel width and height
-    if (x == 0 && y == 0) {
-        printf("Kernel width: %d, Kernel height: %d\n", kernel_width, kernel_height);
-        printf("Block Idx.z: %d\n", blockIdx.z);
-    }
-
     pixel_t this_pixel = image[y * image_pitch + x];
 
     // Check if the pixel is masked and below the maximum valid pixel value

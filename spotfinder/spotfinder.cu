@@ -247,7 +247,6 @@ void call_do_spotfinding_extended(dim3 blocks,
      * Perform the final thresholding using the dispersion mask.
     */
     {
-        printf("Second pass\n");
         // Second pass: Perform the final thresholding using the dispersion mask
         compute_final_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
           image.get(),                // Image data pointer
