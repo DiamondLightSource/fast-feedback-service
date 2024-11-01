@@ -16,7 +16,6 @@ using Eigen::Vector3i;
 
 using namespace pocketfft;
 
-//std::tuple<std::vector<std::complex<double>>, std::vector<bool>>
 void map_centroids_to_reciprocal_space_grid_cpp(
   std::vector<Vector3d> const& reciprocal_space_vectors,
   std::vector<std::complex<double>> &data_in,
@@ -27,9 +26,7 @@ void map_centroids_to_reciprocal_space_grid_cpp(
   const double rlgrid = 2 / (d_min * n_points);
   const double one_over_rlgrid = 1 / rlgrid;
   const int half_n_points = n_points / 2;
-  //std::vector<bool> selection(reciprocal_space_vectors.size(), true);
 
-  //std::vector<std::complex<double>> data_in(256 * 256 * 256);
   for (int i = 0; i < reciprocal_space_vectors.size(); i++) {
     const Vector3d v = reciprocal_space_vectors[i];
     const double v_length = v.norm();
@@ -55,24 +52,21 @@ void map_centroids_to_reciprocal_space_grid_cpp(
     size_t index = coord[2] + (256 * coord[1]) + (256 * 256 * coord[0]);
     data_in[index] = {T, 0.0};
   }
-  //return std::make_tuple(data_in, selection);
 }
 
-std::tuple<std::vector<double>, std::vector<bool>> fft3d(
+std::vector<bool> fft3d(
   std::vector<Vector3d> const& reciprocal_space_vectors,
+  std::vector<double> &real_out,
   double d_min,
   double b_iso = 0) {
   auto start = std::chrono::system_clock::now();
 
   std::vector<std::complex<double>> complex_data_in(256 * 256 * 256);
   std::vector<std::complex<double>> data_out(256 * 256 * 256);
-  std::vector<double> real_out(256 * 256 * 256);
+
   std::vector<bool> used_in_indexing(reciprocal_space_vectors.size(), true);
   auto t1 = std::chrono::system_clock::now();
 
-  ///std::vector<std::complex<double>> complex_data_in;
-  ///std::vector<bool> used_in_indexing;
-  ///std::tie(complex_data_in, used_in_indexing) =
   map_centroids_to_reciprocal_space_grid_cpp(reciprocal_space_vectors, complex_data_in, used_in_indexing, d_min, b_iso);
   auto t2 = std::chrono::system_clock::now();
 
@@ -121,5 +115,5 @@ std::tuple<std::vector<double>, std::vector<bool>> fft3d(
   std::cout << "elapsed time for c2c: " << elapsed_c2c.count() << "s" << std::endl;
   std::cout << "elapsed time for squaring: " << elapsed_square.count() << "s" << std::endl;
 
-  return std::make_tuple(real_out, used_in_indexing);
+  return used_in_indexing;
 }

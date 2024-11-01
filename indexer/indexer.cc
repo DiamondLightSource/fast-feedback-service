@@ -10,21 +10,24 @@
 #include <Eigen/Dense>
 #include "xyz_to_rlp.cc"
 #include "fft3d.cc"
+#include <chrono>
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
 
 int main(int argc, char **argv) {
+
+    auto t1 = std::chrono::system_clock::now();
     auto parser = CUDAArgumentParser();
-    parser.add_h5read_arguments(); //will use h5 file to get metadata
+    /*parser.add_h5read_arguments(); //will use h5 file to get metadata
     parser.add_argument("--images")
       .help("Maximum number of images to process")
       .metavar("NUM")
-      .scan<'u', uint32_t>();
+      .scan<'u', uint32_t>();*/
     auto args = parser.parse_args(argc, argv);
 
 
-    std::unique_ptr<Reader> reader_ptr;
+    /*std::unique_ptr<Reader> reader_ptr;
 
     // Wait for read-readiness
 
@@ -48,7 +51,7 @@ int main(int argc, char **argv) {
         std::exit(1);
     }
     float wavelength_f = wavelength_opt.value();
-    printf("INDEXER: Got wavelength from file: %f Å\n", wavelength_f);
+    printf("INDEXER: Got wavelength from file: %f Å\n", wavelength_f);*/
     //FIXME don't assume s0 vector get from file
     double wavelength = 0.976254;
     Vector3d s0 {0.0, 0.0, -1.0/wavelength};
@@ -96,9 +99,11 @@ int main(int argc, char **argv) {
     std::cout << rlp[rlp.size()-1][0] << std::endl;
     std::cout << "Number of reflections: " << rlp.size() << std::endl;
 
-
-    std::vector<double> real_fft;
-    std::vector<bool> used_in_indexing;
-    std::tie(real_fft, used_in_indexing) = fft3d(rlp, 1.8);
+    std::vector<double> real_fft(256*256*256);
+    std::vector<bool> used_in_indexing = fft3d(rlp, real_fft, 1.8);
+    auto t2 = std::chrono::system_clock::now();
     std::cout << real_fft[0] << " " << used_in_indexing[0] << std::endl;
+    std::chrono::duration<double> elapsed_time = t2 - t1;
+    std::cout << "Total time for indexer: " << elapsed_time.count() << "s" << std::endl;
+
 }
