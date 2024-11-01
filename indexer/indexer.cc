@@ -9,6 +9,7 @@
 #include <cstring>
 #include <Eigen/Dense>
 #include "xyz_to_rlp.cc"
+#include "fft3d.cc"
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
@@ -46,10 +47,11 @@ int main(int argc, char **argv) {
             "--wavelength\n");
         std::exit(1);
     }
-    float wavelength = wavelength_opt.value();
-    printf("INDEXER: Got wavelength from file: %f Å\n", wavelength);
+    float wavelength_f = wavelength_opt.value();
+    printf("INDEXER: Got wavelength from file: %f Å\n", wavelength_f);
     //FIXME don't assume s0 vector get from file
-    std::array<float, 3> s0 {0.0, 0.0, -1.0/wavelength};
+    double wavelength = 0.976254;
+    Vector3d s0 {0.0, 0.0, -1.0/wavelength};
 
     // now get detector properties
     // need fast, slow,  norm and origin, plus pixel size
@@ -63,7 +65,8 @@ int main(int argc, char **argv) {
 
     std::array<float, 3> normal {0.0, 0.0, 1.0}; // fast_axis cross slow_axis
     //std::array<float, 3> origin {-75.61, 79.95, -150.0}; // FIXME
-    Vector3d origin {-75.61, 79.95, -150.0}; // FIXME
+    //Vector3d origin {-75.61, 79.95, -150.0}; // FIXME
+    Vector3d origin {-153.61, 162.446, -200.453};
 
     Matrix3d d_matrix{{fast_axis[0], slow_axis[0], normal[0]+origin[0],
         fast_axis[1], slow_axis[1], normal[1]+origin[1],
@@ -74,19 +77,28 @@ int main(int argc, char **argv) {
     double osc_width = 0.1;
 
     // finally gonio properties e.g.
-    Matrix3d fixed_rotation{{0.965028,0.0598562,-0.255222},{-0.128604,-0.74028,-0.659883},{-0.228434,0.669628,-0.706694}};
+    Matrix3d fixed_rotation{{1,0,0},{0,1,0},{0,0,1}};//{{0.965028,0.0598562,-0.255222},{-0.128604,-0.74028,-0.659883},{-0.228434,0.669628,-0.706694}};
     Vector3d rotation_axis {1.0,0.0,0.0};
     Matrix3d setting_rotation {{1,0,0},{0,1,0},{0,0,1}};
 
     // get processed reflection data from spotfinding
-    std::string filename = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24/h5_file/strong.refl";
+    std::string filename = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/strong.refl";
     std::string array_name = "/dials/processing/group_0/xyzobs.px.value";
     std::vector<double> data = read_xyzobs_data(filename, array_name);
+
     std::vector<Vector3d> rlp = xyz_to_rlp(
         data, fixed_rotation, d_matrix, wavelength, pixel_size_x,image_range_start,
         osc_start, osc_width, rotation_axis, setting_rotation);
+
     std::cout << data[0] << std::endl;
     std::cout << data[data.size()-1] << std::endl;
     std::cout << rlp[0][0] << std::endl;
     std::cout << rlp[rlp.size()-1][0] << std::endl;
+    std::cout << "Number of reflections: " << rlp.size() << std::endl;
+
+
+    std::vector<double> real_fft;
+    std::vector<bool> used_in_indexing;
+    std::tie(real_fft, used_in_indexing) = fft3d(rlp, 1.8);
+    std::cout << real_fft[0] << " " << used_in_indexing[0] << std::endl;
 }

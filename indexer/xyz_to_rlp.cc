@@ -61,7 +61,7 @@ public:
 };
 
 std::vector<Vector3d> xyz_to_rlp(
-  std::vector<double> xyzobs_px,
+  const std::vector<double> &xyzobs_px,
   Matrix3d sample_rotation,
   Matrix3d detector_d_matrix,
   double wavelength,
