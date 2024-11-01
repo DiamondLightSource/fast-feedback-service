@@ -7,6 +7,11 @@
 #include "standalone.h"
 #include <vector>
 #include <cstring>
+#include <Eigen/Dense>
+#include "xyz_to_rlp.cc"
+
+using Eigen::Vector3d;
+using Eigen::Matrix3d;
 
 int main(int argc, char **argv) {
     auto parser = CUDAArgumentParser();
@@ -53,19 +58,35 @@ int main(int argc, char **argv) {
      //FIXME remove assumption of pixel sizes being same in analysis code.
 
     std::array<float, 3> fast_axis {1.0, 0.0, 0.0}; //FIXME get through reader
-    std::array<float, 3> slow_axis {0.0, 1.0, 0.0}; //FIXME get through reader
+    std::array<float, 3> slow_axis {0.0, -1.0, 0.0}; //FIXME get through reader
     // ^ change basis from nexus to iucr/imgcif convention (invert x and z)
 
     std::array<float, 3> normal {0.0, 0.0, 1.0}; // fast_axis cross slow_axis
-    std::array<float, 3> origin {-75.61, 79.95, -150.0}; // FIXME
-    //Vector3d origin {-75.61, 79.95, -150.0}; // FIXME
+    //std::array<float, 3> origin {-75.61, 79.95, -150.0}; // FIXME
+    Vector3d origin {-75.61, 79.95, -150.0}; // FIXME
 
-    // now get scan properties
+    Matrix3d d_matrix{{fast_axis[0], slow_axis[0], normal[0]+origin[0],
+        fast_axis[1], slow_axis[1], normal[1]+origin[1],
+        fast_axis[2], slow_axis[2], normal[2]+origin[2]}};
+    // now get scan properties e.g.
+    int image_range_start = 0;
+    double osc_start = 0.0;
+    double osc_width = 0.1;
+
+    // finally gonio properties e.g.
+    Matrix3d fixed_rotation{{0.965028,0.0598562,-0.255222},{-0.128604,-0.74028,-0.659883},{-0.228434,0.669628,-0.706694}};
+    Vector3d rotation_axis {1.0,0.0,0.0};
+    Matrix3d setting_rotation {{1,0,0},{0,1,0},{0,0,1}};
 
     // get processed reflection data from spotfinding
     std::string filename = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24/h5_file/strong.refl";
     std::string array_name = "/dials/processing/group_0/xyzobs.px.value";
     std::vector<double> data = read_xyzobs_data(filename, array_name);
+    std::vector<Vector3d> rlp = xyz_to_rlp(
+        data, fixed_rotation, d_matrix, wavelength, pixel_size_x,image_range_start,
+        osc_start, osc_width, rotation_axis, setting_rotation);
     std::cout << data[0] << std::endl;
     std::cout << data[data.size()-1] << std::endl;
+    std::cout << rlp[0][0] << std::endl;
+    std::cout << rlp[rlp.size()-1][0] << std::endl;
 }
