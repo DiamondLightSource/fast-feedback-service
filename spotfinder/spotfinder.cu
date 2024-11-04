@@ -54,7 +54,7 @@ void debug_writeout(uint8_t *device_data,
 #pragma region Launch Wrappers
 /**
  * @brief Wrapper function to call the dispersion-based spotfinding algorithm.
- * This function launches the `compute_dispersion_threshold_kernel` to perform
+ * This function launches the `dispersion` kernel to perform
  * the spotfinding based on the basic dispersion threshold.
  *
  * @param blocks The dimensions of the grid of blocks.
@@ -88,7 +88,7 @@ void call_do_spotfinding_dispersion(dim3 blocks,
     constexpr uint8_t basic_kernel_radius = 3;
 
     // Launch the dispersion threshold kernel
-    compute_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
+    dispersion<<<blocks, threads, shared_memory, stream>>>(
       image.get(),            // Image data pointer
       mask.get(),             // Mask data pointer
       result_strong->get(),   // Output mask pointer
@@ -111,8 +111,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
 
 /**
  * @brief Wrapper function to call the extended dispersion-based spotfinding algorithm.
- * This function launches the `compute_final_threshold_kernel` for final thresholding
- * after applying the dispersion mask and the `compute_dispersion_threshold_kernel`
+ * This function launches the `dispersion_extended_second_pass` for final thresholding
+ * after applying the dispersion mask and the `dispersion_extended_first_pass`
  * for initial thresholding.
  *
  * @param blocks The dimensions of the grid of blocks.
@@ -129,7 +129,7 @@ void call_do_spotfinding_dispersion(dim3 blocks,
  * @param min_count The minimum number of valid pixels required in the local neighborhood. Default is 3.
  * @param n_sig_b The background noise significance level. Default is 6.0.
  * @param n_sig_s The signal significance level. Default is 3.0.
- * @param threshold The global threshold for intensity values. Default is 10.0.
+ * @param threshold The global threshold for intensity values. Default is 0.
  */
 void call_do_spotfinding_extended(dim3 blocks,
                                   dim3 threads,
@@ -159,7 +159,7 @@ void call_do_spotfinding_extended(dim3 blocks,
      * threshold. The surviving pixels are then used as a mask later to
      * exclude them from the background calculation in the second pass.
     */
-    compute_dispersion_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
+    dispersion_extended_first_pass<<<blocks, threads, shared_memory, stream>>>(
       image.get(),               // Image data pointer
       mask.get(),                // Mask data pointer
       d_dispersion_mask.get(),   // Output dispersion mask pointer
@@ -199,16 +199,15 @@ void call_do_spotfinding_extended(dim3 blocks,
     */
 
     // Perform erosion
-    erosion_kernel<<<blocks, threads, shared_memory, stream>>>(
-      d_dispersion_mask.get(),
-      d_erosion_mask.get(),
-      mask.get(),
-      d_dispersion_mask.pitch,
-      d_erosion_mask.pitch,
-      mask.pitch,
-      width,
-      height,
-      first_pass_kernel_radius);
+    erosion<<<blocks, threads, shared_memory, stream>>>(d_dispersion_mask.get(),
+                                                        d_erosion_mask.get(),
+                                                        mask.get(),
+                                                        d_dispersion_mask.pitch,
+                                                        d_erosion_mask.pitch,
+                                                        mask.pitch,
+                                                        width,
+                                                        height,
+                                                        first_pass_kernel_radius);
     cudaStreamSynchronize(
       stream);  // Synchronize the CUDA stream to ensure the erosion pass is complete
 
@@ -229,7 +228,7 @@ void call_do_spotfinding_extended(dim3 blocks,
      * Second pass 🎯
      * Perform the final thresholding using the dispersion mask.
     */
-    compute_final_threshold_kernel<<<blocks, threads, shared_memory, stream>>>(
+    dispersion_extended_second_pass<<<blocks, threads, shared_memory, stream>>>(
       image.get(),                // Image data pointer
       mask.get(),                 // Mask data pointer
       d_erosion_mask.get(),       // Dispersion mask pointer

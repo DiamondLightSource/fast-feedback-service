@@ -27,15 +27,15 @@
 namespace cg = cooperative_groups;
 
 #pragma region Erosion kernel
-__global__ void erosion_kernel(uint8_t __restrict__ *dispersion_mask,
-                               uint8_t __restrict__ *erosion_mask,
-                               uint8_t __restrict__ *mask,
-                               size_t dispersion_mask_pitch,
-                               size_t erosion_mask_pitch,
-                               size_t mask_pitch,
-                               int width,
-                               int height,
-                               uint8_t radius) {
+__global__ void erosion(uint8_t __restrict__ *dispersion_mask,
+                        uint8_t __restrict__ *erosion_mask,
+                        uint8_t __restrict__ *mask,
+                        size_t dispersion_mask_pitch,
+                        size_t erosion_mask_pitch,
+                        size_t mask_pitch,
+                        int width,
+                        int height,
+                        uint8_t radius) {
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
