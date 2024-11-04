@@ -148,8 +148,10 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   float threshold) {
     // Allocate intermediate buffer for the dispersion mask on the device
     PitchedMalloc<uint8_t> d_dispersion_mask(width, height);
+    PitchedMalloc<uint8_t> d_erosion_mask(width, height);
 
     constexpr uint8_t first_pass_kernel_radius = 3;
+    constexpr uint8_t second_pass_kernel_radius = 5;
 
     /*
      * First pass 🔎
@@ -195,7 +197,6 @@ void call_do_spotfinding_extended(dim3 blocks,
      * The surviving pixels are then used as a mask to exclude them
      * from the background calculation in the second pass.
     */
-    PitchedMalloc<uint8_t> d_erosion_mask(width, height);
 
     // Perform erosion
     erosion_kernel<<<blocks, threads, shared_memory, stream>>>(
@@ -223,8 +224,6 @@ void call_do_spotfinding_extended(dim3 blocks,
           [](uint8_t pixel) { return pixel == MASKED_PIXEL ? 0 : 255; },
           [](uint8_t pixel) { return pixel == MASKED_PIXEL; });
     }
-
-    constexpr uint8_t second_pass_kernel_radius = 5;
 
     /*
      * Second pass 🎯
