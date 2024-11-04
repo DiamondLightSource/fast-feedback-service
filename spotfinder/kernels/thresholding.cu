@@ -17,15 +17,95 @@
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 
+#include <cuda/std/tuple>
+
 #include "cuda_common.hpp"
 #include "thresholding.cuh"
 
 namespace cg = cooperative_groups;
 
 #pragma region Device Functions
-/*
- * TODO: Break out redundant code from the thresholding kernels into device functions.
-*/
+/**
+ * @brief Calculate the dispersion flags for a given pixel.
+ * @param image Pointer to the input image data.
+ * @param mask Pointer to the mask data indicating valid pixels.
+ * @param image_pitch The pitch of the image data.
+ * @param mask_pitch The pitch of the mask data.
+ * @param this_pixel The pixel value at the current position.
+ * @param x The x-coordinate of the pixel.
+ * @param y The y-coordinate of the pixel.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param kernel_width The radius of the kernel in the x-direction.
+ * @param kernel_height The radius of the kernel in the y-direction.
+ * @param min_count Minimum number of valid pixels required to be considered a valid spot.
+ * @param n_sig_b Background noise significance level.
+ * @param n_sig_s Signal significance level.
+ * @return A tuple <bool not_background, bool is_signal, uint8_t n> where:
+ *        - not_background: True if the pixel is not part of the background.
+ *        - is_signal: True if the pixel is a strong signal.
+ *        - n: The number of valid pixels in the local neighbourhood.
+ */
+__device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
+  pixel_t *image,
+  uint8_t *mask,
+  size_t image_pitch,
+  size_t mask_pitch,
+  pixel_t this_pixel,
+  int x,
+  int y,
+  int width,
+  int height,
+  uint8_t kernel_width,
+  uint8_t kernel_height,
+  uint8_t min_count,
+  float n_sig_b,
+  float n_sig_s) {
+    // Initialize variables for computing the local sum and count
+    uint sum = 0;
+    size_t sumsq = 0;
+    uint8_t n = 0;
+
+    int row_start = max(0, y - kernel_height);
+    int row_end = min(y + kernel_height + 1, height);
+
+    for (int row = row_start; row < row_end; ++row) {
+        int row_offset = image_pitch * row;
+        int mask_offset = mask_pitch * row;
+
+        int col_start = max(0, x - kernel_width);
+        int col_end = min(x + kernel_width + 1, width);
+
+        for (int col = col_start; col < col_end; ++col) {
+            pixel_t pixel = image[row_offset + col];
+            uint8_t mask_pixel = mask[mask_offset + col];
+            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
+            if (include_pixel) {
+                sum += pixel;
+                sumsq += pixel * pixel;
+                n += 1;
+            }
+        }
+    }
+
+    // Compute local mean and variance
+    float sum_f = static_cast<float>(sum);
+    float sumsq_f = static_cast<float>(sumsq);
+
+    float mean = sum_f / n;
+    float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
+    float dispersion = variance / mean;
+
+    // Compute the background threshold and signal threshold
+    float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
+    bool not_background = dispersion > background_threshold;
+    float signal_threshold = mean + n_sig_s * sqrt(mean);
+
+    // Check if the pixel is a strong pixel
+    bool is_signal = this_pixel > signal_threshold;
+
+    return {not_background, is_signal, n};
+}
 #pragma endregion
 
 #pragma region Thresholding kernels
@@ -76,54 +156,29 @@ __global__ void dispersion(pixel_t __restrict__ *image,
     bool px_is_valid =
       mask[y * mask_pitch + x] != 0 && this_pixel <= max_valid_pixel_value;
 
-    // Initialize variables for computing the local sum and count
-    uint sum = 0;
-    size_t sumsq = 0;
-    uint8_t n = 0;
-
-    int row_start = max(0, y - kernel_height);
-    int row_end = min(y + kernel_height + 1, height);
-
-    for (int row = row_start; row < row_end; ++row) {
-        int row_offset = image_pitch * row;
-        int mask_offset = mask_pitch * row;
-
-        int col_start = max(0, x - kernel_width);
-        int col_end = min(x + kernel_width + 1, width);
-
-        for (int col = col_start; col < col_end; ++col) {
-            pixel_t pixel = image[row_offset + col];
-            uint8_t mask_pixel = mask[mask_offset + col];
-            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
-            if (include_pixel) {
-                sum += pixel;
-                sumsq += pixel * pixel;
-                n += 1;
-            }
-        }
-    }
-
-    if (px_is_valid && n > 1) {
-        // Compute local mean and variance
-        float sum_f = static_cast<float>(sum);
-        float sumsq_f = static_cast<float>(sumsq);
-
-        float mean = sum_f / n;
-        float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
-        float dispersion = variance / mean;
-
-        // Compute the background threshold and signal threshold
-        float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
-        bool not_background = dispersion > background_threshold;
-        float signal_threshold = mean + n_sig_s * sqrt(mean);
-
-        // Check if the pixel is a strong pixel
-        bool is_signal = this_pixel > signal_threshold;
-
-        result_mask[x + result_pitch * y] = not_background && is_signal;
-    } else {
+    // Validity guard
+    if (!px_is_valid) {
         result_mask[x + result_pitch * y] = 0;
+        return;
     }
+
+    // Calculate the dispersion flags
+    auto [not_background, is_signal, n] = calculate_dispersion_flags(image,
+                                                                     mask,
+                                                                     image_pitch,
+                                                                     mask_pitch,
+                                                                     this_pixel,
+                                                                     x,
+                                                                     y,
+                                                                     width,
+                                                                     height,
+                                                                     kernel_width,
+                                                                     kernel_height,
+                                                                     min_count,
+                                                                     n_sig_b,
+                                                                     n_sig_s);
+
+    result_mask[x + result_pitch * y] = not_background && is_signal && n > 1;
 }
 
 /**
@@ -174,51 +229,29 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image,
     bool px_is_valid =
       mask[y * mask_pitch + x] != 0 && this_pixel <= max_valid_pixel_value;
 
-    // Initialize variables for computing the local sum and count
-    uint sum = 0;
-    size_t sumsq = 0;
-    uint8_t n = 0;
-
-    int row_start = max(0, y - kernel_height);
-    int row_end = min(y + kernel_height + 1, height);
-
-    for (int row = row_start; row < row_end; ++row) {
-        int row_offset = image_pitch * row;
-        int mask_offset = mask_pitch * row;
-
-        int col_start = max(0, x - kernel_width);
-        int col_end = min(x + kernel_width + 1, width);
-
-        for (int col = col_start; col < col_end; ++col) {
-            pixel_t pixel = image[row_offset + col];
-            uint8_t mask_pixel = mask[mask_offset + col];
-            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
-            if (include_pixel) {
-                sum += pixel;
-                sumsq += pixel * pixel;
-                n += 1;
-            }
-        }
-    }
-
-    // Calculate the thresholding
-    if (px_is_valid && n > 1) {
-        // Compute local mean and variance
-        float sum_f = static_cast<float>(sum);
-        float sumsq_f = static_cast<float>(sumsq);
-
-        float mean = sum_f / n;
-        float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
-        float dispersion = variance / mean;
-
-        // Compute the background threshold
-        float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
-        bool not_background = dispersion > background_threshold;
-
-        result_mask[x + result_pitch * y] = not_background;
-    } else {
+    // Validity guard
+    if (!px_is_valid) {
         result_mask[x + result_pitch * y] = 0;
+        return;
     }
+
+    // Calculate the dispersion flags
+    auto [not_background, is_signal, n] = calculate_dispersion_flags(image,
+                                                                     mask,
+                                                                     image_pitch,
+                                                                     mask_pitch,
+                                                                     this_pixel,
+                                                                     x,
+                                                                     y,
+                                                                     width,
+                                                                     height,
+                                                                     kernel_width,
+                                                                     kernel_height,
+                                                                     min_count,
+                                                                     n_sig_b,
+                                                                     n_sig_s);
+
+    result_mask[x + result_pitch * y] = not_background && n > 1;
 }
 
 /**
