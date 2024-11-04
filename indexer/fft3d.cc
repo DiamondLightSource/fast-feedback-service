@@ -26,6 +26,7 @@ void map_centroids_to_reciprocal_space_grid_cpp(
   const double rlgrid = 2 / (d_min * n_points);
   const double one_over_rlgrid = 1 / rlgrid;
   const int half_n_points = n_points / 2;
+  int count = 0;
 
   for (int i = 0; i < reciprocal_space_vectors.size(); i++) {
     const Vector3d v = reciprocal_space_vectors[i];
@@ -50,8 +51,12 @@ void map_centroids_to_reciprocal_space_grid_cpp(
       T = 1;
     }
     size_t index = coord[2] + (256 * coord[1]) + (256 * 256 * coord[0]);
+    if (!data_in[index].real()){  
+      count++;
+    }
     data_in[index] = {T, 0.0};
   }
+  std::cout << "Number of centroids used: " << count << std::endl;
 }
 
 std::vector<bool> fft3d(
