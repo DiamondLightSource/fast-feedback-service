@@ -1,6 +1,7 @@
 #include <iostream>
 #include <lodepng.h>
 #include <string>
+#include <nlohmann/json.hpp>
 #include "common.hpp"
 #include "cuda_common.hpp"
 #include "h5read.h"
@@ -14,10 +15,12 @@
 #include "fft3d.cc"
 #include <chrono>
 #include "simple_models.cc"
+#include "beam.h"
+#include <fstream>
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
-
+using json = nlohmann::json;
 int main(int argc, char **argv) {
 
     
@@ -72,6 +75,12 @@ int main(int argc, char **argv) {
     printf("INDEXER: Got detector origin x from file: %f mm\n", origin_x);
     printf("INDEXER: Got detector origin y from file: %f mm\n", origin_y);
     
+
+    std::string imported_expt = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/imported.expt";
+    std::ifstream f(imported_expt);
+    json elist_json_obj = json::parse(f);
+    double wl = elist_json_obj["beam"][0]["wavelength"];
+    std::cout << "JSON WL " << wl << std::endl;
     //TODO
     // Get metadata from file
     // implement max cell/d_min estimation. - will need annlib if want same result as dials.
@@ -124,7 +133,7 @@ int main(int argc, char **argv) {
     SimpleDetector detector(d_matrix, pixel_size_x, mu, t0, true);
     SimpleScan scan(image_range_start, osc_start, osc_width);
     SimpleGonio gonio(fixed_rotation, rotation_axis, setting_rotation);
-    SimpleBeam beam(wavelength_f);
+    Beam beam(wavelength_f);
 
     // get processed reflection data from spotfinding
     std::string filename = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/strong.refl";

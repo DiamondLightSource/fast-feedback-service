@@ -2,6 +2,7 @@
 #include <chrono>
 #include <math.h>
 #include "simple_models.cc"
+#include "beam.h"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -9,7 +10,7 @@ using Eigen::Vector3d;
 std::vector<Vector3d> xyz_to_rlp(
   const std::vector<double> &xyzobs_px,
   const SimpleDetector &detector,
-  const SimpleBeam &beam,
+  const Beam &beam,
   const SimpleScan &scan,
   const SimpleGonio &gonio) {
   auto start = std::chrono::system_clock::now();
@@ -17,6 +18,8 @@ std::vector<Vector3d> xyz_to_rlp(
 
   double DEG2RAD = M_PI / 180.0;
   std::vector<Vector3d> rlp(xyzobs_px.size() / 3);
+  Vector3d s0 = beam.get_s0();
+  double wl = beam.get_wavelength();
   for (int i = 0; i < rlp.size(); ++i) {
     // first convert detector pixel positions into mm
     int vec_idx= 3*i;
@@ -33,12 +36,12 @@ std::vector<Vector3d> xyz_to_rlp(
     Vector3d s1_i = detector.d_matrix * m;
     s1_i.normalize();
     // convert into inverse ansgtroms
-    Vector3d s1_this = s1_i / beam.wavelength;
+    Vector3d s1_this = s1_i / wl;
     
     // now apply the goniometer matrices
     // see https://dials.github.io/documentation/conventions.html for full conventions
     // rlp = F^-1 * R'^-1 * S^-1 * (s1-s0)
-    Vector3d S = gonio.setting_rotation_inverse * (s1_this - beam.s0);
+    Vector3d S = gonio.setting_rotation_inverse * (s1_this - s0);
     double cos = std::cos(-1.0 * rot_angle);
     double sin = std::sin(-1.0 * rot_angle);
     // rlp_this = S.rotate_around_origin(gonio.rotation_axis, -1.0 * rot_angle);

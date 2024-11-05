@@ -6,7 +6,7 @@
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 
-class SimpleBeam {
+/*class SimpleBeam {
 public:
   double wavelength;
   Vector3d s0;
@@ -15,7 +15,7 @@ public:
     this->wavelength = wavelength;
     s0 = {0.0, 0.0, -1.0 / wavelength};
   }
-};
+};*/
 
 double attenuation_length(double mu, double t0,
                                    Vector3d s1,
