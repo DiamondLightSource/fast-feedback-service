@@ -101,17 +101,22 @@ int main(int argc, char **argv) {
     //double pixel_size_x = pixel_size[0];//0.075;
 
     // Thickness not currently written to nxs file? Then need to calc mu from thickness.
-    // Required to get equivalent results to dials.
+    // Required to get equivalent results to dials. Const for I03 Eiger
     double mu = 3.9220780876;
     double t0 = 0.45;
 
     // now get scan properties e.g.
-    int image_range_start = 1;
-    double osc_start = 0.0;
-    double osc_width = 0.10002778549596769;
+    int image_range_start = 1; // a 'dials' thing.
+    double osc_start = reader.get_oscillation()[0];
+    double osc_width = reader.get_oscillation()[1];
+    printf("INDEXER: Got osc start from file: %f\n", osc_start);
+    printf("INDEXER: Got osc width from file: %f\n", osc_width);
+    //double osc_start = 0.0;
+    //double osc_width = 0.10002778549596769;
 
     // finally gonio properties e.g.
-    Matrix3d fixed_rotation{{1,0,0},{0,1,0},{0,0,1}};//{{0.965028,0.0598562,-0.255222},{-0.128604,-0.74028,-0.659883},{-0.228434,0.669628,-0.706694}};
+    // Const for I03 Eiger
+    Matrix3d fixed_rotation{{1,0,0},{0,1,0},{0,0,1}};
     Vector3d rotation_axis {1.0,0.0,0.0};
     Matrix3d setting_rotation {{1,0,0},{0,1,0},{0,0,1}};
     auto t1 = std::chrono::system_clock::now();

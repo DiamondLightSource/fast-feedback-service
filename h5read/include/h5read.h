@@ -54,6 +54,8 @@ double* h5read_get_module_offsets(h5read_handle *obj);
 /// Get the pixel size for this dataset
 float h5read_get_pixel_size_slow(h5read_handle *obj);
 float h5read_get_pixel_size_fast(h5read_handle *obj);
+double h5read_get_oscillation_start(h5read_handle *obj);
+double h5read_get_oscillation_width(h5read_handle *obj);
 float h5read_get_detector_distance(h5read_handle *obj);
 float h5read_get_beam_center_x(h5read_handle *obj);
 float h5read_get_beam_center_y(h5read_handle *obj);
@@ -267,6 +269,10 @@ class H5Read : public Reader {
     std::array<double, 3> get_module_offsets() const {
         double* vals = h5read_get_module_offsets(_handle.get());
         return {vals[0], vals[1], vals[2]};
+    }
+    std::array<double, 2> get_oscillation() const {
+        return {{h5read_get_oscillation_start(_handle.get()),
+                 h5read_get_oscillation_width(_handle.get())}};
     }
 
     virtual std::optional<std::array<float, 2>> get_pixel_size() const {
