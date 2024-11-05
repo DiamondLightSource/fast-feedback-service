@@ -39,6 +39,7 @@ using json = nlohmann::json;
 std::stop_source global_stop;
 
 constexpr auto fmt_cyan = fmt::fg(fmt::terminal_color::cyan) | fmt::emphasis::bold;
+constexpr auto fmt_green = fmt::fg(fmt::terminal_color::green) | fmt::emphasis::bold;
 
 // Function for passing to std::signal to register the stop request
 extern "C" void stop_processing(int sig) {
@@ -63,35 +64,6 @@ bool are_close(float a, float b, float tolerance) {
 struct Reflection {
     int l, t, r, b;
     int num_pixels = 0;
-};
-
-template <typename T>
-struct PitchedMalloc {
-  public:
-    using value_type = T;
-    PitchedMalloc(std::shared_ptr<T[]> data, size_t width, size_t height, size_t pitch)
-        : _data(data), width(width), height(height), pitch(pitch) {}
-
-    PitchedMalloc(size_t width, size_t height) : width(width), height(height) {
-        auto [alloc, alloc_pitch] = make_cuda_pitched_malloc<T>(width, height);
-        _data = alloc;
-        pitch = alloc_pitch;
-    }
-
-    auto get() {
-        return _data.get();
-    }
-    auto size_bytes() -> size_t const {
-        return pitch * height * sizeof(T);
-    }
-    auto pitch_bytes() -> size_t const {
-        return pitch * sizeof(T);
-    }
-
-    std::shared_ptr<T[]> _data;
-    size_t width;
-    size_t height;
-    size_t pitch;
 };
 
 /// Copy the mask from a reader into a pitched GPU area
@@ -212,6 +184,34 @@ void wait_for_ready_for_read(const std::string &path,
 }
 
 /**
+ * @brief Struct to store the dispersion algorithm and its string representation.
+ */
+struct DispersionAlgorithm {
+    std::string algorithm_str;
+    enum class Algorithm { DISPERSION, DISPERSION_EXTENDED };
+    Algorithm algorithm;
+
+    /**
+     * @brief Constructor to initialize the DispersionAlgorithm object.
+     * @param input The string representation of the algorithm.
+     */
+    DispersionAlgorithm(std::string input) {
+        // Convert the input to lowercase for case-insensitive comparison
+        this->algorithm_str = input;
+        std::transform(input.begin(), input.end(), input.begin(), ::tolower);
+        if (input == "dispersion") {
+            this->algorithm_str = "Dispersion";
+            this->algorithm = Algorithm::DISPERSION;
+        } else if (input == "dispersion_extended") {
+            this->algorithm_str = "Dispersion Extended";  // ✨
+            this->algorithm = Algorithm::DISPERSION_EXTENDED;
+        } else {
+            throw std::invalid_argument("Invalid algorithm specified");
+        }
+    }
+};
+
+/**
  * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
  */
 class PipeHandler {
@@ -305,6 +305,10 @@ int main(int argc, char **argv) {
       .metavar("FD")
       .default_value<int>(-1)
       .scan<'i', int>();
+    parser.add_argument("-a", "--algorithm")
+      .help("Dispersion algorithm to use")
+      .metavar("ALGO")
+      .default_value<std::string>("dispersion_extended");
     parser.add_argument("--dmin")
       .help("Minimum resolution (Å)")
       .metavar("MIN D")
@@ -329,6 +333,9 @@ int main(int argc, char **argv) {
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
+
+    DispersionAlgorithm dispersion_algorithm(parser.get<std::string>("algorithm"));
+    print("Algorithm: {}\n", styled(dispersion_algorithm.algorithm_str, fmt_green));
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -721,19 +728,33 @@ int main(int argc, char **argv) {
 
 #pragma region Spotfinding
                 // When done, launch the spotfind kernel
-                // do_spotfinding_naive<<<blocks_dims, gpu_thread_block_size, 0, stream>>>(
-                call_do_spotfinding_naive(blocks_dims,
-                                          gpu_thread_block_size,
-                                          0,
-                                          stream,
-                                          device_image.get(),
-                                          device_image.pitch,
-                                          mask.get(),
-                                          mask.pitch,
-                                          width,
-                                          height,
-                                          trusted_px_max,
-                                          device_results.get());
+                switch (dispersion_algorithm.algorithm) {
+                case DispersionAlgorithm::Algorithm::DISPERSION:
+                    call_do_spotfinding_dispersion(blocks_dims,
+                                                   gpu_thread_block_size,
+                                                   0,
+                                                   stream,
+                                                   device_image,
+                                                   mask,
+                                                   width,
+                                                   height,
+                                                   trusted_px_max,
+                                                   &device_results);
+                    break;
+                case DispersionAlgorithm::Algorithm::DISPERSION_EXTENDED:
+                    call_do_spotfinding_extended(blocks_dims,
+                                                 gpu_thread_block_size,
+                                                 0,
+                                                 stream,
+                                                 device_image,
+                                                 mask,
+                                                 width,
+                                                 height,
+                                                 trusted_px_max,
+                                                 &device_results,
+                                                 do_writeout);
+                    break;
+                }
                 post.record(stream);
 
                 // Copy the results buffer back to the CPU
