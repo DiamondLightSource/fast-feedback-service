@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <nlohmann/json.hpp>
+#include <vector>
 
 /**
  * @brief Struct to store the geometry of the detector.
