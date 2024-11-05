@@ -50,6 +50,7 @@ struct _h5read_handle {
     float pixel_size_x, pixel_size_y;
     float detector_distance;
     float beam_center_x, beam_center_y;
+    double module_offsets[3];
 };
 
 void h5read_free(h5read_handle *obj) {
@@ -401,6 +402,10 @@ float h5read_get_wavelength(h5read_handle *obj) {
     return obj->wavelength;
 }
 
+double* h5read_get_module_offsets(h5read_handle *obj){
+    return obj->module_offsets;
+}
+
 float h5read_get_pixel_size_slow(h5read_handle *obj) {
     return obj->pixel_size_x;
 }
@@ -591,6 +596,28 @@ herr_t _read_single_value_image_t_type(hid_t origin,
     return 0;
 }
 
+/// Read an attribute of a HDF5 group that is a vector.
+herr_t _read_object_attribute_array(hid_t origin, const char *path, const char *attrname, double *destination) {
+    hid_t dataset = H5Dopen(origin, path, H5P_DEFAULT);
+    if (dataset < 0) {
+        return dataset;
+    }
+    //hid_t datatype = H5Dget_type(dataset);
+    hid_t attr = H5Aopen(dataset, attrname, H5P_DEFAULT);
+    hid_t attrdatatype = H5Aget_type(attr);
+    if (H5Aread(
+        attr, attrdatatype, destination)
+    < 0) {
+        fprintf(stderr,
+                "Error: While reading array attribute: Unspecified data reading error.\n",
+                path);
+        exit(1);
+    }
+    H5Aclose(attr);
+    H5Dclose(dataset);
+    return 0;
+}
+
 /// Read a single float value out of an HDF5 dataset
 ///
 /// If the dataset is present, but contains multiple elements, sets destination
@@ -665,6 +692,18 @@ void read_wavelength(h5read_handle *obj) {
         < 0) {
         fprintf(stderr, "No wavelength data found...\n");
         obj->wavelength = -1;
+    }
+}
+
+void read_module_offsets(h5read_handle *obj){
+    if (_read_object_attribute_array(obj->master_file,
+                                 "/entry/instrument/detector/module/module_offset",
+                                 "vector",
+                                 *(&obj->module_offsets))
+        < 0){
+        obj->module_offsets[0] = -1;  
+        obj->module_offsets[1] = -1;  
+        obj->module_offsets[2] = -1;    
     }
 }
 
@@ -923,6 +962,8 @@ h5read_handle *h5read_open(const char *master_filename) {
     read_wavelength(file);
 
     read_detector_metadata(file);
+
+    read_module_offsets(file);
 
     read_mask(file);
 
