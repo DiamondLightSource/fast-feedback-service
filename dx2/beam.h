@@ -9,6 +9,10 @@ public:
     Beam()=default;
     Beam(double wavelength);
     Beam(Vector3d s0);
+    Beam(double wavelength, Vector3d direction, double divergence,
+         double sigma_divergence, Vector3d polarization_normal,
+         double polarization_fraction, double flux,
+         double transmission, double sample_to_source_distance);
     double get_wavelength() const;
     void set_wavelength(double wavelength);
     Vector3d get_s0() const;
@@ -33,6 +37,21 @@ Beam::Beam(Vector3d s0){
     wavelength_ = 1.0 / len;
     sample_to_source_direction_ = -1.0 * s0 / len;
 }
+
+// full constructor for to-from json
+Beam::Beam(double wavelength, Vector3d direction, double divergence,
+    double sigma_divergence, Vector3d polarization_normal,
+    double polarization_fraction, double flux,
+    double transmission, double sample_to_source_distance)
+    : wavelength_{wavelength},
+      sample_to_source_direction_{direction},
+      divergence_{divergence},
+      sigma_divergence_{sigma_divergence},
+      polarization_normal_{polarization_normal},
+      polarization_fraction_{polarization_fraction},
+      flux_{flux}, transmission_{transmission},
+      sample_to_source_distance_{sample_to_source_distance} {}
+
 
 double Beam::get_wavelength() const {
     return wavelength_;

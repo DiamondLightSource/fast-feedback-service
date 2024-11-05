@@ -79,8 +79,17 @@ int main(int argc, char **argv) {
     std::string imported_expt = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/imported.expt";
     std::ifstream f(imported_expt);
     json elist_json_obj = json::parse(f);
-    double wl = elist_json_obj["beam"][0]["wavelength"];
-    std::cout << "JSON WL " << wl << std::endl;
+    auto beam_obj = elist_json_obj["beam"][0];
+    printf("DIRECTION %f", beam_obj["direction"][0]);
+    Vector3d dir{{beam_obj["direction"][0], beam_obj["direction"][1], beam_obj["direction"][2]}};
+    Vector3d pol_n{{beam_obj["polarization_normal"][0],beam_obj["polarization_normal"][1],beam_obj["polarization_normal"][2]}};
+    Beam beam(
+        beam_obj["wavelength"], dir,
+        beam_obj["divergence"], beam_obj["sigma_divergence"],
+        pol_n, beam_obj["polarization_fraction"],
+        beam_obj["flux"], beam_obj["transmission"],
+        beam_obj["sample_to_source_distance"]);
+
     //TODO
     // Get metadata from file
     // implement max cell/d_min estimation. - will need annlib if want same result as dials.
@@ -133,7 +142,7 @@ int main(int argc, char **argv) {
     SimpleDetector detector(d_matrix, pixel_size_x, mu, t0, true);
     SimpleScan scan(image_range_start, osc_start, osc_width);
     SimpleGonio gonio(fixed_rotation, rotation_axis, setting_rotation);
-    Beam beam(wavelength_f);
+    //Beam beam(wavelength_f);
 
     // get processed reflection data from spotfinding
     std::string filename = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/strong.refl";
