@@ -15,7 +15,7 @@ include(AlwaysColourCompilation)
 
 
 include_directories(include)
-include_directories(dx2)
+include_directories(dx2_test_models)
 
 # Dependency fetching
 set(FETCHCONTENT_QUIET OFF)

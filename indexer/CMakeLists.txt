@@ -2,6 +2,18 @@ project(indexer CXX CUDA)
 
 find_package(CUDAToolkit REQUIRED)
 
+# Automatic Dependencies
+set(FETCHCONTENT_QUIET OFF)
+include(FetchContent)
+FetchContent_Declare(
+    Eigen3
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG 3.4.0
+    EXCLUDE_FROM_ALL
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(Eigen3)
+
 add_executable(indexer
     indexer.cc
 )
@@ -9,6 +21,7 @@ target_link_libraries(indexer
     PRIVATE
     fmt
     h5read
+    Eigen3::Eigen
     argparse
     standalone
     CUDA::cudart
