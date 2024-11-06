@@ -67,7 +67,7 @@ std::array<double, 2> SimpleDetector::px_to_mm(double x, double y) const{
   return std::array<double, 2>{c1,c2};
 }
 
-class SimpleScan {
+/*class SimpleScan {
 public:
   int image_range_start;
   double osc_start;
@@ -78,7 +78,7 @@ public:
     this->osc_start = osc_start;
     this->osc_width = osc_width;
   }
-};
+};*/
 
 class SimpleGonio {
 public:

@@ -16,6 +16,7 @@
 #include <chrono>
 #include "simple_models.cc"
 #include "beam.h"
+#include "scan.h"
 #include <fstream>
 
 using Eigen::Vector3d;
@@ -79,16 +80,16 @@ int main(int argc, char **argv) {
     std::string imported_expt = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/imported.expt";
     std::ifstream f(imported_expt);
     json elist_json_obj = json::parse(f);
-    auto beam_obj = elist_json_obj["beam"][0];
-    printf("DIRECTION %f", beam_obj["direction"][0]);
-    Vector3d dir{{beam_obj["direction"][0], beam_obj["direction"][1], beam_obj["direction"][2]}};
-    Vector3d pol_n{{beam_obj["polarization_normal"][0],beam_obj["polarization_normal"][1],beam_obj["polarization_normal"][2]}};
-    Beam beam(
-        beam_obj["wavelength"], dir,
-        beam_obj["divergence"], beam_obj["sigma_divergence"],
-        pol_n, beam_obj["polarization_fraction"],
-        beam_obj["flux"], beam_obj["transmission"],
-        beam_obj["sample_to_source_distance"]);
+    json beam_data = elist_json_obj["beam"][0];
+    Beam beam(beam_data);
+    json beam_out = beam.to_json();
+    std::ofstream file("test_beam.json");
+    file << beam_out.dump(4);
+    json scan_data = elist_json_obj["scan"][0];
+    Scan scan(scan_data);
+    json scan_out = scan.to_json();
+    std::ofstream scanfile("test_scan.json");
+    scanfile << scan_out.dump(4);
 
     //TODO
     // Get metadata from file
@@ -140,8 +141,11 @@ int main(int argc, char **argv) {
     auto t1 = std::chrono::system_clock::now();
     // Make the dxtbx-like models
     SimpleDetector detector(d_matrix, pixel_size_x, mu, t0, true);
-    SimpleScan scan(image_range_start, osc_start, osc_width);
+    //SimpleScan scan(image_range_start, osc_start, osc_width);
     SimpleGonio gonio(fixed_rotation, rotation_axis, setting_rotation);
+    /*std::array<int, 2> image_range{{1,3600}};
+    std::array<double, 2> oscillation{{osc_start, osc_width}};
+    Scan scan(image_range, oscillation);*/
     //Beam beam(wavelength_f);
 
     // get processed reflection data from spotfinding

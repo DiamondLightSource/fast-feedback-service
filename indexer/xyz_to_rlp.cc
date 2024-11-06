@@ -3,6 +3,7 @@
 #include <math.h>
 #include "simple_models.cc"
 #include "beam.h"
+#include "scan.h"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -11,7 +12,7 @@ std::vector<Vector3d> xyz_to_rlp(
   const std::vector<double> &xyzobs_px,
   const SimpleDetector &detector,
   const Beam &beam,
-  const SimpleScan &scan,
+  const Scan &scan,
   const SimpleGonio &gonio) {
   auto start = std::chrono::system_clock::now();
   // An equivalent to dials flex_ext.map_centroids_to_reciprocal_space method
@@ -20,6 +21,10 @@ std::vector<Vector3d> xyz_to_rlp(
   std::vector<Vector3d> rlp(xyzobs_px.size() / 3);
   Vector3d s0 = beam.get_s0();
   double wl = beam.get_wavelength();
+  std::array<double, 2> oscillation = scan.get_oscillation();
+  double osc_width = oscillation[1];
+  double osc_start = oscillation[0];
+  int image_range_start = scan.get_image_range()[0];
   for (int i = 0; i < rlp.size(); ++i) {
     // first convert detector pixel positions into mm
     int vec_idx= 3*i;
@@ -29,7 +34,7 @@ std::vector<Vector3d> xyz_to_rlp(
     std::array<double, 2> xymm = detector.px_to_mm(x1,x2);
     // convert the image 'z' coordinate to rotation angle based on the scan data
     double rot_angle =
-      (((x3 + 1 - scan.image_range_start) * scan.osc_width) + scan.osc_start) * DEG2RAD;
+      (((x3 + 1 - image_range_start) * osc_width) + osc_start) * DEG2RAD;
    
     // calculate the s1 vector using the detector d matrix
     Vector3d m = {xymm[0], xymm[1], 1.0};
