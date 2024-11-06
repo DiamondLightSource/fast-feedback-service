@@ -17,6 +17,7 @@
 #include "simple_models.cc"
 #include "beam.h"
 #include "scan.h"
+#include "goniometer.h"
 #include <fstream>
 
 using Eigen::Vector3d;
@@ -82,14 +83,20 @@ int main(int argc, char **argv) {
     json elist_json_obj = json::parse(f);
     json beam_data = elist_json_obj["beam"][0];
     Beam beam(beam_data);
-    json beam_out = beam.to_json();
+    /*json beam_out = beam.to_json();
     std::ofstream file("test_beam.json");
-    file << beam_out.dump(4);
+    file << beam_out.dump(4);*/
     json scan_data = elist_json_obj["scan"][0];
     Scan scan(scan_data);
-    json scan_out = scan.to_json();
+    /*json scan_out = scan.to_json();
     std::ofstream scanfile("test_scan.json");
-    scanfile << scan_out.dump(4);
+    scanfile << scan_out.dump(4);*/
+
+    json gonio_data = elist_json_obj["goniometer"][0];
+    Goniometer gonio(gonio_data);
+    /*json gonio_out = gonio.to_json();
+    std::ofstream goniofile("test_gonio.json");
+    goniofile << gonio_out.dump(4);*/
 
     //TODO
     // Get metadata from file
@@ -142,7 +149,8 @@ int main(int argc, char **argv) {
     // Make the dxtbx-like models
     SimpleDetector detector(d_matrix, pixel_size_x, mu, t0, true);
     //SimpleScan scan(image_range_start, osc_start, osc_width);
-    SimpleGonio gonio(fixed_rotation, rotation_axis, setting_rotation);
+    //SimpleGonio gonio(fixed_rotation, rotation_axis, setting_rotation);
+    
     /*std::array<int, 2> image_range{{1,3600}};
     std::array<double, 2> oscillation{{osc_start, osc_width}};
     Scan scan(image_range, oscillation);*/

@@ -4,6 +4,7 @@
 #include "simple_models.cc"
 #include "beam.h"
 #include "scan.h"
+#include "goniometer.h"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -13,7 +14,7 @@ std::vector<Vector3d> xyz_to_rlp(
   const SimpleDetector &detector,
   const Beam &beam,
   const Scan &scan,
-  const SimpleGonio &gonio) {
+  const Goniometer &gonio) {
   auto start = std::chrono::system_clock::now();
   // An equivalent to dials flex_ext.map_centroids_to_reciprocal_space method
 
@@ -25,6 +26,9 @@ std::vector<Vector3d> xyz_to_rlp(
   double osc_width = oscillation[1];
   double osc_start = oscillation[0];
   int image_range_start = scan.get_image_range()[0];
+  Matrix3d setting_rotation_inverse = gonio.get_setting_rotation().inverse();
+  Matrix3d sample_rotation_inverse = gonio.get_sample_rotation().inverse();
+  Vector3d rotation_axis = gonio.get_rotation_axis();
   for (int i = 0; i < rlp.size(); ++i) {
     // first convert detector pixel positions into mm
     int vec_idx= 3*i;
@@ -46,16 +50,16 @@ std::vector<Vector3d> xyz_to_rlp(
     // now apply the goniometer matrices
     // see https://dials.github.io/documentation/conventions.html for full conventions
     // rlp = F^-1 * R'^-1 * S^-1 * (s1-s0)
-    Vector3d S = gonio.setting_rotation_inverse * (s1_this - s0);
+    Vector3d S = setting_rotation_inverse * (s1_this - s0);
     double cos = std::cos(-1.0 * rot_angle);
     double sin = std::sin(-1.0 * rot_angle);
     // rlp_this = S.rotate_around_origin(gonio.rotation_axis, -1.0 * rot_angle);
     Vector3d rlp_this = (S * cos)
-                        + (gonio.rotation_axis * gonio.rotation_axis.dot(S) * (1 - cos))
-                        + (sin * gonio.rotation_axis.cross(S));
+                        + (rotation_axis * rotation_axis.dot(S) * (1 - cos))
+                        + (sin * rotation_axis.cross(S));
     
     
-    rlp[i] = gonio.sample_rotation_inverse * rlp_this;
+    rlp[i] = sample_rotation_inverse * rlp_this;
   }
 
   auto end = std::chrono::system_clock::now();

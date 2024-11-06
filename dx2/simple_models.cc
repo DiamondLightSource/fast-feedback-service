@@ -6,17 +6,6 @@
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 
-/*class SimpleBeam {
-public:
-  double wavelength;
-  Vector3d s0;
-
-  SimpleBeam(double wavelength) {
-    this->wavelength = wavelength;
-    s0 = {0.0, 0.0, -1.0 / wavelength};
-  }
-};*/
-
 double attenuation_length(double mu, double t0,
                                    Vector3d s1,
                                    Vector3d fast,
@@ -67,37 +56,5 @@ std::array<double, 2> SimpleDetector::px_to_mm(double x, double y) const{
   return std::array<double, 2>{c1,c2};
 }
 
-/*class SimpleScan {
-public:
-  int image_range_start;
-  double osc_start;
-  double osc_width;
-
-  SimpleScan(int image_range_start, double osc_start, double osc_width) {
-    this->image_range_start = image_range_start;
-    this->osc_start = osc_start;
-    this->osc_width = osc_width;
-  }
-};*/
-
-class SimpleGonio {
-public:
-  Matrix3d sample_rotation;
-  Vector3d rotation_axis;
-  Matrix3d setting_rotation;
-  Matrix3d sample_rotation_inverse;
-  Matrix3d setting_rotation_inverse;
-
-  SimpleGonio(Matrix3d sample_rotation,
-              Vector3d rotation_axis,
-              Matrix3d setting_rotation) {
-    this->sample_rotation = sample_rotation;
-    rotation_axis.normalize();
-    this->rotation_axis = rotation_axis;
-    this->setting_rotation = setting_rotation;
-    sample_rotation_inverse = this->sample_rotation.inverse();
-    setting_rotation_inverse = this->setting_rotation.inverse();
-  }
-};
 
 #endif  // INDEXER_SIMPLE_MODELS

@@ -2,6 +2,7 @@
 #define DX2_MODEL_BEAM_H
 #include <Eigen/Dense>
 #include <nlohmann/json.hpp>
+
 using Eigen::Vector3d;
 using json = nlohmann::json;
 
