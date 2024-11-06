@@ -14,11 +14,11 @@
 #include "sites_to_vecs.cc"
 #include "fft3d.cc"
 #include <chrono>
-#include "simple_models.cc"
-#include "beam.h"
-#include "scan.h"
-#include "goniometer.h"
 #include <fstream>
+#include <dx2/simple_models.cc>
+#include <dx2/beam.h>
+#include <dx2/scan.h>
+#include <dx2/goniometer.h>
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;

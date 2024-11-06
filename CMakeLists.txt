@@ -15,7 +15,6 @@ include(AlwaysColourCompilation)
 
 
 include_directories(include)
-include_directories(dx2_test_models)
 
 # Dependency fetching
 set(FETCHCONTENT_QUIET OFF)
@@ -41,7 +40,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(argparse)
 
-
+add_subdirectory(dx2)
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)

@@ -21,6 +21,7 @@ target_link_libraries(indexer
     PRIVATE
     fmt
     h5read
+    dx2
     Eigen3::Eigen
     argparse
     standalone

@@ -1,10 +1,10 @@
 #include <Eigen/Dense>
 #include <chrono>
 #include <math.h>
-#include "simple_models.cc"
-#include "beam.h"
-#include "scan.h"
-#include "goniometer.h"
+#include <dx2/simple_models.cc>
+#include <dx2/beam.h>
+#include <dx2/scan.h>
+#include <dx2/goniometer.h>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
