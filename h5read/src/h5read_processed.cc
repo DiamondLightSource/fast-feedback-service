@@ -11,6 +11,11 @@ using namespace std;
 std::vector<double> read_xyzobs_data(string filename, string array_name){
     auto start_time = std::chrono::high_resolution_clock::now();
     hid_t file = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (file < 0){
+      std::cout << "Error: Unable to open " << filename.c_str() << " as a hdf5 reflection table" <<std::endl;
+      std::exit(1);
+    }
+
     hid_t dataset = H5Dopen(file, array_name.c_str(), H5P_DEFAULT);
     hid_t datatype = H5Dget_type(dataset);
     size_t datatype_size = H5Tget_size(datatype);

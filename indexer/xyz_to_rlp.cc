@@ -12,7 +12,7 @@ using Eigen::Vector3d;
 std::vector<Vector3d> xyz_to_rlp(
   const std::vector<double> &xyzobs_px,
   const SimpleDetector &detector,
-  const Beam &beam,
+  const MonochromaticBeam &beam,
   const Scan &scan,
   const Goniometer &gonio) {
   auto start = std::chrono::system_clock::now();

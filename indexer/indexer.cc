@@ -5,7 +5,6 @@
 #include "common.hpp"
 #include "cuda_common.hpp"
 #include "h5read.h"
-#include "standalone.h"
 #include <vector>
 #include <cstring>
 #include <Eigen/Dense>
@@ -19,70 +18,47 @@
 #include <dx2/beam.h>
 #include <dx2/scan.h>
 #include <dx2/goniometer.h>
+#include <fmt/color.h>
+#include <fmt/core.h>
+#include <fmt/os.h>
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
 using json = nlohmann::json;
+
 int main(int argc, char **argv) {
 
-    
+    auto t1 = std::chrono::system_clock::now();
     auto parser = CUDAArgumentParser();
-    parser.add_h5read_arguments(); //will use h5 file to get metadata
-    parser.add_argument("--images")
-      .help("Maximum number of images to process")
-      .metavar("NUM")
-      .scan<'u', uint32_t>();
+    parser.add_argument("-e", "--expt")
+      .help("Path to the DIALS expt file");
+    parser.add_argument("-r", "--refl")
+      .help("Path to the h5 reflection table file containing spotfinding results");
     auto args = parser.parse_args(argc, argv);
 
-
-    std::unique_ptr<H5Read> reader_ptr;
-
-    // Wait for read-readiness
-
-    reader_ptr = args.file.empty() ? std::make_unique<H5Read>()
-                                    : std::make_unique<H5Read>(args.file);
-    // Bind this as a reference
-    H5Read &reader = *reader_ptr;
-
-    auto reader_mutex = std::mutex{};
-
-    uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
-                                                   : reader.get_number_of_images();
-
-
-    // first get the Beam properties; wavelength and s0 vector
-    auto wavelength_opt = reader.get_wavelength();
-    if (!wavelength_opt) {
-        printf(
-            "Error: No wavelength provided. Please pass wavelength using: "
-            "--wavelength\n");
+    if (!parser.is_used("--expt")){
+        fmt::print("Error: must specify experiment list file with --expt\n");
         std::exit(1);
     }
-    float wavelength_f = wavelength_opt.value();
-    printf("INDEXER: Got wavelength from file: %f Å\n", wavelength_f);
-    auto distance_opt = reader.get_detector_distance();
-    if (!distance_opt) {
-        printf("Error: No detector distance found in file.");
+    if (!parser.is_used("--refl")){
+        fmt::print("Error: must specify spotfinding results file (in DIALS HDF5 format) with --refl\n");
         std::exit(1);
     }
-    float distance_f = distance_opt.value()*1000;
-    printf("INDEXER: Got detector distance from file: %f mm\n", distance_f);
-    auto pixel_size_f = reader.get_pixel_size();
-    float pixel_size_x = pixel_size_f.value()[0]*1000;
-    printf("INDEXER: Got detector pixel_size from file: %f mm\n", pixel_size_x);
-
-    std::array<double, 3> module_offsets = reader.get_module_offsets();
-    double origin_x = module_offsets[0] * 1000;
-    double origin_y = module_offsets[1] * 1000;
-    printf("INDEXER: Got detector origin x from file: %f mm\n", origin_x);
-    printf("INDEXER: Got detector origin y from file: %f mm\n", origin_y);
+    std::string imported_expt = parser.get<std::string>("--expt");
+    std::string filename = parser.get<std::string>("--refl");
     
-
-    std::string imported_expt = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/imported.expt";
+    //std::string imported_expt = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/imported.expt";
     std::ifstream f(imported_expt);
-    json elist_json_obj = json::parse(f);
+    json elist_json_obj;
+    try {
+        elist_json_obj = json::parse(f);
+    }
+    catch(json::parse_error& ex){
+        std::cerr << "Error: Unable to read " << imported_expt.c_str() << "; json parse error at byte " << ex.byte << std::endl;
+        std::exit(1);
+    }
     json beam_data = elist_json_obj["beam"][0];
-    Beam beam(beam_data);
+    MonoXrayBeam beam(beam_data);
     /*json beam_out = beam.to_json();
     std::ofstream file("test_beam.json");
     file << beam_out.dump(4);*/
@@ -98,66 +74,14 @@ int main(int argc, char **argv) {
     std::ofstream goniofile("test_gonio.json");
     goniofile << gonio_out.dump(4);*/
 
+    json detector_data = elist_json_obj["detector"][0];
+    SimpleDetector detector(detector_data);
+
     //TODO
-    // Get metadata from file
     // implement max cell/d_min estimation. - will need annlib if want same result as dials.
 
-    //FIXME don't assume s0 vector get from file
-    //double wavelength = 0.9762535307519975;
-
-    // now get detector properties
-    // need fast, slow,  norm and origin, plus pixel size
-    
-
-    std::array<double, 3> fast_axis {1.0, 0.0, 0.0}; //FIXME get through reader - but const for I03 for now
-    std::array<double, 3> slow_axis {0.0, -1.0, 0.0}; //FIXME get through reader
-    // ^ change basis from nexus to iucr/imgcif convention (invert x and z)
-
-    //std::array<double, 3> normal {0.0, 0.0, 0.0}; // fast_axis cross slow_axis
-    //std::array<float, 3> origin {-75.61, 79.95, -150.0}; // FIXME
-    //Vector3d origin {-75.61, 79.95, -150.0}; // FIXME
-    //Vector3d origin {-153.60993960268158, 162.44624026693077, -200.45297988785603};
-    Vector3d origin {-1.0*origin_x, origin_y, -1.0*distance_f};
-
-    Matrix3d d_matrix{{fast_axis[0], slow_axis[0], origin[0]},{
-        fast_axis[1], slow_axis[1], origin[1]},
-        {fast_axis[2], slow_axis[2], origin[2]}};
-    
-    //FIXME remove assumption of pixel sizes being same in analysis code.
-    //double pixel_size_x = pixel_size[0];//0.075;
-
-    // Thickness not currently written to nxs file? Then need to calc mu from thickness.
-    // Required to get equivalent results to dials. Const for I03 Eiger
-    double mu = 3.9220780876;
-    double t0 = 0.45;
-
-    // now get scan properties e.g.
-    int image_range_start = 1; // a 'dials' thing.
-    double osc_start = reader.get_oscillation()[0];
-    double osc_width = reader.get_oscillation()[1];
-    printf("INDEXER: Got osc start from file: %f\n", osc_start);
-    printf("INDEXER: Got osc width from file: %f\n", osc_width);
-    //double osc_start = 0.0;
-    //double osc_width = 0.10002778549596769;
-
-    // finally gonio properties e.g.
-    // Const for I03 Eiger
-    Matrix3d fixed_rotation{{1,0,0},{0,1,0},{0,0,1}};
-    Vector3d rotation_axis {1.0,0.0,0.0};
-    Matrix3d setting_rotation {{1,0,0},{0,1,0},{0,0,1}};
-    auto t1 = std::chrono::system_clock::now();
-    // Make the dxtbx-like models
-    SimpleDetector detector(d_matrix, pixel_size_x, mu, t0, true);
-    //SimpleScan scan(image_range_start, osc_start, osc_width);
-    //SimpleGonio gonio(fixed_rotation, rotation_axis, setting_rotation);
-    
-    /*std::array<int, 2> image_range{{1,3600}};
-    std::array<double, 2> oscillation{{osc_start, osc_width}};
-    Scan scan(image_range, oscillation);*/
-    //Beam beam(wavelength_f);
-
     // get processed reflection data from spotfinding
-    std::string filename = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/strong.refl";
+    //std::string filename = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/strong.refl";
     std::string array_name = "/dials/processing/group_0/xyzobs.px.value";
     std::vector<double> data = read_xyzobs_data(filename, array_name);
 
