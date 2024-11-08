@@ -12,7 +12,19 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
     FIND_PACKAGE_ARGS
 )
+FetchContent_Declare(
+    pocketfft
+    GIT_REPOSITORY https://github.com/mreineck/pocketfft
+    GIT_TAG cpp
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+)
 FetchContent_MakeAvailable(Eigen3)
+FetchContent_MakeAvailable(pocketfft)
+
+FetchContent_GetProperties(pocketfft)
+add_library(pocketfft INTERFACE)
+target_include_directories(pocketfft INTERFACE ${pocketfft_SOURCE_DIR})
 
 add_executable(indexer
     indexer.cc
@@ -23,6 +35,7 @@ target_link_libraries(indexer
     h5read
     dx2
     Eigen3::Eigen
+    pocketfft
     argparse
     standalone
     CUDA::cudart
