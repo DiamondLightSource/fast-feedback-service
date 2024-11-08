@@ -1,7 +1,7 @@
 #include <Eigen/Dense>
 #include <chrono>
 #include <math.h>
-#include <dx2/simple_models.cc>
+#include <dx2/detector.h>
 #include <dx2/beam.h>
 #include <dx2/scan.h>
 #include <dx2/goniometer.h>
@@ -11,7 +11,7 @@ using Eigen::Vector3d;
 
 std::vector<Vector3d> xyz_to_rlp(
   const std::vector<double> &xyzobs_px,
-  const SimpleDetector &detector,
+  const Panel &panel,
   const MonochromaticBeam &beam,
   const Scan &scan,
   const Goniometer &gonio) {
@@ -29,20 +29,21 @@ std::vector<Vector3d> xyz_to_rlp(
   Matrix3d setting_rotation_inverse = gonio.get_setting_rotation().inverse();
   Matrix3d sample_rotation_inverse = gonio.get_sample_rotation().inverse();
   Vector3d rotation_axis = gonio.get_rotation_axis();
+  Matrix3d d_matrix = panel.get_d_matrix();
   for (int i = 0; i < rlp.size(); ++i) {
     // first convert detector pixel positions into mm
     int vec_idx= 3*i;
     double x1 = xyzobs_px[vec_idx];
     double x2 = xyzobs_px[vec_idx+1];
     double x3 = xyzobs_px[vec_idx+2];
-    std::array<double, 2> xymm = detector.px_to_mm(x1,x2);
+    std::array<double, 2> xymm = panel.px_to_mm(x1,x2);
     // convert the image 'z' coordinate to rotation angle based on the scan data
     double rot_angle =
       (((x3 + 1 - image_range_start) * osc_width) + osc_start) * DEG2RAD;
    
     // calculate the s1 vector using the detector d matrix
     Vector3d m = {xymm[0], xymm[1], 1.0};
-    Vector3d s1_i = detector.d_matrix * m;
+    Vector3d s1_i = d_matrix * m;
     s1_i.normalize();
     // convert into inverse ansgtroms
     Vector3d s1_this = s1_i / wl;

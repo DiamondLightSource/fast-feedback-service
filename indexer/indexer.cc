@@ -14,7 +14,7 @@
 #include "fft3d.cc"
 #include <chrono>
 #include <fstream>
-#include <dx2/simple_models.cc>
+#include <dx2/detector.h>
 #include <dx2/beam.h>
 #include <dx2/scan.h>
 #include <dx2/goniometer.h>
@@ -74,8 +74,11 @@ int main(int argc, char **argv) {
     std::ofstream goniofile("test_gonio.json");
     goniofile << gonio_out.dump(4);*/
 
-    json detector_data = elist_json_obj["detector"][0];
-    SimpleDetector detector(detector_data);
+    json panel_data = elist_json_obj["detector"][0]["panels"][0];
+    Panel detector(panel_data);
+    json det_out = detector.to_json();
+    std::ofstream detfile("test_detector.json");
+    detfile << det_out.dump(4);
 
     //TODO
     // implement max cell/d_min estimation. - will need annlib if want same result as dials.
