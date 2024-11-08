@@ -12,6 +12,7 @@
 #include "flood_fill.cc"
 #include "sites_to_vecs.cc"
 #include "fft3d.cc"
+#include "combinations.cc"
 #include <chrono>
 #include <fstream>
 #include <dx2/detector.h>
@@ -114,4 +115,8 @@ int main(int argc, char **argv) {
     std::chrono::duration<double> elapsed_time = t2 - t1;
     std::cout << "Total time for indexer: " << elapsed_time.count() << "s" << std::endl;
 
+    CandidateOrientationMatrices candidates(candidate_vecs, 1000);
+    while (candidates.has_next()){
+        Vector3i comb = candidates.next();
+    }
 }
