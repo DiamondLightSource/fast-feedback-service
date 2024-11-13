@@ -5,6 +5,7 @@
 #include <tuple>
 #include <math.h>
 #include <iostream>
+#include <dx2/utils.h>
 
 using Eigen::Vector3d;
 
@@ -47,33 +48,14 @@ bool compare_site_data_volume(const SiteData& a, const SiteData& b) {
   return a.volume > b.volume;
 }
 
-double vector_length(Vector3d v) {
-  return std::pow(std::pow(v[0], 2) + std::pow(v[1], 2) + std::pow(v[2], 2), 0.5);
-}
-
-double angle_between_vectors_degrees(Vector3d v1, Vector3d v2) {
-  double l1 = vector_length(v1);
-  double l2 = vector_length(v2);
-  double dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
-  double normdot = dot / (l1 * l2);
-  if (std::abs(normdot - 1.0) < 1E-6) {
-    return 0.0;
-  }
-  if (std::abs(normdot + 1.0) < 1E-6) {
-    return 180.0;
-  }
-  double angle = std::acos(normdot) * 180.0 / M_PI;
-  return angle;
-}
-
 bool is_approximate_integer_multiple(Vector3d v1,
                                      Vector3d v2,
                                      double relative_length_tolerance = 0.2,
                                      double angular_tolerance = 5.0) {
   double angle = angle_between_vectors_degrees(v1, v2);
   if ((angle < angular_tolerance) || (std::abs(180 - angle) < angular_tolerance)) {
-    double l1 = vector_length(v1);
-    double l2 = vector_length(v2);
+    double l1 = v1.norm();
+    double l2 = v2.norm();
     if (l1 > l2) {
       std::swap(l1, l2);
     }
@@ -131,7 +113,7 @@ std::vector<Vector3d> sites_to_vecs(
     double length = filtered_data[i].length;
     for (int j = 0; j < vector_groups.size(); j++) {
       Vector3d mean_v = vector_groups[j].mean();
-      double mean_v_length = vector_length(mean_v);
+      double mean_v_length = mean_v.norm();
       if ((std::abs(mean_v_length - length) / std::max(mean_v_length, length))
           < relative_length_tolerance) {
         double angle = angle_between_vectors_degrees(mean_v, filtered_data[i].site);
@@ -157,7 +139,7 @@ std::vector<Vector3d> sites_to_vecs(
     Vector3d site = vector_groups[i].mean();
     int max = *std::max_element(vector_groups[i].weights.begin(),
                                 vector_groups[i].weights.end());
-    SiteData site_data = {site, vector_length(site), max};
+    SiteData site_data = {site, site.norm(), max};
     grouped_data.push_back(site_data);
   }
   std::stable_sort(grouped_data.begin(), grouped_data.end(), compare_site_data_volume);
@@ -172,8 +154,8 @@ std::vector<Vector3d> sites_to_vecs(
     for (int j = 0; j < unique_sites.size(); j++) {
       if (unique_sites[j].volume > grouped_data[i].volume) {
         if (is_approximate_integer_multiple(unique_sites[j].site, v)) {
-          std::cout << "rejecting " << vector_length(v) << ": is integer multiple of "
-                    << vector_length(unique_sites[j].site) << std::endl;
+          std::cout << "rejecting " << v.norm() << ": is integer multiple of "
+                    << unique_sites[j].site.norm() << std::endl;
           is_unique = false;
           break;
         }
@@ -183,7 +165,7 @@ std::vector<Vector3d> sites_to_vecs(
       // std::cout << v[0] << " " << v[1] << " " << v[2] << std::endl;
       // unique_vectors.push_back(v);
       // unique_volumes.push_back(grouped_data[i].volume);
-      SiteData site{v, vector_length(v), grouped_data[i].volume};
+      SiteData site{v, v.norm(), grouped_data[i].volume};
       unique_sites.push_back(site);
     }
   }

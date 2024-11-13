@@ -12,12 +12,14 @@
 #include "flood_fill.cc"
 #include "sites_to_vecs.cc"
 #include "fft3d.cc"
+#include "assign_indices.h"
 #include "combinations.cc"
 #include <chrono>
 #include <fstream>
 #include <dx2/detector.h>
 #include <dx2/beam.h>
 #include <dx2/scan.h>
+#include <dx2/crystal.h>
 #include <dx2/goniometer.h>
 #include <fmt/color.h>
 #include <fmt/core.h>
@@ -25,6 +27,7 @@
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
+using Eigen::Vector3i;
 using json = nlohmann::json;
 
 int main(int argc, char **argv) {
@@ -35,6 +38,10 @@ int main(int argc, char **argv) {
       .help("Path to the DIALS expt file");
     parser.add_argument("-r", "--refl")
       .help("Path to the h5 reflection table file containing spotfinding results");
+    parser.add_argument("--max-refine")
+      .help("Maximum number of crystal models to test")
+      .default_value<int>(50)
+      .scan<'i', int>();
     auto args = parser.parse_args(argc, argv);
 
     if (!parser.is_used("--expt")){
@@ -47,6 +54,7 @@ int main(int argc, char **argv) {
     }
     std::string imported_expt = parser.get<std::string>("--expt");
     std::string filename = parser.get<std::string>("--refl");
+    int max_refine = parser.get<int>("max-refine");
     
     //std::string imported_expt = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/imported.expt";
     std::ifstream f(imported_expt);
@@ -91,6 +99,16 @@ int main(int argc, char **argv) {
 
     std::vector<Vector3d> rlp = xyz_to_rlp(data, detector, beam, scan, gonio);
 
+    // compare against dials proc
+    /*std::string filename2 = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/index_rot.refl";
+    std::string array_name2 = "/dials/processing/group_0/rlp";
+    std::vector<double> data2 = read_xyzobs_data(filename2, array_name2);
+    for (int i=0;i<rlp.size();i++){
+        std::cout<< i << " " << rlp[i][2] << " " << data2[i*3+2] << std::endl;
+        //assert(rlp[i] == data2[i*3+2]);
+    }*/
+    //assert(false);
+
     std::cout << "Number of reflections: " << rlp.size() << std::endl;
     
     double d_min = 1.31;
@@ -111,12 +129,41 @@ int main(int argc, char **argv) {
     std::vector<Vector3d> candidate_vecs =
         sites_to_vecs(centres_of_mass_frac, grid_points_per_void, d_min, 3.0, max_cell);
 
+    CandidateOrientationMatrices candidates(candidate_vecs, 1000);
+    std::vector<Vector3i> miller_indices;
+    // first extract phis
+    int image_range_start = scan.get_image_range()[0];
+    std::vector<double> phi(rlp.size());
+    std::array<double, 2> oscillation = scan.get_oscillation();
+    double osc_width = oscillation[1];
+    double osc_start = oscillation[0];
+    double DEG2RAD = M_PI / 180.0;
+    for (int i=0;i<phi.size();i++){
+        phi[i] = (((data[i*3+2] +1 - image_range_start)*osc_width) + osc_start) * DEG2RAD;
+    }
+    Vector3i null{{0,0,0}};
+    int n = 0;
+    while (candidates.has_next() && n < max_refine){
+        Crystal crystal = candidates.next();
+        std::cout << crystal.get_A_matrix() << std::endl;
+        n++;
+        
+        std::vector<Vector3i> miller_indices = assign_indices_global(crystal.get_A_matrix(), rlp, phi);
+        int count = 0;
+        for (int i=0;i<miller_indices.size();i++){
+            if (miller_indices[i] != null){
+                count++;
+                //std::cout << i << ": " << miller_indices[i][0] << " " << miller_indices[i][1] << " " << miller_indices[i][2] << std::endl;
+            }
+        }
+        std::cout << count << " nonzero miller indices" << std::endl;
+        // now need to select on dmin (and first rot of scan)
+        // then index_reflections (i.e. assign indices) - global method with hkl tolerance of 0.3
+        // requires data items phi (xyzobs.mm.value[2]), crystal A matrix, tol, 
+    }
+    
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;
     std::cout << "Total time for indexer: " << elapsed_time.count() << "s" << std::endl;
 
-    CandidateOrientationMatrices candidates(candidate_vecs, 1000);
-    while (candidates.has_next()){
-        Vector3i comb = candidates.next();
-    }
 }

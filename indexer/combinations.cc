@@ -3,6 +3,9 @@
 #include <cmath>
 #include <Eigen/Dense>
 #include <iostream>
+#include <dx2/crystal.h>
+#include "gemmi/unitcell.hpp"
+#include <dx2/utils.h>
 
 using Eigen::Vector3d;
 using Eigen::Vector3i;
@@ -10,21 +13,6 @@ using Eigen::Matrix3d;
 
 bool compare_comb(Vector3i a, Vector3i b){
     return a.squaredNorm() < b.squaredNorm(); // note can't use norm as get int truncation after std::sqrt.
-}
-
-double angle_between_vectors_degrees2(Vector3d v1, Vector3d v2) {
-  double l1 = v1.norm();
-  double l2 = v2.norm();
-  double dot = v1.dot(v2);
-  double normdot = dot / (l1 * l2);
-  if (std::abs(normdot - 1.0) < 1E-6) {
-    return 0.0;
-  }
-  if (std::abs(normdot + 1.0) < 1E-6) {
-    return 180.0;
-  }
-  double angle = std::acos(normdot) * 180.0 / M_PI;
-  return angle;
 }
 
 class CandidateOrientationMatrices {
@@ -57,15 +45,15 @@ public:
         return index < truncated_combinations.size();
     }
 
-    Vector3i next() {
+    Crystal next() {
         while (index < truncated_combinations.size()){
             Vector3i comb = truncated_combinations[index];
             Vector3d v1 = truncated_basis_vectors[comb[0]];
             Vector3d v2 = truncated_basis_vectors[comb[1]];
             index++;
-            double gamma = angle_between_vectors_degrees2(v1,v2);
+            double gamma = angle_between_vectors_degrees(v1,v2);
             if (gamma < min_angle || (180 - gamma) < min_angle) {
-                std::cout << "skipping comb " << comb[0] << " " << comb[1] << " " << comb[2] << std::endl;
+                //std::cout << "skipping comb " << comb[0] << " " << comb[1] << " " << comb[2] << std::endl;
                 continue;
             }
             Vector3d crossprod = v1.cross(v2);
@@ -74,11 +62,11 @@ public:
                 crossprod = -crossprod;
             }
             Vector3d v3 = truncated_basis_vectors[comb[2]];
-            if (std::abs(half_pi - angle_between_vectors_degrees2(crossprod, v3)) < min_angle){
-                std::cout << "skipping comb " << comb[0] << " " << comb[1] << " " << comb[2] << std::endl;
+            if (std::abs(half_pi - angle_between_vectors_degrees(crossprod, v3)) < min_angle){
+                //std::cout << "skipping comb " << comb[0] << " " << comb[1] << " " << comb[2] << std::endl;
                 continue;
             }
-            double alpha = angle_between_vectors_degrees2(v2, v3);
+            double alpha = angle_between_vectors_degrees(v2, v3);
             if (alpha < half_pi){
                 v3 = -v3;
             }
@@ -87,8 +75,15 @@ public:
                 v2 = -v2;
                 v3 = -v3;
             }
-            std::cout << "returning comb " << comb[0] << " " << comb[1] << " " << comb[2] << std::endl;
-            return comb;
+            //std::cout << "returning comb " << comb[0] << " " << comb[1] << " " << comb[2] << std::endl;
+            Crystal c{v1,v2,v3};
+            c.niggli_reduce();
+            gemmi::UnitCell cell = c.get_unit_cell();
+            if (cell.volume > (cell.a * cell.b * cell.c / 100.0)){
+                std::cout << comb[0] << " " << comb[1] << " " << comb[2] << std::endl;
+                return c;
+            }
+                
         }
         throw std::out_of_range("No more combinations available");
     }
