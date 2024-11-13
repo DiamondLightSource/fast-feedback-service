@@ -80,7 +80,7 @@ public:
             c.niggli_reduce();
             gemmi::UnitCell cell = c.get_unit_cell();
             if (cell.volume > (cell.a * cell.b * cell.c / 100.0)){
-                std::cout << comb[0] << " " << comb[1] << " " << comb[2] << std::endl;
+                std::cout << "Returning combination: " << comb[0] << "," << comb[1] << "," << comb[2] << std::endl;
                 return c;
             }
                 

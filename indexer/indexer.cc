@@ -99,16 +99,6 @@ int main(int argc, char **argv) {
 
     std::vector<Vector3d> rlp = xyz_to_rlp(data, detector, beam, scan, gonio);
 
-    // compare against dials proc
-    /*std::string filename2 = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/index_rot.refl";
-    std::string array_name2 = "/dials/processing/group_0/rlp";
-    std::vector<double> data2 = read_xyzobs_data(filename2, array_name2);
-    for (int i=0;i<rlp.size();i++){
-        std::cout<< i << " " << rlp[i][2] << " " << data2[i*3+2] << std::endl;
-        //assert(rlp[i] == data2[i*3+2]);
-    }*/
-    //assert(false);
-
     std::cout << "Number of reflections: " << rlp.size() << std::endl;
     
     double d_min = 1.31;
@@ -132,23 +122,32 @@ int main(int argc, char **argv) {
     CandidateOrientationMatrices candidates(candidate_vecs, 1000);
     std::vector<Vector3i> miller_indices;
     // first extract phis
+    // need to select on dmin, also only first 360 deg of scan. Do this earlier?
     int image_range_start = scan.get_image_range()[0];
-    std::vector<double> phi(rlp.size());
+    std::vector<double> phi_select(rlp.size());
+    std::vector<Vector3d> rlp_select(rlp.size());
     std::array<double, 2> oscillation = scan.get_oscillation();
     double osc_width = oscillation[1];
     double osc_start = oscillation[0];
     double DEG2RAD = M_PI / 180.0;
-    for (int i=0;i<phi.size();i++){
-        phi[i] = (((data[i*3+2] +1 - image_range_start)*osc_width) + osc_start) * DEG2RAD;
+    int selcount=0;
+    for (int i=0;i<phi_select.size();i++){
+        if ((1.0/rlp[i].norm()) > d_min){
+            phi_select[selcount] = (((data[i*3+2] +1 - image_range_start)*osc_width) + osc_start) * DEG2RAD;
+            rlp_select[selcount] = rlp[i];
+            selcount++;
+        }
     }
+    rlp_select.resize(selcount);
+    phi_select.resize(selcount);
     Vector3i null{{0,0,0}};
     int n = 0;
     while (candidates.has_next() && n < max_refine){
         Crystal crystal = candidates.next();
-        std::cout << crystal.get_A_matrix() << std::endl;
+        //std::cout << crystal.get_A_matrix() << std::endl; 
         n++;
         
-        std::vector<Vector3i> miller_indices = assign_indices_global(crystal.get_A_matrix(), rlp, phi);
+        std::vector<Vector3i> miller_indices = assign_indices_global(crystal.get_A_matrix(), rlp_select, phi_select);
         int count = 0;
         for (int i=0;i<miller_indices.size();i++){
             if (miller_indices[i] != null){
@@ -157,9 +156,13 @@ int main(int argc, char **argv) {
             }
         }
         std::cout << count << " nonzero miller indices" << std::endl;
-        // now need to select on dmin (and first rot of scan)
-        // then index_reflections (i.e. assign indices) - global method with hkl tolerance of 0.3
-        // requires data items phi (xyzobs.mm.value[2]), crystal A matrix, tol, 
+        // skip from dials.algorithms.indexing import non_primitive_basis step
+        // then on to model evaluation. Have refinement code but should parallelise.
+        // data needed: flags, s1, xyzobs.mm.value, entering.
+        // call 'calculate_entering_flags'
+        // flags from file
+        // s1 calculated
+        // xyzobs.mm.value already effectively calculated in xyz_to_rlp?
     }
     
     auto t2 = std::chrono::system_clock::now();
