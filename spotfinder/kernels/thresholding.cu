@@ -56,8 +56,7 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
   int y,
   int width,
   int height,
-  uint8_t kernel_width,
-  uint8_t kernel_height,
+  uint8_t kernel_radius,
   uint8_t min_count,
   float n_sig_b,
   float n_sig_s) {
@@ -66,15 +65,15 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
     size_t sumsq = 0;
     uint8_t n = 0;
 
-    int row_start = max(0, y - kernel_height);
-    int row_end = min(y + kernel_height + 1, height);
+    int row_start = max(0, y - kernel_radius);
+    int row_end = min(y + kernel_radius + 1, height);
 
     for (int row = row_start; row < row_end; ++row) {
         int row_offset = image_pitch * row;
         int mask_offset = mask_pitch * row;
 
-        int col_start = max(0, x - kernel_width);
-        int col_end = min(x + kernel_width + 1, width);
+        int col_start = max(0, x - kernel_radius);
+        int col_end = min(x + kernel_radius + 1, width);
 
         for (int col = col_start; col < col_end; ++col) {
             pixel_t pixel = image[row_offset + col];
