@@ -22,9 +22,20 @@
 #include <cooperative_groups/reduce.h>
 
 #include "cuda_common.hpp"
+#include "device_common.cuh"
 #include "erosion.cuh"
 
 namespace cg = cooperative_groups;
+
+#pragma region Global constants
+/*
+ * Constants for kernels
+ * extern keyword is used to declare a variable that is defined in
+ * another file. This links the constant global variable to the
+ * kernel_constants variable defined in spotfinder.cu
+ */
+extern __constant__ KernelConstants kernel_constants;
+#pragma endregion Global constants
 
 #pragma region Erosion kernel
 __global__ void erosion(uint8_t __restrict__ *dispersion_mask,
@@ -32,9 +43,6 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask,
                         // uint8_t __restrict__ *mask,
                         size_t dispersion_mask_pitch,
                         size_t erosion_mask_pitch,
-                        // size_t mask_pitch,
-                        int width,
-                        int height,
                         uint8_t radius) {
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
@@ -42,7 +50,8 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask,
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
     // Guards
-    if (x >= width || y >= height) return;  // Out of bounds guard
+    if (x >= kernel_constants.width || y >= kernel_constants.height)
+        return;  // Out of bounds guard
 
     bool is_background = dispersion_mask[y * dispersion_mask_pitch + x] == MASKED_PIXEL;
     if (is_background) {
@@ -56,9 +65,9 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask,
 
     // Calculate the bounds of the erosion kernel
     int x_start = max(0, x - radius);
-    int x_end = min(x + radius + 1, width);
+    int x_end = min(x + radius + 1, kernel_constants.width);
     int y_start = max(0, y - radius);
-    int y_end = min(y + radius + 1, height);
+    int y_end = min(y + radius + 1, kernel_constants.height);
 
     bool should_erase = false;  // Flag to determine if the pixel should be erased
     constexpr uint8_t chebyshev_distance_threshold = 2;
@@ -72,7 +81,7 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask,
              * however DIALS does not do this. May be a bug, may be on
              * purpose? Investigate!
             */
-            // if (mask[kernel_y * mask_pitch + kernel_x] == 0) {
+            // if (mask[kernel_y * kernel_constants.mask_pitch + kernel_x] == 0) {
             //     continue;
             // }
             if (dispersion_mask[kernel_y * dispersion_mask_pitch + kernel_x]
