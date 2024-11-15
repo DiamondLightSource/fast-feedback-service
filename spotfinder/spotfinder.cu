@@ -9,11 +9,52 @@
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 
+#include "device_common.cuh"
 #include "kernels/erosion.cuh"
 #include "kernels/thresholding.cuh"
 #include "spotfinder.cuh"
 
 namespace cg = cooperative_groups;
+
+__constant__ KernelConstants kernel_constants;
+
+/**
+ * @brief Set the kernel constants in the device constant memory.
+ * 
+ * @warning This function is asynchronous and does not guarantee that
+ * the kernel constants are set before the next kernel call. It is the
+ * responsibility of the caller to ensure that the kernel constants are
+ * set and synchronized before the next kernel call.
+ */
+void set_kernel_constants(cudaStream_t stream,
+                          size_t image_pitch,
+                          size_t mask_pitch,
+                          size_t result_pitch,
+                          ushort width,
+                          ushort height,
+                          float max_valid_pixel_value,
+                          uint8_t min_count,
+                          float n_sig_b,
+                          float n_sig_s) {
+    KernelConstants host_constants{
+      image_pitch,
+      mask_pitch,
+      result_pitch,
+      width,
+      height,
+      max_valid_pixel_value,
+      min_count,
+      n_sig_b,
+      n_sig_s,
+    };
+
+    CUDA_CHECK(cudaMemcpyToSymbolAsync(kernel_constants,
+                                       &host_constants,
+                                       sizeof(KernelConstants),
+                                       0,
+                                       cudaMemcpyHostToDevice,
+                                       stream));
+}
 
 /**
  * @brief Device function for writing out debug information in PNG and TXT formats.
@@ -84,25 +125,26 @@ void call_do_spotfinding_dispersion(dim3 blocks,
                                     uint8_t min_count,
                                     float n_sig_b,
                                     float n_sig_s) {
-    /// One-direction width of kernel. Total kernel span is (K * 2 + 1)
-    constexpr uint8_t basic_kernel_radius = 3;
+    // Set the kernel constants in the device constant memory
+    set_kernel_constants(stream,
+                         image.pitch,
+                         mask.pitch,
+                         result_strong->pitch,
+                         width,
+                         height,
+                         max_valid_pixel_value,
+                         min_count,
+                         n_sig_b,
+                         n_sig_s);
+
+    // Synchronize the CUDA stream to ensure the kernel constants are set
+    cudaStreamSynchronize(stream);
 
     // Launch the dispersion threshold kernel
     dispersion<<<blocks, threads, shared_memory, stream>>>(
-      image.get(),            // Image data pointer
-      mask.get(),             // Mask data pointer
-      result_strong->get(),   // Output mask pointer
-      image.pitch,            // Image pitch
-      mask.pitch,             // Mask pitch
-      result_strong->pitch,   // Output mask pitch
-      width,                  // Image width
-      height,                 // Image height
-      max_valid_pixel_value,  // Maximum valid pixel value
-      basic_kernel_radius,    // Kernel width
-      basic_kernel_radius,    // Kernel height
-      min_count,              // Minimum count
-      n_sig_b,                // Background significance level
-      n_sig_s                 // Signal significance level
+      image.get(),          // Image data pointer
+      mask.get(),           // Mask data pointer
+      result_strong->get()  // Output mask pointer
     );
 
     cudaStreamSynchronize(
@@ -144,14 +186,25 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   bool do_writeout,
                                   uint8_t min_count,
                                   float n_sig_b,
-                                  float n_sig_s,
-                                  float threshold) {
+                                  float n_sig_s) {
+    // Set the kernel constants in the device constant memory
+    set_kernel_constants(stream,
+                         image.pitch,
+                         mask.pitch,
+                         result_strong->pitch,
+                         width,
+                         height,
+                         max_valid_pixel_value,
+                         min_count,
+                         n_sig_b,
+                         n_sig_s);
+
     // Allocate intermediate buffer for the dispersion mask on the device
     PitchedMalloc<uint8_t> d_dispersion_mask(width, height);
     PitchedMalloc<uint8_t> d_erosion_mask(width, height);
 
-    constexpr uint8_t first_pass_kernel_radius = 3;
-    constexpr uint8_t second_pass_kernel_radius = 5;
+    // Synchronize the CUDA stream to ensure the kernel constants are set
+    cudaStreamSynchronize(stream);
 
     /*
      * First pass 🔎
@@ -160,20 +213,9 @@ void call_do_spotfinding_extended(dim3 blocks,
      * exclude them from the background calculation in the second pass.
     */
     dispersion_extended_first_pass<<<blocks, threads, shared_memory, stream>>>(
-      image.get(),               // Image data pointer
-      mask.get(),                // Mask data pointer
-      d_dispersion_mask.get(),   // Output dispersion mask pointer
-      image.pitch,               // Image pitch
-      mask.pitch,                // Mask pitch
-      d_dispersion_mask.pitch,   // Output dispersion mask pitch
-      width,                     // Image width
-      height,                    // Image height
-      max_valid_pixel_value,     // Maximum valid pixel value
-      first_pass_kernel_radius,  // Kernel radius
-      first_pass_kernel_radius,  // Kernel radius
-      min_count,                 // Minimum count
-      n_sig_b,                   // Background significance level
-      n_sig_s                    // Signal significance level
+      image.get(),             // Image data pointer
+      mask.get(),              // Mask data pointer
+      d_dispersion_mask.get()  // Output dispersion mask pointer
     );
     cudaStreamSynchronize(
       stream);  // Synchronize the CUDA stream to ensure the first pass is complete
@@ -203,9 +245,7 @@ void call_do_spotfinding_extended(dim3 blocks,
                                                         d_erosion_mask.get(),
                                                         d_dispersion_mask.pitch,
                                                         d_erosion_mask.pitch,
-                                                        width,
-                                                        height,
-                                                        first_pass_kernel_radius);
+                                                        KERNEL_RADIUS);
     cudaStreamSynchronize(
       stream);  // Synchronize the CUDA stream to ensure the erosion pass is complete
 
@@ -227,21 +267,11 @@ void call_do_spotfinding_extended(dim3 blocks,
      * Perform the final thresholding using the dispersion mask.
     */
     dispersion_extended_second_pass<<<blocks, threads, shared_memory, stream>>>(
-      image.get(),                // Image data pointer
-      mask.get(),                 // Mask data pointer
-      d_erosion_mask.get(),       // Dispersion mask pointer
-      result_strong->get(),       // Output result mask pointer
-      image.pitch,                // Image pitch
-      mask.pitch,                 // Mask pitch
-      d_erosion_mask.pitch,       // Dispersion mask pitch
-      result_strong->pitch,       // Output result mask pitch
-      width,                      // Image width
-      height,                     // Image height
-      max_valid_pixel_value,      // Maximum valid pixel value
-      second_pass_kernel_radius,  // Kernel radius
-      second_pass_kernel_radius,  // Kernel radius
-      n_sig_s,                    // Signal significance level
-      threshold                   // Global threshold
+      image.get(),           // Image data pointer
+      mask.get(),            // Mask data pointer
+      d_erosion_mask.get(),  // Dispersion mask pointer
+      result_strong->get(),  // Output result mask pointer
+      d_erosion_mask.pitch   // Dispersion mask pitch
     );
     cudaStreamSynchronize(
       stream);  // Synchronize the CUDA stream to ensure the second pass is complete
