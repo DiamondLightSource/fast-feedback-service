@@ -50,4 +50,46 @@ struct KernelConstants {
  */
 extern __constant__ KernelConstants kernel_constants;
 
+/**
+ * @brief Struct to represent a 2D pitched array on the device and provide
+ * a convenient way to access pitched elements
+ * 
+ * @tparam T Type of the elements in the array
+ * @param array Pointer to the array
+ * @param pitch Pointer to the pitch of the array
+ */
+template <typename T>
+struct PitchedArray2D {
+    T *array;
+    const size_t *pitch;
+
+    /**
+     * @brief Construct a new PitchedArray2D object
+     */
+    __device__ PitchedArray2D(T *array, const size_t *pitch)
+        : array(array), pitch(pitch) {}
+
+    /**
+     * @brief Access the element at the given coordinates
+     */
+    __device__ T operator()(uint x, uint y) const {
+        return array[(y * (*pitch)) + x];
+    }
+
+    /**
+     * @brief Access the element at the given coordinates
+     */
+    __device__ T &operator()(uint x, uint y) {
+        return array[(y * (*pitch)) + x];
+    }
+
+    /**
+     * @brief Get the pitch value
+     */
+    __device__ size_t get_pitch() const {
+        // Dereference the pointer to get the value
+        return *pitch;
+    }
+};
+
 #endif  // DEVICE_COMMON_H
