@@ -58,10 +58,8 @@ extern __constant__ KernelConstants kernel_constants;
  *        - n: The number of valid pixels in the local neighbourhood.
  */
 __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
-  pixel_t *image,
-  uint8_t *mask,
-  size_t image_pitch,
-  size_t mask_pitch,
+  PitchedArray2D<pixel_t> image,
+  PitchedArray2D<uint8_t> mask,
   pixel_t this_pixel,
   int x,
   int y,
@@ -80,15 +78,12 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
     int row_end = min(y + kernel_radius + 1, height);
 
     for (int row = row_start; row < row_end; ++row) {
-        int row_offset = image_pitch * row;
-        int mask_offset = mask_pitch * row;
-
         int col_start = max(0, x - kernel_radius);
         int col_end = min(x + kernel_radius + 1, width);
 
         for (int col = col_start; col < col_end; ++col) {
-            pixel_t pixel = image[row_offset + col];
-            uint8_t mask_pixel = mask[mask_offset + col];
+            pixel_t pixel = image(col, row);
+            uint8_t mask_pixel = mask(col, row);
             bool include_pixel = mask_pixel != 0;  // If the pixel is valid
             if (include_pixel) {
                 sum += pixel;
@@ -135,15 +130,21 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
  * @param n_sig_b Background noise significance level.
  * @param n_sig_s Signal significance level.
  */
-__global__ void dispersion(pixel_t __restrict__ *image,
-                           uint8_t __restrict__ *mask,
-                           uint8_t __restrict__ *result_mask) {
+__global__ void dispersion(pixel_t __restrict__ *image_ptr,
+                           uint8_t __restrict__ *mask_ptr,
+                           uint8_t __restrict__ *result_mask_ptr) {
     // Move pointers to the correct slice
-    image =
-      image + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
-    result_mask =
-      result_mask
+    image_ptr =
+      image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
+    result_mask_ptr =
+      result_mask_ptr
       + (kernel_constants.mask_pitch * kernel_constants.height * blockIdx.z);
+
+    // Create pitched arrays for data access
+    PitchedArray2D<pixel_t> image(image_ptr, &kernel_constants.image_pitch);
+    PitchedArray2D<uint8_t> mask(mask_ptr, &kernel_constants.mask_pitch);
+    PitchedArray2D<uint8_t> result_mask(result_mask_ptr,
+                                        &kernel_constants.result_pitch);
 
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
@@ -153,15 +154,15 @@ __global__ void dispersion(pixel_t __restrict__ *image,
     if (x >= kernel_constants.width || y >= kernel_constants.height)
         return;  // Out of bounds guard
 
-    pixel_t this_pixel = image[y * kernel_constants.image_pitch + x];
+    pixel_t this_pixel = image(x, y);
 
     // Check if the pixel is masked and below the maximum valid pixel value
-    bool px_is_valid = mask[y * kernel_constants.mask_pitch + x] != 0
-                       && this_pixel <= kernel_constants.max_valid_pixel_value;
+    bool px_is_valid =
+      mask(x, y) != 0 && this_pixel <= kernel_constants.max_valid_pixel_value;
 
     // Validity guard
     if (!px_is_valid) {
-        result_mask[x + kernel_constants.result_pitch * y] = 0;
+        result_mask(x, y) = 0;
         return;
     }
 
@@ -169,8 +170,6 @@ __global__ void dispersion(pixel_t __restrict__ *image,
     auto [not_background, is_signal, n] =
       calculate_dispersion_flags(image,
                                  mask,
-                                 kernel_constants.image_pitch,
-                                 kernel_constants.mask_pitch,
                                  this_pixel,
                                  x,
                                  y,
@@ -181,8 +180,7 @@ __global__ void dispersion(pixel_t __restrict__ *image,
                                  kernel_constants.n_sig_b,
                                  kernel_constants.n_sig_s);
 
-    result_mask[x + kernel_constants.result_pitch * y] =
-      not_background && is_signal && n > 1;
+    result_mask(x, y) = not_background && is_signal && n > 1;
 }
 
 /**
@@ -202,15 +200,21 @@ __global__ void dispersion(pixel_t __restrict__ *image,
  * @param n_sig_b Background noise significance level.
  * @param n_sig_s Signal significance level.
  */
-__global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image,
-                                               uint8_t __restrict__ *mask,
-                                               uint8_t __restrict__ *result_mask) {
+__global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
+                                               uint8_t __restrict__ *mask_ptr,
+                                               uint8_t __restrict__ *result_mask_ptr) {
     // Move pointers to the correct slice
-    image =
-      image + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
-    result_mask =
-      result_mask
+    image_ptr =
+      image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
+    result_mask_ptr =
+      result_mask_ptr
       + (kernel_constants.mask_pitch * kernel_constants.height * blockIdx.z);
+
+    // Create pitched arrays for data access
+    PitchedArray2D<pixel_t> image(image_ptr, &kernel_constants.image_pitch);
+    PitchedArray2D<uint8_t> mask(mask_ptr, &kernel_constants.mask_pitch);
+    PitchedArray2D<uint8_t> result_mask(result_mask_ptr,
+                                        &kernel_constants.result_pitch);
 
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
@@ -220,15 +224,15 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image,
     if (x >= kernel_constants.width || y >= kernel_constants.height)
         return;  // Out of bounds guard
 
-    pixel_t this_pixel = image[y * kernel_constants.image_pitch + x];
+    pixel_t this_pixel = image(x, y);
 
     // Check if the pixel is masked and below the maximum valid pixel value
-    bool px_is_valid = mask[y * kernel_constants.mask_pitch + x] != 0
-                       && this_pixel <= kernel_constants.max_valid_pixel_value;
+    bool px_is_valid =
+      mask(x, y) != 0 && this_pixel <= kernel_constants.max_valid_pixel_value;
 
     // Validity guard
     if (!px_is_valid) {
-        result_mask[x + kernel_constants.result_pitch * y] = 0;
+        result_mask(x, y) = 0;
         return;
     }
 
@@ -236,8 +240,6 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image,
     auto [not_background, is_signal, n] =
       calculate_dispersion_flags(image,
                                  mask,
-                                 kernel_constants.image_pitch,
-                                 kernel_constants.mask_pitch,
                                  this_pixel,
                                  x,
                                  y,
@@ -248,7 +250,7 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image,
                                  kernel_constants.n_sig_b,
                                  kernel_constants.n_sig_s);
 
-    result_mask[x + kernel_constants.result_pitch * y] = not_background && n > 1;
+    result_mask(x, y) = not_background && n > 1;
 }
 
 /**
@@ -267,17 +269,26 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image,
  * @param n_sig_s Signal significance level.
  * @param threshold Global threshold for the intensity.
  */
-__global__ void dispersion_extended_second_pass(pixel_t __restrict__ *image,
-                                                uint8_t __restrict__ *mask,
-                                                uint8_t __restrict__ *dispersion_mask,
-                                                uint8_t __restrict__ *result_mask,
-                                                size_t dispersion_mask_pitch) {
+__global__ void dispersion_extended_second_pass(
+  pixel_t __restrict__ *image_ptr,
+  uint8_t __restrict__ *mask_ptr,
+  uint8_t __restrict__ *dispersion_mask_ptr,
+  uint8_t __restrict__ *result_mask_ptr,
+  size_t dispersion_mask_pitch) {
     // Move pointers to the correct slice
-    image =
-      image + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
-    result_mask =
-      result_mask
+    image_ptr =
+      image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
+    result_mask_ptr =
+      result_mask_ptr
       + (kernel_constants.result_pitch * kernel_constants.height * blockIdx.z);
+
+    // Create pitched arrays for data access
+    PitchedArray2D<pixel_t> image(image_ptr, &kernel_constants.image_pitch);
+    PitchedArray2D<uint8_t> mask(mask_ptr, &kernel_constants.mask_pitch);
+    PitchedArray2D<uint8_t> dispersion_mask(dispersion_mask_ptr,
+                                            &dispersion_mask_pitch);
+    PitchedArray2D<uint8_t> result_mask(result_mask_ptr,
+                                        &kernel_constants.result_pitch);
 
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
@@ -287,11 +298,11 @@ __global__ void dispersion_extended_second_pass(pixel_t __restrict__ *image,
     if (x >= kernel_constants.width || y >= kernel_constants.height)
         return;  // Out of bounds guard
 
-    pixel_t this_pixel = image[y * kernel_constants.image_pitch + x];
+    pixel_t this_pixel = image(x, y);
 
     // Check if the pixel is masked and below the maximum valid pixel value
-    bool px_is_valid = mask[y * kernel_constants.mask_pitch + x] != 0
-                       && this_pixel <= kernel_constants.max_valid_pixel_value;
+    bool px_is_valid =
+      mask(x, y) != 0 && this_pixel <= kernel_constants.max_valid_pixel_value;
 
     // Initialize variables for computing the local sum and count
     uint sum = 0;
@@ -301,17 +312,13 @@ __global__ void dispersion_extended_second_pass(pixel_t __restrict__ *image,
     int row_end = min(y + KERNEL_RADIUS_EXTENDED + 1, kernel_constants.height);
 
     for (int row = row_start; row < row_end; ++row) {
-        int row_offset = kernel_constants.image_pitch * row;
-        int mask_offset = kernel_constants.mask_pitch * row;
-
         int col_start = max(0, x - KERNEL_RADIUS_EXTENDED);
         int col_end = min(x + KERNEL_RADIUS_EXTENDED + 1, kernel_constants.width);
 
         for (int col = col_start; col < col_end; ++col) {
-            pixel_t pixel = image[row_offset + col];
-            uint8_t mask_pixel = mask[mask_offset + col];
-            uint8_t disp_mask_pixel =
-              dispersion_mask[row * dispersion_mask_pitch + col];
+            pixel_t pixel = image(col, row);
+            uint8_t mask_pixel = mask(col, row);
+            uint8_t disp_mask_pixel = dispersion_mask(col, row);
             /*
                * Check if the pixel is valid. That means that it is not
                * masked and was not marked as potentially signal in the
@@ -333,19 +340,18 @@ __global__ void dispersion_extended_second_pass(pixel_t __restrict__ *image,
         float sum_f = static_cast<float>(sum);
 
         // The pixel must have been marked as potentially signal in the dispersion mask
-        bool disp_mask = dispersion_mask[y * dispersion_mask_pitch + x] == MASKED_PIXEL;
+        bool disp_mask = dispersion_mask(x, y) == MASKED_PIXEL;
         // The pixel must be above the global threshold
-        bool global_mask = image[y * kernel_constants.image_pitch + x] > threshold;
+        bool global_mask = image(x, y) > threshold;
         // Calculate the local mean
         float mean = (n > 1 ? sum_f / n : 0);  // If n is less than 1, set mean to 0
         // The pixel must be above the local threshold
-        bool local_mask = image[y * kernel_constants.image_pitch + x]
-                          >= (mean + kernel_constants.n_sig_s * sqrtf(mean));
+        bool local_mask =
+          image(x, y) >= (mean + kernel_constants.n_sig_s * sqrtf(mean));
 
-        result_mask[y * kernel_constants.result_pitch + x] =
-          disp_mask && global_mask && local_mask;
+        result_mask(x, y) = disp_mask && global_mask && local_mask;
     } else {
-        result_mask[y * kernel_constants.result_pitch + x] = 0;
+        result_mask(x, y) = 0;
     }
 }
 #pragma endregion
