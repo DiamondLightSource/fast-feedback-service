@@ -38,12 +38,17 @@ extern __constant__ KernelConstants kernel_constants;
 #pragma endregion Global constants
 
 #pragma region Erosion kernel
-__global__ void erosion(uint8_t __restrict__ *dispersion_mask,
-                        uint8_t __restrict__ *erosion_mask,
+__global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
+                        uint8_t __restrict__ *erosion_mask_ptr,
                         // uint8_t __restrict__ *mask,
                         size_t dispersion_mask_pitch,
                         size_t erosion_mask_pitch,
                         uint8_t radius) {
+    // Create pitched arrays for data access
+    PitchedArray2D<uint8_t> dispersion_mask{dispersion_mask_ptr,
+                                            &dispersion_mask_pitch};
+    PitchedArray2D<uint8_t> erosion_mask{erosion_mask_ptr, &erosion_mask_pitch};
+
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
@@ -53,13 +58,13 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask,
     if (x >= kernel_constants.width || y >= kernel_constants.height)
         return;  // Out of bounds guard
 
-    bool is_background = dispersion_mask[y * dispersion_mask_pitch + x] == MASKED_PIXEL;
+    bool is_background = dispersion_mask(x, y) == MASKED_PIXEL;
     if (is_background) {
         /*
          * If the pixel is masked, we want to set it to VALID_PIXEL
          * in order to invert the mask.
         */
-        erosion_mask[y * erosion_mask_pitch + x] = VALID_PIXEL;
+        erosion_mask(x, y) = VALID_PIXEL;
         return;
     }
 
@@ -84,8 +89,7 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask,
             // if (mask[kernel_y * kernel_constants.mask_pitch + kernel_x] == 0) {
             //     continue;
             // }
-            if (dispersion_mask[kernel_y * dispersion_mask_pitch + kernel_x]
-                == MASKED_PIXEL) {
+            if (dispersion_mask(kernel_x, kernel_y) == MASKED_PIXEL) {
                 // If the current pixel is background, check the Chebyshev distance
                 uint8_t chebyshev_distance = max(abs(kernel_x - x), abs(kernel_y - y));
 
@@ -107,7 +111,7 @@ termination:
          * considered as a background pixel in the background calculation as it is not
          * considered part of the signal.
         */
-        erosion_mask[y * erosion_mask_pitch + x] = VALID_PIXEL;
+        erosion_mask(x, y) = VALID_PIXEL;
     } else {
         /*
          * If the pixel should not be erased, this means that it is part of the signal.
@@ -116,8 +120,7 @@ termination:
         */
 
         // Invert 'valid' signal spot to 'masked' background spots
-        erosion_mask[y * erosion_mask_pitch + x] =
-          !dispersion_mask[y * dispersion_mask_pitch + x];
+        erosion_mask(x, y) = !dispersion_mask(x, y);
     }
 }
 #pragma enregion Erosion kernel
