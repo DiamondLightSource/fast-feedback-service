@@ -10,6 +10,8 @@
 #include <cooperative_groups/reduce.h>
 #include <cuda_runtime.h>
 
+#include <cuda/std/tuple>
+
 /* 
  * Kernel radii 🔳
  *
@@ -91,5 +93,111 @@ struct PitchedArray2D {
         return *pitch;
     }
 };
+
+/**
+ * @brief Load the halo region of an image and mask into shared memory.
+ * 
+ * This function loads the surrounding pixels (halo) of the current
+ * block into shared memory. It ensures that the halo region is correctly
+ * loaded for boundary conditions.
+ * 
+ * @tparam MappedPairs Variadic template parameter pack representing
+ * tuples of an image source and its corresponding shared memory
+ * destination (e.g., std::tuple<src, dst>). This allows arbitrary
+ * pairs to be passed and processed.
+ * @param block The cooperative groups thread block.
+ * @param x The x-coordinate of the current thread in the global memory.
+ * @param y The y-coordinate of the current thread in the global memory.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param kernel_width The width of the kernel (halo region).
+ * @param kernel_height The height of the kernel (halo region).
+ * @param mapped_pairs Variadic parameter pack of tuples, each
+ * containing a source image and a corresponding shared memory array
+ * as PitchedArray2D.
+ */
+template <typename... MappedPairs>
+__device__ void load_halo(const cooperative_groups::thread_block block,
+                          const int x,
+                          const int y,
+                          const ushort width,
+                          const ushort height,
+                          const uint8_t kernel_width,
+                          const uint8_t kernel_height,
+                          MappedPairs... mapped_pairs) {
+    // Compute local shared memory coordinates
+    int local_x = threadIdx.x + kernel_width;
+    int local_y = threadIdx.y + kernel_height;
+
+    /*
+     * A lambda function is used here to load a single pixel from the
+     * global memory (src) into the shared memory (dst). The lambda
+     * accepts a mapped pair (src, dst) and offsets (offset_x, offset_y),
+     * and uses structured binding to extract the source and
+     * destination objects from the tuple.
+     */
+    auto load_pixel = [&](auto &mapped_pair, int offset_x, int offset_y) {
+        auto &[src, dst] = mapped_pair;  // Destucture the mapped pair tuple
+        dst(local_x + offset_x, local_y + offset_y) = src(x + offset_x, y + offset_y);
+    };
+
+    // Precompute boundary checks to avoid repeated evaluation
+
+    bool load_left = threadIdx.x < kernel_width;
+    bool left_valid = x >= kernel_width;
+
+    bool load_right = threadIdx.x >= blockDim.x - kernel_width;
+    bool right_valid = x + kernel_width < width;
+
+    bool load_top = threadIdx.y < kernel_height;
+    bool top_valid = y >= kernel_height;
+
+    bool load_bottom = threadIdx.y >= blockDim.y - kernel_height;
+    bool bottom_valid = y + kernel_height < height;
+
+    /*
+     * These are C++ fold expressions, which applies the lambda function
+     * (load_pixel) to each tuple in the variadic parameter pack
+     * (mapped_pairs...). By using this approach, we can load pixels
+     * for multiple source/destination pairs in a single operation,
+     * without needing explicit loops for each pair.
+     */
+
+    // Load vertically and horizontally adjacent pixels
+    if (load_left && left_valid) {
+        // Load left halo
+        (load_pixel(mapped_pairs, -kernel_width, 0), ...);
+    }
+    if (load_right && right_valid) {
+        // Load right halo
+        (load_pixel(mapped_pairs, kernel_width, 0), ...);
+    }
+    if (load_top && top_valid) {
+        // Load top halo
+        (load_pixel(mapped_pairs, 0, -kernel_height), ...);
+    }
+    if (load_bottom && bottom_valid) {
+        // Load bottom halo
+        (load_pixel(mapped_pairs, 0, kernel_height), ...);
+    }
+
+    // Load diagonally adjacent pixels
+    if (load_left && load_top && left_valid && top_valid) {
+        // Load top-left corner
+        (load_pixel(mapped_pairs, -kernel_width, -kernel_height), ...);
+    }
+    if (load_right && load_top && right_valid && top_valid) {
+        // Load top-right corner
+        (load_pixel(mapped_pairs, kernel_width, -kernel_height), ...);
+    }
+    if (load_left && load_bottom && left_valid && bottom_valid) {
+        // Load bottom-left corner
+        (load_pixel(mapped_pairs, -kernel_width, kernel_height), ...);
+    }
+    if (load_right && load_bottom && right_valid && bottom_valid) {
+        // Load bottom-right corner
+        (load_pixel(mapped_pairs, kernel_width, kernel_height), ...);
+    }
+}
 
 #endif  // DEVICE_COMMON_H
