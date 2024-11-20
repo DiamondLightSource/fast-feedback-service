@@ -10,6 +10,8 @@
 #include <cooperative_groups/reduce.h>
 #include <cuda_runtime.h>
 
+#include <cuda/std/tuple>
+
 /* 
  * Kernel radii 🔳
  *
@@ -91,5 +93,102 @@ struct PitchedArray2D {
         return *pitch;
     }
 };
+
+/**
+ * @brief Load the halo region of an image and mask into shared memory.
+ * 
+ * This function loads the surrounding pixels (halo) of the current
+ * block into shared memory. It ensures that the halo region is correctly
+ * loaded for boundary conditions.
+ * 
+ * @tparam MappedPairs Variadic template parameter pack representing
+ * tuples of an image source and its corresponding shared memory
+ * destination (e.g., std::tuple<src, dst>). This allows arbitrary
+ * pairs to be passed and processed.
+ * @param block The cooperative groups thread block.
+ * @param x The x-coordinate of the current thread in the global memory.
+ * @param y The y-coordinate of the current thread in the global memory.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param kernel_width The width of the kernel (halo region).
+ * @param kernel_height The height of the kernel (halo region).
+ * @param mapped_pairs Variadic parameter pack of tuples, each
+ * containing a source image and a corresponding shared memory array
+ * as PitchedArray2D.
+ */
+template <typename... MappedPairs>
+__device__ void load_halo(const cooperative_groups::thread_block block,
+                          const int x,
+                          const int y,
+                          const int width,
+                          const int height,
+                          const uint8_t kernel_width,
+                          const uint8_t kernel_height,
+                          MappedPairs... mapped_pairs) {
+    // Compute local shared memory coordinates
+    int local_x = threadIdx.x + kernel_width;
+    int local_y = threadIdx.y + kernel_height;
+
+    /*
+     * A lambda function is used here to load a single pixel from the
+     * global memory (src) into the shared memory (dst). The lambda
+     * accepts a mapped pair (src, dst) and offsets (offset_x, offset_y),
+     * and uses structured binding to extract the source and
+     * destination objects from the tuple.
+     */
+    auto load_pixel = [&](auto &mapped_pair, int offset_x, int offset_y) {
+        auto &[src, dst] = mapped_pair;  // Destucture the mapped pair tuple
+        dst(local_x + offset_x, local_y + offset_y) = src(x + offset_x, y + offset_y);
+    };
+
+    /*
+     * These are fold expressions, which applies the lambda function
+     * (load_pixel) to each tuple in the variadic parameter pack
+     * (mapped_pairs...). By using this approach, we can load pixels
+     * for multiple source/destination pairs in a single operation,
+     * without needing explicit loops for each pair.
+     */
+
+    // Load vertically and horizontally adjacent pixels
+    if (threadIdx.x < kernel_width && x >= kernel_width) {
+        // Load left halo
+        (load_pixel(mapped_pairs, -kernel_width, 0), ...);
+    }
+    if (threadIdx.x >= blockDim.x - kernel_width && x + kernel_width < width) {
+        // Load right halo
+        (load_pixel(mapped_pairs, kernel_width, 0), ...);
+    }
+    if (threadIdx.y < kernel_height && y >= kernel_height) {
+        // Load top halo
+        (load_pixel(mapped_pairs, 0, -kernel_height), ...);
+    }
+    if (threadIdx.y >= blockDim.y - kernel_height && y + kernel_height < height) {
+        // Load bottom halo
+        (load_pixel(mapped_pairs, 0, kernel_height), ...);
+    }
+
+    // Load diagonally adjacent pixels
+    if (threadIdx.x < kernel_width && threadIdx.y < kernel_height && x >= kernel_width
+        && y >= kernel_height) {
+        // Load top-left corner
+        (load_pixel(mapped_pairs, -kernel_width, -kernel_height), ...);
+    }
+    if (threadIdx.x >= blockDim.x - kernel_width && threadIdx.y < kernel_height
+        && x + kernel_width < width && y >= kernel_height) {
+        // Load top-right corner
+        (load_pixel(mapped_pairs, kernel_width, -kernel_height), ...);
+    }
+    if (threadIdx.x < kernel_width && threadIdx.y >= blockDim.y - kernel_height
+        && x >= kernel_width && y + kernel_height < height) {
+        // Load bottom-left corner
+        (load_pixel(mapped_pairs, -kernel_width, kernel_height), ...);
+    }
+    if (threadIdx.x >= blockDim.x - kernel_width
+        && threadIdx.y >= blockDim.y - kernel_height && x + kernel_width < width
+        && y + kernel_height < height) {
+        // Load bottom-right corner
+        (load_pixel(mapped_pairs, kernel_width, kernel_height), ...);
+    }
+}
 
 #endif  // DEVICE_COMMON_H
