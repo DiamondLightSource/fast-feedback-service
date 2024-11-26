@@ -5,6 +5,7 @@
 #include <iostream>
 #include <dx2/crystal.h>
 #include "gemmi/unitcell.hpp"
+#include "gemmi/symmetry.hpp"
 #include <dx2/utils.h>
 
 using Eigen::Vector3d;
@@ -76,7 +77,8 @@ public:
                 v3 = -v3;
             }
             //std::cout << "returning comb " << comb[0] << " " << comb[1] << " " << comb[2] << std::endl;
-            Crystal c{v1,v2,v3};
+            gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
+            Crystal c{v1,v2,v3, space_group};
             c.niggli_reduce();
             gemmi::UnitCell cell = c.get_unit_cell();
             if (cell.volume > (cell.a * cell.b * cell.c / 100.0)){

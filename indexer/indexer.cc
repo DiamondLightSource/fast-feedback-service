@@ -30,6 +30,11 @@ using Eigen::Matrix3d;
 using Eigen::Vector3i;
 using json = nlohmann::json;
 
+struct score_and_crystal {
+    double score;
+    Crystal crystal;
+};
+
 int main(int argc, char **argv) {
 
     auto t1 = std::chrono::system_clock::now();
@@ -42,6 +47,13 @@ int main(int argc, char **argv) {
       .help("Maximum number of crystal models to test")
       .default_value<int>(50)
       .scan<'i', int>();
+    parser.add_argument("--dmin")
+      .help("Resolution limit")
+      .default_value<float>(1.0)
+      .scan<'f', float>();
+    parser.add_argument("--max-cell")
+      .help("The maxiumu cell length to try during indexing")
+      .scan<'f', float>();
     auto args = parser.parse_args(argc, argv);
 
     if (!parser.is_used("--expt")){
@@ -52,9 +64,15 @@ int main(int argc, char **argv) {
         fmt::print("Error: must specify spotfinding results file (in DIALS HDF5 format) with --refl\n");
         std::exit(1);
     }
+    if (!parser.is_used("--max-cell")){
+        fmt::print("Error: must specify --max-cell\n");
+        std::exit(1);
+    }
     std::string imported_expt = parser.get<std::string>("--expt");
     std::string filename = parser.get<std::string>("--refl");
     int max_refine = parser.get<int>("max-refine");
+    double max_cell = parser.get<float>("max-cell");
+    double d_min = parser.get<float>("dmin");
     
     //std::string imported_expt = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/imported.expt";
     std::ifstream f(imported_expt);
@@ -66,34 +84,21 @@ int main(int argc, char **argv) {
         std::cerr << "Error: Unable to read " << imported_expt.c_str() << "; json parse error at byte " << ex.byte << std::endl;
         std::exit(1);
     }
+
+    // Load the models
     json beam_data = elist_json_obj["beam"][0];
     MonoXrayBeam beam(beam_data);
-    /*json beam_out = beam.to_json();
-    std::ofstream file("test_beam.json");
-    file << beam_out.dump(4);*/
     json scan_data = elist_json_obj["scan"][0];
     Scan scan(scan_data);
-    /*json scan_out = scan.to_json();
-    std::ofstream scanfile("test_scan.json");
-    scanfile << scan_out.dump(4);*/
-
     json gonio_data = elist_json_obj["goniometer"][0];
     Goniometer gonio(gonio_data);
-    /*json gonio_out = gonio.to_json();
-    std::ofstream goniofile("test_gonio.json");
-    goniofile << gonio_out.dump(4);*/
-
     json panel_data = elist_json_obj["detector"][0]["panels"][0];
     Panel detector(panel_data);
-    json det_out = detector.to_json();
-    std::ofstream detfile("test_detector.json");
-    detfile << det_out.dump(4);
 
     //TODO
     // implement max cell/d_min estimation. - will need annlib if want same result as dials.
 
     // get processed reflection data from spotfinding
-    //std::string filename = "/dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/strong.refl";
     std::string array_name = "/dials/processing/group_0/xyzobs.px.value";
     std::vector<double> data = read_xyzobs_data(filename, array_name);
 
@@ -101,9 +106,11 @@ int main(int argc, char **argv) {
 
     std::cout << "Number of reflections: " << rlp.size() << std::endl;
     
-    double d_min = 1.31;
+    //double d_min = 1.31;
+    //double d_min = 1.84;
     double b_iso = -4.0 * std::pow(d_min, 2) * log(0.05);
-    double max_cell = 33.8;
+    //double max_cell = 33.8;
+    //double max_cell = 94.4;
     std::cout << "Setting b_iso =" << b_iso << std::endl;
     
     std::vector<double> real_fft(256*256*256, 0.0);
@@ -142,12 +149,19 @@ int main(int argc, char **argv) {
     phi_select.resize(selcount);
     Vector3i null{{0,0,0}};
     int n = 0;
+
+    // iterate over candidates; assign indices, refine, score.
+    // need a map of scores for candidates: index to score and xtal. What about miller indices?
+
+    std::map<int,score_and_crystal> results_map;
+
     while (candidates.has_next() && n < max_refine){
         Crystal crystal = candidates.next();
-        //std::cout << crystal.get_A_matrix() << std::endl; 
         n++;
         
         std::vector<Vector3i> miller_indices = assign_indices_global(crystal.get_A_matrix(), rlp_select, phi_select);
+        
+        // for debugging, let's count the number of nonzero miller indices
         int count = 0;
         for (int i=0;i<miller_indices.size();i++){
             if (miller_indices[i] != null){
@@ -156,14 +170,55 @@ int main(int argc, char **argv) {
             }
         }
         std::cout << count << " nonzero miller indices" << std::endl;
+
+        // FIXME refine the crystal model
         // skip from dials.algorithms.indexing import non_primitive_basis step
-        // then on to model evaluation. Have refinement code but should parallelise.
+        //
         // data needed: flags, s1, xyzobs.mm.value, entering.
         // call 'calculate_entering_flags'
         // flags from file
         // s1 calculated
         // xyzobs.mm.value already effectively calculated in xyz_to_rlp?
+
+        // FIXME score the refined model
+
+        score_and_crystal sac;
+        sac.score = (double)n;
+        sac.crystal = crystal;
+        results_map[n] = sac;
+        
     }
+
+    // find the best crystal from the map - lowest score
+    auto it = *std::min_element(results_map.begin(), results_map.end(),
+            [](const auto& l, const auto& r) { return l.second.score < r.second.score; });
+    Crystal best_xtal = it.second.crystal;
+    // save the best crystal.
+    json cryst_out = best_xtal.to_json();
+    std::ofstream cfile("best_crystal.json");
+    cfile << cryst_out.dump(4);
+
+    json elist_out;
+    elist_out["__id__"] = "ExperimentList";
+    json expt_out;
+    // no imageset for now.
+    expt_out["__id__"] = "Experiment";
+    expt_out["identifier"] = "test";
+    expt_out["beam"] = 0;
+    expt_out["detector"] = 0;
+    expt_out["goniometer"] = 0;
+    expt_out["scan"] = 0;
+    expt_out["crystal"] = 0;
+    elist_out["experiment"] = std::array<json, 1> {expt_out};
+    elist_out["crystal"] = std::array<json, 1> {cryst_out};
+    elist_out["scan"] = std::array<json, 1> {scan.to_json()};
+    elist_out["goniometer"] = std::array<json, 1> {gonio.to_json()};
+    elist_out["beam"] = std::array<json, 1> {beam.to_json()};
+    elist_out["detector"] = std::array<json, 1> {detector.to_json()};
+
+    std::ofstream efile("elist.json");
+    efile << elist_out.dump(4);
+
     
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;
