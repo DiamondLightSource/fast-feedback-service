@@ -5,6 +5,7 @@
 #include <dx2/beam.h>
 #include <dx2/scan.h>
 #include <dx2/goniometer.h>
+#include <iostream>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
