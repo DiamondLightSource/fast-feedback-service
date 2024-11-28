@@ -175,6 +175,11 @@ void call_do_spotfinding_dispersion(dim3 blocks,
                          n_sig_b,
                          n_sig_s);
 
+    // Calculate required shared memory
+    // This is before the stream synchronization to overlap other asynchronous operations
+    size_t shared_memory = calculate_shared_memory<pixel_t, uint8_t>(
+      threads, KERNEL_RADIUS);  // Required shared memory
+
     // Synchronize the CUDA stream to ensure the kernel constants are set
     cudaStreamSynchronize(stream);
 
@@ -237,6 +242,11 @@ void call_do_spotfinding_extended(dim3 blocks,
                          n_sig_b,
                          n_sig_s);
 
+    // Calculate the shared memory required for the first pass
+    // This is before the stream synchronization to overlap other asynchronous operations
+    size_t shared_memory = calculate_shared_memory<pixel_t, uint8_t>(
+      threads, KERNEL_RADIUS);  // Required shared memory
+
     // Allocate intermediate buffer for the dispersion mask on the device
     PitchedMalloc<uint8_t> d_dispersion_mask(width, height);
     PitchedMalloc<uint8_t> d_erosion_mask(width, height);
@@ -255,6 +265,12 @@ void call_do_spotfinding_extended(dim3 blocks,
       mask.get(),              // Mask data pointer
       d_dispersion_mask.get()  // Output dispersion mask pointer
     );
+
+    // Calculate the shared memory required for the erosion pass
+    // This is before the stream synchronization to overlap the kernel execution
+    shared_memory = calculate_shared_memory<uint8_t>(
+      threads, KERNEL_RADIUS);  // Required shared memory
+
     cudaStreamSynchronize(
       stream);  // Synchronize the CUDA stream to ensure the first pass is complete
 
@@ -284,6 +300,12 @@ void call_do_spotfinding_extended(dim3 blocks,
                                                         d_dispersion_mask.pitch,
                                                         d_erosion_mask.pitch,
                                                         KERNEL_RADIUS);
+
+    // Calculate the shared memory required for the second pass
+    // This is before the stream synchronization to overlap the kernel execution
+    shared_memory = calculate_shared_memory<pixel_t, uint8_t, uint8_t>(
+      threads, KERNEL_RADIUS_EXTENDED);  // Required shared memory
+
     cudaStreamSynchronize(
       stream);  // Synchronize the CUDA stream to ensure the erosion pass is complete
 
