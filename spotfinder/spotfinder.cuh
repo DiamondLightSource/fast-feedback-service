@@ -8,7 +8,6 @@
 
 void call_do_spotfinding_dispersion(dim3 blocks,
                                     dim3 threads,
-                                    size_t shared_memory,
                                     cudaStream_t stream,
                                     PitchedMalloc<pixel_t> &image,
                                     PitchedMalloc<uint8_t> &mask,
@@ -22,7 +21,6 @@ void call_do_spotfinding_dispersion(dim3 blocks,
 
 void call_do_spotfinding_extended(dim3 blocks,
                                   dim3 threads,
-                                  size_t shared_memory,
                                   cudaStream_t stream,
                                   PitchedMalloc<pixel_t> &image,
                                   PitchedMalloc<uint8_t> &mask,

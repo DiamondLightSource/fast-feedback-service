@@ -732,7 +732,6 @@ int main(int argc, char **argv) {
                 case DispersionAlgorithm::Algorithm::DISPERSION:
                     call_do_spotfinding_dispersion(blocks_dims,
                                                    gpu_thread_block_size,
-                                                   0,
                                                    stream,
                                                    device_image,
                                                    mask,
@@ -744,7 +743,6 @@ int main(int argc, char **argv) {
                 case DispersionAlgorithm::Algorithm::DISPERSION_EXTENDED:
                     call_do_spotfinding_extended(blocks_dims,
                                                  gpu_thread_block_size,
-                                                 0,
                                                  stream,
                                                  device_image,
                                                  mask,
