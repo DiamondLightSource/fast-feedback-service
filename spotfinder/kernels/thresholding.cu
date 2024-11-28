@@ -61,10 +61,10 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
   PitchedArray2D<pixel_t> image,
   PitchedArray2D<uint8_t> mask,
   pixel_t this_pixel,
-  int x,
-  int y,
-  int width,
-  int height,
+  int local_x,
+  int local_y,
+  ushort width,
+  ushort height,
   uint8_t kernel_radius,
   uint8_t min_count,
   float n_sig_b,
@@ -74,23 +74,24 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
     size_t sumsq = 0;
     uint8_t n = 0;
 
-    int row_start = max(0, y - kernel_radius);
-    int row_end = min(y + kernel_radius + 1, height);
-
-    for (int row = row_start; row < row_end; ++row) {
-        int col_start = max(0, x - kernel_radius);
-        int col_end = min(x + kernel_radius + 1, width);
-
-        for (int col = col_start; col < col_end; ++col) {
-            pixel_t pixel = image(col, row);
-            uint8_t mask_pixel = mask(col, row);
-            bool include_pixel = mask_pixel != 0;  // If the pixel is valid
-            if (include_pixel) {
+    for (int i = -kernel_radius; i <= kernel_radius; ++i) {
+        for (int j = -kernel_radius; j <= kernel_radius; ++j) {
+            // Calculate the local coordinates
+            int lx = local_x + j;
+            int ly = local_y + i;
+            uint8_t mask_pixel = mask(lx, ly);
+            if (mask_pixel) {
+                pixel_t pixel = image(lx, ly);
                 sum += pixel;
                 sumsq += pixel * pixel;
-                n += 1;
+                ++n;
             }
         }
+    }
+
+    // Check if the pixel has enough valid neighbours
+    if (n < min_count) {
+        return {false, false, n};
     }
 
     // Compute local mean and variance
@@ -148,31 +149,67 @@ __global__ void dispersion(pixel_t __restrict__ *image_ptr,
 
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
-    int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
-    int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
+    int global_x = block.group_index().x * block.group_dim().x + block.thread_index().x;
+    int global_y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
-    if (x >= kernel_constants.width || y >= kernel_constants.height)
+    if (global_x >= kernel_constants.width || global_y >= kernel_constants.height)
         return;  // Out of bounds guard
 
-    pixel_t this_pixel = image(x, y);
+    // Allocate shared memory for the image data
+    extern __shared__ uint8_t shared_mem[];
+    // Partition shared memory for image and mask data
+    uint8_t *shared_mask_ptr = shared_mem;
+    size_t shared_partition_size =
+      (blockDim.x + KERNEL_RADIUS * 2) * (blockDim.y + KERNEL_RADIUS * 2);
+    pixel_t *shared_image_ptr =
+      reinterpret_cast<pixel_t *>(&shared_mask_ptr[shared_partition_size]);
+
+    // Create pitched arrays for shared memory access
+    size_t shared_pitch = blockDim.x + KERNEL_RADIUS * 2;
+    PitchedArray2D<pixel_t> shared_image(shared_image_ptr, &shared_pitch);
+    PitchedArray2D<uint8_t> shared_mask(shared_mask_ptr, &shared_pitch);
+
+    int local_x = threadIdx.x + KERNEL_RADIUS;
+    int local_y = threadIdx.y + KERNEL_RADIUS;
+
+    // Get the pixel value at the current position
+    pixel_t this_pixel = image(global_x, global_y);
+
+    // Load this pixel into shared memory
+    shared_image(local_x, local_y) = this_pixel;
+    shared_mask(local_x, local_y) = mask(global_x, global_y);
+
+    // Load the surrounding pixels into shared memory
+    load_halo(block,
+              global_x,
+              global_y,
+              kernel_constants.width,
+              kernel_constants.height,
+              KERNEL_RADIUS,
+              KERNEL_RADIUS,
+              cuda::std::make_tuple(image, shared_image),
+              cuda::std::make_tuple(mask, shared_mask));
+
+    // Sync threads to ensure all shared memory is loaded
+    block.sync();
 
     // Check if the pixel is masked and below the maximum valid pixel value
-    bool px_is_valid =
-      mask(x, y) != 0 && this_pixel <= kernel_constants.max_valid_pixel_value;
+    bool px_is_valid = shared_mask(local_x, local_y) != 0
+                       && this_pixel <= kernel_constants.max_valid_pixel_value;
 
     // Validity guard
     if (!px_is_valid) {
-        result_mask(x, y) = 0;
+        result_mask(global_x, global_y) = 0;
         return;
     }
 
     // Calculate the dispersion flags
     auto [not_background, is_signal, n] =
-      calculate_dispersion_flags(image,
-                                 mask,
+      calculate_dispersion_flags(shared_image,
+                                 shared_mask,
                                  this_pixel,
-                                 x,
-                                 y,
+                                 local_x,
+                                 local_y,
                                  kernel_constants.width,
                                  kernel_constants.height,
                                  KERNEL_RADIUS,
@@ -180,7 +217,7 @@ __global__ void dispersion(pixel_t __restrict__ *image_ptr,
                                  kernel_constants.n_sig_b,
                                  kernel_constants.n_sig_s);
 
-    result_mask(x, y) = not_background && is_signal && n > 1;
+    result_mask(global_x, global_y) = not_background && is_signal && n > 1;
 }
 
 /**
@@ -218,31 +255,67 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
 
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
-    int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
-    int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
+    int global_x = block.group_index().x * block.group_dim().x + block.thread_index().x;
+    int global_y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
-    if (x >= kernel_constants.width || y >= kernel_constants.height)
+    if (global_x >= kernel_constants.width || global_y >= kernel_constants.height)
         return;  // Out of bounds guard
 
-    pixel_t this_pixel = image(x, y);
+    // Allocate shared memory for the image data
+    extern __shared__ uint8_t shared_mem[];
+    // Partition shared memory for image and mask data
+    uint8_t *shared_mask_ptr = shared_mem;
+    size_t shared_partition_size =
+      (blockDim.x + KERNEL_RADIUS * 2) * (blockDim.y + KERNEL_RADIUS * 2);
+    pixel_t *shared_image_ptr =
+      reinterpret_cast<pixel_t *>(&shared_mask_ptr[shared_partition_size]);
+
+    // Create pitched arrays for shared memory access
+    size_t shared_pitch = blockDim.x + KERNEL_RADIUS * 2;
+    PitchedArray2D<pixel_t> shared_image(shared_image_ptr, &shared_pitch);
+    PitchedArray2D<uint8_t> shared_mask(shared_mask_ptr, &shared_pitch);
+
+    int local_x = threadIdx.x + KERNEL_RADIUS;
+    int local_y = threadIdx.y + KERNEL_RADIUS;
+
+    // Get the pixel value at the current position
+    pixel_t this_pixel = image(global_x, global_y);
+
+    // Load this pixel into shared memory
+    shared_image(local_x, local_y) = this_pixel;
+    shared_mask(local_x, local_y) = mask(global_x, global_y);
+
+    // Load the surrounding pixels into shared memory
+    load_halo(block,
+              global_x,
+              global_y,
+              kernel_constants.width,
+              kernel_constants.height,
+              KERNEL_RADIUS,
+              KERNEL_RADIUS,
+              cuda::std::make_tuple(image, shared_image),
+              cuda::std::make_tuple(mask, shared_mask));
+
+    // Sync threads to ensure all shared memory is loaded
+    block.sync();
 
     // Check if the pixel is masked and below the maximum valid pixel value
-    bool px_is_valid =
-      mask(x, y) != 0 && this_pixel <= kernel_constants.max_valid_pixel_value;
+    bool px_is_valid = shared_mask(local_x, local_y) != 0
+                       && this_pixel <= kernel_constants.max_valid_pixel_value;
 
     // Validity guard
     if (!px_is_valid) {
-        result_mask(x, y) = 0;
+        result_mask(global_x, global_y) = 0;
         return;
     }
 
     // Calculate the dispersion flags
     auto [not_background, is_signal, n] =
-      calculate_dispersion_flags(image,
-                                 mask,
+      calculate_dispersion_flags(shared_image,
+                                 shared_mask,
                                  this_pixel,
-                                 x,
-                                 y,
+                                 local_x,
+                                 local_y,
                                  kernel_constants.width,
                                  kernel_constants.height,
                                  KERNEL_RADIUS,
@@ -250,7 +323,7 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
                                  kernel_constants.n_sig_b,
                                  kernel_constants.n_sig_s);
 
-    result_mask(x, y) = not_background && n > 1;
+    result_mask(global_x, global_y) = not_background && n > 1;
 }
 
 /**
@@ -292,33 +365,71 @@ __global__ void dispersion_extended_second_pass(
 
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
-    int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
-    int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
+    int global_x = block.group_index().x * block.group_dim().x + block.thread_index().x;
+    int global_y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
-    if (x >= kernel_constants.width || y >= kernel_constants.height)
+    if (global_x >= kernel_constants.width || global_y >= kernel_constants.height)
         return;  // Out of bounds guard
 
-    pixel_t this_pixel = image(x, y);
+    // Allocate shared memory for the image data
+    extern __shared__ uint8_t shared_mem[];
+    // Partition shared memory for image, mask and dispersion mask data
+    uint8_t *shared_mask_ptr = shared_mem;
+    size_t shared_partition_size = (blockDim.x + KERNEL_RADIUS_EXTENDED * 2)
+                                   * (blockDim.y + KERNEL_RADIUS_EXTENDED * 2);
+    uint8_t *shared_dispersion_mask_ptr = &shared_mask_ptr[shared_partition_size];
+    pixel_t *shared_image_ptr =
+      reinterpret_cast<pixel_t *>(&shared_dispersion_mask_ptr[shared_partition_size]);
+
+    // Create pitched arrays for shared memory access
+    size_t shared_pitch = blockDim.x + KERNEL_RADIUS_EXTENDED * 2;
+    PitchedArray2D<pixel_t> shared_image(shared_image_ptr, &shared_pitch);
+    PitchedArray2D<uint8_t> shared_mask(shared_mask_ptr, &shared_pitch);
+    PitchedArray2D<uint8_t> shared_dispersion_mask(shared_dispersion_mask_ptr,
+                                                   &shared_pitch);
+
+    int local_x = threadIdx.x + KERNEL_RADIUS_EXTENDED;
+    int local_y = threadIdx.y + KERNEL_RADIUS_EXTENDED;
+
+    pixel_t this_pixel = image(global_x, global_y);
+
+    // Load this pixel into shared memory
+    shared_image(local_x, local_y) = this_pixel;
+    shared_mask(local_x, local_y) = mask(global_x, global_y);
+    shared_dispersion_mask(local_x, local_y) = dispersion_mask(global_x, global_y);
+
+    // Load the surrounding pixels into shared memory
+    load_halo(block,
+              global_x,
+              global_y,
+              kernel_constants.width,
+              kernel_constants.height,
+              KERNEL_RADIUS_EXTENDED,
+              KERNEL_RADIUS_EXTENDED,
+              cuda::std::make_tuple(image, shared_image),
+              cuda::std::make_tuple(mask, shared_mask),
+              cuda::std::make_tuple(dispersion_mask, shared_dispersion_mask));
+
+    // Sync threads to ensure all shared memory is loaded
+    block.sync();
 
     // Check if the pixel is masked and below the maximum valid pixel value
-    bool px_is_valid =
-      mask(x, y) != 0 && this_pixel <= kernel_constants.max_valid_pixel_value;
+    bool px_is_valid = shared_mask(local_x, local_y) != 0
+                       && this_pixel <= kernel_constants.max_valid_pixel_value;
 
     // Initialize variables for computing the local sum and count
     uint sum = 0;
     uint8_t n = 0;
 
-    int row_start = max(0, y - KERNEL_RADIUS_EXTENDED);
-    int row_end = min(y + KERNEL_RADIUS_EXTENDED + 1, kernel_constants.height);
+    for (int i = -KERNEL_RADIUS_EXTENDED; i <= KERNEL_RADIUS_EXTENDED; ++i) {
+        for (int j = -KERNEL_RADIUS_EXTENDED; j <= KERNEL_RADIUS_EXTENDED; ++j) {
+            // Calculate the local coordinates
+            int lx = local_x + j;
+            int ly = local_y + i;
 
-    for (int row = row_start; row < row_end; ++row) {
-        int col_start = max(0, x - KERNEL_RADIUS_EXTENDED);
-        int col_end = min(x + KERNEL_RADIUS_EXTENDED + 1, kernel_constants.width);
-
-        for (int col = col_start; col < col_end; ++col) {
-            pixel_t pixel = image(col, row);
-            uint8_t mask_pixel = mask(col, row);
-            uint8_t disp_mask_pixel = dispersion_mask(col, row);
+            pixel_t pixel = shared_image(lx, ly);
+            uint8_t mask_pixel = shared_mask(lx, ly);
+            uint8_t disp_mask_pixel = shared_dispersion_mask(lx, ly);
             /*
                * Check if the pixel is valid. That means that it is not
                * masked and was not marked as potentially signal in the
@@ -340,18 +451,18 @@ __global__ void dispersion_extended_second_pass(
         float sum_f = static_cast<float>(sum);
 
         // The pixel must have been marked as potentially signal in the dispersion mask
-        bool disp_mask = dispersion_mask(x, y) == MASKED_PIXEL;
+        bool disp_mask = shared_dispersion_mask(local_x, local_y) == MASKED_PIXEL;
         // The pixel must be above the global threshold
-        bool global_mask = image(x, y) > threshold;
+        bool global_mask = shared_image(local_x, local_y) > threshold;
         // Calculate the local mean
         float mean = (n > 1 ? sum_f / n : 0);  // If n is less than 1, set mean to 0
         // The pixel must be above the local threshold
-        bool local_mask =
-          image(x, y) >= (mean + kernel_constants.n_sig_s * sqrtf(mean));
+        bool local_mask = shared_image(local_x, local_y)
+                          >= (mean + kernel_constants.n_sig_s * sqrtf(mean));
 
-        result_mask(x, y) = disp_mask && global_mask && local_mask;
+        result_mask(global_x, global_y) = disp_mask && global_mask && local_mask;
     } else {
-        result_mask(x, y) = 0;
+        result_mask(global_x, global_y) = 0;
     }
 }
 #pragma endregion
