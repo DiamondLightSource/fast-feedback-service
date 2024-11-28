@@ -36,6 +36,8 @@ using json = nlohmann::json;
 struct score_and_crystal {
     double score;
     Crystal crystal;
+    double num_indexed;
+    double rmsdxy;
 };
 
 int main(int argc, char **argv) {
@@ -104,8 +106,48 @@ int main(int argc, char **argv) {
     // get processed reflection data from spotfinding
     std::string array_name = "/dials/processing/group_0/xyzobs.px.value";
     std::vector<double> xyzobs_px = read_xyzobs_data(filename, array_name);
+    std::string flags_array_name = "/dials/processing/group_0/flags";
+    std::vector<std::size_t> flags = read_flags_data(filename, flags_array_name);
 
     std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, detector, beam, scan, gonio);
+
+    // some more setup - entering flags and s1
+    //self.reflections.centroid_px_to_mm(self.experiments)
+    //self.reflections.map_centroids_to_reciprocal_space(self.experiments)
+    //self.reflections.calculate_entering_flags(self.experiments)
+    Vector3d s0 = beam.get_s0();
+    Vector3d axis = gonio.get_rotation_axis();
+    Matrix3d d_matrix = detector.get_d_matrix();
+    std::array<double, 2> oscillation = scan.get_oscillation();
+    double osc_width = oscillation[1];
+    double osc_start = oscillation[0];
+    int image_range_start = scan.get_image_range()[0];
+    double DEG2RAD = M_PI / 180.0;
+
+    // calculate s1 and xyzobsmm
+    std::vector<Vector3d> s1(rlp.size());
+    std::vector<Vector3d> xyzobs_mm(rlp.size());
+    std::vector<Vector3d> xyzcal_mm(rlp.size());
+    std::vector<double> phi(rlp.size());
+    for (int i = 0; i < rlp.size(); ++i) {
+        int vec_idx= 3*i;
+        double x1 = xyzobs_px[vec_idx];
+        double x2 = xyzobs_px[vec_idx+1];
+        double x3 = xyzobs_px[vec_idx+2];
+        std::array<double, 2> xymm = detector.px_to_mm(x1,x2);
+        double rot_angle = (((x3 + 1 - image_range_start) * osc_width) + osc_start) * DEG2RAD;
+        phi[i] = rot_angle;
+        Vector3d m = {xymm[0], xymm[1], 1.0};
+        s1[i] = d_matrix * m;
+        xyzobs_mm[i] = {xymm[0], xymm[1], rot_angle};
+    }
+    
+    // calculate entering array
+    std::vector<bool> enterings(rlp.size());
+    Vector3d vec = s0.cross(axis);
+    for (int i=0;i<s1.size();i++){
+        enterings[i] = ((s1[i].dot(vec)) < 0.0);
+    }
 
     std::cout << "Number of reflections: " << rlp.size() << std::endl;
     
@@ -133,23 +175,43 @@ int main(int argc, char **argv) {
     std::vector<Vector3i> miller_indices;
     // first extract phis
     // need to select on dmin, also only first 360 deg of scan. Do this earlier?
-    int image_range_start = scan.get_image_range()[0];
+    /*int image_range_start = scan.get_image_range()[0];
     std::vector<double> phi_select(rlp.size());
     std::vector<Vector3d> rlp_select(rlp.size());
     std::array<double, 2> oscillation = scan.get_oscillation();
     double osc_width = oscillation[1];
     double osc_start = oscillation[0];
-    double DEG2RAD = M_PI / 180.0;
+    double DEG2RAD = M_PI / 180.0;*/
+
+    // Fix this inefficient selection with reflection-table-like struct.
+    std::vector<double> phi_select(rlp.size());
+    std::vector<Vector3d> rlp_select(rlp.size());
+    std::vector<std::size_t> flags_select(rlp.size());
+    std::vector<Vector3d> xyzobs_mm_select(rlp.size());
+    std::vector<Vector3d> xyzcal_mm_select(rlp.size());
+    std::vector<Vector3d> s1_select(rlp.size());
+    std::vector<bool> entering_select(rlp.size());
     int selcount=0;
+    // also select flags, xyzobs/cal, s1 and enterings
     for (int i=0;i<phi_select.size();i++){
         if ((1.0/rlp[i].norm()) > d_min){
-            phi_select[selcount] = (((xyzobs_px[i*3+2] +1 - image_range_start)*osc_width) + osc_start) * DEG2RAD;
+            phi_select[selcount] = phi[i];
             rlp_select[selcount] = rlp[i];
+            flags_select[selcount] = flags[i];
+            xyzobs_mm_select[selcount] = xyzobs_mm[i];
+            xyzcal_mm_select[selcount] = xyzcal_mm[i];
+            s1_select[selcount] = s1[i];
+            entering_select[selcount] = enterings[i];
             selcount++;
         }
     }
     rlp_select.resize(selcount);
     phi_select.resize(selcount);
+    flags_select.resize(selcount);
+    xyzobs_mm_select.resize(selcount);
+    xyzcal_mm_select.resize(selcount);
+    s1_select.resize(selcount);
+    entering_select.resize(selcount);
     Vector3i null{{0,0,0}};
     int n = 0;
 
@@ -161,7 +223,6 @@ int main(int argc, char **argv) {
     while (candidates.has_next() && n < max_refine){
         Crystal crystal = candidates.next();
         n++;
-        
         std::vector<Vector3i> miller_indices = assign_indices_global(crystal.get_A_matrix(), rlp_select, phi_select);
         
         // for debugging, let's count the number of nonzero miller indices
@@ -172,99 +233,47 @@ int main(int argc, char **argv) {
                 //std::cout << i << ": " << miller_indices[i][0] << " " << miller_indices[i][1] << " " << miller_indices[i][2] << std::endl;
             }
         }
-        std::cout << count << " nonzero miller indices" << std::endl;
+        //std::cout << count << " nonzero miller indices" << std::endl;
 
-        // Would do some refine here. 
-        // For now, pretend we have refined and calculate the rmsd for the model as an example
-
-        Vector3d s0 = beam.get_s0();
-        Vector3d axis = gonio.get_rotation_axis();
-        Matrix3d d_matrix = detector.get_d_matrix();
-        std::array<double, 2> oscillation = scan.get_oscillation();
-        double osc_width = oscillation[1];
-        double osc_start = oscillation[0];
-        int image_range_start = scan.get_image_range()[0];
-        double DEG2RAD = M_PI / 180.0;
-
-        // calculate s1
-        std::vector<Vector3d> s1(rlp_select.size());
-        std::vector<Vector3d> xyzobs_mm(rlp_select.size());
-        std::vector<Vector3d> xyzcal_mm(rlp_select.size());
-        for (int i = 0; i < rlp_select.size(); ++i) {
-            int vec_idx= 3*i;
-            double x1 = xyzobs_px[vec_idx];
-            double x2 = xyzobs_px[vec_idx+1];
-            double x3 = xyzobs_px[vec_idx+2];
-            std::array<double, 2> xymm = detector.px_to_mm(x1,x2);
-            double rot_angle = (((x3 + 1 - image_range_start) * osc_width) + osc_start) * DEG2RAD;
-            Vector3d m = {xymm[0], xymm[1], 1.0};
-            s1[i] = d_matrix * m;
-            xyzobs_mm[i] = {xymm[0], xymm[1], rot_angle};
-        }
-        
-        // calculate entering array
-        /*std::vector<bool> enterings(rlp_select.size());
-        Vector3d vec = s0.cross(axis);
-        for (int i=0;i<s1.size();i++){
-            enterings[i] = ((s1[i].dot(vec)) < 0.0);
-        }*/
-        
-        // make some flags
-        std::vector<std::size_t> flags(rlp_select.size());
-        std::vector<bool> entering(rlp_select.size());
-        //std::vector<Vector3d> xyzcal_mm(rlp_select.size());
+        // make a reflection table like object
         reflection_data obs;
         obs.miller_indices = miller_indices;
-        obs.flags = flags;
-        obs.xyzobs_mm = xyzobs_mm;
-        obs.xyzcal_mm = xyzcal_mm;
-        obs.s1 = s1;
-        obs.entering = entering;
+        obs.flags = flags_select;
+        obs.xyzobs_mm = xyzobs_mm_select;
+        obs.xyzcal_mm = xyzcal_mm_select;
+        obs.s1 = s1_select;
+        obs.entering = entering_select;
 
         int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
         double width = scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
+
+        // get a filtered selection for refinement
         reflection_data sel_obs = reflection_filter_preevaluation(
             obs, gonio, crystal, beam, detector, width, 20
         );
 
-        // now predict
-        /*simple_reflection_predictor(
-            beam, gonio, crystal.get_A_matrix(), detector,
-            s1, xyzobs_mm, enterings, flags, xyzcal_mm, miller_indices
-            );
-        std::cout << xyzcal_mm[0][0] << " " << xyzcal_mm[0][1] << " " << xyzcal_mm[0][2] <<std::endl;
-        std::cout << xyzobs_mm[0][0] << " " << xyzobs_mm[0][1] << " " << xyzobs_mm[0][2] <<std::endl;
-        */
-        // calc rmsd
-        /*double xsum = 0;
+        // do some refinement
+
+        // now calculate the rmsd and model likelihood
+        double xsum = 0;
         double ysum = 0;
         double zsum = 0;
         for (int i=0;i<sel_obs.flags.size();i++){
-            if (sel_obs.miller_indices[i] == null){
+            /*if (sel_obs.miller_indices[i] == null){
                 continue;
-            }
+            }*/
             Vector3d xyzobs = sel_obs.xyzobs_mm[i];
             Vector3d xyzcal = sel_obs.xyzcal_mm[i];
-            double dx = std::pow(xyzobs[0] - xyzcal[0],2);
-            double dy = std::pow(xyzobs[1] - xyzcal[1],2);
-            if (dx > 4.0){
-                std::cout << i << " dx " << xyzobs[0] << " " << xyzcal[0] << std::endl;
-            }
-            if (dy > 4.0){
-                std::cout << i << " dy " << xyzobs[1] << " " << xyzcal[1] << std::endl;
-            }
-            xsum += dx;
-            ysum += dy;
+            xsum += std::pow(xyzobs[0] - xyzcal[0],2);
+            ysum += std::pow(xyzobs[1] - xyzcal[1],2);
             zsum += std::pow(xyzobs[2] - xyzcal[2],2);
         }
         double rmsdx = std::pow(xsum / sel_obs.xyzcal_mm.size(), 0.5);
         double rmsdy = std::pow(ysum / sel_obs.xyzcal_mm.size(), 0.5);
         double rmsdz = std::pow(zsum / sel_obs.xyzcal_mm.size(), 0.5);
         double xyrmsd = std::pow(std::pow(rmsdx, 2)+std::pow(rmsdy, 2), 0.5);
-        std::cout << rmsdx << " <<xrmsd" << std::endl;
-        std::cout << rmsdy << " <<yrmsd" << std::endl;
-        std::cout << rmsdz << " <<zrmsd" << std::endl;
-        std::cout << xyrmsd << " <<xyrmsd" << std::endl;
+        //std::cout << "RMSDx: " << rmsdx << ", RMSDy: " << rmsdy << ", RMSDz: " << rmsdz << std::endl;
+        //std::cout << xyrmsd << " <<xyrmsd" << std::endl;
         //s1, flags, xyzcal.mm*/
 
         // FIXME refine the crystal model
@@ -281,8 +290,22 @@ int main(int argc, char **argv) {
         score_and_crystal sac;
         sac.score = (double)n;
         sac.crystal = crystal;
+        sac.num_indexed = count;
+        sac.rmsdxy = xyrmsd;
         results_map[n] = sac;
         
+    }
+    std::cout << "Unit cell, #indexed, rmsd_xy" << std::endl;
+    for (auto it=results_map.begin();it!=results_map.end();it++){
+        gemmi::UnitCell cell = (*it).second.crystal.get_unit_cell();
+        std::string printcell;
+        std::string a = std::to_string(cell.a);
+        std::string b = std::to_string(cell.b);
+        std::string c = std::to_string(cell.c);
+        std::string al = std::to_string(cell.alpha);
+        std::string be = std::to_string(cell.beta);
+        std::string ga = std::to_string(cell.gamma);
+        std::cout << a << ", " << b << ", " << c << ", " << al << ", " << be << ", "<< ga << ", "<< (*it).second.num_indexed << ", " << (*it).second.rmsdxy << std::endl;
     }
 
     // find the best crystal from the map - lowest score

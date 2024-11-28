@@ -40,7 +40,6 @@ std::vector<std::size_t> random_selection(int pop_size, int sample_size, int see
 std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double> yresid, std::vector<double>phi_resid){
     std::vector<size_t> sel {};//(xresid.size(), true);
     double iqr_multiplier = 3.0;
-    std::cout << xresid.size() << " xresid size" << std::endl;
     std::vector<double> xresid_unsorted(xresid.begin(), xresid.end());
     std::vector<double> yresid_unsorted(yresid.begin(), yresid.end());
     std::vector<double> phi_resid_unsorted(phi_resid.begin(), phi_resid.end());
@@ -124,7 +123,6 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double>
 
 reflection_data outlier_filter(reflection_data &reflections){
     // filter on predicted
-    std::cout << "start outlier filter " <<  reflections.flags.size() << std::endl;
     std::vector<std::size_t> flags = reflections.flags;
     std::vector<Vector3d> xyzobs = reflections.xyzobs_mm;
     std::vector<Vector3d> xyzcal = reflections.xyzcal_mm;
@@ -132,8 +130,7 @@ reflection_data outlier_filter(reflection_data &reflections){
     std::vector<double> y_resid(reflections.flags.size(), 0.0);
     std::vector<double> phi_resid(reflections.flags.size(), 0.0);
     std::vector<std::size_t> sel {};
-    std::cout << x_resid.size() << std::endl;
-
+    
     size_t predicted_value = (1 << 0); //predicted flag
     for (int i=0;i<flags.size();i++){
         if ((flags[i] & predicted_value) == predicted_value){
@@ -156,7 +153,6 @@ reflection_data outlier_filter(reflection_data &reflections){
         phi_resid_sel[i] = phi_resid[idx];
     }
 
-    std::cout << x_resid_sel.size() << std::endl;
     std::vector<size_t> outlier_isel = simple_tukey(x_resid_sel, y_resid_sel, phi_resid_sel);
     // get indices of good, then loop over good indics from first.
     std::vector<bool> good_sel(x_resid_sel.size(), true);
@@ -169,9 +165,7 @@ reflection_data outlier_filter(reflection_data &reflections){
             final_sel.push_back(sel[i]);
         }
     }
-    std::cout << "size before outlier select " << flags.size() << std::endl;
     reflection_data subrefls = select(reflections, final_sel);
-    std::cout << "size after outlier select " << subrefls.flags.size() << std::endl;
     std::vector<std::size_t> subflags = subrefls.flags;
 
     // unset centroid outlier flag (necessary?)
@@ -274,7 +268,6 @@ reflection_data reflection_filter_preevaluation(
     int max_sample_size=0
     ){
     reflection_data filter_obs = initial_refman_filter(obs, gonio, beam, close_to_spindle_cutoff);
-    std::cout << "initital filter " << filter_obs.flags.size() << std::endl;
     Matrix3d UB = crystal.get_A_matrix();
     simple_reflection_predictor(
         beam,
@@ -284,8 +277,6 @@ reflection_data reflection_filter_preevaluation(
         filter_obs
     );
     filter_obs = outlier_filter(filter_obs);
-    std::cout << "outlier filter " << filter_obs.flags.size() << std::endl;
     reflection_data sel_obs = select_sample(filter_obs, n_ref_per_degree, scan_width_degrees, min_sample_size, max_sample_size);
-    std::cout << sel_obs.flags.size() << std::endl;
     return sel_obs;
 }
