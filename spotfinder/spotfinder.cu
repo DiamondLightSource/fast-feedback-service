@@ -57,6 +57,44 @@ void set_kernel_constants(cudaStream_t stream,
 }
 
 /**
+ * @brief Calculate the shared memory required for the specified kernel.
+ * 
+ * This function calculates the shared memory required for the specified
+ * kernel based on the number of types and the radius of the kernel.
+ * 
+ * @tparam Types The types of the data to be stored in shared memory. This is a variadic template
+ * that allows multiple types to be specified at compile time.
+ * @param threads The dimensions of the grid of threads within each block.
+ * @param radius The radius of the kernel.
+ * @return The size of the shared memory required in bytes.
+ */
+template <typename... Types>
+size_t calculate_shared_memory(dim3 threads, uint8_t radius) {
+    // Determine the x and y dimensions of the shared memory, including the halo region
+    uint shared_block_width = threads.x + (2 * radius);
+    uint shared_block_height = threads.y + (2 * radius);
+    // Initialize the shared memory size
+    size_t total_shared_memory = 0;
+
+    /*
+     * This is a C++ fold expression, which iterates through all the types
+     * in the variadic template parameter pack (Types...). For each type,
+     * we use a lambda function to calculate the shared memory required
+     * based on its size and the dimensions of the block. The lambda is
+     * invoked once for each type, and the results are added together.
+     */
+    (
+      [&] {
+          total_shared_memory +=
+            shared_block_width * shared_block_height * sizeof(Types);
+      }(),
+      ...);
+
+    // Return the total calculated shared memory size
+    return total_shared_memory;
+}
+
+/**
  * @brief Device function for writing out debug information in PNG and TXT formats.
  *
  * This function writes the specified device data to both PNG and TXT files,
