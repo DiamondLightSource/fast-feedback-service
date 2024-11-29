@@ -39,3 +39,24 @@ exec 3>&-
 
 # Delete the JSON file
 # rm detector.json
+
+# Read the output from the file
+output=$(cat output_file.txt)
+
+# Define the expected output
+expected_output='{"file":"/dls/i03/data/2024/cm37235-2/xraycentring/TestInsulin/ins_14/ins_14_24.nxs","file-number":0,"n_spots_total":3,"num_strong_pixels":115}'
+
+# Compare the output with the expected output
+if [ "$output" == "$expected_output" ]; then
+  echo "#############################################"
+  echo "#                                           #"
+  echo "#               SUCCESS!!!                  #"
+  echo "#                                           #"
+  echo "#############################################"
+else
+  echo "*********************************************"
+  echo "*                                           *"
+  echo "*               FAILURE!!!                  *"
+  echo "*                                           *"
+  echo "*********************************************"
+fi
