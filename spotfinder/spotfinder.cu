@@ -1,8 +1,11 @@
 /**
- * Basic Naive Kernel
+ * @file spotfinder.cu
+ * @brief Implements CUDA kernels and utility functions for performing
+ *        spotfinding on image data using dispersion-based algorithms.
  * 
- * Does spotfinding in-kernel, without in-depth performance tweaking.
- * 
+ * This file contains the CUDA kernels for performing spotfinding on image data
+ * using dispersion-based algorithms. The kernels are designed to be used to 
+ * identify potential signal spots in diffraction images.
  */
 
 // #include <bitshuffle.h>
