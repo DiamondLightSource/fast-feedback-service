@@ -106,8 +106,7 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv);
 #include <string>
 #include <vector>
 
-std::vector<double> read_xyzobs_data(std::string filename, std::string array_name);
-std::vector<std::size_t> read_flags_data(std::string filename, std::string array_name);
+template <typename T> std::vector<T> read_array_from_h5_file(std::string filename, std::string array_name);
 
 class Image {
   private:

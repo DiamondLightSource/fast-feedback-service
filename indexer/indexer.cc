@@ -105,9 +105,11 @@ int main(int argc, char **argv) {
 
     // get processed reflection data from spotfinding
     std::string array_name = "/dials/processing/group_0/xyzobs.px.value";
-    std::vector<double> xyzobs_px = read_xyzobs_data(filename, array_name);
+    std::vector<double> xyzobs_px = read_array_from_h5_file<double>(filename, array_name);
+    //read_xyzobs_data(filename, array_name);
     std::string flags_array_name = "/dials/processing/group_0/flags";
-    std::vector<std::size_t> flags = read_flags_data(filename, flags_array_name);
+    std::vector<std::size_t> flags = read_array_from_h5_file<std::size_t>(filename, flags_array_name);
+    //read_flags_data(filename, flags_array_name);
 
     std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, detector, beam, scan, gonio);
 
@@ -170,6 +172,17 @@ int main(int argc, char **argv) {
     
     std::vector<Vector3d> candidate_vecs =
         sites_to_vecs(centres_of_mass_frac, grid_points_per_void, d_min, 3.0, max_cell);
+
+    std::string n_vecs = std::to_string(candidate_vecs.size() - 1);
+    size_t n_zero = n_vecs.length();
+    json vecs_out;
+    for (int i=0;i<candidate_vecs.size();i++){
+        std::string s = std::to_string(i);
+        auto pad_s = std::string(n_zero - std::min(n_zero, s.length()), '0') + s;
+        vecs_out[pad_s] = candidate_vecs[i];
+    }
+    std::ofstream vecs_file("candidate_vectors.json");
+    vecs_file << vecs_out.dump(4);
 
     CandidateOrientationMatrices candidates(candidate_vecs, 1000);
     std::vector<Vector3i> miller_indices;
