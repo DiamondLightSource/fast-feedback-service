@@ -26,10 +26,10 @@ FetchContent_GetProperties(pocketfft)
 add_library(pocketfft INTERFACE)
 target_include_directories(pocketfft INTERFACE ${pocketfft_SOURCE_DIR})
 
-add_executable(indexer
+add_executable(baseline_indexer
     indexer.cc
 )
-target_link_libraries(indexer
+target_link_libraries(baseline_indexer
     PRIVATE
     fmt
     h5read
@@ -43,4 +43,4 @@ target_link_libraries(indexer
     lodepng
     nlohmann_json::nlohmann_json
 )
-target_compile_options(indexer PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
+target_compile_options(baseline_indexer PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
