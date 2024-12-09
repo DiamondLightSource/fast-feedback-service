@@ -74,7 +74,9 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
     size_t sumsq = 0;
     uint8_t n = 0;
 
+#pragma unroll
     for (int i = -kernel_radius; i <= kernel_radius; ++i) {
+#pragma unroll
         for (int j = -kernel_radius; j <= kernel_radius; ++j) {
             // Calculate the local coordinates
             int lx = local_x + j;
@@ -421,7 +423,9 @@ __global__ void dispersion_extended_second_pass(
     uint sum = 0;
     uint8_t n = 0;
 
+#pragma unroll
     for (int i = -KERNEL_RADIUS_EXTENDED; i <= KERNEL_RADIUS_EXTENDED; ++i) {
+#pragma unroll
         for (int j = -KERNEL_RADIUS_EXTENDED; j <= KERNEL_RADIUS_EXTENDED; ++j) {
             // Calculate the local coordinates
             int lx = local_x + j;
