@@ -2,8 +2,6 @@
 #include <lodepng.h>
 #include <string>
 #include <nlohmann/json.hpp>
-#include "common.hpp"
-#include "cuda_common.hpp"
 #include "h5read.h"
 #include <vector>
 #include <cstring>
@@ -22,6 +20,7 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
+#include <argparse/argparse.hpp>
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
@@ -38,7 +37,7 @@ struct score_and_crystal {
 int main(int argc, char **argv) {
 
     auto t1 = std::chrono::system_clock::now();
-    auto parser = CUDAArgumentParser();
+    auto parser = argparse::ArgumentParser();
     parser.add_argument("-e", "--expt")
       .help("Path to the DIALS expt file");
     parser.add_argument("-r", "--refl")
@@ -49,7 +48,7 @@ int main(int argc, char **argv) {
     parser.add_argument("--max-cell")
       .help("The maxiumu cell length to try during indexing")
       .scan<'f', float>();
-    auto args = parser.parse_args(argc, argv);
+    parser.parse_args(argc, argv);
 
     if (!parser.is_used("--expt")){
         fmt::print("Error: must specify experiment list file with --expt\n");
