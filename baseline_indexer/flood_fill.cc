@@ -34,14 +34,11 @@ flood_fill(std::vector<double> const& grid,
   double rmsd = std::pow(sum_delta_sq / grid.size(), 0.5);
   std::vector<int> grid_binary(n_points * n_points * n_points, 0);
   double cutoff = rmsd_cutoff * rmsd;
-  int count = 0;
   for (int i = 0; i < grid.size(); i++) {
     if (grid[i] >= cutoff) {
       grid_binary[i] = 1;
-      count++;
     }
   }
-  std::cout << "Nonzero grid binary: " << count << std::endl;
   auto t2 = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_time = t2 - start;
   std::cout << "Time for first part of flood fill: " << elapsed_time.count() << "s" << std::endl;
@@ -173,12 +170,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill_filter(
   int iqr = grid_points_per_void[Q3_index] - grid_points_per_void[Q1_index];
   int iqr_multiplier = 5;
   int cut = (iqr * iqr_multiplier) + grid_points_per_void[Q3_index];
-  /*for (int i = grid_points_per_void.size() - 1; i >= 0; i--) {
-    if (grid_points_per_void_unsorted[i] > cut) {
-      grid_points_per_void_unsorted.erase(grid_points_per_void_unsorted.begin() + i);
-      centres_of_mass_frac.erase(centres_of_mass_frac.begin() + i);
-    }
-  }*/
+
   while (grid_points_per_void[grid_points_per_void.size() - 1] > cut) {
     grid_points_per_void.pop_back();
   }

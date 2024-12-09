@@ -104,20 +104,17 @@ int main(int argc, char **argv) {
     std::cout << "Number of reflections: " << rlp.size() << std::endl;
     
     double b_iso = -4.0 * std::pow(d_min, 2) * log(0.05);
-    std::cout << "Setting b_iso =" << b_iso << std::endl;
+    std::cout << "Setting b_iso = " << b_iso << std::endl;
     
     std::vector<double> real_fft(256*256*256, 0.0);
     std::vector<bool> used_in_indexing = fft3d(rlp, real_fft, d_min, b_iso);
-    
-    std::cout << real_fft[0] << " " << used_in_indexing[0] << std::endl;
 
     std::vector<int> grid_points_per_void;
     std::vector<Vector3d> centres_of_mass_frac;
     std::tie(grid_points_per_void, centres_of_mass_frac) = flood_fill(real_fft);
     std::tie(grid_points_per_void, centres_of_mass_frac) = flood_fill_filter(grid_points_per_void, centres_of_mass_frac, 0.15);
     
-    std::vector<Vector3d> candidate_vecs =
-        sites_to_vecs(centres_of_mass_frac, grid_points_per_void, d_min, 3.0, max_cell);
+    std::vector<Vector3d> candidate_vecs = sites_to_vecs(centres_of_mass_frac, grid_points_per_void, d_min, 3.0, max_cell);
 
     std::string n_vecs = std::to_string(candidate_vecs.size() - 1);
     size_t n_zero = n_vecs.length();
@@ -127,7 +124,9 @@ int main(int argc, char **argv) {
         auto pad_s = std::string(n_zero - std::min(n_zero, s.length()), '0') + s;
         vecs_out[pad_s] = candidate_vecs[i];
     }
-    std::ofstream vecs_file("candidate_vectors.json");
+    std::string outfile = "candidate_vectors.json";
+    std::cout << "Saving candidate vectors to " << outfile << std::endl;
+    std::ofstream vecs_file(outfile);
     vecs_file << vecs_out.dump(4);
     
     auto t2 = std::chrono::system_clock::now();

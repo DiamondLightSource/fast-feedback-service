@@ -1,5 +1,4 @@
 #include <map>
-#include <stack>
 #include <algorithm>
 #include <chrono>
 #include <tuple>
@@ -102,9 +101,7 @@ std::vector<Vector3d> sites_to_vecs(
 
   // need to sort volumes and sites by length for group_vectors, and also filter by max
   // and min cell
-  //std::stable_sort(filtered_data.begin(), filtered_data.end(), compare_site_data);
 
-  // now 'group vectors'
   double relative_length_tolerance = 0.1;
   double angular_tolerance = 5.0;
   std::vector<VectorGroup> vector_groups{};
@@ -145,8 +142,6 @@ std::vector<Vector3d> sites_to_vecs(
   std::stable_sort(grouped_data.begin(), grouped_data.end(), compare_site_data_volume);
   std::stable_sort(grouped_data.begin(), grouped_data.end(), compare_site_data);
 
-  // std::vector<Vector3d> unique_vectors;
-  // std::vector<int> unique_volumes;
   std::vector<SiteData> unique_sites;
   for (int i = 0; i < grouped_data.size(); i++) {
     bool is_unique = true;
@@ -162,9 +157,6 @@ std::vector<Vector3d> sites_to_vecs(
       }
     }
     if (is_unique) {
-      // std::cout << v[0] << " " << v[1] << " " << v[2] << std::endl;
-      // unique_vectors.push_back(v);
-      // unique_volumes.push_back(grouped_data[i].volume);
       SiteData site{v, v.norm(), grouped_data[i].volume};
       unique_sites.push_back(site);
     }

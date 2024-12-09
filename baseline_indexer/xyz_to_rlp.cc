@@ -1,11 +1,9 @@
 #include <Eigen/Dense>
-#include <chrono>
 #include <math.h>
 #include <dx2/detector.h>
 #include <dx2/beam.h>
 #include <dx2/scan.h>
 #include <dx2/goniometer.h>
-#include <iostream>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -16,7 +14,6 @@ std::vector<Vector3d> xyz_to_rlp(
   const MonochromaticBeam &beam,
   const Scan &scan,
   const Goniometer &gonio) {
-  auto start = std::chrono::system_clock::now();
   // An equivalent to dials flex_ext.map_centroids_to_reciprocal_space method
 
   double DEG2RAD = M_PI / 180.0;
@@ -63,10 +60,5 @@ std::vector<Vector3d> xyz_to_rlp(
     
     rlp[i] = sample_rotation_inverse * rlp_this;
   }
-
-  auto end = std::chrono::system_clock::now();
-  std::chrono::duration<double> elapsed_seconds = end - start;
-  std::cout << "elapsed time for xyz_to_rlp: " << elapsed_seconds.count() << "s"
-            << std::endl;
   return rlp;
 }
