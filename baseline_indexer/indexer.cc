@@ -13,7 +13,6 @@
 #include <dx2/detector.h>
 #include <dx2/beam.h>
 #include <dx2/scan.h>
-#include <dx2/crystal.h>
 #include <dx2/goniometer.h>
 #include <dx2/h5read_processed.h>
 #include <fmt/color.h>
@@ -25,13 +24,6 @@ using Eigen::Vector3d;
 using Eigen::Matrix3d;
 using Eigen::Vector3i;
 using json = nlohmann::json;
-
-struct score_and_crystal {
-    double score;
-    Crystal crystal;
-    double num_indexed;
-    double rmsdxy;
-};
 
 int main(int argc, char **argv) {
 
