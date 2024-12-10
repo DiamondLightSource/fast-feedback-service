@@ -176,3 +176,4 @@ std::vector<Vector3d> sites_to_vecs(
             << std::endl;
   return unique_vectors_sorted;
 }
+

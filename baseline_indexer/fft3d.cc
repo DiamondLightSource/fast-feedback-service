@@ -122,3 +122,4 @@ std::vector<bool> fft3d(
 
   return used_in_indexing;
 }
+
