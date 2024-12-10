@@ -1,4 +1,6 @@
-project(indexer CXX)
+project(indexer CXX CUDA)
+
+find_package(CUDAToolkit REQUIRED)
 
 # Automatic Dependencies
 set(FETCHCONTENT_QUIET OFF)
@@ -33,7 +35,9 @@ target_link_libraries(baseline_indexer
     dx2
     Eigen3::Eigen
     pocketfft
+    CUDA::cudart
+    CUDA::nppif
     argparse
     nlohmann_json::nlohmann_json
 )
-target_compile_options(baseline_indexer PRIVATE)
+target_compile_options(baseline_indexer PRIVATE  "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
