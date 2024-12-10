@@ -106,8 +106,6 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv);
 #include <string>
 #include <vector>
 
-template <typename T> std::vector<T> read_array_from_h5_file(std::string filename, std::string array_name);
-
 class Image {
   private:
     std::shared_ptr<h5read_handle> _handle;
