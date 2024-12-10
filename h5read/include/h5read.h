@@ -50,12 +50,9 @@ size_t h5read_get_image_fast(h5read_handle *obj);
 void h5read_get_trusted_range(h5read_handle *obj, image_t_type *min, image_t_type *max);
 /// Get the wavelength for this dataset
 float h5read_get_wavelength(h5read_handle *obj);
-double* h5read_get_module_offsets(h5read_handle *obj);
 /// Get the pixel size for this dataset
 float h5read_get_pixel_size_slow(h5read_handle *obj);
 float h5read_get_pixel_size_fast(h5read_handle *obj);
-double h5read_get_oscillation_start(h5read_handle *obj);
-double h5read_get_oscillation_width(h5read_handle *obj);
 float h5read_get_detector_distance(h5read_handle *obj);
 float h5read_get_beam_center_x(h5read_handle *obj);
 float h5read_get_beam_center_y(h5read_handle *obj);
@@ -161,7 +158,6 @@ class Reader {
     virtual size_t get_number_of_images() const = 0;
     virtual std::array<image_t_type, 2> get_trusted_range() const = 0;
     virtual std::array<size_t, 2> image_shape() const = 0;
-    //virtual std::array<float, 3> get_module_offsets() const = 0;
     virtual std::optional<std::span<const uint8_t>> get_mask() const = 0;
     virtual std::optional<float> get_wavelength() const = 0;
     virtual std::optional<std::array<float, 2>> get_pixel_size()
@@ -262,15 +258,6 @@ class H5Read : public Reader {
             std::optional<float> result = wavelength;
             return result;
         }
-    }
-
-    std::array<double, 3> get_module_offsets() const {
-        double* vals = h5read_get_module_offsets(_handle.get());
-        return {vals[0], vals[1], vals[2]};
-    }
-    std::array<double, 2> get_oscillation() const {
-        return {{h5read_get_oscillation_start(_handle.get()),
-                 h5read_get_oscillation_width(_handle.get())}};
     }
 
     virtual std::optional<std::array<float, 2>> get_pixel_size() const {
