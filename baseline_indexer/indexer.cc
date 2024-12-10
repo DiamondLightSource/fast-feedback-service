@@ -1,8 +1,6 @@
 #include <iostream>
-#include <lodepng.h>
 #include <string>
 #include <nlohmann/json.hpp>
-#include "h5read.h"
 #include <vector>
 #include <cstring>
 #include <Eigen/Dense>
@@ -17,6 +15,7 @@
 #include <dx2/scan.h>
 #include <dx2/crystal.h>
 #include <dx2/goniometer.h>
+#include <dx2/h5read_processed.h>
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
