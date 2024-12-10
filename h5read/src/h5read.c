@@ -50,9 +50,6 @@ struct _h5read_handle {
     float pixel_size_x, pixel_size_y;
     float detector_distance;
     float beam_center_x, beam_center_y;
-    double module_offsets[3];
-    double oscillation_start;
-    double oscillation_width;
 };
 
 void h5read_free(h5read_handle *obj) {
@@ -404,10 +401,6 @@ float h5read_get_wavelength(h5read_handle *obj) {
     return obj->wavelength;
 }
 
-double* h5read_get_module_offsets(h5read_handle *obj){
-    return obj->module_offsets;
-}
-
 float h5read_get_pixel_size_slow(h5read_handle *obj) {
     return obj->pixel_size_x;
 }
@@ -422,12 +415,6 @@ float h5read_get_beam_center_x(h5read_handle *obj) {
 }
 float h5read_get_beam_center_y(h5read_handle *obj) {
     return obj->beam_center_y;
-}
-double h5read_get_oscillation_start(h5read_handle *obj){
-    return obj->oscillation_start;
-}
-double h5read_get_oscillation_width(h5read_handle *obj){
-    return obj->oscillation_width;
 }
 
 #ifdef HAVE_HDF5
@@ -604,28 +591,6 @@ herr_t _read_single_value_image_t_type(hid_t origin,
     return 0;
 }
 
-/// Read an attribute of a HDF5 group that is a vector.
-herr_t _read_object_attribute_array(hid_t origin, const char *path, const char *attrname, double *destination) {
-    hid_t dataset = H5Dopen(origin, path, H5P_DEFAULT);
-    if (dataset < 0) {
-        return dataset;
-    }
-    //hid_t datatype = H5Dget_type(dataset);
-    hid_t attr = H5Aopen(dataset, attrname, H5P_DEFAULT);
-    hid_t attrdatatype = H5Aget_type(attr);
-    if (H5Aread(
-        attr, attrdatatype, destination)
-    < 0) {
-        fprintf(stderr,
-                "Error: While reading array attribute: Unspecified data reading error.\n",
-                path);
-        exit(1);
-    }
-    H5Aclose(attr);
-    H5Dclose(dataset);
-    return 0;
-}
-
 /// Read a single float value out of an HDF5 dataset
 ///
 /// If the dataset is present, but contains multiple elements, sets destination
@@ -701,47 +666,6 @@ void read_wavelength(h5read_handle *obj) {
         fprintf(stderr, "No wavelength data found...\n");
         obj->wavelength = -1;
     }
-}
-
-void read_module_offsets(h5read_handle *obj){
-    if (_read_object_attribute_array(obj->master_file,
-                                 "/entry/instrument/detector/module/module_offset",
-                                 "vector",
-                                 *(&obj->module_offsets))
-        < 0){
-        obj->module_offsets[0] = -1;  
-        obj->module_offsets[1] = -1;  
-        obj->module_offsets[2] = -1;    
-    }
-}
-
-void read_oscillation_start_and_width(h5read_handle *obj){
-    char omega_path[] = "/entry/sample/sample_omega/omega";
-
-    hid_t omega_dataset = H5Dopen(obj->master_file, omega_path, H5P_DEFAULT);
-    if (omega_dataset < 0){
-        //We're allowed no omega scan e.g. grid
-        obj->oscillation_start=0;
-        obj->oscillation_width=0;
-        return;
-    }
-    hid_t datatype = H5Dget_type(omega_dataset);
-    hid_t omega_info = H5Dget_space(omega_dataset);
-    int size = H5Sget_simple_extent_npoints(omega_info);
-    if (size<2){
-        fprintf(stderr, "Error: While reading oscillation, size<2\n");
-        exit(1);
-    }
-    double* raw_omega = (double *)malloc(sizeof(double) * size);
-    void* buffer = (void *)raw_omega;
-    if (H5Dread(omega_dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buffer) < 0) {
-        fprintf(stderr, "Error: While reading oscillation\n");
-        exit(1);
-    }
-    obj->oscillation_start=raw_omega[0];
-    obj->oscillation_width=raw_omega[1] - raw_omega[0];
-    free(raw_omega);
-    H5Dclose(omega_dataset);
 }
 
 void read_detector_metadata(h5read_handle *obj) {
@@ -999,10 +923,6 @@ h5read_handle *h5read_open(const char *master_filename) {
     read_wavelength(file);
 
     read_detector_metadata(file);
-
-    read_module_offsets(file);
-
-    read_oscillation_start_and_width(file);
 
     read_mask(file);
 
