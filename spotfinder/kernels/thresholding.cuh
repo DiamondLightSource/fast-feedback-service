@@ -2,8 +2,6 @@
 
 #include "h5read.h"
 
-using pixel_t = H5Read::image_type;
-
 __global__ void dispersion(pixel_t __restrict__ *image,
                            uint8_t __restrict__ *mask,
                            uint8_t __restrict__ *result_mask,

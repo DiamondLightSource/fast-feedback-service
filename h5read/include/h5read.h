@@ -278,6 +278,8 @@ class H5Read : public Reader {
     std::shared_ptr<h5read_handle> _handle;
 };
 
+using pixel_t = H5Read::image_type;
+
 template <typename T>
 bool is_ready_for_read(const std::string &path);
 
