@@ -929,7 +929,6 @@ int main(int argc, char **argv) {
                         }
                     }
                 }
-#pragma endregion Connected Components
 
                 // Check if pipeHandler was initialized
                 if (pipeHandler != nullptr) {
@@ -941,6 +940,7 @@ int main(int argc, char **argv) {
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
+#pragma endregion Connected Components
 
 #pragma region Validation
                 if (do_validate) {
