@@ -120,3 +120,173 @@ void ConnectedComponents::generate_boxes(const ushort width,
         num_strong_pixels_filtered = num_strong_pixels;
     }
 }
+
+std::vector<Reflection3D> ConnectedComponents::find_3d_components(
+  const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
+  const ushort width,
+  const ushort height) {
+    // Step 1: Initialize the 3D graph and vertex mapping
+    // ----------------------------------------------
+    // The 3D graph will combine all the 2D graphs (one per slice)
+    // and add inter-slice (z-axis) edges. Each vertex in the graph
+    // represents a pixel in the dataset, and edges represent connectivity
+    // between pixels (either within a slice or across slices).
+    printf("Initializing 3D graph...\n");
+    boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS> graph;
+    std::vector<std::unordered_map<size_t, size_t>>
+      slice_vertex_maps;   // Slice-specific vertex mappings
+    size_t vertex_id = 0;  // Global vertex ID for the 3D graph
+
+    // Add vertices for each slice
+    printf("Adding vertices to 3D graph...\n");
+    for (const auto &connected_component : slices) {
+        const auto &slice_graph =
+          connected_component->get_graph();  // 2D graph of the slice
+        const auto &signals =
+          connected_component->get_signals();  // Signals (pixels with intensity)
+
+        std::unordered_map<size_t, size_t>
+          vertex_map;  // Map from 2D graph vertices to 3D graph vertices
+
+        // Add each vertex from the 2D graph to the 3D graph
+        for (const auto &vertex :
+             boost::make_iterator_range(boost::vertices(slice_graph))) {
+            vertex_map[vertex] = vertex_id++;  // Assign a unique global ID
+            boost::add_vertex(graph);          // Add the vertex to the 3D graph
+        }
+
+        slice_vertex_maps.push_back(
+          std::move(vertex_map));  // Store the mapping for this slice
+    }
+
+    // Step 2: Add edges for in-slice connectivity
+    // ----------------------------------------------
+    // These edges represent the connectivity within each individual slice,
+    // as already computed in the 2D graph.
+    printf("Adding in-slice connectivity to 3D graph...\n");
+    for (size_t slice_idx = 0; slice_idx < slices.size(); ++slice_idx) {
+        const auto &slice_graph = slices[slice_idx]->get_graph();  // 2D graph
+        const auto &vertex_map =
+          slice_vertex_maps[slice_idx];  // Mapping for this slice
+
+        // Add each edge from the 2D graph to the 3D graph
+        for (const auto &edge : boost::make_iterator_range(boost::edges(slice_graph))) {
+            auto source =
+              boost::source(edge, slice_graph);  // Source vertex in 2D graph
+            auto target =
+              boost::target(edge, slice_graph);  // Target vertex in 2D graph
+            boost::add_edge(vertex_map.at(source),
+                            vertex_map.at(target),
+                            graph);  // Add edge to 3D graph
+        }
+    }
+
+    // Step 3: Add inter-slice (z-axis) connectivity
+    // ----------------------------------------------
+    // These edges connect corresponding pixels in adjacent slices
+    // (i.e., pixels with the same linear index in the signal map).
+    printf("Adding inter-slice connectivity to 3D graph...\n");
+    for (size_t slice_idx = 0; slice_idx < slices.size() - 1; ++slice_idx) {
+        const auto &signals_curr =
+          slices[slice_idx]->get_signals();  // Signals in the current slice
+        const auto &signals_next =
+          slices[slice_idx + 1]->get_signals();  // Signals in the next slice
+        const auto &vertex_map_curr =
+          slice_vertex_maps[slice_idx];  // Vertex map for the current slice
+        const auto &vertex_map_next =
+          slice_vertex_maps[slice_idx + 1];  // Vertex map for the next slice
+
+        // Check for matching pixels in adjacent slices and add edges
+        for (const auto &[linear_index, signal] : signals_curr) {
+            if (signals_next.find(linear_index) != signals_next.end()) {
+                boost::add_edge(
+                  vertex_map_curr.at(linear_index),  // Current slice vertex
+                  vertex_map_next.at(linear_index),  // Next slice vertex
+                  graph);                            // Add edge to 3D graph
+            }
+        }
+    }
+
+    // Step 4: Perform connected components analysis on the 3D graph
+    // ----------------------------------------------
+    // Use the Boost library to identify connected components in the 3D graph.
+    // Each connected component corresponds to a 3D cluster of connected pixels.
+    printf("Performing connected components analysis on 3D graph...\n");
+    std::vector<int> labels(
+      boost::num_vertices(graph));  // Component ID for each vertex
+    int num_components =
+      boost::connected_components(graph, labels.data());  // Find connected components
+
+    // Group vertices into their respective connected components
+    printf("Grouping vertices into connected components...\n");
+    std::vector<std::vector<size_t>> components(
+      num_components);  // Each component is a list of vertices
+    for (size_t slice_idx = 0; slice_idx < slices.size(); ++slice_idx) {
+        const auto &signals =
+          slices[slice_idx]->get_signals();  // Signals in this slice
+        const auto &vertex_map =
+          slice_vertex_maps[slice_idx];  // Vertex mapping for this slice
+
+        // Assign each signal pixel to its connected component
+        for (const auto &[linear_index, signal] : signals) {
+            size_t unique_index =
+              slice_idx * width * height + linear_index;  // Unique global index
+            size_t graph_vertex =
+              vertex_map.at(linear_index);  // Vertex in the 3D graph
+            components[labels[graph_vertex]].push_back(
+              unique_index);  // Add to the appropriate component
+        }
+    }
+
+    // Step 5: Generate 3D reflections
+    // ----------------------------------------------
+    // For each connected component, compute the bounding box, pixel count,
+    // and weighted center of mass based on pixel intensities.
+    printf("Generating 3D reflections...\n");
+    std::vector<Reflection3D> reflections_3d;
+
+    for (const auto &component : components) {
+        if (component.empty()) continue;  // Skip empty components
+
+        Reflection3D reflection = {
+          INT_MAX, INT_MAX, INT_MAX, 0, 0, 0, 0, 0.0, 0.0, 0.0};
+        double total_intensity = 0.0;
+
+        // Process each pixel in the component
+        for (size_t unique_index : component) {
+            int slice = unique_index / (width * height);  // Slice index
+            size_t linear_index =
+              unique_index % (width * height);  // Linear index within the slice
+
+            const auto &signal =
+              slices[slice]->get_signals().at(linear_index);  // Signal data
+
+            // Update bounding box
+            reflection.xmin = std::min(reflection.xmin, signal.coord.x);
+            reflection.ymin = std::min(reflection.ymin, signal.coord.y);
+            reflection.zmin = std::min(reflection.zmin, slice);
+            reflection.xmax = std::max(reflection.xmax, signal.coord.x);
+            reflection.ymax = std::max(reflection.ymax, signal.coord.y);
+            reflection.zmax = std::max(reflection.zmax, slice);
+
+            // Accumulate intensity and weighted coordinates
+            double intensity = static_cast<double>(signal.intensity);
+            total_intensity += intensity;
+            reflection.cx += intensity * signal.coord.x;
+            reflection.cy += intensity * signal.coord.y;
+            reflection.cz += intensity * slice;
+            ++reflection.num_pixels;  // Count pixels
+        }
+
+        // Normalize weighted coordinates
+        if (total_intensity > 0) {
+            reflection.cx /= total_intensity;
+            reflection.cy /= total_intensity;
+            reflection.cz /= total_intensity;
+        }
+
+        reflections_3d.push_back(reflection);  // Add the reflection to the list
+    }
+
+    return reflections_3d;
+}
