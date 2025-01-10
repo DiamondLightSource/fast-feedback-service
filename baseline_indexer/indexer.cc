@@ -14,11 +14,13 @@
 #include <dx2/beam.h>
 #include <dx2/scan.h>
 #include <dx2/goniometer.h>
+#include <dx2/crystal.h>
 #include <dx2/h5read_processed.h>
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
 #include <argparse/argparse.hpp>
+#include "gemmi/symmetry.hpp"
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
@@ -106,6 +108,15 @@ int main(int argc, char **argv) {
     
     std::vector<Vector3d> candidate_vecs = sites_to_vecs(centres_of_mass_frac, grid_points_per_void, d_min, 3.0, max_cell);
 
+    // at this point, we will test combinations of the candidate vectors, use those to index the spots, do some
+    // refinement of the candidates and choose the best one. Then we will do some more refinement including extra
+    // model parameters. At then end, we will have a list of refined experiment models (including a crystal)
+
+    // For now, let's just write out the candidate vectors and write out the unrefined experiment models with the
+    // first combination of candidate vectors as an example crystal, to demonstrate an example experiment list data
+    // structure.
+
+    // dump the candidate vectors to json
     std::string n_vecs = std::to_string(candidate_vecs.size() - 1);
     size_t n_zero = n_vecs.length();
     json vecs_out;
@@ -118,6 +129,38 @@ int main(int argc, char **argv) {
     std::cout << "Saving candidate vectors to " << outfile << std::endl;
     std::ofstream vecs_file(outfile);
     vecs_file << vecs_out.dump(4);
+
+    // Now make a crystal and save an experiment list with the models.
+    if (candidate_vecs.size() < 3){
+      std::cout << "Insufficient number of candidate vectors to make a crystal model." << std::endl;
+    }
+    else {
+      gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
+      Crystal best_xtal {candidate_vecs[0], candidate_vecs[1], candidate_vecs[2], space_group};
+      json cryst_out = best_xtal.to_json();
+
+      // save an example experiment list
+      json elist_out; // a list of potentially multiple experiments
+      elist_out["__id__"] = "ExperimentList";
+      json expt_out; // our single experiment
+      // no imageset (for now?).
+      expt_out["__id__"] = "Experiment";
+      expt_out["identifier"] = "test";
+      expt_out["beam"] = 0; // the indices of the models that will correspond to our experiment
+      expt_out["detector"] = 0;
+      expt_out["goniometer"] = 0;
+      expt_out["scan"] = 0;
+      expt_out["crystal"] = 0;
+      elist_out["experiment"] = std::array<json, 1> {expt_out};
+      elist_out["crystal"] = std::array<json, 1> {cryst_out}; // add the the actual models
+      elist_out["scan"] = std::array<json, 1> {scan.to_json()};
+      elist_out["goniometer"] = std::array<json, 1> {gonio.to_json()};
+      elist_out["beam"] = std::array<json, 1> {beam.to_json()};
+      elist_out["detector"] = std::array<json, 1> {detector.to_json()};
+
+      std::ofstream efile("elist.json");
+      efile << elist_out.dump(4);
+    }
     
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;
