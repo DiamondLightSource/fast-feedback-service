@@ -206,7 +206,7 @@ class GPUPerImageAnalysis(CommonService):
 
         start_time = time.monotonic()
         self.log.info(
-            f"Gotten PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): {parameters.filename}/:{parameters.start_frame_index}-{parameters.start_frame_index+parameters.number_of_frames}"
+            f"Gotten PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): {parameters.filename}/:{parameters.start_frame_index}-{parameters.start_frame_index + parameters.number_of_frames}"
         )
 
         if not self._order_resolver.should_handle_now(parameters, header):
