@@ -41,6 +41,10 @@ int main(int argc, char **argv) {
     parser.add_argument("--max-cell")
       .help("The maxiumu cell length to try during indexing")
       .scan<'f', float>();
+    parser.add_argument("--fft-npoints")
+      .help("The number of grid points to use for the fft. Powers of two are most efficient.")
+      .default_value<uint32_t>(256)
+      .scan<'u', uint32_t>();
     parser.parse_args(argc, argv);
 
     if (!parser.is_used("--expt")){
@@ -96,17 +100,18 @@ int main(int argc, char **argv) {
     std::cout << "Number of reflections: " << rlp.size() << std::endl;
     
     double b_iso = -4.0 * std::pow(d_min, 2) * log(0.05);
+    uint32_t n_points = parser.get<uint32_t>("--fft-npoints");
     std::cout << "Setting b_iso = " << b_iso << std::endl;
     
-    std::vector<double> real_fft(256*256*256, 0.0);
-    std::vector<bool> used_in_indexing = fft3d(rlp, real_fft, d_min, b_iso);
+    std::vector<double> real_fft(n_points*n_points*n_points, 0.0);
+    std::vector<bool> used_in_indexing = fft3d(rlp, real_fft, d_min, b_iso, n_points);
 
     std::vector<int> grid_points_per_void;
     std::vector<Vector3d> centres_of_mass_frac;
-    std::tie(grid_points_per_void, centres_of_mass_frac) = flood_fill(real_fft);
+    std::tie(grid_points_per_void, centres_of_mass_frac) = flood_fill(real_fft, 15.0, n_points);
     std::tie(grid_points_per_void, centres_of_mass_frac) = flood_fill_filter(grid_points_per_void, centres_of_mass_frac, 0.15);
     
-    std::vector<Vector3d> candidate_vecs = sites_to_vecs(centres_of_mass_frac, grid_points_per_void, d_min, 3.0, max_cell);
+    std::vector<Vector3d> candidate_vecs = sites_to_vecs(centres_of_mass_frac, grid_points_per_void, d_min, 3.0, max_cell, n_points);
 
     // at this point, we will test combinations of the candidate vectors, use those to index the spots, do some
     // refinement of the candidates and choose the best one. Then we will do some more refinement including extra

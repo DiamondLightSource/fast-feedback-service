@@ -21,8 +21,8 @@ void map_centroids_to_reciprocal_space_grid_cpp(
   std::vector<std::complex<double>> &data_in,
   std::vector<bool> &selection,
   double d_min,
-  double b_iso = 0) {
-  const int n_points = 256;
+  double b_iso = 0,
+  uint32_t n_points = 256) {
   const double rlgrid = 2 / (d_min * n_points);
   const double one_over_rlgrid = 1 / rlgrid;
   const int half_n_points = n_points / 2;
@@ -50,7 +50,7 @@ void map_centroids_to_reciprocal_space_grid_cpp(
     } else {
       T = 1;
     }
-    size_t index = coord[2] + (256 * coord[1]) + (256 * 256 * coord[0]);
+    size_t index = coord[2] + (n_points * coord[1]) + (n_points * n_points * coord[0]);
     if (!data_in[index].real()){  
       count++;
     }
@@ -63,28 +63,25 @@ std::vector<bool> fft3d(
   std::vector<Vector3d> const& reciprocal_space_vectors,
   std::vector<double> &real_out,
   double d_min,
-  double b_iso = 0) {
+  double b_iso = 0,
+  uint32_t n_points = 256) {
   auto start = std::chrono::system_clock::now();
 
-  std::vector<std::complex<double>> complex_data_in(256 * 256 * 256);
-  std::vector<std::complex<double>> data_out(256 * 256 * 256);
+  std::vector<std::complex<double>> complex_data_in(n_points * n_points * n_points);
+  std::vector<std::complex<double>> data_out(n_points * n_points * n_points);
 
   std::vector<bool> used_in_indexing(reciprocal_space_vectors.size(), true);
   auto t1 = std::chrono::system_clock::now();
 
-  map_centroids_to_reciprocal_space_grid_cpp(reciprocal_space_vectors, complex_data_in, used_in_indexing, d_min, b_iso);
+  map_centroids_to_reciprocal_space_grid_cpp(reciprocal_space_vectors, complex_data_in, used_in_indexing, d_min, b_iso, n_points);
   auto t2 = std::chrono::system_clock::now();
-
-  shape_t shape_in{256, 256, 256};
-  stride_t stride_in{sizeof(std::complex<double>),
-                     sizeof(std::complex<double>) * 256,
-                     sizeof(std::complex<double>) * 256
-                       * 256};  // must have the size of each element. Must have
+  shape_t shape_in{n_points, n_points, n_points};
+  int stride_x = sizeof(std::complex<double>);
+  int stride_y = static_cast<int>(sizeof(std::complex<double>) * n_points);
+  int stride_z = static_cast<int>(sizeof(std::complex<double>) * n_points * n_points);
+  stride_t stride_in{stride_x, stride_y, stride_z}; // must have the size of each element. Must have
                                 // size() equal to shape_in.size()
-  stride_t stride_out{sizeof(std::complex<double>),
-                      sizeof(std::complex<double>) * 256,
-                      sizeof(std::complex<double>) * 256
-                        * 256};  // must have the size of each element. Must
+  stride_t stride_out{stride_x, stride_y, stride_z};  // must have the size of each element. Must
                                  // have size() equal to shape_in.size()
   shape_t axes{0, 1, 2};         // 0 to shape.size()-1 inclusive
   bool forward{FORWARD};

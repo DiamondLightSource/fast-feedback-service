@@ -71,10 +71,10 @@ std::vector<Vector3d> sites_to_vecs(
   std::vector<int> grid_points_per_void,
   double d_min,
   double min_cell = 3.0,
-  double max_cell = 92.3) {
+  double max_cell = 92.3,
+  uint32_t n_points = 256) {
   auto start = std::chrono::system_clock::now();
 
-  int n_points = 256;
   double fft_cell_length = n_points * d_min / 2.0;
   // sites_mod_short and convert to cartesian
   for (int i = 0; i < centres_of_mass_frac.size(); i++) {
