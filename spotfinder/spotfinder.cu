@@ -76,25 +76,17 @@ size_t calculate_shared_memory(dim3 threads, uint8_t radius) {
     // Determine the x and y dimensions of the shared memory, including the halo region
     uint shared_block_width = threads.x + (2 * radius);
     uint shared_block_height = threads.y + (2 * radius);
-    // Initialize the shared memory size
-    size_t total_shared_memory = 0;
 
     /*
-     * This is a C++ fold expression, which iterates through all the types
-     * in the variadic template parameter pack (Types...). For each type,
-     * we use a lambda function to calculate the shared memory required
-     * based on its size and the dimensions of the block. The lambda is
-     * invoked once for each type, and the results are added together.
-     */
-    (
-      [&] {
-          total_shared_memory +=
-            shared_block_width * shared_block_height * sizeof(Types);
-      }(),
-      ...);
-
-    // Return the total calculated shared memory size
-    return total_shared_memory;
+    * This uses a C++ fold expression to calculate the total size of the shared memory.
+    * The fold expression expands out each type in the parameter pack separated by
+    * the `+` operator, resulting in a sum of the sizes of each type.
+    * 
+    * For example: calculate_sum_of_type_sizes<int, float, double>(10, 10)
+    * expands to: 
+    * shared_block_width * 1shared_block_height0 * (sizeof(int) + sizeof(float) + sizeof(double))
+    */
+    return shared_block_width * shared_block_height * (sizeof(Types) + ...);
 }
 
 /**
