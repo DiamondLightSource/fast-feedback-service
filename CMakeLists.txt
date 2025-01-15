@@ -40,7 +40,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(argparse)
 
-
+add_subdirectory(dx2)
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
+add_subdirectory(baseline_indexer)
