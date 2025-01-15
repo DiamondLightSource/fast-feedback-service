@@ -48,7 +48,6 @@ else()
         list(GET _ver_parts 2 _ver_version_dev)
         list(GET _ver_parts 3 _ver_commits)
         list(GET _ver_parts 4 _ver_shasum)
-        message(STATUS "${_ver_version_dev}")
         if (_ver_version_dev STREQUAL ".dev")
             # A dev build
             set(FFS_VERSION_FULL "${_ver_version_major}.${_ver_version_minor}.0.dev${_ver_commits}+${_ver_shasum}")
