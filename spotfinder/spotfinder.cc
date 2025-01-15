@@ -30,6 +30,7 @@
 #include "kernels/masking.cuh"
 #include "shmread.hpp"
 #include "standalone.h"
+#include "version.hpp"
 
 using namespace fmt;
 using namespace std::chrono_literals;
@@ -266,7 +267,7 @@ class PipeHandler {
 int main(int argc, char **argv) {
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader
-    auto parser = CUDAArgumentParser();
+    auto parser = CUDAArgumentParser(FFS_VERSION);
     parser.add_h5read_arguments();
     parser.add_argument("-n", "--threads")
       .help("Number of parallel reader threads")
