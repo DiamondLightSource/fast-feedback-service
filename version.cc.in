@@ -1,0 +1,2 @@
+#include "version.hpp"
+const char *FFS_VERSION = "@FFS_VERSION_FULL@";
