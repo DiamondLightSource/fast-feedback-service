@@ -84,7 +84,7 @@ size_t calculate_shared_memory(dim3 threads, uint8_t radius) {
     * 
     * For example: calculate_sum_of_type_sizes<int, float, double>(10, 10)
     * expands to: 
-    * shared_block_width * 1shared_block_height0 * (sizeof(int) + sizeof(float) + sizeof(double))
+    * shared_block_width * shared_block_height * (sizeof(int) + sizeof(float) + sizeof(double))
     */
     return shared_block_width * shared_block_height * (sizeof(Types) + ...);
 }
