@@ -44,7 +44,7 @@ FetchContent_MakeAvailable(argparse)
 FetchContent_Declare(
     dx2
     GIT_REPOSITORY  https://github.com/dials/dx2
-    GIT_TAG 431850825377a0b6a7e9c1f9b0b285b985bb2a8c
+    GIT_TAG 3898dc078a1e7bb5a4a83d69ee83282c4f51fcc8
 )
 FetchContent_MakeAvailable(dx2)
 
@@ -53,7 +53,7 @@ project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
-#add_subdirectory(dx2) // for development
+#add_subdirectory(dx2) #for development
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)

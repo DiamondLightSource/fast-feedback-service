@@ -1,7 +1,9 @@
+#include <assert.h>
 #include <dx2/beam.h>
 #include <dx2/crystal.h>
 #include <dx2/detector.h>
 #include <dx2/goniometer.h>
+#include <dx2/experiment.h>
 #include <dx2/h5read_processed.h>
 #include <dx2/scan.h>
 #include <fmt/color.h>
@@ -98,15 +100,13 @@ int main(int argc, char** argv) {
         std::exit(1);
     }
 
-    // Load the models
-    json beam_data = elist_json_obj["beam"][0];
-    MonoXrayBeam beam(beam_data);
-    json scan_data = elist_json_obj["scan"][0];
-    Scan scan(scan_data);
-    json gonio_data = elist_json_obj["goniometer"][0];
-    Goniometer gonio(gonio_data);
-    json panel_data = elist_json_obj["detector"][0]["panels"][0];
-    Panel detector(panel_data);
+    Experiment<MonochromaticBeam> expt(elist_json_obj);
+    Scan scan = expt.scan();
+    MonochromaticBeam beam = expt.beam();
+    Goniometer gonio = expt.goniometer();
+    Detector detector = expt.detector();
+    assert(detector.panels().size() == 1); // only considering single panel detectors initially.
+    Panel panel = detector.panels()[0];
 
     // Read data from a reflection table. Again, this should be moved to
     // dx2 and only require the data array name (xyzobs.px.value) with some
@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
     // The diffraction spots form a lattice in reciprocal space (if the experimental
     // geometry is accurate). So use the experimental models to transform the spot
     // coordinates on the detector into reciprocal space.
-    std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, detector, beam, scan, gonio);
+    std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
     std::cout << "Number of reflections: " << rlp.size() << std::endl;
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
@@ -194,29 +194,8 @@ int main(int argc, char** argv) {
                           candidate_lattice_vectors[1],
                           candidate_lattice_vectors[2],
                           space_group};
-        json cryst_out = best_xtal.to_json();
-
-        // save an example experiment list
-        json elist_out;  // a list of potentially multiple experiments
-        elist_out["__id__"] = "ExperimentList";
-        json expt_out;  // our single experiment
-        // no imageset (for now?).
-        expt_out["__id__"] = "Experiment";
-        expt_out["identifier"] = "test";
-        expt_out["beam"] =
-          0;  // the indices of the models that will correspond to our experiment
-        expt_out["detector"] = 0;
-        expt_out["goniometer"] = 0;
-        expt_out["scan"] = 0;
-        expt_out["crystal"] = 0;
-        elist_out["experiment"] = std::array<json, 1>{expt_out};
-        elist_out["crystal"] =
-          std::array<json, 1>{cryst_out};  // add the the actual models
-        elist_out["scan"] = std::array<json, 1>{scan.to_json()};
-        elist_out["goniometer"] = std::array<json, 1>{gonio.to_json()};
-        elist_out["beam"] = std::array<json, 1>{beam.to_json()};
-        elist_out["detector"] = std::array<json, 1>{detector.to_json()};
-
+        expt.set_crystal(best_xtal);
+        json elist_out = expt.to_json();
         std::ofstream efile("elist.json");
         efile << elist_out.dump(4);
     }
