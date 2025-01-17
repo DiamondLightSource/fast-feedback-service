@@ -16,12 +16,20 @@ int modulo(int i, int n) {
   return (i % n + n) % n;
 }
 
+/**
+ * @brief Perform a flood fill algorithm on a grid of data to determine connected areas of signal.
+ * @param grid The input array (grid) of data
+ * @param rmsd_cutoff Filter out grid points below this cutoff value
+ * @param n_points The size of each dimension of the FFT grid.
+ * @returns A tuple of grid points per peak and centres of mass of the peaks in fractional coordinates.
+ */
 std::tuple<std::vector<int>,std::vector<Vector3d>>
 flood_fill(std::vector<double> const& grid,
            double rmsd_cutoff = 15.0,
            int n_points = 256) {
   auto start = std::chrono::system_clock::now();
-  //  First calc rmsd and use this to create a binary grid
+  assert(grid.size() == n_points * n_points * n_points);
+  //  First calculate the rmsd and use this to create a binary grid
   double sumg = 0.0;
   for (int i = 0; i < grid.size(); ++i) {
     sumg += grid[i];
@@ -43,7 +51,9 @@ flood_fill(std::vector<double> const& grid,
   std::chrono::duration<double> elapsed_time = t2 - start;
   std::cout << "Time for first part of flood fill: " << elapsed_time.count() << "s" << std::endl;
 
-  // Now do flood fill. Wrap around the edge in all three dimensions.
+  // Now do the flood fill.
+  // Wrap around the edge in all three dimensions to replicate the DIALS
+  // results exactly.
   int n_voids = 0;
   std::stack<Vector3i> stack;
   std::vector<std::vector<Vector3i>> accumulators;
@@ -51,6 +61,8 @@ flood_fill(std::vector<double> const& grid,
   int replacement = 2;
   std::vector<int> grid_points_per_void;
   int accumulator_index = 0;
+
+  // precalculate a few constants
   int total = n_points * n_points * n_points;
   int n_sq = n_points * n_points;
   int n_sq_minus_n = n_points * (n_points - 1);
@@ -136,7 +148,7 @@ flood_fill(std::vector<double> const& grid,
   std::chrono::duration<double> elapsed_time2 = t3 - t2;
   std::cout << "Time for second part of flood fill: " << elapsed_time2.count() << "s" << std::endl;
 
-  // Now calculate the unweighted centres of mass of each group.
+  // Now calculate the unweighted centres of mass of each group, in fractional coordinates.
   std::vector<Vector3d> centres_of_mass_frac(n_voids);
   for (int i = 0; i < accumulators.size(); i++) {
     std::vector<Vector3i> values = accumulators[i];
@@ -158,24 +170,37 @@ flood_fill(std::vector<double> const& grid,
   return std::make_tuple(grid_points_per_void, centres_of_mass_frac);
 }
 
+/**
+ * @brief Perform a filter on the flood fill results.
+ * @param grid_points_per_void The number of grid points in each peak
+ * @param centres_of_mass_frac The centres of mass of each peak, in fractional coordinates
+ * @param peak_volume_cutoff The minimum fractional threshold for peaks to be included.
+ * @returns A tuple of grid points per peak and centres of mass of the peaks in fractional coordinates.
+ */
 std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill_filter(
   std::vector<int> grid_points_per_void,
   std::vector<Vector3d> centres_of_mass_frac,
    double peak_volume_cutoff = 0.15){
-    // now filter out based on iqr range and peak_volume_cutoff
+  // Filter out based on iqr range and peak_volume_cutoff
   std::vector<int> grid_points_per_void_unsorted(grid_points_per_void);
   std::sort(grid_points_per_void.begin(), grid_points_per_void.end());
+  // The peak around the origin of the FFT can be very large in volume,
+  // so use the IQR range to filter high-volume peaks out that are not
+  // from the typical distribution of points, before applying the peak
+  // volume cutoff based on a fraction of the max volume in the remaining
+  // array.
   int Q3_index = grid_points_per_void.size() * 3 / 4;
   int Q1_index = grid_points_per_void.size() / 4;
   int iqr = grid_points_per_void[Q3_index] - grid_points_per_void[Q1_index];
   int iqr_multiplier = 5;
   int cut = (iqr * iqr_multiplier) + grid_points_per_void[Q3_index];
 
+  // Remove abnormally high volumes
   while (grid_points_per_void[grid_points_per_void.size() - 1] > cut) {
     grid_points_per_void.pop_back();
   }
   int max_val = grid_points_per_void[grid_points_per_void.size() - 1];
-
+  // Cut based on a fraction of the max volume.
   int peak_cutoff = (int)(peak_volume_cutoff * max_val);
   for (int i = grid_points_per_void_unsorted.size() - 1; i >= 0; i--) {
     if (grid_points_per_void_unsorted[i] <= peak_cutoff) {

@@ -12,6 +12,8 @@ using Eigen::Vector3d;
 #define _USE_MATH_DEFINES
 #include <cmath>
 
+
+// Define a few simple data structures to help with the calculations below.
 class VectorGroup {
 public:
   void add(Vector3d vec, int weight) {
@@ -66,6 +68,16 @@ bool is_approximate_integer_multiple(Vector3d v1,
   return false;
 }
 
+/**
+ * @brief Rescale the fractional coordinates on the grid to vectors (in reciprocal space).
+ * @param centres_of_mass_frac The fractional centres of mass of FFT peaks.
+ * @param grid_points_per_void The number of FFT grid points corresponding to each peak.
+ * @param d_min The resolution limit that was applied to the FFT.
+ * @param min_cell Don't consider vectors below this length
+ * @param max_cell Don't consider vectors above this length
+ * @param n_points The size of each dimension of the FFT grid.
+ * @returns Unique vectors, sorted by volume, that give describe the FFT peaks.
+ */
 std::vector<Vector3d> sites_to_vecs(
   std::vector<Vector3d> centres_of_mass_frac,
   std::vector<int> grid_points_per_void,
@@ -74,9 +86,9 @@ std::vector<Vector3d> sites_to_vecs(
   double max_cell = 92.3,
   uint32_t n_points = 256) {
   auto start = std::chrono::system_clock::now();
-
+  // Calculate the scaling between the FFT grid and reciprocal space.
   double fft_cell_length = n_points * d_min / 2.0;
-  // sites_mod_short and convert to cartesian
+  // Use 'sites_mod_short' and convert to cartesian (but keep in same array)
   for (int i = 0; i < centres_of_mass_frac.size(); i++) {
     for (size_t j = 0; j < 3; j++) {
       if (centres_of_mass_frac[i][j] > 0.5) {
@@ -86,7 +98,7 @@ std::vector<Vector3d> sites_to_vecs(
     }
   }
 
-  // now do some filtering
+  // now do some filtering based on the min and max cell
   std::vector<SiteData> filtered_data;
   for (int i = 0; i < centres_of_mass_frac.size(); i++) {
     auto v = centres_of_mass_frac[i];
@@ -97,11 +109,9 @@ std::vector<Vector3d> sites_to_vecs(
       filtered_data.push_back(site_data);
     }
   }
-  // now sort filtered data
 
-  // need to sort volumes and sites by length for group_vectors, and also filter by max
-  // and min cell
-
+  // Now sort the filtered data. Ggroup together those
+  // with similar angles and lengths (e.g. inverse pairs from the FFT).
   double relative_length_tolerance = 0.1;
   double angular_tolerance = 5.0;
   std::vector<VectorGroup> vector_groups{};
@@ -125,12 +135,14 @@ std::vector<Vector3d> sites_to_vecs(
         }
       }
     }
+    // If it didn't match any existing group, create a new one.
     if (!matched_group) {
       VectorGroup group = VectorGroup();
       group.add(filtered_data[i].site, filtered_data[i].volume);
       vector_groups.push_back(group);
     }
   }
+  // Create 'site's based on the data from the groups.
   std::vector<SiteData> grouped_data;
   for (int i = 0; i < vector_groups.size(); i++) {
     Vector3d site = vector_groups[i].mean();
@@ -139,9 +151,12 @@ std::vector<Vector3d> sites_to_vecs(
     SiteData site_data = {site, site.norm(), max};
     grouped_data.push_back(site_data);
   }
+
+  // Sort by volume, then by length.
   std::stable_sort(grouped_data.begin(), grouped_data.end(), compare_site_data_volume);
   std::stable_sort(grouped_data.begin(), grouped_data.end(), compare_site_data);
 
+  // Now check if any sites are integer multiples of other sites.
   std::vector<SiteData> unique_sites;
   for (int i = 0; i < grouped_data.size(); i++) {
     bool is_unique = true;
