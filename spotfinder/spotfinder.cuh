@@ -6,8 +6,6 @@
 #include "cuda_common.hpp"
 #include "h5read.h"
 
-using pixel_t = H5Read::image_type;
-
 void call_do_spotfinding_dispersion(dim3 blocks,
                                     dim3 threads,
                                     size_t shared_memory,

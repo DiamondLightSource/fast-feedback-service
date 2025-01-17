@@ -16,7 +16,7 @@ if [[ ! -d $DIR/ENV ]]; then
     (
     set -x
     mamba create -c conda-forge -yp $DIR/ENV \
-        python=3.11 \
+        python=3.12 \
         cmake \
         ninja \
         boost-cpp \

@@ -71,6 +71,15 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
   public:
     CUDAArgumentParser(std::string version = "0.1.0")
         : ArgumentParser("", version, argparse::default_arguments::help) {
+        this->add_argument("--version")
+          .help("print version information and exits")
+          .action([=](const auto & /*unused*/) {
+              fmt::print("{}\n", version);
+              std::exit(0);
+          })
+          .default_value(false)
+          .implicit_value(true)
+          .nargs(0);
         this->add_argument("-v", "--verbose")
           .help("Verbose output")
           .implicit_value(false)

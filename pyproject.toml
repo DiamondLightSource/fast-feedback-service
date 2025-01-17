@@ -1,32 +1,35 @@
-[tool.poetry]
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
 name = "ffs"
-version = "0.1.0"
-description = ""
-authors = ["Nicholas Devenish <ndevenish@gmail.com>"]
+dynamic = ["version"]
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Nicholas Devenish", email = "ndevenish@gmail.com" },
+    { name = "Dimitri Vlachos", email = "dimitrios.vlachos@diamond.ac.uk" },
+]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-requests = "^2.30.0"
-watchdir = "^1.0.0"
-pyepics = "^3.5.2"
-zocalo = "^1.1"
-rich = "^13.7.1"
-pydantic = "^2"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>2",
+    "pyepics>=3.5.7",
+    "requests>=2.32.3",
+    "rich>=13.9.4",
+    "watchdir>=1.0.0",
+    "zocalo>=1.2.0",
+]
 
-[tool.poetry.plugins."workflows.services"]
+[tool.setuptools_scm]
+
+[project.entry-points."workflows.services"]
 "GPUPerImageAnalysis" = "ffs.service:GPUPerImageAnalysis"
 "XRCResultCompare" = "compare_service:XRCResultCompare"
 
-
-[tool.poetry.group.dev.dependencies]
-mypy = "^1.10.0"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
 [tool.ruff]
 lint.ignore = ["E501", "E741"]
-line-length = 88
 lint.select = ["C9", "E", "F", "W", "I"]
 lint.unfixable = ["F841"]
+line-length = 88

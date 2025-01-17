@@ -9,7 +9,7 @@
  * @param pixel_size_y The pixel size of the detector in the y-direction in m.
  * @param beam_center_x The x-coordinate of the beam center in the image.
  * @param beam_center_y The y-coordinate of the beam center in the image.
- * @param distanc The distance from the sample to the detector in m.
+ * @param distance The distance from the sample to the detector in m.
 */
 struct detector_geometry {
     float pixel_size_x;
