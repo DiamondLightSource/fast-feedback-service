@@ -5,6 +5,7 @@
 #include <fmt/core.h>
 #include <fmt/os.h>
 #include <lodepng.h>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <array>
