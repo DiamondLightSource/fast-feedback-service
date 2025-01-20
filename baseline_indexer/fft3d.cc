@@ -5,10 +5,10 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <chrono>
-#include <iostream>
 #include <map>
 #include <stack>
 #include <tuple>
+#include <spdlog/spdlog.h>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -75,7 +75,7 @@ void map_centroids_to_reciprocal_space_grid(
         }
         data_in[index] = {T, 0.0};
     }
-    std::cout << "Number of centroids used: " << count << std::endl;
+    spdlog::info("Number of centroids used: {0}", count);
 }
 
 /**
@@ -134,7 +134,7 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
     double fct{1.0f};
     // note, threads can be higher than the number of hardware threads.
     // It is not clear what the best value is for this.
-    std::cout << "Performing FFT with nthreads=" << nthreads << std::endl;
+    spdlog::info("Performing FFT with nthreads={0}", nthreads);
     // Do the FFT.
     c2c(shape_in,
         stride_in,
@@ -158,16 +158,11 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
     std::chrono::duration<double> elapsed_make_arrays = t1 - start;
     std::chrono::duration<double> elapsed_c2c = t3 - t2;
     std::chrono::duration<double> elapsed_square = t4 - t3;
-    std::cout << "Total time for fft3d: " << elapsed_seconds.count() << "s"
-              << std::endl;
-
-    std::cout << "elapsed time for making data arrays: " << elapsed_make_arrays.count()
-              << "s" << std::endl;
-    std::cout << "elapsed time for map_to_recip: " << elapsed_map.count() << "s"
-              << std::endl;
-    std::cout << "elapsed time for c2c: " << elapsed_c2c.count() << "s" << std::endl;
-    std::cout << "elapsed time for squaring: " << elapsed_square.count() << "s"
-              << std::endl;
+    spdlog::debug("Total time for fft3d: {0:.5f}s", elapsed_seconds.count());
+    spdlog::debug("elapsed time for making data arrays: {0:.5f}s", elapsed_make_arrays.count());
+    spdlog::debug("elapsed time for map_to_recip: {0:.5f}s", elapsed_map.count());
+    spdlog::debug("elapsed time for c2c: {0:.5f}s", elapsed_c2c.count());
+    spdlog::debug("elapsed time for squaring: {0:.5f}s", elapsed_square.count());
 
     return used_in_indexing;
 }

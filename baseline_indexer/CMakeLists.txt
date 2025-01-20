@@ -1,6 +1,7 @@
 project(indexer CXX CUDA)
 
 find_package(CUDAToolkit REQUIRED)
+find_package(spdlog)
 
 # Automatic Dependencies
 set(FETCHCONTENT_QUIET OFF)

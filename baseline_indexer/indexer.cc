@@ -15,11 +15,13 @@
 #include <chrono>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <vector>
+#include <spdlog/spdlog.h>
+#include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
 
 #include "fft3d.cc"
 #include "flood_fill.cc"
@@ -70,14 +72,20 @@ int main(int argc, char** argv) {
       .scan<'u', size_t>();
     parser.parse_args(argc, argv);
 
+    auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    console_sink->set_level(spdlog::level::info);
+    auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("ffs_index.log", true);
+    file_sink->set_level(spdlog::level::debug);
+    spdlog::logger logger("ffs_index", {console_sink, file_sink});
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>("ffs_index", spdlog::sinks_init_list({console_sink, file_sink})));
+    spdlog::set_level(spdlog::level::debug); // Will output debug messages, but only to the file log.
+
     if (!parser.is_used("--expt")) {
-        fmt::print("Error: must specify experiment list file with --expt\n");
+        logger.error("Must specify experiment list file with --expt\n");
         std::exit(1);
     }
     if (!parser.is_used("--refl")) {
-        fmt::print(
-          "Error: must specify spotfinding results file (in DIALS HDF5 format) with "
-          "--refl\n");
+        logger.error("Must specify spotfinding results file (in DIALS HDF5 format) with --refl\n");
         std::exit(1);
     }
     // In DIALS, the max cell is automatically determined through a nearest
@@ -85,12 +93,12 @@ int main(int argc, char** argv) {
     // let's make this a required argument to help with testing/comparison
     // to DIALS.
     if (!parser.is_used("--max-cell")) {
-        fmt::print("Error: must specify --max-cell\n");
+        logger.error("Must specify --max-cell\n");
         std::exit(1);
     }
     // FIXME use highest resolution by default to remove this requirement.
     if (!parser.is_used("--dmin")) {
-        fmt::print("Error: must specify --dmin\n");
+        logger.error("Must specify --dmin\n");
         std::exit(1);
     }
     std::string imported_expt = parser.get<std::string>("--expt");
@@ -106,8 +114,7 @@ int main(int argc, char** argv) {
     try {
         elist_json_obj = json::parse(f);
     } catch (json::parse_error& ex) {
-        std::cerr << "Error: Unable to read " << imported_expt.c_str()
-                  << "; json parse error at byte " << ex.byte << std::endl;
+        logger.error("Unable to read {0}; json parse error at byte {1}", imported_expt.c_str(), ex.byte);
         std::exit(1);
     }
 
@@ -134,14 +141,14 @@ int main(int argc, char** argv) {
     // geometry is accurate). So use the experimental models to transform the spot
     // coordinates on the detector into reciprocal space.
     std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
-    std::cout << "Number of reflections: " << rlp.size() << std::endl;
+    logger.info("Number of reflections: {0}", rlp.size());
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
     // i.e. high resolution (weaker) spots are downweighted by the expected
     // intensity fall-off as as function of resolution.
     double b_iso = -4.0 * std::pow(d_min, 2) * log(0.05);
     uint32_t n_points = parser.get<uint32_t>("--fft-npoints");
-    std::cout << "Setting b_iso = " << b_iso << std::endl;
+    logger.info("Setting b_iso = {0:.3f}", b_iso);
 
     // Create an array to store the fft result. This is a 3D grid of points, typically 256^3.
     std::vector<double> real_fft_result(n_points * n_points * n_points, 0.0);
@@ -197,14 +204,13 @@ int main(int argc, char** argv) {
         vecs_out[pad_s] = candidate_lattice_vectors[i];
     }
     std::string outfile = "candidate_vectors.json";
-    std::cout << "Saving candidate vectors to " << outfile << std::endl;
     std::ofstream vecs_file(outfile);
     vecs_file << vecs_out.dump(4);
+    logger.info("Saved candidate vectors to {0}", outfile);
 
     // Now make a crystal and save an experiment list with the models.
     if (candidate_lattice_vectors.size() < 3) {
-        std::cout << "Insufficient number of candidate vectors to make a crystal model."
-                  << std::endl;
+        logger.info("Insufficient number of candidate vectors to make a crystal model.");
     } else {
         gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
         Crystal best_xtal{candidate_lattice_vectors[0],
@@ -213,11 +219,13 @@ int main(int argc, char** argv) {
                           space_group};
         expt.set_crystal(best_xtal);
         json elist_out = expt.to_json();
-        std::ofstream efile("elist.json");
+        std::string efile_name = "elist.json";
+        std::ofstream efile(efile_name);
         efile << elist_out.dump(4);
+        logger.info("Saved experiment list to {0}", efile_name);
     }
 
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;
-    std::cout << "Total time for indexer: " << elapsed_time.count() << "s" << std::endl;
+    logger.info("Total time for indexer: {0:.4f}s", elapsed_time.count());
 }

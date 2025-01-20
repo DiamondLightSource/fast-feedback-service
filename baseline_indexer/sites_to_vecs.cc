@@ -3,7 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
-#include <iostream>
+#include <spdlog/spdlog.h>
 #include <map>
 #include <numeric>
 #include <tuple>
@@ -157,8 +157,7 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
             }
             // If the current site is an integer multiple of the unique site, exit
             if (is_approximate_integer_multiple(unique_site.site, v)) {
-                std::cout << "rejecting " << v.norm() << ": is integer multiple of "
-                          << unique_site.site.norm() << std::endl;
+                spdlog::info("rejecting {0} : is integer multiple of {1}",  v.norm(), unique_site.site.norm());
                 is_unique = false;
                 break;
             }
@@ -171,16 +170,13 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
     std::stable_sort(
       unique_sites.begin(), unique_sites.end(), compare_site_data_volume);
     std::vector<Vector3d> unique_vectors_sorted;
-    std::cout << "Candidate basis vectors: " << std::endl;
+    spdlog::info("Candidate basis vectors:");
     for (int i = 0; i < unique_sites.size(); i++) {
         unique_vectors_sorted.push_back(unique_sites[i].site);
-        std::cout << i << " " << unique_sites[i].length << " " << unique_sites[i].volume
-                  << std::endl;
+        spdlog::info("{0} {1:.5f} {2}", i, unique_sites[i].length, unique_sites[i].volume);
     }
 
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsed_seconds = end - start;
-    std::cout << "elapsed time for sites_to_vecs: " << elapsed_seconds.count() << "s"
-              << std::endl;
+    std::chrono::duration<double> elapsed_seconds = std::chrono::system_clock::now() - start;
+    spdlog::debug("elapsed time for sites_to_vecs: {0:.5f}s", elapsed_seconds.count());
     return unique_vectors_sorted;
 }
