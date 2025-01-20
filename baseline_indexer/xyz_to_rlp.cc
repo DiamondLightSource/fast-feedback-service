@@ -38,8 +38,7 @@ std::vector<Vector3d> xyz_to_rlp(const std::vector<double> &xyzobs_px,
     Vector3d s0 = beam.get_s0();
     double wl = beam.get_wavelength();
     std::array<double, 2> oscillation = scan.get_oscillation();
-    double osc_width = oscillation[1];
-    double osc_start = oscillation[0];
+    const auto [osc_start, osc_width] = scan.get_oscillation();
     int image_range_start = scan.get_image_range()[0];
     Matrix3d setting_rotation_inverse = gonio.get_setting_rotation().inverse();
     Matrix3d sample_rotation_inverse = gonio.get_sample_rotation().inverse();

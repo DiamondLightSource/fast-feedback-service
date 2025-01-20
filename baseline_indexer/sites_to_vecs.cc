@@ -79,13 +79,14 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
     // Calculate the scaling between the FFT grid and reciprocal space.
     double fft_cell_length = n_points * d_min / 2.0;
     // Use 'sites_mod_short' and convert to cartesian (but keep in same array)
-    for (int i = 0; i < centres_of_mass_frac.size(); i++) {
-        for (size_t j = 0; j < 3; j++) {
-            if (centres_of_mass_frac[i][j] > 0.5) {
-                centres_of_mass_frac[i][j]--;
+    for (Vector3d& vec: centres_of_mass_frac){
+        // Apply the scaling across the vector
+        std::transform(vec.begin(), vec.end(), vec.begin(),
+            [fft_cell_length](double& val){
+                if (val > 0.5) val -= 1.0;
+                return val * fft_cell_length;
             }
-            centres_of_mass_frac[i][j] *= fft_cell_length;
-        }
+        );
     }
 
     // now do some filtering based on the min and max cell
@@ -103,24 +104,20 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
     double relative_length_tolerance = 0.1;
     double angular_tolerance = 5.0;
     std::vector<VectorGroup> vector_groups{};
-    for (int i = 0; i < filtered_data.size(); i++) {
+    for (const SiteData& data : filtered_data){
         bool matched_group = false;
-        double length = filtered_data[i].length;
-        for (int j = 0; j < vector_groups.size(); j++) {
-            Vector3d mean_v = vector_groups[j].mean();
+        for (VectorGroup& group : vector_groups){
+            Vector3d mean_v = group.mean();
             double mean_v_length = mean_v.norm();
-            if ((std::abs(mean_v_length - length) / std::max(mean_v_length, length))
+            if ((std::abs(mean_v_length - data.length) / std::max(mean_v_length, data.length))
                 < relative_length_tolerance) {
-                double angle =
-                  angle_between_vectors_degrees(mean_v, filtered_data[i].site);
+                double angle = angle_between_vectors_degrees(mean_v, data.site);
                 if (angle < angular_tolerance) {
-                    vector_groups[j].add(filtered_data[i].site,
-                                         filtered_data[i].volume);
+                    group.add(data.site, data.volume);
                     matched_group = true;
                     break;
                 } else if (std::abs(180 - angle) < angular_tolerance) {
-                    vector_groups[j].add(-1.0 * filtered_data[i].site,
-                                         filtered_data[i].volume);
+                    group.add(-1.0 * data.site, data.volume);
                     matched_group = true;
                     break;
                 }
@@ -128,11 +125,12 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
         }
         // If it didn't match any existing group, create a new one.
         if (!matched_group) {
-            VectorGroup group = VectorGroup();
-            group.add(filtered_data[i].site, filtered_data[i].volume);
+            VectorGroup group;
+            group.add(data.site, data.volume);
             vector_groups.push_back(group);
         }
     }
+
     // Create 'site's based on the data from the groups.
     std::vector<SiteData> grouped_data;
     for (int i = 0; i < vector_groups.size(); i++) {
@@ -150,22 +148,24 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
 
     // Now check if any sites are integer multiples of other sites.
     std::vector<SiteData> unique_sites;
-    for (int i = 0; i < grouped_data.size(); i++) {
+    for (const SiteData& data: grouped_data){
         bool is_unique = true;
-        Vector3d v = grouped_data[i].site;
-        for (int j = 0; j < unique_sites.size(); j++) {
-            if (unique_sites[j].volume > grouped_data[i].volume) {
-                if (is_approximate_integer_multiple(unique_sites[j].site, v)) {
-                    std::cout << "rejecting " << v.norm() << ": is integer multiple of "
-                              << unique_sites[j].site.norm() << std::endl;
-                    is_unique = false;
-                    break;
-                }
+        const Vector3d& v = data.site;
+        for (const SiteData& unique_site : unique_sites) {
+            // If the volume of the unique site is less than the current site, skip
+            if (unique_site.volume <= data.volume) {
+                continue;
+            }
+            // If the current site is an integer multiple of the unique site, exit
+            if (is_approximate_integer_multiple(unique_site.site, v)) {
+                std::cout << "rejecting " << v.norm() << ": is integer multiple of "
+                        << unique_site.site.norm() << std::endl;
+                is_unique = false;
+                break;
             }
         }
         if (is_unique) {
-            SiteData site{v, v.norm(), grouped_data[i].volume};
-            unique_sites.push_back(site);
+            unique_sites.push_back({v, v.norm(), data.volume});
         }
     }
     // now sort by peak volume again
