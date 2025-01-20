@@ -93,7 +93,8 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
     for (int i = 0; i < centres_of_mass_frac.size(); ++i) {
         double length = centres_of_mass_frac[i].norm();
         if (length > min_cell && length < 2 * max_cell) {
-            filtered_data.push_back({centres_of_mass_frac[i], length, grid_points_per_void[i]});
+            filtered_data.push_back(
+              {centres_of_mass_frac[i], length, grid_points_per_void[i]});
         }
     }
 
