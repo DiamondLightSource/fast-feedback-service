@@ -1,7 +1,9 @@
-project(indexer CXX CUDA)
+project(indexer CXX)
 
-find_package(CUDAToolkit REQUIRED)
+set(CMAKE_CXX_STANDARD 20)
+
 find_package(spdlog)
+find_package (Threads)
 
 # Automatic Dependencies
 set(FETCHCONTENT_QUIET OFF)
@@ -17,8 +19,6 @@ FetchContent_Declare(
     pocketfft
     GIT_REPOSITORY https://github.com/mreineck/pocketfft
     GIT_TAG cpp
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND ""
 )
 FetchContent_MakeAvailable(Eigen3)
 FetchContent_MakeAvailable(pocketfft)
@@ -36,9 +36,7 @@ target_link_libraries(baseline_indexer
     dx2
     Eigen3::Eigen
     pocketfft
-    CUDA::cudart
-    CUDA::nppif
     argparse
     nlohmann_json::nlohmann_json
+    ${CMAKE_THREAD_LIBS_INIT}
 )
-target_compile_options(baseline_indexer PRIVATE  "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
