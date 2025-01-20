@@ -134,10 +134,9 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
 
     // Create "site"s based on the data from the groups.
     std::vector<SiteData> grouped_data;
-    for (const VectorGroup& group: vector_groups){
+    for (const VectorGroup& group : vector_groups) {
         Vector3d site = group.mean();
-        int max = *std::max_element(group.weights.begin(),
-                                    group.weights.end());
+        int max = *std::max_element(group.weights.begin(), group.weights.end());
         grouped_data.push_back({site, site.norm(), max});
     }
 

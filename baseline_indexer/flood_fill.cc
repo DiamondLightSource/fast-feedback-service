@@ -35,9 +35,10 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     //  First calculate the rmsd and use this to create a binary grid
     double sumg = std::accumulate(grid.begin(), grid.end(), 0.0);
     double meang = sumg / grid.size();
-    double sum_delta_sq = std::accumulate(grid.begin(), grid.end(), 0.0, [meang](double total, const double& val){
-        return total + std::pow(val - meang, 2);
-    });
+    double sum_delta_sq = std::accumulate(
+      grid.begin(), grid.end(), 0.0, [meang](double total, const double& val) {
+          return total + std::pow(val - meang, 2);
+      });
     double rmsd = std::pow(sum_delta_sq / grid.size(), 0.5);
     std::vector<int> grid_binary(n_points * n_points * n_points, 0);
     double cutoff = rmsd_cutoff * rmsd;
@@ -133,9 +134,9 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
         std::vector<Vector3i> values = accumulators[i];
         int n = values.size();
         double divisor = static_cast<double>(n * n_points);
-        Vector3i sum = std::accumulate(
-            values.begin(), values.end(), Vector3i{0, 0, 0});
-        centres_of_mass_frac[i] = {sum[2] / divisor, sum[1]/ divisor, sum[0]/ divisor}; //z,y,x
+        Vector3i sum = std::accumulate(values.begin(), values.end(), Vector3i{0, 0, 0});
+        centres_of_mass_frac[i] = {
+          sum[2] / divisor, sum[1] / divisor, sum[0] / divisor};  //z,y,x
     }
     return std::make_tuple(grid_points_per_void, centres_of_mass_frac);
 }
