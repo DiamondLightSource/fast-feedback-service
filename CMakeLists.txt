@@ -41,19 +41,22 @@ FetchContent_Declare(
     GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
 )
 FetchContent_MakeAvailable(argparse)
-FetchContent_Declare(
-    dx2
-    GIT_REPOSITORY  https://github.com/dials/dx2
-    GIT_TAG 3898dc078a1e7bb5a4a83d69ee83282c4f51fcc8
-)
-FetchContent_MakeAvailable(dx2)
+if(dev) #flag for for development
+    add_subdirectory(dx2)
+else()
+    FetchContent_Declare(
+        dx2
+        GIT_REPOSITORY  https://github.com/dials/dx2
+        GIT_TAG 3898dc078a1e7bb5a4a83d69ee83282c4f51fcc8
+    )
+    FetchContent_MakeAvailable(dx2)
+endif()
 
 # Make a small library that we can link to to get the version
 project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
-#add_subdirectory(dx2) #for development
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
