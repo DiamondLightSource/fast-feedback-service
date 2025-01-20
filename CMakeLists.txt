@@ -47,7 +47,7 @@ else()
     FetchContent_Declare(
         dx2
         GIT_REPOSITORY  https://github.com/dials/dx2
-        GIT_TAG 3898dc078a1e7bb5a4a83d69ee83282c4f51fcc8
+        GIT_TAG 2654929bc73e0d699dfdfcc2d924c3454e434ccf
     )
     FetchContent_MakeAvailable(dx2)
 endif()
