@@ -5,6 +5,7 @@ find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
 find_package(lodepng)
+find_package(spdlog)
 
 add_executable(spotfinder
     spotfinder.cc
