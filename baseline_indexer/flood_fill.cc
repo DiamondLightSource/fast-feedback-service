@@ -9,6 +9,7 @@
 #define _USE_MATH_DEFINES
 #include <cmath>
 #include <iostream>
+#include <numeric>
 
 using Eigen::Vector3d;
 using Eigen::Vector3i;
@@ -32,15 +33,11 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     auto start = std::chrono::system_clock::now();
     assert(grid.size() == n_points * n_points * n_points);
     //  First calculate the rmsd and use this to create a binary grid
-    double sumg = 0.0;
-    for (int i = 0; i < grid.size(); ++i) {
-        sumg += grid[i];
-    }
+    double sumg = std::accumulate(grid.begin(), grid.end(), 0.0);
     double meang = sumg / grid.size();
-    double sum_delta_sq = 0.0;
-    for (int i = 0; i < grid.size(); ++i) {
-        sum_delta_sq += std::pow(grid[i] - meang, 2);
-    }
+    double sum_delta_sq = std::accumulate(grid.begin(), grid.end(), 0.0, [meang](double total, const double& val){
+        return total + std::pow(val - meang, 2);
+    });
     double rmsd = std::pow(sum_delta_sq / grid.size(), 0.5);
     std::vector<int> grid_binary(n_points * n_points * n_points, 0);
     double cutoff = rmsd_cutoff * rmsd;
@@ -135,19 +132,10 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     for (int i = 0; i < accumulators.size(); i++) {
         std::vector<Vector3i> values = accumulators[i];
         int n = values.size();
-        int divisor = n * n_points;
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
-        for (int j = 0; j < n; j++) {
-            x += values[j][0];
-            y += values[j][1];
-            z += values[j][2];
-        }
-        x /= divisor;
-        y /= divisor;
-        z /= divisor;
-        centres_of_mass_frac[i] = {z, y, x};
+        double divisor = static_cast<double>(n * n_points);
+        Vector3i sum = std::accumulate(
+            values.begin(), values.end(), Vector3i{0, 0, 0});
+        centres_of_mass_frac[i] = {sum[2] / divisor, sum[1]/ divisor, sum[0]/ divisor}; //z,y,x
     }
     return std::make_tuple(grid_points_per_void, centres_of_mass_frac);
 }

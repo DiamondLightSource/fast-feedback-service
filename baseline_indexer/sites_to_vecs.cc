@@ -20,7 +20,7 @@ class VectorGroup {
         vectors.push_back(vec);
         weights.push_back(weight);
     }
-    Vector3d mean() {
+    Vector3d mean() const {
         Vector3d sum =
           std::accumulate(vectors.begin(), vectors.end(), Vector3d{0, 0, 0});
         return sum / static_cast<double>(vectors.size());
@@ -132,14 +132,13 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
         }
     }
 
-    // Create 'site's based on the data from the groups.
+    // Create "site"s based on the data from the groups.
     std::vector<SiteData> grouped_data;
-    for (int i = 0; i < vector_groups.size(); i++) {
-        Vector3d site = vector_groups[i].mean();
-        int max = *std::max_element(vector_groups[i].weights.begin(),
-                                    vector_groups[i].weights.end());
-        SiteData site_data = {site, site.norm(), max};
-        grouped_data.push_back(site_data);
+    for (const VectorGroup& group: vector_groups){
+        Vector3d site = group.mean();
+        int max = *std::max_element(group.weights.begin(),
+                                    group.weights.end());
+        grouped_data.push_back({site, site.norm(), max});
     }
 
     // Sort by volume, then by length.
