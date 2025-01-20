@@ -79,14 +79,13 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
     // Calculate the scaling between the FFT grid and reciprocal space.
     double fft_cell_length = n_points * d_min / 2.0;
     // Use 'sites_mod_short' and convert to cartesian (but keep in same array)
-    for (Vector3d& vec: centres_of_mass_frac){
+    for (Vector3d& vec : centres_of_mass_frac) {
         // Apply the scaling across the vector
-        std::transform(vec.begin(), vec.end(), vec.begin(),
-            [fft_cell_length](double& val){
-                if (val > 0.5) val -= 1.0;
-                return val * fft_cell_length;
-            }
-        );
+        std::transform(
+          vec.begin(), vec.end(), vec.begin(), [fft_cell_length](double& val) {
+              if (val > 0.5) val -= 1.0;
+              return val * fft_cell_length;
+          });
     }
 
     // now do some filtering based on the min and max cell
@@ -104,12 +103,13 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
     double relative_length_tolerance = 0.1;
     double angular_tolerance = 5.0;
     std::vector<VectorGroup> vector_groups{};
-    for (const SiteData& data : filtered_data){
+    for (const SiteData& data : filtered_data) {
         bool matched_group = false;
-        for (VectorGroup& group : vector_groups){
+        for (VectorGroup& group : vector_groups) {
             Vector3d mean_v = group.mean();
             double mean_v_length = mean_v.norm();
-            if ((std::abs(mean_v_length - data.length) / std::max(mean_v_length, data.length))
+            if ((std::abs(mean_v_length - data.length)
+                 / std::max(mean_v_length, data.length))
                 < relative_length_tolerance) {
                 double angle = angle_between_vectors_degrees(mean_v, data.site);
                 if (angle < angular_tolerance) {
@@ -148,7 +148,7 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
 
     // Now check if any sites are integer multiples of other sites.
     std::vector<SiteData> unique_sites;
-    for (const SiteData& data: grouped_data){
+    for (const SiteData& data : grouped_data) {
         bool is_unique = true;
         const Vector3d& v = data.site;
         for (const SiteData& unique_site : unique_sites) {
@@ -159,7 +159,7 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
             // If the current site is an integer multiple of the unique site, exit
             if (is_approximate_integer_multiple(unique_site.site, v)) {
                 std::cout << "rejecting " << v.norm() << ": is integer multiple of "
-                        << unique_site.site.norm() << std::endl;
+                          << unique_site.site.norm() << std::endl;
                 is_unique = false;
                 break;
             }
