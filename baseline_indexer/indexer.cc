@@ -68,7 +68,6 @@ int main(int argc, char** argv) {
         "Defaults to the value of std::thread::hardware_concurrency."
         "Better performance can typically be obtained with a higher number"
         "of threads than this.")
-      .default_value<size_t>(0)
       .scan<'u', size_t>();
     parser.parse_args(argc, argv);
 
@@ -83,11 +82,11 @@ int main(int argc, char** argv) {
     spdlog::set_level(
       spdlog::level::debug);  // Will output debug messages, but only to the file log.
 
-    if (!parser.is_used("--expt")) {
+    if (!parser.is_used("expt")) {
         logger.error("Must specify experiment list file with --expt\n");
         std::exit(1);
     }
-    if (!parser.is_used("--refl")) {
+    if (!parser.is_used("refl")) {
         logger.error(
           "Must specify spotfinding results file (in DIALS HDF5 format) with --refl\n");
         std::exit(1);
@@ -96,18 +95,17 @@ int main(int argc, char** argv) {
     // neighbour analysis that requires the annlib package. For now,
     // let's make this a required argument to help with testing/comparison
     // to DIALS.
-    if (!parser.is_used("--max-cell")) {
+    if (!parser.is_used("max-cell")) {
         logger.error("Must specify --max-cell\n");
         std::exit(1);
     }
     // FIXME use highest resolution by default to remove this requirement.
-    if (!parser.is_used("--dmin")) {
+    if (!parser.is_used("dmin")) {
         logger.error("Must specify --dmin\n");
         std::exit(1);
     }
-    std::string imported_expt = parser.get<std::string>("--expt");
-    std::string filename = parser.get<std::string>("--refl");
-    size_t nthreads = parser.get<size_t>("--nthreads");
+    std::string imported_expt = parser.get<std::string>("expt");
+    std::string filename = parser.get<std::string>("refl");
     double max_cell = parser.get<float>("max-cell");
     double d_min = parser.get<float>("dmin");
 
@@ -153,7 +151,7 @@ int main(int argc, char** argv) {
     // i.e. high resolution (weaker) spots are downweighted by the expected
     // intensity fall-off as as function of resolution.
     double b_iso = -4.0 * std::pow(d_min, 2) * log(0.05);
-    uint32_t n_points = parser.get<uint32_t>("--fft-npoints");
+    uint32_t n_points = parser.get<uint32_t>("fft-npoints");
     logger.info("Setting b_iso = {0:.3f}", b_iso);
 
     // Create an array to store the fft result. This is a 3D grid of points, typically 256^3.
@@ -163,10 +161,14 @@ int main(int argc, char** argv) {
     // the used in indexing array denotes whether a coordinate was used for the
     // fft (might not be if dmin filter was used for example). The used_in_indexing array
     // is sometimes used onwards in the dials indexing algorithms, so keep for now.
-    if (nthreads == 0) {                                 // i.e. user has not specified.
-        nthreads = std::thread::hardware_concurrency();  // Get max number of threads
+    size_t nthreads;
+    if (parser.is_used("nthreads")) {
+        nthreads = parser.get<size_t>("nthreads");
     }
-    if (nthreads == 0) nthreads = 1;  // Set to default number of threads
+    else {
+        size_t max_threads = std::thread::hardware_concurrency();
+        nthreads = max_threads ? max_threads : 1;
+    }
 
     std::vector<bool> used_in_indexing =
       fft3d(rlp, real_fft_result, d_min, b_iso, n_points, nthreads);
