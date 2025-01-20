@@ -2,8 +2,8 @@
 #include <dx2/beam.h>
 #include <dx2/crystal.h>
 #include <dx2/detector.h>
-#include <dx2/goniometer.h>
 #include <dx2/experiment.h>
+#include <dx2/goniometer.h>
 #include <dx2/h5read_processed.h>
 #include <dx2/scan.h>
 #include <fmt/color.h>
@@ -18,8 +18,8 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
-#include <vector>
 #include <thread>
+#include <vector>
 
 #include "fft3d.cc"
 #include "flood_fill.cc"
@@ -59,7 +59,8 @@ int main(int argc, char** argv) {
         "efficient.")
       .default_value<uint32_t>(256)
       .scan<'u', uint32_t>();
-    parser.add_argument("--nthreads")  // mainly for testing.
+    parser
+      .add_argument("--nthreads")  // mainly for testing.
       .help(
         "The number of threads to use for the fft calculation."
         "Defaults to the value of std::thread::hardware_concurrency."
@@ -115,7 +116,8 @@ int main(int argc, char** argv) {
     MonochromaticBeam beam = expt.beam();
     Goniometer gonio = expt.goniometer();
     Detector detector = expt.detector();
-    assert(detector.panels().size() == 1); // only considering single panel detectors initially.
+    assert(detector.panels().size()
+           == 1);  // only considering single panel detectors initially.
     Panel panel = detector.panels()[0];
 
     // Read data from a reflection table. Again, this should be moved to
@@ -148,10 +150,10 @@ int main(int argc, char** argv) {
     // the used in indexing array denotes whether a coordinate was used for the
     // fft (might not be if dmin filter was used for example). The used_in_indexing array
     // is sometimes used onwards in the dials indexing algorithms, so keep for now.
-    if (nthreads == 0){ // i.e. user has not specified.
-      nthreads = std::thread::hardware_concurrency(); // Get max number of threads
+    if (nthreads == 0) {                                 // i.e. user has not specified.
+        nthreads = std::thread::hardware_concurrency();  // Get max number of threads
     }
-    if (nthreads == 0) nthreads = 1; // Set to default number of threads
+    if (nthreads == 0) nthreads = 1;  // Set to default number of threads
 
     std::vector<bool> used_in_indexing =
       fft3d(rlp, real_fft_result, d_min, b_iso, n_points, nthreads);

@@ -92,7 +92,7 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
                         double d_min,
                         double b_iso = 0,
                         uint32_t n_points = 256,
-                        size_t nthreads=1) {
+                        size_t nthreads = 1) {
     auto start = std::chrono::system_clock::now();
     assert(real_out.size() == n_points * n_points * n_points);
 
