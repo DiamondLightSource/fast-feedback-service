@@ -53,7 +53,7 @@ void map_centroids_to_reciprocal_space_grid(
         Vector3i coord;
         // map to the nearest point in each dimension.
         for (int j = 0; j < 3; j++) {
-            coord[j] = ((int)round(v[j] * one_over_rlgrid)) + half_n_points;
+            coord[j] = static_cast<int>(round(v[j] * one_over_rlgrid)) + half_n_points;
         }
         if ((coord.maxCoeff() >= n_points) || coord.minCoeff() < 0) {
             selection[i] = false;

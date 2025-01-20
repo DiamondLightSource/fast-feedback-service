@@ -20,17 +20,9 @@ class VectorGroup {
         weights.push_back(weight);
     }
     Vector3d mean() {
-        int n = vectors.size();
-        double sum_x = 0.0;
-        double sum_y = 0.0;
-        double sum_z = 0.0;
-        for (const Vector3d& i : vectors) {
-            sum_x += i[0];
-            sum_y += i[1];
-            sum_z += i[2];
-        }
-        Vector3d m = {sum_x / n, sum_y / n, sum_z / n};
-        return m;
+        Vector3d sum =
+          std::accumulate(vectors.begin(), vectors.end(), Vector3d{0, 0, 0});
+        return sum / static_cast<double>(vectors.size());
     }
     std::vector<Vector3d> vectors{};
     std::vector<int> weights{};
@@ -98,14 +90,10 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
 
     // now do some filtering based on the min and max cell
     std::vector<SiteData> filtered_data;
-    for (int i = 0; i < centres_of_mass_frac.size(); i++) {
-        auto v = centres_of_mass_frac[i];
-        double length =
-          std::pow(std::pow(v[0], 2) + std::pow(v[1], 2) + std::pow(v[2], 2), 0.5);
-        if ((length > min_cell) && (length < 2 * max_cell)) {
-            SiteData site_data = {
-              centres_of_mass_frac[i], length, grid_points_per_void[i]};
-            filtered_data.push_back(site_data);
+    for (int i = 0; i < centres_of_mass_frac.size(); ++i) {
+        double length = centres_of_mass_frac[i].norm();
+        if (length > min_cell && length < 2 * max_cell) {
+            filtered_data.push_back({centres_of_mass_frac[i], length, grid_points_per_void[i]});
         }
     }
 

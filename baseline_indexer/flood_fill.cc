@@ -195,7 +195,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill_filter(
     int Q3_index = grid_points_per_void.size() * 3 / 4;
     int Q1_index = grid_points_per_void.size() / 4;
     int iqr = grid_points_per_void[Q3_index] - grid_points_per_void[Q1_index];
-    int iqr_multiplier = 5;
+    constexpr int iqr_multiplier = 5;
     int cut = (iqr * iqr_multiplier) + grid_points_per_void[Q3_index];
 
     // Remove abnormally high volumes
@@ -204,7 +204,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill_filter(
     }
     int max_val = grid_points_per_void[grid_points_per_void.size() - 1];
     // Cut based on a fraction of the max volume.
-    int peak_cutoff = (int)(peak_volume_cutoff * max_val);
+    int peak_cutoff = static_cast<int>(peak_volume_cutoff * max_val);
     for (int i = grid_points_per_void_unsorted.size() - 1; i >= 0; i--) {
         if (grid_points_per_void_unsorted[i] <= peak_cutoff) {
             grid_points_per_void_unsorted.erase(grid_points_per_void_unsorted.begin()

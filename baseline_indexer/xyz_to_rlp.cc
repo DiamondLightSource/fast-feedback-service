@@ -28,7 +28,7 @@ std::vector<Vector3d> xyz_to_rlp(const std::vector<double> &xyzobs_px,
     // inverse angstrom.
     // An equivalent to dials flex_ext.map_centroids_to_reciprocal_space method
 
-    double DEG2RAD = M_PI / 180.0;
+    constexpr double DEG2RAD = M_PI / 180.0;
 
     // xyzobs_px is a flattened array, we want to return a vector of Vector3ds,
     // so the size is divided by 3.
