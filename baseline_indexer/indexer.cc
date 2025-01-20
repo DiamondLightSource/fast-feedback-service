@@ -164,8 +164,7 @@ int main(int argc, char** argv) {
     size_t nthreads;
     if (parser.is_used("nthreads")) {
         nthreads = parser.get<size_t>("nthreads");
-    }
-    else {
+    } else {
         size_t max_threads = std::thread::hardware_concurrency();
         nthreads = max_threads ? max_threads : 1;
     }
