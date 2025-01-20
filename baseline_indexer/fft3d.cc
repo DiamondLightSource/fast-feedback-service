@@ -5,10 +5,10 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <map>
 #include <stack>
 #include <tuple>
-#include <iostream>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;

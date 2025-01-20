@@ -93,11 +93,12 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
                 grid_points_per_void[accumulator_index]++;
 
                 // Predefined neighbor offsets for 6-connected neighbors
-                static const std::array<Vector3i, 6> neighbors = {
-                    Vector3i{1, 0, 0}, Vector3i{-1, 0, 0},
-                    Vector3i{0, 1, 0}, Vector3i{0, -1, 0},
-                    Vector3i{0, 0, 1}, Vector3i{0, 0, -1}
-                };
+                static const std::array<Vector3i, 6> neighbors = {Vector3i{1, 0, 0},
+                                                                  Vector3i{-1, 0, 0},
+                                                                  Vector3i{0, 1, 0},
+                                                                  Vector3i{0, -1, 0},
+                                                                  Vector3i{0, 0, 1},
+                                                                  Vector3i{0, 0, -1}};
 
                 int modx = modulo(this_xyz[0], n_points);
                 int mody = modulo(this_xyz[1], n_points) * n_points;
@@ -107,9 +108,11 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
                     // Compute the neighbor position
                     Vector3i neighbor = this_xyz + offset;
                     // Compute the flattened 1D array index for the neighbor
-                    int array_index = (offset[0] ? modulo(neighbor[0], n_points) : modx) + // x
-                       (offset[1] ? (modulo(neighbor[1], n_points) * n_points) : mody) + // y
-                       (offset[2] ? (modulo(neighbor[2], n_points) * n_sq) : modz); // z
+                    int array_index =
+                      (offset[0] ? modulo(neighbor[0], n_points) : modx) +  // x
+                      (offset[1] ? (modulo(neighbor[1], n_points) * n_points) : mody)
+                      +                                                             // y
+                      (offset[2] ? (modulo(neighbor[2], n_points) * n_sq) : modz);  // z
 
                     // Check if the neighbor matches the target and push to the stack
                     if (grid_binary[array_index] == target) {
