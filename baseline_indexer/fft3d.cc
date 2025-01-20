@@ -91,7 +91,8 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
                         std::vector<double> &real_out,
                         double d_min,
                         double b_iso = 0,
-                        uint32_t n_points = 256) {
+                        uint32_t n_points = 256,
+                        size_t nthreads=1) {
     auto start = std::chrono::system_clock::now();
     assert(real_out.size() == n_points * n_points * n_points);
 
@@ -131,8 +132,9 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
     bool forward{FORWARD};
 
     double fct{1.0f};
-    size_t nthreads = 20;  // use all threads available - is this working?
-
+    // note, threads can be higher than the number of hardware threads.
+    // It is not clear what the best value is for this.
+    std::cout << "Performing FFT with nthreads=" << nthreads << std::endl;
     // Do the FFT.
     c2c(shape_in,
         stride_in,

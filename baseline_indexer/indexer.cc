@@ -19,6 +19,7 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+#include <thread>
 
 #include "fft3d.cc"
 #include "flood_fill.cc"
@@ -58,6 +59,14 @@ int main(int argc, char** argv) {
         "efficient.")
       .default_value<uint32_t>(256)
       .scan<'u', uint32_t>();
+    parser.add_argument("--nthreads")  // mainly for testing.
+      .help(
+        "The number of threads to use for the fft calculation."
+        "Defaults to the value of std::thread::hardware_concurrency."
+        "Better performance can typically be obtained with a higher number"
+        "of threads than this.")
+      .default_value<size_t>(0)
+      .scan<'u', size_t>();
     parser.parse_args(argc, argv);
 
     if (!parser.is_used("--expt")) {
@@ -85,6 +94,7 @@ int main(int argc, char** argv) {
     }
     std::string imported_expt = parser.get<std::string>("--expt");
     std::string filename = parser.get<std::string>("--refl");
+    size_t nthreads = parser.get<size_t>("--nthreads");
     double max_cell = parser.get<float>("max-cell");
     double d_min = parser.get<float>("dmin");
 
@@ -138,8 +148,13 @@ int main(int argc, char** argv) {
     // the used in indexing array denotes whether a coordinate was used for the
     // fft (might not be if dmin filter was used for example). The used_in_indexing array
     // is sometimes used onwards in the dials indexing algorithms, so keep for now.
+    if (nthreads == 0){ // i.e. user has not specified.
+      nthreads = std::thread::hardware_concurrency(); // Get max number of threads
+    }
+    if (nthreads == 0) nthreads = 1; // Set to default number of threads
+
     std::vector<bool> used_in_indexing =
-      fft3d(rlp, real_fft_result, d_min, b_iso, n_points);
+      fft3d(rlp, real_fft_result, d_min, b_iso, n_points, nthreads);
 
     // The fft result is noisy. We want to extract the peaks, which may be spread over several
     // points on the fft grid. So we use a flood fill algorithm (https://en.wikipedia.org/wiki/Flood_fill)
