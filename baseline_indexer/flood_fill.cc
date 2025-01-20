@@ -8,6 +8,7 @@
 #include <tuple>
 #define _USE_MATH_DEFINES
 #include <cmath>
+#include <iostream>
 
 using Eigen::Vector3d;
 using Eigen::Vector3i;
@@ -91,55 +92,30 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
                 accumulators[accumulator_index].push_back(this_xyz);
                 grid_points_per_void[accumulator_index]++;
 
-                int x_plus = this_xyz[0] + 1;
+                // Predefined neighbor offsets for 6-connected neighbors
+                static const std::array<Vector3i, 6> neighbors = {
+                    Vector3i{1, 0, 0}, Vector3i{-1, 0, 0},
+                    Vector3i{0, 1, 0}, Vector3i{0, -1, 0},
+                    Vector3i{0, 0, 1}, Vector3i{0, 0, -1}
+                };
+
                 int modx = modulo(this_xyz[0], n_points);
                 int mody = modulo(this_xyz[1], n_points) * n_points;
                 int modz = modulo(this_xyz[2], n_points) * n_sq;
 
-                // For x,y,z, check locations +-1 on the grid and add to stack if match.
+                for (const Vector3i& offset : neighbors) {
+                    // Compute the neighbor position
+                    Vector3i neighbor = this_xyz + offset;
+                    // Compute the flattened 1D array index for the neighbor
+                    int array_index = (offset[0] ? modulo(neighbor[0], n_points) : modx) + // x
+                       (offset[1] ? (modulo(neighbor[1], n_points) * n_points) : mody) + // y
+                       (offset[2] ? (modulo(neighbor[2], n_points) * n_sq) : modz); // z
 
-                int array_index = modulo(x_plus, n_points) + mody + modz;
-                if (grid_binary[array_index] == target) {
-                    grid_binary[array_index] = replacement;
-                    Vector3i new_xyz = {x_plus, this_xyz[1], this_xyz[2]};
-                    stack.push(new_xyz);
-                }
-                int x_minus = this_xyz[0] - 1;
-                array_index = modulo(x_minus, n_points) + mody + modz;
-                if (grid_binary[array_index] == target) {
-                    grid_binary[array_index] = replacement;
-                    Vector3i new_xyz = {x_minus, this_xyz[1], this_xyz[2]};
-                    stack.push(new_xyz);
-                }
-
-                int y_plus = this_xyz[1] + 1;
-                array_index = modx + (modulo(y_plus, n_points) * n_points) + modz;
-                if (grid_binary[array_index] == target) {
-                    grid_binary[array_index] = replacement;
-                    Vector3i new_xyz = {this_xyz[0], y_plus, this_xyz[2]};
-                    stack.push(new_xyz);
-                }
-                int y_minus = this_xyz[1] - 1;
-                array_index = modx + (modulo(y_minus, n_points) * n_points) + modz;
-                if (grid_binary[array_index] == target) {
-                    grid_binary[array_index] = replacement;
-                    Vector3i new_xyz = {this_xyz[0], y_minus, this_xyz[2]};
-                    stack.push(new_xyz);
-                }
-
-                int z_plus = this_xyz[2] + 1;
-                array_index = modx + mody + (modulo(z_plus, n_points) * n_sq);
-                if (grid_binary[array_index] == target) {
-                    grid_binary[array_index] = replacement;
-                    Vector3i new_xyz = {this_xyz[0], this_xyz[1], z_plus};
-                    stack.push(new_xyz);
-                }
-                int z_minus = this_xyz[2] - 1;
-                array_index = modx + mody + (modulo(z_minus, n_points) * n_sq);
-                if (grid_binary[array_index] == target) {
-                    grid_binary[array_index] = replacement;
-                    Vector3i new_xyz = {this_xyz[0], this_xyz[1], z_minus};
-                    stack.push(new_xyz);
+                    // Check if the neighbor matches the target and push to the stack
+                    if (grid_binary[array_index] == target) {
+                        grid_binary[array_index] = replacement;
+                        stack.push(neighbor);
+                    }
                 }
             }
             replacement++;

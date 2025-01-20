@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <tuple>
+#include <numeric>
 
 using Eigen::Vector3d;
 
