@@ -9,6 +9,7 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
+#include <spdlog/spdlog.h>
 
 #include <Eigen/Dense>
 #include <argparse/argparse.hpp>
@@ -19,14 +20,13 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <spdlog/spdlog.h>
-#include "spdlog/sinks/basic_file_sink.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
 
 #include "fft3d.cc"
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
 #include "sites_to_vecs.cc"
+#include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
 #include "xyz_to_rlp.cc"
 
 using Eigen::Matrix3d;
@@ -74,18 +74,22 @@ int main(int argc, char** argv) {
 
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     console_sink->set_level(spdlog::level::info);
-    auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("ffs_index.log", true);
+    auto file_sink =
+      std::make_shared<spdlog::sinks::basic_file_sink_mt>("ffs_index.log", true);
     file_sink->set_level(spdlog::level::debug);
     spdlog::logger logger("ffs_index", {console_sink, file_sink});
-    spdlog::set_default_logger(std::make_shared<spdlog::logger>("ffs_index", spdlog::sinks_init_list({console_sink, file_sink})));
-    spdlog::set_level(spdlog::level::debug); // Will output debug messages, but only to the file log.
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>(
+      "ffs_index", spdlog::sinks_init_list({console_sink, file_sink})));
+    spdlog::set_level(
+      spdlog::level::debug);  // Will output debug messages, but only to the file log.
 
     if (!parser.is_used("--expt")) {
         logger.error("Must specify experiment list file with --expt\n");
         std::exit(1);
     }
     if (!parser.is_used("--refl")) {
-        logger.error("Must specify spotfinding results file (in DIALS HDF5 format) with --refl\n");
+        logger.error(
+          "Must specify spotfinding results file (in DIALS HDF5 format) with --refl\n");
         std::exit(1);
     }
     // In DIALS, the max cell is automatically determined through a nearest
@@ -114,7 +118,9 @@ int main(int argc, char** argv) {
     try {
         elist_json_obj = json::parse(f);
     } catch (json::parse_error& ex) {
-        logger.error("Unable to read {0}; json parse error at byte {1}", imported_expt.c_str(), ex.byte);
+        logger.error("Unable to read {0}; json parse error at byte {1}",
+                     imported_expt.c_str(),
+                     ex.byte);
         std::exit(1);
     }
 
@@ -210,7 +216,8 @@ int main(int argc, char** argv) {
 
     // Now make a crystal and save an experiment list with the models.
     if (candidate_lattice_vectors.size() < 3) {
-        logger.info("Insufficient number of candidate vectors to make a crystal model.");
+        logger.info(
+          "Insufficient number of candidate vectors to make a crystal model.");
     } else {
         gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
         Crystal best_xtal{candidate_lattice_vectors[0],

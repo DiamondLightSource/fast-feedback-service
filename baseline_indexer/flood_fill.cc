@@ -7,9 +7,10 @@
 #include <stack>
 #include <tuple>
 #define _USE_MATH_DEFINES
+#include <spdlog/spdlog.h>
+
 #include <cmath>
 #include <numeric>
-#include <spdlog/spdlog.h>
 
 using Eigen::Vector3d;
 using Eigen::Vector3i;
@@ -124,7 +125,8 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     }
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time2 = t3 - t2;
-    spdlog::debug("Time for second part of flood fill: {0:.5f}s", elapsed_time2.count());
+    spdlog::debug("Time for second part of flood fill: {0:.5f}s",
+                  elapsed_time2.count());
 
     // Now calculate the unweighted centres of mass of each group, in fractional coordinates.
     std::vector<Vector3d> centres_of_mass_frac(n_voids);

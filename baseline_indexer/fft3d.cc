@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <math.h>
 #include <pocketfft_hdronly.h>
+#include <spdlog/spdlog.h>
 
 #include <Eigen/Dense>
 #include <algorithm>
@@ -8,7 +9,6 @@
 #include <map>
 #include <stack>
 #include <tuple>
-#include <spdlog/spdlog.h>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -159,7 +159,8 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
     std::chrono::duration<double> elapsed_c2c = t3 - t2;
     std::chrono::duration<double> elapsed_square = t4 - t3;
     spdlog::debug("Total time for fft3d: {0:.5f}s", elapsed_seconds.count());
-    spdlog::debug("elapsed time for making data arrays: {0:.5f}s", elapsed_make_arrays.count());
+    spdlog::debug("elapsed time for making data arrays: {0:.5f}s",
+                  elapsed_make_arrays.count());
     spdlog::debug("elapsed time for map_to_recip: {0:.5f}s", elapsed_map.count());
     spdlog::debug("elapsed time for c2c: {0:.5f}s", elapsed_c2c.count());
     spdlog::debug("elapsed time for squaring: {0:.5f}s", elapsed_square.count());
