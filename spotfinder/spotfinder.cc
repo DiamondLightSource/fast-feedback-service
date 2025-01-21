@@ -27,6 +27,7 @@
 #include "cbfread.hpp"
 #include "common.hpp"
 #include "cuda_common.hpp"
+#include "ffs_logger.hpp"
 #include "h5read.h"
 #include "kernels/masking.cuh"
 #include "shmread.hpp"
@@ -266,6 +267,9 @@ class PipeHandler {
 };
 
 int main(int argc, char **argv) {
+    auto logger = FFSLogger::getInstance();
+    logger->info("Spotfinder version: {}", FFS_VERSION);
+
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser(FFS_VERSION);
