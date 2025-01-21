@@ -157,7 +157,7 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
             }
             // If the current site is an integer multiple of the unique site, exit
             if (is_approximate_integer_multiple(unique_site.site, v)) {
-                spdlog::info("rejecting {0} : is integer multiple of {1}",
+                spdlog::info("rejecting {0:.5f} : is integer multiple of {1:.5f}",
                              v.norm(),
                              unique_site.site.norm());
                 is_unique = false;

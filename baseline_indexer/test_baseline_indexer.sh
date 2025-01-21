@@ -13,8 +13,8 @@ if test -f "candidate_vectors.json"; then
 fi
 
 ./bin/baseline_indexer \
-  -r /dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/strong.refl \
-  -e /dls/mx-scratch/jbe/test_cuda_spotfinder/cm37235-2_ins_14_24_rot/imported.expt \
+  -r /dls/i03/data/2024/cm37235-2/processing/JBE/ins_14_24_rot/strong.refl \
+  -e /dls/i03/data/2024/cm37235-2/processing/JBE/ins_14_24_rot/imported.expt \
   --max-cell 100 \
   --dmin 1.81
 
