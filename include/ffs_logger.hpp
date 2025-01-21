@@ -84,6 +84,14 @@ class FFSLogger {
               spdlog::async_overflow_policy::block  // Block if queue is full
             );
 
+            // Get logging level from environment variable (if set)
+            const char* logLevelEnv = std::getenv("LOG_LEVEL");
+            if (logLevelEnv) {
+                async_logger->set_level(spdlog::level::from_str(logLevelEnv));
+            } else {
+                async_logger->set_level(spdlog::level::info);  // Default log level
+            }
+
             // Set default log level and pattern
             async_logger->set_level(spdlog::level::info);
 
