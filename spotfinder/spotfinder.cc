@@ -267,7 +267,6 @@ class PipeHandler {
 };
 
 int main(int argc, char **argv) {
-    auto logger = FFSLogger::getInstance();
     logger->info("Spotfinder version: {}", FFS_VERSION);
 
 #pragma region Argument Parsing

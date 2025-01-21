@@ -107,4 +107,7 @@ class FFSLogger {
     }
 };
 
+// Global static access to the logger
+static auto& logger = FFSLogger::getInstance();
+
 #endif  // FFS_LOGGER_HPP
