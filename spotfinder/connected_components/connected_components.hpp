@@ -82,7 +82,7 @@ class ConnectedComponents {
     }
 
     const auto &get_vertex_map() const {
-        return vertex_map;
+        return vertex_to_index;
     }
 
     /**
@@ -106,10 +106,11 @@ class ConnectedComponents {
     uint num_strong_pixels;           // Number of strong pixels
     uint num_strong_pixels_filtered;  // Number of strong pixels after filtering
     std::vector<Reflection> boxes;    // Bounding boxes
-    std::unordered_map<size_t, Signal>
-      signals;  // Maps pixel linear index -> Signal (used to store signal pixels)
-    std::unordered_map<size_t, size_t>
-      vertex_map;  // Maps linear_index -> graph vertex ID
+    // Maps pixel linear index -> Signal (used to store signal pixels)
+    std::unordered_map<size_t, Signal> signals;
+    // Maps graph vertex ID -> linear index
+    std::unordered_map<size_t, size_t> vertex_to_index;
+    // 2D graph representing the connected components
     boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS> graph;
 
     /**
@@ -117,16 +118,19 @@ class ConnectedComponents {
      * connectivity between neighboring pixels.
      * 
      * This function uses the `signals` map to find neighboring pixels efficiently.
-     * The `vertex_map` is used to map linear indices (from `signals`) to graph vertex IDs.
+     * The `index_to_vertex` is used to map linear indices (from `signals`) to graph vertex IDs.
      */
-    void build_graph(const ushort width, const ushort height);
+    std::unordered_map<size_t, size_t> build_graph(const ushort width,
+                                                   const ushort height);
+
     /**
      * @brief Generates bounding boxes for connected components using the graph labels.
      * 
      * The `labels` vector maps each graph vertex to its connected component ID.
-     * The `vertex_map` is used to relate graph vertex IDs back to the original pixels.
+     * The `index_to_vertex` map is used to map linear indices to graph vertex IDs.
      */
-    void generate_boxes(const ushort width,
+    void generate_boxes(const std::unordered_map<size_t, size_t> &index_to_vertex,
+                        const ushort width,
                         const ushort height,
                         const uint32_t min_spot_size);
 };
