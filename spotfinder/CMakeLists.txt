@@ -5,7 +5,7 @@ find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
 find_package(lodepng)
-find_package(spdlog)
+find_package(spdlog REQUIRED)
 
 add_executable(spotfinder
     spotfinder.cc
@@ -29,6 +29,7 @@ target_link_libraries(spotfinder
     Boost::graph
     lodepng
     nlohmann_json::nlohmann_json
+    spdlog::spdlog
     version
 )
 
