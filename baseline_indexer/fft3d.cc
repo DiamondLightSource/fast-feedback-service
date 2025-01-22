@@ -135,15 +135,17 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
     // It is not clear what the best value is for this.
     spdlog::info("Performing FFT with nthreads={0}", nthreads);
     // Do the FFT.
-    c2c(shape_in,
-        stride_in,
-        stride_out,
-        axes,
-        forward,
-        complex_data_in.data(),
-        complex_data_in.data(), // this is the output array, we are going to overwrite the input as we don't need it
-        fct,
-        nthreads);
+    c2c(
+      shape_in,
+      stride_in,
+      stride_out,
+      axes,
+      forward,
+      complex_data_in.data(),
+      complex_data_in
+        .data(),  // this is the output array, we are going to overwrite the input as we don't need it
+      fct,
+      nthreads);
     auto t3 = std::chrono::system_clock::now();
 
     // Take the square of the real part as the output.

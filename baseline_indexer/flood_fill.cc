@@ -8,10 +8,10 @@
 #include <tuple>
 #define _USE_MATH_DEFINES
 #include <spdlog/spdlog.h>
-#include <unordered_map>
 
 #include <cmath>
 #include <numeric>
+#include <unordered_map>
 
 using Eigen::Vector3d;
 using Eigen::Vector3i;
@@ -72,8 +72,8 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     int n_sq = n_points * n_points;
     int n_sq_minus_n = n_points * (n_points - 1);
     int nn_sq_minus_n = n_points * n_points * (n_points - 1);
-    for (auto& it: grid_binary){
-        if (it.second == target){
+    for (auto& it : grid_binary) {
+        if (it.second == target) {
             //for (int i = 0; i < grid_binary.size(); i++) {
             //if (grid_binary[i] == target) {
             // Convert the array index into xyz coordinates.
@@ -119,9 +119,10 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
                       (offset[2] ? (modulo(neighbor[2], n_points) * n_sq) : modz);  // z
 
                     // Check if the neighbor matches the target and push to the stack
-                    std::unordered_map<int,int>::const_iterator found = grid_binary.find(array_index);
-                    if (found != grid_binary.end()){
-                        if (found->second == target){
+                    std::unordered_map<int, int>::const_iterator found =
+                      grid_binary.find(array_index);
+                    if (found != grid_binary.end()) {
+                        if (found->second == target) {
                             grid_binary[array_index] = replacement;
                             stack.push(neighbor);
                         }
