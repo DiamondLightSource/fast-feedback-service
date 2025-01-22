@@ -26,7 +26,7 @@ exec 3> output_file.txt
 # Extended dispersion test dataset
 # This is a good dataset to test the dispersion_extended algorithm. However this is 32bit data and requires truncation in order to be read
 # ../bin/spotfinder /dls/i24/data/2024/nr27313-319/gw/Test_Insulin/ins_big_15/ins_big_15_2_master.h5 \
-../bin/spotfinder /dls/i03/data/2024/cm37235-2/xraycentring/TestInsulin/ins_14/ins_14_24.nxs \
+../bin/spotfinder /dls/i03/data/2024/cm37235-2/TestInsulin/ins_14/ins_14_49_45_master.h5 \
   --min-spot-size 3 \
   --pipe_fd 3 \
   --dmin 4 \
@@ -44,7 +44,7 @@ exec 3>&-
 output=$(cat output_file.txt)
 
 # Define the expected output
-expected_output='{"file":"/dls/i03/data/2024/cm37235-2/xraycentring/TestInsulin/ins_14/ins_14_24.nxs","file-number":0,"n_spots_total":3,"num_strong_pixels":115}'
+expected_output='{"file":"/dls/i03/data/2024/cm37235-2/TestInsulin/ins_14/ins_14_49_45_master.h5","file-number":0,"n_spots_total":102,"num_strong_pixels":729}'
 
 # Compare the output with the expected output
 if [ "$output" == "$expected_output" ]; then
