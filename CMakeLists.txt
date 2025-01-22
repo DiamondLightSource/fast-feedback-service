@@ -41,20 +41,31 @@ FetchContent_Declare(
     GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
 )
 FetchContent_MakeAvailable(argparse)
-if(EXISTS ${CMAKE_SOURCE_DIR}/dx2) #a local copy e.g. for development
-    message("-- Using local dx2 subdirectory")
+
+# Handle inclusion of dx2 dependency in a choice of several ways
+set(dx2_SOURCE "" CACHE FILEPATH "Location of dx2 source directory")
+set(_dx2_already_populated "${dx2_SOURCE_DIR}")
+if(dx2_SOURCE)
+    # Explicitly told where to find dx2
+    add_subdirectory(${dx2_SOURCE} dx2)
+    set(dx2_SOURCE_DIR "${dx2_SOURCE}")
+elseif(EXISTS ${CMAKE_SOURCE_DIR}/dx2)
+    # dx2 exists as a local checkout
     add_subdirectory(dx2)
-elseif(dx2_source)
-    message("-- Using dx2 located at ${dx2_source}")
-    add_subdirectory(${dx2_source})
+    set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
 else()
-    message("-- Fetching dx2 from GitHub")
+    # Try finding an installed dx2, or fetch
     FetchContent_Declare(
         dx2
         GIT_REPOSITORY  https://github.com/dials/dx2
         GIT_TAG 2654929bc73e0d699dfdfcc2d924c3454e434ccf
+        FIND_PACKAGE_ARGS
     )
     FetchContent_MakeAvailable(dx2)
+endif()
+# Only print a message when as a new action
+if (NOT dx2_SOURCE_DIR STREQUAL _dx2_already_populated)
+    message(STATUS "Found dx2: ${dx2_SOURCE_DIR}")
 endif()
 
 # Make a small library that we can link to to get the version
