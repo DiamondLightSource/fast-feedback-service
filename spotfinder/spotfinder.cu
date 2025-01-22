@@ -242,6 +242,7 @@ void call_do_spotfinding_extended(dim3 blocks,
 
     // Allocate intermediate buffer for the dispersion mask on the device
     PitchedMalloc<uint8_t> d_dispersion_mask(width, height);
+    PitchedMalloc<uint8_t> d_erosion_mask(width, height);
 
     // Synchronize the CUDA stream to ensure the kernel constants are set
     cudaStreamSynchronize(stream);
@@ -287,8 +288,11 @@ void call_do_spotfinding_extended(dim3 blocks,
     */
 
     // Perform erosion
-    erosion<<<blocks, threads, shared_memory, stream>>>(
-      d_dispersion_mask.get(), d_dispersion_mask.pitch, KERNEL_RADIUS);
+    erosion<<<blocks, threads, shared_memory, stream>>>(d_dispersion_mask.get(),
+                                                        d_erosion_mask.get(),
+                                                        d_dispersion_mask.pitch,
+                                                        d_erosion_mask.pitch,
+                                                        KERNEL_RADIUS);
 
     // Calculate the shared memory required for the second pass
     // This is before the stream synchronization to overlap the kernel execution
@@ -301,8 +305,8 @@ void call_do_spotfinding_extended(dim3 blocks,
     if (do_writeout) {
         printf("Erosion pass complete\n");
         debug_writeout(
-          d_dispersion_mask.get(),
-          d_dispersion_mask.pitch_bytes(),
+          d_erosion_mask.get(),
+          d_erosion_mask.pitch_bytes(),
           width,
           height,
           stream,
@@ -316,11 +320,11 @@ void call_do_spotfinding_extended(dim3 blocks,
      * Perform the final thresholding using the dispersion mask.
     */
     dispersion_extended_second_pass<<<blocks, threads, shared_memory, stream>>>(
-      image.get(),              // Image data pointer
-      mask.get(),               // Mask data pointer
-      d_dispersion_mask.get(),  // Dispersion mask pointer
-      result_strong->get(),     // Output result mask pointer
-      d_dispersion_mask.pitch   // Dispersion mask pitch
+      image.get(),           // Image data pointer
+      mask.get(),            // Mask data pointer
+      d_erosion_mask.get(),  // Dispersion mask pointer
+      result_strong->get(),  // Output result mask pointer
+      d_erosion_mask.pitch   // Dispersion mask pitch
     );
     cudaStreamSynchronize(
       stream);  // Synchronize the CUDA stream to ensure the second pass is complete
