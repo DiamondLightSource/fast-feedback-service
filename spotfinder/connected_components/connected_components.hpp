@@ -11,6 +11,13 @@
 #include "cuda_common.hpp"
 #include "h5read.h"
 
+struct Signal {
+    int x, y;              // Coordinates of the pixel
+    std::optional<int> z;  // Optional z-index used in 3DCC
+    pixel_t intensity;     // Pixel intensity
+    size_t linear_index;   // Linear index of the pixel
+};
+
 struct Reflection {
     int l, t, r, b;  // Bounding box: left, top, right, bottom
     int num_pixels = 0;
@@ -21,12 +28,6 @@ struct Reflection3D {
     int xmax, ymax, zmax;
     int num_pixels = 0;
     double cx = 0.0, cy = 0.0, cz = 0.0;  // Center of mass
-};
-
-struct Signal {
-    int2 coord;           // Coordinates of the pixel (x, y)
-    pixel_t intensity;    // Pixel intensity
-    size_t linear_index;  // Linear index of the pixel
 };
 
 /**
@@ -53,7 +54,8 @@ class ConnectedComponents {
                         const pixel_t *original_image,
                         const ushort width,
                         const ushort height,
-                        const uint32_t min_spot_size);
+                        const uint32_t min_spot_size,
+                        const int z_index);
 
     uint get_num_strong_pixels() const {
         return num_strong_pixels;

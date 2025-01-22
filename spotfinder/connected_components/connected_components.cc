@@ -23,8 +23,7 @@ ConnectedComponents::ConnectedComponents(const uint8_t *result_image,
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x, ++k) {
             if (result_image[k]) {  // Store only non-zero (signal) pixels
-                int2 coord{x, y};
-                signals[k] = {coord, original_image[k], k};
+                signals[k] = {x, y, std::nullopt, original_image[k], k};
                 ++num_strong_pixels;
             }
         }
@@ -126,10 +125,10 @@ void ConnectedComponents::generate_boxes(
         int label = labels[vertex_id];  // Label assigned to this vertex
 
         auto &box = boxes[label];
-        box.l = std::min(box.l, signal.coord.x);
-        box.r = std::max(box.r, signal.coord.x);
-        box.t = std::min(box.t, signal.coord.y);
-        box.b = std::max(box.b, signal.coord.y);
+        box.l = std::min(box.l, signal.x);
+        box.r = std::max(box.r, signal.x);
+        box.t = std::min(box.t, signal.y);
+        box.b = std::max(box.b, signal.y);
         ++box.num_pixels;  // Increment the number of pixels in the box
     }
 
