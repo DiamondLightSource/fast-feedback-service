@@ -101,7 +101,7 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
     // Note we should be able to use c2r rather than c2c, but I couldn't get this to work with
     // the output ordering in c2r (JBE).
     std::vector<std::complex<double>> complex_data_in(n_points * n_points * n_points);
-    std::vector<std::complex<double>> data_out(n_points * n_points * n_points);
+    //std::vector<std::complex<double>> data_out(n_points * n_points * n_points);
 
     // A boolean array of whether the vectors were used for the FFT.
     std::vector<bool> used_in_indexing(reciprocal_space_vectors.size(), true);
@@ -142,14 +142,14 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
         axes,
         forward,
         complex_data_in.data(),
-        data_out.data(),
+        complex_data_in.data(),
         fct,
         nthreads);
     auto t3 = std::chrono::system_clock::now();
 
     // Take the square of the real part as the output.
     for (int i = 0; i < real_out.size(); ++i) {
-        real_out[i] = std::pow(data_out[i].real(), 2);
+        real_out[i] = std::pow(complex_data_in[i].real(), 2);
     }
     auto t4 = std::chrono::system_clock::now();
 

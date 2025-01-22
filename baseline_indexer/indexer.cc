@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
     logger.info("Setting b_iso = {0:.3f}", b_iso);
 
     // Create an array to store the fft result. This is a 3D grid of points, typically 256^3.
-    std::vector<double> real_fft_result(n_points * n_points * n_points, 0.0);
+    std::vector<double> real_fft_result(n_points * n_points * n_points);
 
     // Do the fft of the reciprocal lattice coordinates.
     // the used in indexing array denotes whether a coordinate was used for the

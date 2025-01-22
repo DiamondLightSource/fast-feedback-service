@@ -8,6 +8,7 @@
 #include <tuple>
 #define _USE_MATH_DEFINES
 #include <spdlog/spdlog.h>
+#include <unordered_map>
 
 #include <cmath>
 #include <numeric>
@@ -41,7 +42,10 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
           return total + std::pow(val - meang, 2);
       });
     double rmsd = std::pow(sum_delta_sq / grid.size(), 0.5);
-    std::vector<int> grid_binary(n_points * n_points * n_points, 0);
+
+    // Most of the binary grid will be zero, so use an
+    // unordered map rather than vector.
+    std::unordered_map<int, int> grid_binary;
     double cutoff = rmsd_cutoff * rmsd;
     for (int i = 0; i < grid.size(); i++) {
         if (grid[i] >= cutoff) {
@@ -68,11 +72,13 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     int n_sq = n_points * n_points;
     int n_sq_minus_n = n_points * (n_points - 1);
     int nn_sq_minus_n = n_points * n_points * (n_points - 1);
-
-    for (int i = 0; i < grid_binary.size(); i++) {
-        if (grid_binary[i] == target) {
+    for (auto& it: grid_binary){
+        if (it.second == target){
+            //for (int i = 0; i < grid_binary.size(); i++) {
+            //if (grid_binary[i] == target) {
             // Convert the array index into xyz coordinates.
             // Store xyz coordinates on the stack, but index the array with 1D index.
+            int i = it.first;
             int x = i % n_points;
             int y = (i % n_sq) / n_points;
             int z = i / n_sq;
@@ -113,10 +119,17 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
                       (offset[2] ? (modulo(neighbor[2], n_points) * n_sq) : modz);  // z
 
                     // Check if the neighbor matches the target and push to the stack
-                    if (grid_binary[array_index] == target) {
-                        grid_binary[array_index] = replacement;
-                        stack.push(neighbor);
+                    std::unordered_map<int,int>::const_iterator found = grid_binary.find(array_index);
+                    if (found != grid_binary.end()){
+                        if (found->second == target){
+                            grid_binary[array_index] = replacement;
+                            stack.push(neighbor);
+                        }
                     }
+                    //if (grid_binary[array_index] == target) {
+                    //    grid_binary[array_index] = replacement;
+                    //    stack.push(neighbor);
+                    //}
                 }
             }
             replacement++;
