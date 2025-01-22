@@ -41,9 +41,14 @@ FetchContent_Declare(
     GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
 )
 FetchContent_MakeAvailable(argparse)
-if(dev) #flag for for development
+if(EXISTS ${CMAKE_SOURCE_DIR}/dx2) #a local copy e.g. for development
+    message("-- Using local dx2 subdirectory")
     add_subdirectory(dx2)
+elseif(dx2_source)
+    message("-- Using dx2 located at ${dx2_source}")
+    add_subdirectory(${dx2_source})
 else()
+    message("-- Fetching dx2 from GitHub")
     FetchContent_Declare(
         dx2
         GIT_REPOSITORY  https://github.com/dials/dx2
