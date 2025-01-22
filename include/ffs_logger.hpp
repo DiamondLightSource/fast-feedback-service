@@ -93,9 +93,6 @@ class FFSLogger {
                 async_logger->set_level(spdlog::level::info);  // Default log level
             }
 
-            // Set default log level and pattern
-            async_logger->set_level(spdlog::level::info);
-
             // Register the logger globally
             spdlog::register_logger(async_logger);
 
