@@ -70,33 +70,8 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
     if (x >= kernel_constants.width || y >= kernel_constants.height)
         return;  // Out of bounds guard
 
-    // Allocate shared memory for the mask
-    extern __shared__ uint8_t shared_mem[];
+    bool is_background = dispersion_mask(x, y) == MASKED_PIXEL;
 
-    // Create a PitchedArray2D object for the shared memory
-    size_t shared_pitch = blockDim.x + radius * 2;
-    PitchedArray2D<uint8_t> shared_mask{shared_mem, &shared_pitch};
-
-    int local_x = threadIdx.x + radius;
-    int local_y = threadIdx.y + radius;
-
-    // Load central pixel into shared memory
-    shared_mask(local_x, local_y) = dispersion_mask(x, y);
-
-    // Load halo region into shared memory
-    load_halo(block,
-              x,
-              y,
-              kernel_constants.width,
-              kernel_constants.height,
-              radius,
-              radius,
-              cuda::std::make_tuple(dispersion_mask, shared_mask));
-
-    // Sync threads to ensure all shared memory is loaded
-    block.sync();
-
-    bool is_background = shared_mask(local_x, local_y) == MASKED_PIXEL;
     if (is_background) {
         /*
          * If the pixel is masked, we want to set it to VALID_PIXEL
@@ -110,10 +85,10 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
     constexpr uint8_t chebyshev_distance_threshold = 2;
 
     // Iterate over the kernel bounds
-    for (int i = -radius; i <= radius; ++i) {
-        for (int j = -radius; j <= radius; ++j) {
-            int lx = local_x + j;
-            int ly = local_y + i;
+    for (int i = -radius; i <= radius; ++i) {      // Iterate over y offsets
+        for (int j = -radius; j <= radius; ++j) {  // Iterate over x offsets
+            int lx = x + j;                        // Offset x coordinate
+            int ly = y + i;                        // Offset y coordinate
             /*
              * TODO: Investigate whether we should be doing this or not!
              * Intuition says that we should be considering the mask,
@@ -125,7 +100,7 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
             // }
 
             // Get pixel from step in kernel
-            uint8_t this_pixel = shared_mask(lx, ly);
+            uint8_t this_pixel = dispersion_mask(lx, ly);
 
             if (this_pixel == MASKED_PIXEL) {
                 // If the current pixel is background, check the Chebyshev distance
@@ -158,7 +133,7 @@ termination:
         */
 
         // Invert 'valid' signal spot to 'masked' background spots
-        erosion_mask(x, y) = !shared_mask(local_x, local_y);
+        erosion_mask(x, y) = !dispersion_mask(x, y);
     }
 }
 #pragma enregion Erosion kernel
