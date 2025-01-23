@@ -7,7 +7,7 @@
 #include <stack>
 #include <tuple>
 #define _USE_MATH_DEFINES
-#include <spdlog/spdlog.h>
+#include "common.hpp"
 
 #include <cmath>
 #include <numeric>
@@ -54,7 +54,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     }
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - start;
-    spdlog::debug("Time for first part of flood fill: {0:.5f}s", elapsed_time.count());
+    logger->debug("Time for first part of flood fill: {:.5f}s", elapsed_time.count());
 
     // Now do the flood fill.
     // Wrap around the edge in all three dimensions to replicate the DIALS
@@ -139,7 +139,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     }
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time2 = t3 - t2;
-    spdlog::debug("Time for second part of flood fill: {0:.5f}s",
+    logger->debug("Time for second part of flood fill: {:.5f}s",
                   elapsed_time2.count());
 
     // Now calculate the unweighted centres of mass of each group, in fractional coordinates.

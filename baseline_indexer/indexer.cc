@@ -9,7 +9,6 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
-#include <spdlog/spdlog.h>
 
 #include <Eigen/Dense>
 #include <argparse/argparse.hpp>
@@ -21,12 +20,11 @@
 #include <thread>
 #include <vector>
 
+#include "common.hpp"
 #include "fft3d.cc"
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
 #include "sites_to_vecs.cc"
-#include "spdlog/sinks/basic_file_sink.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
 #include "xyz_to_rlp.cc"
 
 using Eigen::Matrix3d;
@@ -71,23 +69,12 @@ int main(int argc, char** argv) {
       .scan<'u', size_t>();
     parser.parse_args(argc, argv);
 
-    auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    console_sink->set_level(spdlog::level::info);
-    auto file_sink =
-      std::make_shared<spdlog::sinks::basic_file_sink_mt>("ffs_index.log", true);
-    file_sink->set_level(spdlog::level::debug);
-    spdlog::logger logger("ffs_index", {console_sink, file_sink});
-    spdlog::set_default_logger(std::make_shared<spdlog::logger>(
-      "ffs_index", spdlog::sinks_init_list({console_sink, file_sink})));
-    spdlog::set_level(
-      spdlog::level::debug);  // Will output debug messages, but only to the file log.
-
     if (!parser.is_used("expt")) {
-        logger.error("Must specify experiment list file with --expt\n");
+        logger->error("Must specify experiment list file with --expt\n");
         std::exit(1);
     }
     if (!parser.is_used("refl")) {
-        logger.error(
+        logger->error(
           "Must specify spotfinding results file (in DIALS HDF5 format) with --refl\n");
         std::exit(1);
     }
@@ -96,12 +83,12 @@ int main(int argc, char** argv) {
     // let's make this a required argument to help with testing/comparison
     // to DIALS.
     if (!parser.is_used("max-cell")) {
-        logger.error("Must specify --max-cell\n");
+        logger->error("Must specify --max-cell\n");
         std::exit(1);
     }
     // FIXME use highest resolution by default to remove this requirement.
     if (!parser.is_used("dmin")) {
-        logger.error("Must specify --dmin\n");
+        logger->error("Must specify --dmin\n");
         std::exit(1);
     }
     std::string imported_expt = parser.get<std::string>("expt");
@@ -116,7 +103,7 @@ int main(int argc, char** argv) {
     try {
         elist_json_obj = json::parse(f);
     } catch (json::parse_error& ex) {
-        logger.error("Unable to read {0}; json parse error at byte {1}",
+        logger->error("Unable to read {}; json parse error at byte {}",
                      imported_expt.c_str(),
                      ex.byte);
         std::exit(1);
@@ -145,14 +132,14 @@ int main(int argc, char** argv) {
     // geometry is accurate). So use the experimental models to transform the spot
     // coordinates on the detector into reciprocal space.
     std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
-    logger.info("Number of reflections: {0}", rlp.size());
+    logger->info("Number of reflections: {}", rlp.size());
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
     // i.e. high resolution (weaker) spots are downweighted by the expected
     // intensity fall-off as as function of resolution.
     double b_iso = -4.0 * std::pow(d_min, 2) * log(0.05);
     uint32_t n_points = parser.get<uint32_t>("fft-npoints");
-    logger.info("Setting b_iso = {0:.3f}", b_iso);
+    logger->info("Setting b_iso = {:.3f}", b_iso);
 
     // Create an array to store the fft result. This is a 3D grid of points, typically 256^3.
     std::vector<double> real_fft_result(n_points * n_points * n_points);
@@ -213,11 +200,11 @@ int main(int argc, char** argv) {
     std::string outfile = "candidate_vectors.json";
     std::ofstream vecs_file(outfile);
     vecs_file << vecs_out.dump(4);
-    logger.info("Saved candidate vectors to {0}", outfile);
+    logger->info("Saved candidate vectors to {}", outfile);
 
     // Now make a crystal and save an experiment list with the models.
     if (candidate_lattice_vectors.size() < 3) {
-        logger.info(
+        logger->info(
           "Insufficient number of candidate vectors to make a crystal model.");
     } else {
         gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
@@ -230,10 +217,10 @@ int main(int argc, char** argv) {
         std::string efile_name = "elist.json";
         std::ofstream efile(efile_name);
         efile << elist_out.dump(4);
-        logger.info("Saved experiment list to {0}", efile_name);
+        logger->info("Saved experiment list to {}", efile_name);
     }
 
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;
-    logger.info("Total time for indexer: {0:.4f}s", elapsed_time.count());
+    logger->info("Total time for indexer: {:.4f}s", elapsed_time.count());
 }

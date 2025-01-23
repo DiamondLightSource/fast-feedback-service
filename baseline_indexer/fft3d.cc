@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <math.h>
 #include <pocketfft_hdronly.h>
-#include <spdlog/spdlog.h>
+#include "common.hpp"
 
 #include <Eigen/Dense>
 #include <algorithm>
@@ -75,7 +75,7 @@ void map_centroids_to_reciprocal_space_grid(
         }
         data_in[index] = {T, 0.0};
     }
-    spdlog::info("Number of centroids used: {0}", count);
+    logger->info("Number of centroids used: {}", count);
 }
 
 /**
@@ -133,7 +133,7 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
     double fct{1.0f};
     // note, threads can be higher than the number of hardware threads.
     // It is not clear what the best value is for this.
-    spdlog::info("Performing FFT with nthreads={0}", nthreads);
+    logger->info("Performing FFT with nthreads={}", nthreads);
     // Do the FFT.
     c2c(
       shape_in,
@@ -159,12 +159,12 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
     std::chrono::duration<double> elapsed_make_arrays = t1 - start;
     std::chrono::duration<double> elapsed_c2c = t3 - t2;
     std::chrono::duration<double> elapsed_square = t4 - t3;
-    spdlog::debug("Total time for fft3d: {0:.5f}s", elapsed_seconds.count());
-    spdlog::debug("elapsed time for making data arrays: {0:.5f}s",
+    logger->debug("Total time for fft3d: {:.5f}s", elapsed_seconds.count());
+    logger->debug("elapsed time for making data arrays: {:.5f}s",
                   elapsed_make_arrays.count());
-    spdlog::debug("elapsed time for map_to_recip: {0:.5f}s", elapsed_map.count());
-    spdlog::debug("elapsed time for c2c: {0:.5f}s", elapsed_c2c.count());
-    spdlog::debug("elapsed time for squaring: {0:.5f}s", elapsed_square.count());
+    logger->debug("elapsed time for map_to_recip: {:.5f}s", elapsed_map.count());
+    logger->debug("elapsed time for c2c: {:.5f}s", elapsed_c2c.count());
+    logger->debug("elapsed time for squaring: {:.5f}s", elapsed_square.count());
 
     return used_in_indexing;
 }

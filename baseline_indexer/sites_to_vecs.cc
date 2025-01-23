@@ -1,6 +1,6 @@
 #include <dx2/utils.h>
 #include <math.h>
-#include <spdlog/spdlog.h>
+#include "common.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -157,7 +157,7 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
             }
             // If the current site is an integer multiple of the unique site, exit
             if (is_approximate_integer_multiple(unique_site.site, v)) {
-                spdlog::info("rejecting {0:.5f} : is integer multiple of {1:.5f}",
+                logger->info("rejecting {:.5f} : is integer multiple of {:.5f}",
                              v.norm(),
                              unique_site.site.norm());
                 is_unique = false;
@@ -172,15 +172,15 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
     std::stable_sort(
       unique_sites.begin(), unique_sites.end(), compare_site_data_volume);
     std::vector<Vector3d> unique_vectors_sorted;
-    spdlog::info("Candidate basis vectors:");
+    logger->info("Candidate basis vectors:");
     for (int i = 0; i < unique_sites.size(); i++) {
         unique_vectors_sorted.push_back(unique_sites[i].site);
-        spdlog::info(
-          "{0} {1:.5f} {2}", i, unique_sites[i].length, unique_sites[i].volume);
+        logger->info(
+          "{} {:.5f} {}", i, unique_sites[i].length, unique_sites[i].volume);
     }
 
     std::chrono::duration<double> elapsed_seconds =
       std::chrono::system_clock::now() - start;
-    spdlog::debug("elapsed time for sites_to_vecs: {0:.5f}s", elapsed_seconds.count());
+    logger->debug("elapsed time for sites_to_vecs: {:.5f}s", elapsed_seconds.count());
     return unique_vectors_sorted;
 }

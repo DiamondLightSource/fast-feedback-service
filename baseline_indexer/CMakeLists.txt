@@ -2,7 +2,6 @@ project(indexer CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 
-find_package(spdlog)
 find_package (Threads)
 
 # Automatic Dependencies
@@ -38,5 +37,6 @@ target_link_libraries(baseline_indexer
     pocketfft
     argparse
     nlohmann_json::nlohmann_json
+    spdlog::spdlog
     ${CMAKE_THREAD_LIBS_INIT}
 )
