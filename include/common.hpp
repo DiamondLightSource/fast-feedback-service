@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <ffs_logger.hpp>
 #include <memory>
 #include <span>
 #include <stdexcept>
@@ -14,6 +15,9 @@
 
 #define VALID_PIXEL 1
 #define MASKED_PIXEL 0
+
+// Global static access to the logger
+static auto &logger = FFSLogger::getInstance();
 
 template <typename T1, typename... TS>
 auto with_formatting(const std::string &code, const T1 &first, TS... args)
