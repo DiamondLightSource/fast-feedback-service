@@ -132,7 +132,8 @@ void ConnectedComponents::generate_boxes(const ushort width,
 std::vector<Reflection3D> ConnectedComponents::find_3d_components(
   const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
   const ushort width,
-  const ushort height) {
+  const ushort height,
+  const uint min_spot_size) {
     /*
      * Initialize global containers for the 3D connected components
      */
@@ -302,6 +303,21 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
             // Update the reflection with the signal
             reflection.add_signal(signal);
         }
+    }
+
+    /*
+     * Finally, filter the reflections based on the minimum spot size and
+     * return the final list of 3D reflections.
+     */
+
+    if (min_spot_size > 0) {
+        reflections_3d.erase(std::remove_if(reflections_3d.begin(),
+                                            reflections_3d.end(),
+                                            [min_spot_size](const auto &reflection) {
+                                                return reflection.num_pixels
+                                                       < min_spot_size;
+                                            }),
+                             reflections_3d.end());
     }
 
     return reflections_3d;

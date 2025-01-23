@@ -29,6 +29,7 @@ struct Reflection3D {
     int x_min, x_max;
     int y_min, y_max;
     int z_min, z_max;
+    int num_pixels = 0;  // Number of pixels in the reflection
 
     Reflection3D()
         : x_min(std::numeric_limits<int>::max()),
@@ -58,6 +59,8 @@ struct Reflection3D {
         x_max = std::max(x_max, signal.x);
         y_min = std::min(y_min, signal.y);
         y_max = std::max(y_max, signal.y);
+
+        ++num_pixels;  // Increment the number of pixels in the reflection
     }
 
     /**
@@ -168,7 +171,8 @@ class ConnectedComponents {
     static std::vector<Reflection3D> find_3d_components(
       const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
       const ushort width,
-      const ushort height);
+      const ushort height,
+      const uint min_spot_size);
 
   private:
     uint num_strong_pixels;           // Number of strong pixels

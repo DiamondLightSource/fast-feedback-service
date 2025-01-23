@@ -980,7 +980,7 @@ int main(int argc, char **argv) {
 
         // Step 2: Call find_3d_components
         auto reflections_3d =
-          ConnectedComponents::find_3d_components(slices, width, height);
+          ConnectedComponents::find_3d_components(slices, width, height, min_spot_size);
 
         // Step 3: Output the 3D reflections
         print("Found {} 3D connected components.\n", reflections_3d.size());
