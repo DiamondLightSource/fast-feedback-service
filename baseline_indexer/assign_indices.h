@@ -6,7 +6,7 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 
-std::vector<Vector3i> assign_indices_global(Matrix3d A, std::vector<Vector3d> rlp, std::vector<double> phi, double tolerance = 0.3){
+std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, std::vector<Vector3d> const &rlp, std::vector<double> const &phi, double tolerance = 0.3){
     // Consider only a single lattice.
     std::vector<Vector3i> miller_indices(rlp.size());
     std::vector<int> crystal_ids(rlp.size());
@@ -22,12 +22,11 @@ std::vector<Vector3i> assign_indices_global(Matrix3d A, std::vector<Vector3d> rl
         b.data(),b.data()+b.size());
     });
     
-    //hklmap miller_idx_to_iref;
     double pi_4 = M_PI / 4;
     Vector3i miller_index_zero{{0, 0, 0}};
     Matrix3d A_inv = A.inverse();
-    //std::cout << A_inv << std::endl;
     double tolsq = std::pow(tolerance, 2);
+    int count = 0;
     for (int i=0;i<rlp.size();i++){
         Vector3d rlp_this = rlp[i];
         Vector3d hkl_f = A_inv * rlp_this;
@@ -39,12 +38,6 @@ std::vector<Vector3i> assign_indices_global(Matrix3d A, std::vector<Vector3d> rl
         diff[1] = (double)miller_indices[i][1] - hkl_f[1];
         diff[2] = (double)miller_indices[i][2] - hkl_f[2];
         double l_sq = diff.squaredNorm();
-        /*if (i == 693){
-            std::cout << l_sq << std::endl;
-            std::cout << miller_indices[i][0] << " " << miller_indices[i][1] << " " << miller_indices[i][2] << std::endl;
-            std::cout << hkl_f[0] << " " << hkl_f[1] << " " << hkl_f[2] << std::endl;
-            std::cout << rlp_this[0] << " " << rlp_this[1] << " " << rlp_this[2] << std::endl;
-        }*/
         if (l_sq > tolsq){
             miller_indices[i] = {0,0,0};
             crystal_ids[i] = -1;
@@ -55,14 +48,11 @@ std::vector<Vector3i> assign_indices_global(Matrix3d A, std::vector<Vector3d> rl
         else {
             miller_idx_to_iref.insert({miller_indices[i],i});
             lsq_vector[i] = l_sq;
+            count++;
         }
     }
     // if more than one spot can be assigned the same miller index then
     // choose the closest one
-    /*for (hklmap::iterator it = miller_idx_to_iref.begin(); it != miller_idx_to_iref.end(); it++){
-        std::cout << it->first[0] << " " << it->first[1] << " " << it->first[2] << " " << it->second << std::endl;
-    }*/
-
     Vector3i curr_hkl{{0, 0, 0}};
     std::vector<std::size_t> i_same_hkl;
     for (hklmap::iterator it = miller_idx_to_iref.begin(); it != miller_idx_to_iref.end(); it++){
@@ -78,12 +68,18 @@ std::vector<Vector3i> assign_indices_global(Matrix3d A, std::vector<Vector3d> rl
                             continue;
                         }
                         if (lsq_vector[i_ref] < lsq_vector[j_ref]){
-                            miller_indices[i_ref] = {0,0,0};
-                            crystal_ids[i_ref] = -1;
+                            if (crystal_ids[i_ref] != -1){
+                                miller_indices[i_ref] = {0,0,0};
+                                crystal_ids[i_ref] = -1;
+                                count--;
+                            }
                         }
                         else {
-                            miller_indices[j_ref] = {0,0,0};
-                            crystal_ids[j_ref] = -1;
+                            if (crystal_ids[j_ref] != -1){
+                                miller_indices[j_ref] = {0,0,0};
+                                crystal_ids[j_ref] = -1;
+                                count--;
+                            }
                         }
                     }
                 }
@@ -106,17 +102,22 @@ std::vector<Vector3i> assign_indices_global(Matrix3d A, std::vector<Vector3d> rl
                     continue;
                 }
                 if (lsq_vector[i_ref] < lsq_vector[j_ref]){
-                    miller_indices[i_ref] = {0,0,0};
-                    crystal_ids[i_ref] = -1;
+                    if (crystal_ids[i_ref] != -1){
+                        miller_indices[i_ref] = {0,0,0};
+                        crystal_ids[i_ref] = -1;
+                        count--;
+                    }
                 }
                 else {
-                    miller_indices[j_ref] = {0,0,0};
-                    crystal_ids[j_ref] = -1;
+                    if (crystal_ids[j_ref] != -1){
+                        miller_indices[j_ref] = {0,0,0};
+                        crystal_ids[j_ref] = -1;
+                        count--;
+                    }
                 }
             }
         }
     }
 
-
-    return miller_indices;
+    return {miller_indices, count};
 }

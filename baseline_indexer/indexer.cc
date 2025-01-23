@@ -26,11 +26,35 @@
 #include "gemmi/symmetry.hpp"
 #include "sites_to_vecs.cc"
 #include "xyz_to_rlp.cc"
-
+#include "refman_filter.cc"
+#include "assign_indices.h"
+#include "reflection_data.h"
+#include "scanstaticpredictor.cc"
+#include "combinations.cc"
+#include <thread>
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 using json = nlohmann::json;
+
+struct score_and_crystal {
+    double score;
+    Crystal crystal;
+    double num_indexed;
+    double rmsdxy;
+};
+    
+void calc_score(Crystal const &crystal, std::vector<Vector3d> const &rlp_select, std::vector<double> const &phi_select){
+  std::vector<Vector3i> miller_indices;
+  int count;
+  auto preassign = std::chrono::system_clock::now();
+  std::tie(miller_indices, count) = assign_indices_global(crystal.get_A_matrix(), rlp_select, phi_select);
+  auto t2 = std::chrono::system_clock::now();
+  std::chrono::duration<double> elapsed_time = t2 - preassign;
+  std::cout << "Time for assigning: " << elapsed_time.count() << " s" << std::endl;
+
+  std::cout<< "Done from thread# " << std::this_thread::get_id() << std::endl;
+}
 
 int main(int argc, char** argv) {
     // The purpose of an indexer is to determine the lattice model that best
@@ -180,6 +204,174 @@ int main(int argc, char** argv) {
     std::vector<Vector3d> candidate_lattice_vectors = sites_to_vecs(
       centres_of_mass_frac, grid_points_per_void, d_min, 3.0, max_cell, n_points);
 
+    // Fix this inefficient selection with reflection-table-like struct.
+    auto predata = std::chrono::system_clock::now();
+    std::string flags_array_name = "/dials/processing/group_0/flags";
+    std::vector<std::size_t> flags = read_array_from_h5_file<std::size_t>(filename, flags_array_name);
+    // calculate s1 and xyzobsmm
+    std::vector<Vector3d> s1(rlp.size());
+    std::vector<Vector3d> xyzobs_mm(rlp.size());
+    std::vector<Vector3d> xyzcal_mm(rlp.size());
+    std::vector<double> phi(rlp.size());
+    Vector3d s0 = beam.get_s0();
+    Vector3d axis = gonio.get_rotation_axis();
+    Matrix3d d_matrix = panel.get_d_matrix();
+    std::array<double, 2> oscillation = scan.get_oscillation();
+    double osc_width = oscillation[1];
+    double osc_start = oscillation[0];
+    int image_range_start = scan.get_image_range()[0];
+    double DEG2RAD = M_PI / 180.0;
+    for (int i = 0; i < rlp.size(); ++i) {
+        int vec_idx= 3*i;
+        double x1 = xyzobs_px[vec_idx];
+        double x2 = xyzobs_px[vec_idx+1];
+        double x3 = xyzobs_px[vec_idx+2];
+        std::array<double, 2> xymm = panel.px_to_mm(x1,x2);
+        double rot_angle = (((x3 + 1 - image_range_start) * osc_width) + osc_start) * DEG2RAD;
+        phi[i] = rot_angle;
+        Vector3d m = {xymm[0], xymm[1], 1.0};
+        s1[i] = d_matrix * m;
+        xyzobs_mm[i] = {xymm[0], xymm[1], rot_angle};
+    }
+
+    // calculate entering array
+    std::vector<bool> enterings(rlp.size());
+    Vector3d vec = s0.cross(axis);
+    for (int i=0;i<s1.size();i++){
+        enterings[i] = ((s1[i].dot(vec)) < 0.0);
+    }
+
+    std::vector<double> phi_select(rlp.size());
+    std::vector<Vector3d> rlp_select(rlp.size());
+    std::vector<std::size_t> flags_select(rlp.size());
+    std::vector<Vector3d> xyzobs_mm_select(rlp.size());
+    std::vector<Vector3d> xyzcal_mm_select(rlp.size());
+    std::vector<Vector3d> s1_select(rlp.size());
+    std::vector<bool> entering_select(rlp.size());
+    int selcount=0;
+    // also select flags, xyzobs/cal, s1 and enterings
+    for (int i=0;i<phi_select.size();i++){
+        if ((1.0/rlp[i].norm()) > d_min){
+            phi_select[selcount] = phi[i];
+            rlp_select[selcount] = rlp[i];
+            flags_select[selcount] = flags[i];
+            xyzobs_mm_select[selcount] = xyzobs_mm[i];
+            xyzcal_mm_select[selcount] = xyzcal_mm[i];
+            s1_select[selcount] = s1[i];
+            entering_select[selcount] = enterings[i];
+            selcount++;
+        }
+    }
+    rlp_select.resize(selcount);
+    phi_select.resize(selcount);
+    flags_select.resize(selcount);
+    xyzobs_mm_select.resize(selcount);
+    xyzcal_mm_select.resize(selcount);
+    s1_select.resize(selcount);
+    entering_select.resize(selcount);
+    auto postdata = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_timedata = postdata - predata;
+    std::cout << "Time for making data arrays: " << elapsed_timedata.count() << " s" << std::endl;
+    Vector3i null{{0,0,0}};
+    int n = 0;
+
+    CandidateOrientationMatrices candidates(candidate_lattice_vectors, 1000); //quick (<1ms)
+    // iterate over candidates; assign indices, refine, score.
+    // need a map of scores for candidates: index to score and xtal. What about miller indices?
+    int max_refine = 50;
+    std::vector<Vector3i> miller_indices;
+    std::map<int,score_and_crystal> results_map;
+    int count;
+    int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
+    double width = scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
+
+    std::vector<std::thread> threads;
+    
+    while (candidates.has_next() && n < max_refine){
+        // could do all this threaded.
+        Crystal crystal = candidates.next(); //quick (<0.1ms)
+        n++;
+        //calc_score(crystal, rlp_select, phi_select);
+        threads.emplace_back(std::thread(calc_score, crystal, rlp_select, phi_select));
+    }
+    for (auto &t : threads){
+        t.join();
+    }
+
+    /*while (candidates.has_next() && n < max_refine){
+        // could do all this threaded.
+        Crystal crystal = candidates.next(); //quick (<0.1ms)
+        n++;
+        auto preassign = std::chrono::system_clock::now();
+        std::tie(miller_indices, count) = assign_indices_global(crystal.get_A_matrix(), rlp_select, phi_select);
+        auto t2 = std::chrono::system_clock::now();
+        std::chrono::duration<double> elapsed_time = t2 - preassign;
+        std::cout << "Time for assigning: " << elapsed_time.count() << " s" << std::endl;
+
+        // make a reflection table like object
+        reflection_data obs;
+        obs.miller_indices = miller_indices;
+        obs.flags = flags_select;
+        obs.xyzobs_mm = xyzobs_mm_select;
+        obs.xyzcal_mm = xyzcal_mm_select;
+        obs.s1 = s1_select;
+        obs.entering = entering_select;
+
+        // get a filtered selection for refinement
+        auto prefilter = std::chrono::system_clock::now();
+        reflection_data sel_obs = reflection_filter_preevaluation(
+            obs, gonio, crystal, beam, panel, width, 20
+        );
+        auto postfilter = std::chrono::system_clock::now();
+        std::chrono::duration<double> elapsed_timefilter = postfilter - prefilter;
+        std::cout << "Time for reflection_filter: " << elapsed_timefilter.count() << " s" << std::endl;
+        // do some refinement
+        // FIXME implement in part3
+
+        // now calculate the rmsd and model likelihood
+        double xsum = 0;
+        double ysum = 0;
+        double zsum = 0;
+        for (int i=0;i<sel_obs.flags.size();i++){
+            //if (sel_obs.miller_indices[i] == null){
+            //    continue;
+            //}
+            Vector3d xyzobs = sel_obs.xyzobs_mm[i];
+            Vector3d xyzcal = sel_obs.xyzcal_mm[i];
+            xsum += std::pow(xyzobs[0] - xyzcal[0],2);
+            ysum += std::pow(xyzobs[1] - xyzcal[1],2);
+            zsum += std::pow(xyzobs[2] - xyzcal[2],2);
+        }
+        double rmsdx = std::pow(xsum / sel_obs.xyzcal_mm.size(), 0.5);
+        double rmsdy = std::pow(ysum / sel_obs.xyzcal_mm.size(), 0.5);
+        double rmsdz = std::pow(zsum / sel_obs.xyzcal_mm.size(), 0.5);
+        double xyrmsd = std::pow(std::pow(rmsdx, 2)+std::pow(rmsdy, 2), 0.5);
+
+        // FIXME score the refined model
+        score_and_crystal sac;
+        sac.score = (double)n;
+        sac.crystal = crystal;
+        sac.num_indexed = count;
+        sac.rmsdxy = xyrmsd;
+        results_map[n] = sac;
+    }
+    std::cout << "Unit cell, #indexed, rmsd_xy" << std::endl;
+    for (auto it=results_map.begin();it!=results_map.end();it++){
+        gemmi::UnitCell cell = (*it).second.crystal.get_unit_cell();
+        std::string printcell;
+        std::string a = std::to_string(cell.a);
+        std::string b = std::to_string(cell.b);
+        std::string c = std::to_string(cell.c);
+        std::string al = std::to_string(cell.alpha);
+        std::string be = std::to_string(cell.beta);
+        std::string ga = std::to_string(cell.gamma);
+        std::cout << a << ", " << b << ", " << c << ", " << al << ", " << be << ", "<< ga << ", "<< (*it).second.num_indexed << ", " << (*it).second.rmsdxy << std::endl;
+    }
+
+    // find the best crystal from the map - lowest score
+    auto it = *std::min_element(results_map.begin(), results_map.end(),
+            [](const auto& l, const auto& r) { return l.second.score < r.second.score; });
+    Crystal best_xtal = it.second.crystal;
     // at this point, we will test combinations of the candidate vectors, use those to index the spots, do some
     // refinement of the candidates and choose the best one. Then we will do some more refinement including extra
     // model parameters. At then end, we will have a list of refined experiment models (including a crystal)
@@ -207,18 +399,18 @@ int main(int argc, char** argv) {
         logger->info(
           "Insufficient number of candidate vectors to make a crystal model.");
     } else {
-        gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
-        Crystal best_xtal{candidate_lattice_vectors[0],
-                          candidate_lattice_vectors[1],
-                          candidate_lattice_vectors[2],
-                          space_group};
+        //gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
+        //Crystal best_xtal{candidate_lattice_vectors[0],
+        //                  candidate_lattice_vectors[1],
+        //                  candidate_lattice_vectors[2],
+        //                  space_group};
         expt.set_crystal(best_xtal);
         json elist_out = expt.to_json();
         std::string efile_name = "elist.json";
         std::ofstream efile(efile_name);
         efile << elist_out.dump(4);
         logger->info("Saved experiment list to {}", efile_name);
-    }
+    }*/
 
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;
