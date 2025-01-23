@@ -137,7 +137,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
     /*
      * Initialize global containers for the 3D connected components
      */
-    logger->info("Initializing 3D connected components...");
+    logger->info("Initializing 3D connected components");
     // Graph for the 3D connected components
     boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS> graph_3d;
     // List to store each slice's mapping of linear_index -> global_vertex_id
@@ -149,7 +149,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * Start building the 3D graph. First we copy the precomputed vertices and edges
      * from each slice's graph into the global 3D graph.
      */
-    logger->info("Building 3D graph...");
+    logger->info("Building 3D graph");
     for (const auto &slice : slices) {
         // Get the slice's graph and vertex map
         const auto &graph = slice->get_graph();
@@ -172,7 +172,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
     /*
      * We then copy the pre-computed edges from each slice's graph to the 3D graph.
      */
-    logger->info("Copying edges to 3D graph...");
+    logger->info("Copying edges to 3D graph");
     // Iterate over each slice and copy the edges to the 3D graph
     for (int i = 0; i < slices.size(); ++i) {
         // Current slice's 2d graph
@@ -180,7 +180,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
         // Current slice's vertex id -> linear index map
         const auto &vertex_to_index = slices[i]->get_vertex_to_index();
 
-        logger->info("Copying edges from slice {}...", i);
+        logger->debug("Copying edges from slice {}", i);
         // Iterate over the edges in the slice's graph
         for (const auto &edge : boost::make_iterator_range(boost::edges(graph_2d))) {
             // Get the source and target vertices for the edge
@@ -207,7 +207,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * iterating over the local_to_global_vertex_maps and connecting vertices
      * that correspond to the same pixel in adjacent slices.
      */
-    logger->info("Adding inter-slice connectivity...");
+    logger->info("Adding inter-slice connectivity");
     // Loop through all slices except the last one
     for (size_t i = 0; i < slices.size() - 1; ++i) {
         const auto &current_vertex_map =
@@ -233,7 +233,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * Now that we have constructed the 3D graph, we can perform connected components
      * analysis to find the 3D connected components.
      */
-    logger->info("Performing 3D connected components analysis...");
+    logger->info("Performing 3D connected components analysis");
     /*
      * Label vector for connected components. This matches vertex ids
      * to connected component labels.
@@ -249,7 +249,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * of labels to vectors of global vertex IDs, and then iterating over each map
      * entry to compute the bounding box and center of mass.
      */
-    logger->info("Grouping 3D connected components...");
+    logger->info("Grouping 3D connected components");
 
     // Map of labels -> list of global vertices for each label
     std::unordered_map<int, std::vector<size_t>> label_to_vertices;
@@ -319,6 +319,23 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
                                             }),
                              reflections_3d.end());
     }
+
+    for (const auto &reflection : reflections_3d) {
+        auto [x, y, z] = reflection.center_of_mass();
+        std::string reflection_info = fmt::format(
+          "X: [{}, {}] Y: [{}, {}] Z: [{}, {}] COM: ({:.1f}, {:.1f}, {:.1f})",
+          reflection.x_min,
+          reflection.x_max,
+          reflection.y_min,
+          reflection.y_max,
+          reflection.z_min,
+          reflection.z_max,
+          x,
+          y,
+          z);
+        logger->debug(reflection_info);
+    }
+    logger->flush();  // Flush to ensure all messages printed before continuing
 
     return reflections_3d;
 }

@@ -983,21 +983,27 @@ int main(int argc, char **argv) {
           ConnectedComponents::find_3d_components(slices, width, height, min_spot_size);
 
         // Step 3: Output the 3D reflections
-        print("Found {} 3D connected components.\n", reflections_3d.size());
-        for (const auto &reflection : reflections_3d) {
-            // Print all members of the reflection
-            // Print x bounds
-            print("X: [{}, {}] ", reflection.x_min, reflection.x_max);
-            // Print y bounds
-            print("Y: [{}, {}] ", reflection.y_min, reflection.y_max);
-            // Print z bounds
-            print("Z: [{}, {}] ", reflection.z_min, reflection.z_max);
-            // Print Centre of Mass
-            auto [x, y, z] = reflection.center_of_mass();
-            print("COM: ({:.1f}, {:.1f}, {:.1f})\n", x, y, z);
+        // print("Found {} 3D connected components.\n", reflections_3d.size());
+        logger->info("Found {} 3D connected components.", reflections_3d.size());
+
+        if (do_writeout) {
+            std::ofstream out("3d_reflections.txt");
+            for (const auto &reflection : reflections_3d) {
+                // Print all members of the reflection
+                // Print x bounds
+                out << "X: [" << reflection.x_min << ", " << reflection.x_max << "] ";
+                // Print y bounds
+                out << "Y: [" << reflection.y_min << ", " << reflection.y_max << "] ";
+                // Print z bounds
+                out << "Z: [" << reflection.z_min << ", " << reflection.z_max << "] ";
+                // Print Centre of Mass
+                auto [x, y, z] = reflection.center_of_mass();
+                out << "COM: (" << x << ", " << y << ", " << z << ")\n";
+            }
         }
 
-        print("3D connected components processing complete.\n");
+        // print("3D connected components processing complete.\n");
+        logger->info("3D connected components processing complete.");
     }
 
     float total_time =
