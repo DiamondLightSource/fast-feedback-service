@@ -985,19 +985,16 @@ int main(int argc, char **argv) {
         // Step 3: Output the 3D reflections
         print("Found {} 3D connected components.\n", reflections_3d.size());
         for (const auto &reflection : reflections_3d) {
-            printf(
-              "3D Reflection: x=[%d, %d], y=[%d, %d], z=[%d, %d], pixels=%d, "
-              "center_of_mass=(%.2f, %.2f, %.2f)\n",
-              reflection.xmin,
-              reflection.xmax,
-              reflection.ymin,
-              reflection.ymax,
-              reflection.zmin,
-              reflection.zmax,
-              reflection.num_pixels,
-              reflection.cx,
-              reflection.cy,
-              reflection.cz);
+            // Print all members of the reflection
+            // Print x bounds
+            print("X: [{}, {}] ", reflection.x_min, reflection.x_max);
+            // Print y bounds
+            print("Y: [{}, {}] ", reflection.y_min, reflection.y_max);
+            // Print z bounds
+            print("Z: [{}, {}] ", reflection.z_min, reflection.z_max);
+            // Print Centre of Mass
+            auto [x, y, z] = reflection.center_of_mass();
+            print("COM: ({:.1f}, {:.1f}, {:.1f})\n", x, y, z);
         }
 
         print("3D connected components processing complete.\n");

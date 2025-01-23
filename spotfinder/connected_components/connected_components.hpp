@@ -24,10 +24,73 @@ struct Reflection {
 };
 
 struct Reflection3D {
-    int xmin, ymin, zmin;
-    int xmax, ymax, zmax;
-    int num_pixels = 0;
-    double cx = 0.0, cy = 0.0, cz = 0.0;  // Center of mass
+    std::vector<Signal> signals;  // List of signals
+    // Bounding box min/max coordinates
+    int x_min, x_max;
+    int y_min, y_max;
+    int z_min, z_max;
+
+    Reflection3D()
+        : x_min(std::numeric_limits<int>::max()),
+          x_max(std::numeric_limits<int>::min()),
+          y_min(std::numeric_limits<int>::max()),
+          y_max(std::numeric_limits<int>::min()),
+          z_min(std::numeric_limits<int>::max()),
+          z_max(std::numeric_limits<int>::min()) {}
+
+    void add_signal(const Signal &signal) {
+        signals.push_back(signal);
+
+        // Update bounding box
+
+        // Ensure z-index is present
+        if (signal.z.has_value()) {
+            z_min = std::min(z_min, signal.z.value());
+            z_max = std::max(z_max, signal.z.value());
+        } else {
+            std::string msg = "Signal missing z-index";
+            logger->error(msg);
+            throw std::runtime_error(msg);
+        }
+
+        // Complete the bounding box
+        x_min = std::min(x_min, signal.x);
+        x_max = std::max(x_max, signal.x);
+        y_min = std::min(y_min, signal.y);
+        y_max = std::max(y_max, signal.y);
+    }
+
+    /**
+     * @brief Calculate the center of mass of the 3D reflection.
+     * 
+     * The center of mass is calculated as the weighted average of the pixel
+     * coordinates, where the intensity of each pixel is used as the weight.
+     * 
+     * @return A tuple containing the x, y, and z coordinates of the center of mass.
+     */
+    std::tuple<float, float, float> center_of_mass() const {
+        if (signals.empty()) {
+            throw std::runtime_error("No pixels in 3D reflection");
+        }
+
+        double weighted_sum_x = 0, weighted_sum_y = 0, weighted_sum_z = 0;
+        double total_intensity = 0;
+
+        for (const auto &signal : signals) {
+            weighted_sum_x += signal.x * signal.intensity;
+            weighted_sum_y += signal.y * signal.intensity;
+            weighted_sum_z += signal.z.value() * signal.intensity;
+            total_intensity += signal.intensity;
+        }
+
+        if (total_intensity == 0) {
+            throw std::runtime_error("Total intensity is zero");
+        }
+
+        return {weighted_sum_x / total_intensity,
+                weighted_sum_y / total_intensity,
+                weighted_sum_z / total_intensity};
+    }
 };
 
 /**
@@ -54,8 +117,7 @@ class ConnectedComponents {
                         const pixel_t *original_image,
                         const ushort width,
                         const ushort height,
-                        const uint32_t min_spot_size,
-                        const int z_index);
+                        const uint32_t min_spot_size);
 
     uint get_num_strong_pixels() const {
         return num_strong_pixels;
@@ -75,7 +137,7 @@ class ConnectedComponents {
         return boxes;
     }
 
-    const std::unordered_map<size_t, Signal> &get_signals() const {
+    std::unordered_map<size_t, Signal> &get_signals() {
         return signals;
     }
 
@@ -83,7 +145,11 @@ class ConnectedComponents {
         return graph;
     }
 
-    const auto &get_vertex_map() const {
+    const auto &get_index_to_vertex() const {
+        return index_to_vertex;
+    }
+
+    const auto &get_vertex_to_index() const {
         return vertex_to_index;
     }
 
@@ -110,6 +176,8 @@ class ConnectedComponents {
     std::vector<Reflection> boxes;    // Bounding boxes
     // Maps pixel linear index -> Signal (used to store signal pixels)
     std::unordered_map<size_t, Signal> signals;
+    // Maps graph linear index -> vertex ID
+    std::unordered_map<size_t, size_t> index_to_vertex;
     // Maps graph vertex ID -> linear index
     std::unordered_map<size_t, size_t> vertex_to_index;
     // 2D graph representing the connected components
@@ -122,8 +190,7 @@ class ConnectedComponents {
      * This function uses the `signals` map to find neighboring pixels efficiently.
      * The `index_to_vertex` is used to map linear indices (from `signals`) to graph vertex IDs.
      */
-    std::unordered_map<size_t, size_t> build_graph(const ushort width,
-                                                   const ushort height);
+    void build_graph(const ushort width, const ushort height);
 
     /**
      * @brief Generates bounding boxes for connected components using the graph labels.
@@ -131,8 +198,7 @@ class ConnectedComponents {
      * The `labels` vector maps each graph vertex to its connected component ID.
      * The `index_to_vertex` map is used to map linear indices to graph vertex IDs.
      */
-    void generate_boxes(const std::unordered_map<size_t, size_t> &index_to_vertex,
-                        const ushort width,
+    void generate_boxes(const ushort width,
                         const ushort height,
                         const uint32_t min_spot_size);
 };
