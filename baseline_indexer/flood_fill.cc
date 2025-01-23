@@ -7,11 +7,11 @@
 #include <stack>
 #include <tuple>
 #define _USE_MATH_DEFINES
-#include "common.hpp"
-
 #include <cmath>
 #include <numeric>
 #include <unordered_map>
+
+#include "common.hpp"
 
 using Eigen::Vector3d;
 using Eigen::Vector3i;
@@ -139,8 +139,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     }
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time2 = t3 - t2;
-    logger->debug("Time for second part of flood fill: {:.5f}s",
-                  elapsed_time2.count());
+    logger->debug("Time for second part of flood fill: {:.5f}s", elapsed_time2.count());
 
     // Now calculate the unweighted centres of mass of each group, in fractional coordinates.
     std::vector<Vector3d> centres_of_mass_frac(n_voids);

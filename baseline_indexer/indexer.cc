@@ -104,8 +104,8 @@ int main(int argc, char** argv) {
         elist_json_obj = json::parse(f);
     } catch (json::parse_error& ex) {
         logger->error("Unable to read {}; json parse error at byte {}",
-                     imported_expt.c_str(),
-                     ex.byte);
+                      imported_expt.c_str(),
+                      ex.byte);
         std::exit(1);
     }
 

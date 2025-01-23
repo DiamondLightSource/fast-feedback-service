@@ -1,12 +1,13 @@
 #include <dx2/utils.h>
 #include <math.h>
-#include "common.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <map>
 #include <numeric>
 #include <tuple>
+
+#include "common.hpp"
 
 using Eigen::Vector3d;
 
@@ -175,8 +176,7 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
     logger->info("Candidate basis vectors:");
     for (int i = 0; i < unique_sites.size(); i++) {
         unique_vectors_sorted.push_back(unique_sites[i].site);
-        logger->info(
-          "{} {:.5f} {}", i, unique_sites[i].length, unique_sites[i].volume);
+        logger->info("{} {:.5f} {}", i, unique_sites[i].length, unique_sites[i].volume);
     }
 
     std::chrono::duration<double> elapsed_seconds =

@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <math.h>
 #include <pocketfft_hdronly.h>
-#include "common.hpp"
 
 #include <Eigen/Dense>
 #include <algorithm>
@@ -9,6 +8,8 @@
 #include <map>
 #include <stack>
 #include <tuple>
+
+#include "common.hpp"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
