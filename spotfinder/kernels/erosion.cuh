@@ -1,11 +1,8 @@
 #pragma once
 
-__global__ void erosion(uint8_t __restrict__ *dispersion_mask,
-                        uint8_t __restrict__ *erosion_mask,
+__global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
+                        uint8_t __restrict__ *erosion_mask_ptr,
                         // uint8_t __restrict__ *mask,
                         size_t dispersion_mask_pitch,
                         size_t erosion_mask_pitch,
-                        // size_t mask_pitch,
-                        int width,
-                        int height,
                         uint8_t radius);

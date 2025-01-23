@@ -21,64 +21,90 @@
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 
+#include <cuda/std/tuple>
+
 #include "cuda_common.hpp"
+#include "device_common.cuh"
 #include "erosion.cuh"
 
 namespace cg = cooperative_groups;
 
+#pragma region Global constants
+/*
+ * Constants for kernels
+ * extern keyword is used to declare a variable that is defined in
+ * another file. This links the constant global variable to the
+ * kernel_constants variable defined in spotfinder.cu
+ */
+extern __constant__ KernelConstants kernel_constants;
+#pragma endregion Global constants
+
 #pragma region Erosion kernel
-__global__ void erosion(uint8_t __restrict__ *dispersion_mask,
-                        uint8_t __restrict__ *erosion_mask,
+/**
+ * @brief CUDA kernel to perform morphological erosion on a dispersion mask
+ *       using a given kernel radius and Chebyshev distance threshold.
+ * 
+ * @param dispersion_mask_ptr Pointer to the dispersion mask data
+ * @param erosion_mask_ptr (Output) empty mask to store the erosion result
+ * @param dispersion_mask_pitch Pitch of the dispersion mask data
+ * @param erosion_mask_pitch Pitch of the erosion mask data
+ * @param radius Radius of the erosion kernel
+ */
+__global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
+                        uint8_t __restrict__ *erosion_mask_ptr,
                         // uint8_t __restrict__ *mask,
                         size_t dispersion_mask_pitch,
                         size_t erosion_mask_pitch,
-                        // size_t mask_pitch,
-                        int width,
-                        int height,
                         uint8_t radius) {
+    // Create pitched arrays for data access
+    PitchedArray2D<uint8_t> dispersion_mask{dispersion_mask_ptr,
+                                            &dispersion_mask_pitch};
+    PitchedArray2D<uint8_t> erosion_mask{erosion_mask_ptr, &erosion_mask_pitch};
+
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
     // Guards
-    if (x >= width || y >= height) return;  // Out of bounds guard
+    if (x >= kernel_constants.width || y >= kernel_constants.height)
+        return;  // Out of bounds guard
 
-    bool is_background = dispersion_mask[y * dispersion_mask_pitch + x] == MASKED_PIXEL;
+    bool is_background = dispersion_mask(x, y) == MASKED_PIXEL;
+
     if (is_background) {
         /*
          * If the pixel is masked, we want to set it to VALID_PIXEL
          * in order to invert the mask.
         */
-        erosion_mask[y * erosion_mask_pitch + x] = VALID_PIXEL;
+        erosion_mask(x, y) = VALID_PIXEL;
         return;
     }
-
-    // Calculate the bounds of the erosion kernel
-    int x_start = max(0, x - radius);
-    int x_end = min(x + radius + 1, width);
-    int y_start = max(0, y - radius);
-    int y_end = min(y + radius + 1, height);
 
     bool should_erase = false;  // Flag to determine if the pixel should be erased
     constexpr uint8_t chebyshev_distance_threshold = 2;
 
     // Iterate over the kernel bounds
-    for (int kernel_x = x_start; kernel_x < x_end; ++kernel_x) {
-        for (int kernel_y = y_start; kernel_y < y_end; ++kernel_y) {
+    for (int i = -radius; i <= radius; ++i) {      // Iterate over y offsets
+        for (int j = -radius; j <= radius; ++j) {  // Iterate over x offsets
+            int lx = x + j;                        // Offset x coordinate
+            int ly = y + i;                        // Offset y coordinate
             /*
              * TODO: Investigate whether we should be doing this or not!
              * Intuition says that we should be considering the mask,
              * however DIALS does not do this. May be a bug, may be on
              * purpose? Investigate!
             */
-            // if (mask[kernel_y * mask_pitch + kernel_x] == 0) {
+            // if (mask[kernel_y * kernel_constants.mask_pitch + kernel_x] == 0) {
             //     continue;
             // }
-            if (dispersion_mask[kernel_y * dispersion_mask_pitch + kernel_x]
-                == MASKED_PIXEL) {
+
+            // Get pixel from step in kernel
+            uint8_t this_pixel = dispersion_mask(lx, ly);
+
+            if (this_pixel == MASKED_PIXEL) {
                 // If the current pixel is background, check the Chebyshev distance
-                uint8_t chebyshev_distance = max(abs(kernel_x - x), abs(kernel_y - y));
+                uint8_t chebyshev_distance = max(abs(i), abs(j));
 
                 if (chebyshev_distance <= chebyshev_distance_threshold) {
                     // If a background pixel is too close, the current pixel should be erased
@@ -98,7 +124,7 @@ termination:
          * considered as a background pixel in the background calculation as it is not
          * considered part of the signal.
         */
-        erosion_mask[y * erosion_mask_pitch + x] = VALID_PIXEL;
+        erosion_mask(x, y) = VALID_PIXEL;
     } else {
         /*
          * If the pixel should not be erased, this means that it is part of the signal.
@@ -107,8 +133,7 @@ termination:
         */
 
         // Invert 'valid' signal spot to 'masked' background spots
-        erosion_mask[y * erosion_mask_pitch + x] =
-          !dispersion_mask[y * dispersion_mask_pitch + x];
+        erosion_mask(x, y) = !dispersion_mask(x, y);
     }
 }
 #pragma enregion Erosion kernel
