@@ -276,7 +276,12 @@ int main(int argc, char **argv) {
       .default_value(false)
       .implicit_value(true);
     parser.add_argument("--min-spot-size")
-      .help("Reflections with a pixel count below this will be discarded.")
+      .help("2D Reflections with a pixel count below this will be discarded.")
+      .metavar("N")
+      .default_value<uint32_t>(3)
+      .scan<'u', uint32_t>();
+    parser.add_argument("--min-spot-size-3d")
+      .help("3D Reflections with a pixel count below this will be discarded.")
       .metavar("N")
       .default_value<uint32_t>(3)
       .scan<'u', uint32_t>();
@@ -333,6 +338,7 @@ int main(int argc, char **argv) {
         std::exit(1);
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
+    uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
 
     std::unique_ptr<Reader> reader_ptr;
 
@@ -974,7 +980,7 @@ int main(int argc, char **argv) {
         // Step 2: Call find_3d_components
         constexpr uint max_peak_centroid_separation = 2;  // Hardcoded for now
         auto reflections_3d = ConnectedComponents::find_3d_components(
-          slices, width, height, min_spot_size, max_peak_centroid_separation);
+          slices, width, height, min_spot_size_3d, max_peak_centroid_separation);
 
         // Step 3: Output the 3D reflections
         // print("Found {} 3D connected components.\n", reflections_3d.size());
