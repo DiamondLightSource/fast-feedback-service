@@ -968,6 +968,7 @@ int main(int argc, char **argv) {
         thread.join();
     }
 
+#pragma region 3D Connected Components
     // After all threads have finished processing slices
     if (rotation_slices) {
         print("Processing 3D connected components...\n");
@@ -1005,6 +1006,7 @@ int main(int argc, char **argv) {
         // print("3D connected components processing complete.\n");
         logger->info("3D connected components processing complete.");
     }
+#pragma endregion 3D Connected Components
 
     float total_time =
       std::chrono::duration_cast<std::chrono::duration<double>>(
