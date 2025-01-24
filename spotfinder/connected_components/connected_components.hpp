@@ -73,6 +73,7 @@ struct Reflection3D {
      */
     std::tuple<float, float, float> center_of_mass() const {
         if (signals.empty()) {
+            logger->error("No pixels in 3D reflection");
             throw std::runtime_error("No pixels in 3D reflection");
         }
 
@@ -93,6 +94,45 @@ struct Reflection3D {
         return {weighted_sum_x / total_intensity,
                 weighted_sum_y / total_intensity,
                 weighted_sum_z / total_intensity};
+    }
+
+    /**
+     * @brief Calculate the distance between the pixel with the highest intensity
+     *        and the center of mass.
+     * 
+     * @return The Euclidean distance between the peak pixel and the center of mass.
+     */
+    float peak_centroid_distance() const {
+        if (signals.empty()) {
+            logger->error("No pixels in 3D reflection");
+            throw std::runtime_error("No pixels in 3D reflection");
+        }
+
+        // Find the signal with the highest intensity
+        const Signal *peak_signal = nullptr;
+        double max_intensity = std::numeric_limits<double>::min();
+
+        for (const auto &signal : signals) {
+            if (signal.intensity > max_intensity) {
+                max_intensity = signal.intensity;
+                peak_signal = &signal;
+            }
+        }
+
+        if (!peak_signal) {
+            logger->error("Failed to find peak intensity signal");
+            throw std::runtime_error("Failed to find peak intensity signal");
+        }
+
+        // Get the center of mass
+        auto [com_x, com_y, com_z] = center_of_mass();
+
+        // Calculate the Euclidean distance
+        float dx = (peak_signal->x + 0.5f) - com_x;
+        float dy = (peak_signal->y + 0.5f) - com_y;
+        float dz = (peak_signal->z.value() + 0.5f) - com_z;
+
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
     }
 };
 
