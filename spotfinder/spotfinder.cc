@@ -971,7 +971,7 @@ int main(int argc, char **argv) {
 #pragma region 3D Connected Components
     // After all threads have finished processing slices
     if (rotation_slices) {
-        print("Processing 3D connected components...\n");
+        logger->info("Processing 3D spots");
 
         // Step 1: Convert rotation_slices map to a vector
         std::vector<std::unique_ptr<ConnectedComponents>> slices;
@@ -986,11 +986,26 @@ int main(int argc, char **argv) {
 
         // Step 3: Output the 3D reflections
         // print("Found {} 3D connected components.\n", reflections_3d.size());
-        logger->info("Found {} 3D connected components.", reflections_3d.size());
+        logger->info("Found {} spots", reflections_3d.size());
 
         if (do_writeout) {
             std::ofstream out("3d_reflections.txt");
             for (const auto &reflection : reflections_3d) {
+                auto [x, y, z] = reflection.center_of_mass();
+
+                std::string reflection_info = fmt::format(
+                  "X: [{}, {}] Y: [{}, {}] Z: [{}, {}] COM: ({:.1f}, {:.1f}, {:.1f})",
+                  reflection.x_min,
+                  reflection.x_max,
+                  reflection.y_min,
+                  reflection.y_max,
+                  reflection.z_min,
+                  reflection.z_max,
+                  x,
+                  y,
+                  z);
+                logger->trace(reflection_info);
+
                 // Print all members of the reflection
                 // Print x bounds
                 out << "X: [" << reflection.x_min << ", " << reflection.x_max << "] ";
@@ -999,13 +1014,12 @@ int main(int argc, char **argv) {
                 // Print z bounds
                 out << "Z: [" << reflection.z_min << ", " << reflection.z_max << "] ";
                 // Print Centre of Mass
-                auto [x, y, z] = reflection.center_of_mass();
                 out << "COM: (" << x << ", " << y << ", " << z << ")\n";
             }
+            logger->flush();  // Flush to ensure all messages printed before continuing
         }
 
-        // print("3D connected components processing complete.\n");
-        logger->info("3D connected components processing complete.");
+        logger->info("3D spot analysis complete");
     }
 #pragma endregion 3D Connected Components
 
