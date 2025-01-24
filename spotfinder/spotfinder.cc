@@ -1,9 +1,6 @@
 #include "spotfinder.cuh"
 
 #include <bitshuffle.h>
-#include <fmt/color.h>
-#include <fmt/core.h>
-#include <fmt/os.h>
 #include <lodepng.h>
 #include <spdlog/spdlog.h>
 
@@ -41,11 +38,6 @@ using json = nlohmann::json;
 
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
-
-constexpr auto fmt_cyan = fmt::fg(fmt::terminal_color::cyan) | fmt::emphasis::bold;
-constexpr auto fmt_green = fmt::fg(fmt::terminal_color::green) | fmt::emphasis::bold;
-constexpr auto fmt_magenta =
-  fmt::fg(fmt::terminal_color::magenta) | fmt::emphasis::bold;
 
 // Function for passing to std::signal to register the stop request
 extern "C" void stop_processing(int sig) {
