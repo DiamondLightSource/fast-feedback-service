@@ -31,20 +31,26 @@ struct Reflection3D {
     int z_min, z_max;
     int num_pixels = 0;  // Number of pixels in the reflection
 
+    // com cache for lazy evaluation
+    mutable bool com_cached = false;
+    mutable std::tuple<float, float, float> com_cache;
+
     Reflection3D()
         : x_min(std::numeric_limits<int>::max()),
           x_max(std::numeric_limits<int>::min()),
           y_min(std::numeric_limits<int>::max()),
           y_max(std::numeric_limits<int>::min()),
           z_min(std::numeric_limits<int>::max()),
-          z_max(std::numeric_limits<int>::min()) {}
+          z_max(std::numeric_limits<int>::min()),
+          com_cached(false) {}
 
     void add_signal(const Signal &signal) {
         signals.push_back(signal);
 
-        // Update bounding box
+        // Invalidate cached center of mass
+        com_cached = false;
 
-        // Ensure z-index is present
+        // Update bounding box
         if (signal.z.has_value()) {
             z_min = std::min(z_min, signal.z.value());
             z_max = std::max(z_max, signal.z.value());
@@ -54,7 +60,6 @@ struct Reflection3D {
             throw std::runtime_error(msg);
         }
 
-        // Complete the bounding box
         x_min = std::min(x_min, signal.x);
         x_max = std::max(x_max, signal.x);
         y_min = std::min(y_min, signal.y);
@@ -64,14 +69,15 @@ struct Reflection3D {
     }
 
     /**
-     * @brief Calculate the center of mass of the 3D reflection.
-     * 
-     * The center of mass is calculated as the weighted average of the pixel
-     * coordinates, where the intensity of each pixel is used as the weight.
+     * @brief Calculate or retrieve cached center of mass of the 3D reflection.
      * 
      * @return A tuple containing the x, y, and z coordinates of the center of mass.
      */
     std::tuple<float, float, float> center_of_mass() const {
+        if (com_cached) {
+            return com_cache;
+        }
+
         if (signals.empty()) {
             logger->error("No pixels in 3D reflection");
             throw std::runtime_error("No pixels in 3D reflection");
@@ -88,12 +94,18 @@ struct Reflection3D {
         }
 
         if (total_intensity == 0) {
+            logger->error("Total intensity is zero");
             throw std::runtime_error("Total intensity is zero");
         }
 
-        return {weighted_sum_x / total_intensity,
-                weighted_sum_y / total_intensity,
-                weighted_sum_z / total_intensity};
+        // Compute and cache the result
+        com_cache = {weighted_sum_x / total_intensity,
+                     weighted_sum_y / total_intensity,
+                     weighted_sum_z / total_intensity};
+
+        com_cached = true;  // Mark cache as valid
+
+        return com_cache;
     }
 
     /**
@@ -124,7 +136,7 @@ struct Reflection3D {
             throw std::runtime_error("Failed to find peak intensity signal");
         }
 
-        // Get the center of mass
+        // Get the cached or computed center of mass
         auto [com_x, com_y, com_z] = center_of_mass();
 
         // Calculate the Euclidean distance
