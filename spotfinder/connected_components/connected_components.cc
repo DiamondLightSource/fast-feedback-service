@@ -12,6 +12,7 @@
 #include "ffs_logger.hpp"
 #include "h5read.h"
 
+#pragma region Connected Components
 ConnectedComponents::ConnectedComponents(const uint8_t *result_image,
                                          const pixel_t *original_image,
                                          const ushort width,
@@ -128,7 +129,9 @@ void ConnectedComponents::generate_boxes(const ushort width,
         num_strong_pixels_filtered = num_strong_pixels;
     }
 }
+#pragma endregion Connected Components
 
+#pragma region 3D Connected Components
 std::vector<Reflection3D> ConnectedComponents::find_3d_components(
   const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
   const ushort width,
@@ -338,3 +341,4 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
 
     return reflections_3d;
 }
+#pragma endregion 3D Connected Components

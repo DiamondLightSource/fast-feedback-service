@@ -218,7 +218,9 @@ class ConnectedComponents {
    * @param slices A list of ConnectedComponents objects, each corresponding to a slice.
    * @param width The width of the image.
    * @param height The height of the image.
-   * @return A list of 3D reflections, each with bounding box and weighted center of mass.
+   * @param min_spot_size The minimum number of pixels in a connected component.
+   * @param max_peak_centroid_separation The maximum distance between peak and centroid.
+   * @return A list of 3D reflections.
    */
     static std::vector<Reflection3D> find_3d_components(
       const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
