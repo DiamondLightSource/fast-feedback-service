@@ -80,9 +80,9 @@ struct Reflection3D {
         double total_intensity = 0;
 
         for (const auto &signal : signals) {
-            weighted_sum_x += signal.x * signal.intensity;
-            weighted_sum_y += signal.y * signal.intensity;
-            weighted_sum_z += signal.z.value() * signal.intensity;
+            weighted_sum_x += (signal.x + 0.5) * signal.intensity;
+            weighted_sum_y += (signal.y + 0.5) * signal.intensity;
+            weighted_sum_z += (signal.z.value() + 0.5) * signal.intensity;
             total_intensity += signal.intensity;
         }
 
