@@ -991,17 +991,17 @@ int main(int argc, char **argv) {
             for (const auto &reflection : reflections_3d) {
                 auto [x, y, z] = reflection.center_of_mass();
 
-                std::string reflection_info = fmt::format(
-                  "X: [{}, {}] Y: [{}, {}] Z: [{}, {}] COM: ({:.1f}, {:.1f}, {:.1f})",
-                  reflection.x_min,
-                  reflection.x_max,
-                  reflection.y_min,
-                  reflection.y_max,
-                  reflection.z_min,
-                  reflection.z_max,
-                  x,
-                  y,
-                  z);
+                std::string reflection_info =
+                  fmt::format("X: [{}, {}] Y: [{}, {}] Z: [{}, {}] COM: ({}, {}, {})",
+                              reflection.x_min,
+                              reflection.x_max,
+                              reflection.y_min,
+                              reflection.y_max,
+                              reflection.z_min,
+                              reflection.z_max,
+                              x,
+                              y,
+                              z);
                 logger->trace(reflection_info);
 
                 // Print all members of the reflection
