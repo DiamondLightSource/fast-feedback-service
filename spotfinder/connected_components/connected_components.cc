@@ -114,6 +114,9 @@ void ConnectedComponents::generate_boxes(const ushort width,
         ++box.num_pixels;  // Increment the number of pixels in the box
     }
 
+    uint num_unfiltered_spots = boxes.size();
+    logger->info("Extracted {} spots", num_unfiltered_spots);
+
     // Filter boxes based on the minimum spot size
     if (min_spot_size > 0) {
         std::vector<Reflection> filtered_boxes;
@@ -125,6 +128,10 @@ void ConnectedComponents::generate_boxes(const ushort width,
         }
         // Overwrite boxes with filtered boxes
         boxes = std::move(filtered_boxes);
+
+        logger->info("Removed {} spots with size < {} pixels",
+                     num_unfiltered_spots - boxes.size(),
+                     min_spot_size);
     } else {
         num_strong_pixels_filtered = num_strong_pixels;
     }
@@ -315,6 +322,9 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * Finally, filter the reflections based on the minimum spot size and
      * maximum peak centroid separation. Then return the filtered reflections.
      */
+    uint initial_spot_count = reflections_3d.size();
+    logger->info(
+      fmt::format("Calculated {} spots", styled(initial_spot_count, fmt_cyan)));
 
     if (min_spot_size > 0) {
         logger->debug("Filtering reflections by minimum spot size");
@@ -327,6 +337,12 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
                              reflections_3d.end());
     }
 
+    logger->info(
+      fmt::format("Filtered {} spots with size < {} pixels",
+                  styled(initial_spot_count - reflections_3d.size(), fmt_cyan),
+                  styled(min_spot_size, fmt_cyan)));
+    uint filtered_spot_count = reflections_3d.size();
+
     if (max_peak_centroid_separation > 0) {
         logger->debug("Filtering reflections by maximum peak centroid separation");
         reflections_3d.erase(
@@ -338,6 +354,11 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
                          }),
           reflections_3d.end());
     }
+
+    logger->info(
+      fmt::format("Filtered {} spots with peak-centroid distance > {}",
+                  styled(filtered_spot_count - reflections_3d.size(), fmt_cyan),
+                  styled(max_peak_centroid_separation, fmt_cyan)));
 
     return reflections_3d;
 }

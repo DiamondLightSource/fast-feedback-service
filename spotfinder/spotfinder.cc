@@ -983,8 +983,8 @@ int main(int argc, char **argv) {
           slices, width, height, min_spot_size_3d, max_peak_centroid_separation);
 
         // Step 3: Output the 3D reflections
-        // print("Found {} 3D connected components.\n", reflections_3d.size());
-        logger->info("Found {} spots", reflections_3d.size());
+        logger->info(
+          fmt::format("Found {} spots", styled(reflections_3d.size(), fmt_cyan)));
 
         if (do_writeout) {
             std::ofstream out("3d_reflections.txt");
