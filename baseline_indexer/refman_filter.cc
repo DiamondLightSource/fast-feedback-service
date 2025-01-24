@@ -182,11 +182,12 @@ reflection_data outlier_filter(reflection_data &reflections){
 }
 
 reflection_data initial_refman_filter(
-    reflection_data reflections,
+    reflection_data const& reflections,
+    std::vector<Vector3i> const& hkl,
     Goniometer gonio, MonochromaticBeam beam,
     double close_to_spindle_cutoff){
     std::vector<std::size_t> flags = reflections.flags;
-    std::vector<Vector3i> hkl = reflections.miller_indices;
+    //std::vector<Vector3i> hkl = miller_indices;
     std::vector<Vector3d> s1 = reflections.s1;
     //std::vector<int> id = reflections["id"];
     std::vector<Vector3d> xyzobs = reflections.xyzobs_mm;
@@ -215,6 +216,14 @@ reflection_data initial_refman_filter(
         }*/
     }
     reflection_data subrefls = select(reflections, sel);
+    std::vector<Vector3i> filtered_hkl;
+    for (int i=0;i<sel.size();i++){
+        if (sel[i]){
+            filtered_hkl.push_back(hkl[i]);
+        }
+    }
+    subrefls.miller_indices = filtered_hkl;
+
     //dials::af::reflection_table subrefls = dials::af::boost_python::reflection_table_suite::select_rows_flags(
     //    reflections, sel.const_ref());
     // now calculate entering flags (needed for prediction) and frame numbers
@@ -256,7 +265,8 @@ reflection_data select_sample(
 }
 
 reflection_data reflection_filter_preevaluation(
-    reflection_data &obs,
+    reflection_data const& obs,
+    std::vector<Vector3i> const& miller_indices,
     const Goniometer &gonio,
     const Crystal &crystal,
     const MonochromaticBeam &beam,
@@ -267,7 +277,7 @@ reflection_data reflection_filter_preevaluation(
     int min_sample_size=1000,
     int max_sample_size=0
     ){
-    reflection_data filter_obs = initial_refman_filter(obs, gonio, beam, close_to_spindle_cutoff);
+    reflection_data filter_obs = initial_refman_filter(obs, miller_indices, gonio, beam, close_to_spindle_cutoff);
     Matrix3d UB = crystal.get_A_matrix();
     simple_reflection_predictor(
         beam,

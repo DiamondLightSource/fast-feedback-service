@@ -44,7 +44,9 @@ struct score_and_crystal {
     double rmsdxy;
 };
     
-void calc_score(Crystal const &crystal, std::vector<Vector3d> const &rlp_select, std::vector<double> const &phi_select){
+void calc_score(Crystal const &crystal,
+  reflection_data const& obs, std::vector<Vector3d> const &rlp_select, std::vector<double> const &phi_select,
+  Goniometer gonio, MonochromaticBeam beam, Panel panel, double width){
   std::vector<Vector3i> miller_indices;
   int count;
   auto preassign = std::chrono::system_clock::now();
@@ -53,6 +55,13 @@ void calc_score(Crystal const &crystal, std::vector<Vector3d> const &rlp_select,
   std::chrono::duration<double> elapsed_time = t2 - preassign;
   std::cout << "Time for assigning: " << elapsed_time.count() << " s" << std::endl;
 
+  auto prefilter = std::chrono::system_clock::now();
+  reflection_data sel_obs = reflection_filter_preevaluation(
+      obs, miller_indices, gonio, crystal, beam, panel, width, 20
+  );
+  auto postfilter = std::chrono::system_clock::now();
+  std::chrono::duration<double> elapsed_timefilter = postfilter - prefilter;
+  std::cout << "Time for reflection_filter: " << elapsed_timefilter.count() << " s" << std::endl;
   std::cout<< "Done from thread# " << std::this_thread::get_id() << std::endl;
 }
 
@@ -285,14 +294,21 @@ int main(int argc, char** argv) {
     int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
     double width = scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
 
+    reflection_data obs;
+    obs.flags = flags_select;
+    obs.xyzobs_mm = xyzobs_mm_select;
+    obs.xyzcal_mm = xyzcal_mm_select;
+    obs.s1 = s1_select;
+    obs.entering = entering_select;
+
     std::vector<std::thread> threads;
     
     while (candidates.has_next() && n < max_refine){
         // could do all this threaded.
         Crystal crystal = candidates.next(); //quick (<0.1ms)
         n++;
-        //calc_score(crystal, rlp_select, phi_select);
-        threads.emplace_back(std::thread(calc_score, crystal, rlp_select, phi_select));
+        //calc_score(crystal, obs, rlp_select, phi_select, gonio, beam, panel, width);
+        threads.emplace_back(std::thread(calc_score, crystal, obs, rlp_select, phi_select, gonio, beam, panel, width));
     }
     for (auto &t : threads){
         t.join();
@@ -379,7 +395,7 @@ int main(int argc, char** argv) {
     // For now, let's just write out the candidate vectors and write out the unrefined experiment models with the
     // first combination of candidate vectors as an example crystal, to demonstrate an example experiment list data
     // structure.
-
+    */
     // dump the candidate vectors to json
     std::string n_vecs = std::to_string(candidate_lattice_vectors.size() - 1);
     size_t n_zero = n_vecs.length();
@@ -395,7 +411,7 @@ int main(int argc, char** argv) {
     logger->info("Saved candidate vectors to {}", outfile);
 
     // Now make a crystal and save an experiment list with the models.
-    if (candidate_lattice_vectors.size() < 3) {
+    /*if (candidate_lattice_vectors.size() < 3) {
         logger->info(
           "Insufficient number of candidate vectors to make a crystal model.");
     } else {

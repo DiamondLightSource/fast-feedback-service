@@ -14,22 +14,25 @@ struct reflection_data {
     std::vector<bool> entering;
 };
 
-reflection_data select(reflection_data data, std::vector<bool> sel){
+reflection_data select(reflection_data const& data, std::vector<bool> const& sel){
     reflection_data selected;
+    bool has_miller = (data.miller_indices.size() > 0);
     for (int i=0;i<sel.size();i++){
         if (sel[i]){
             selected.flags.push_back(data.flags[i]);
             selected.xyzobs_mm.push_back(data.xyzobs_mm[i]);
             selected.xyzcal_mm.push_back(data.xyzcal_mm[i]);
             selected.s1.push_back(data.s1[i]);
-            selected.miller_indices.push_back(data.miller_indices[i]);
+            if (has_miller){
+                selected.miller_indices.push_back(data.miller_indices[i]);
+            }
             selected.entering.push_back(data.entering[i]);
         }
     }
     return selected;
 }
 
-reflection_data select(reflection_data data, std::vector<std::size_t> sel){
+reflection_data select(reflection_data const& data, std::vector<std::size_t> const& sel){
     reflection_data selected;
     for (int i=0;i<sel.size();i++){
         int index = sel[i];
