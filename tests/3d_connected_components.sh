@@ -12,13 +12,11 @@ cd _debug_output
 # Save the current value of the environment variable if it exists
 if [ -z "${LOG_LEVEL+x}" ]; then
   original_value_set=false
+  # Change the log level to debug
+  export LOG_LEVEL="debug"
 else
   original_value_set=true
-  original_value=$LOG_LEVEL
 fi
-
-# Change the log level to debug
-export LOG_LEVEL="debug"
 
 # Open file descriptor 3 for writing to output_file.txt
 exec 3> output_file.txt
@@ -36,9 +34,7 @@ exec 3> output_file.txt
 exec 3>&-
 
 # Restore the original value of the environment variable if it was set
-if [ "$original_value_set" = true ]; then
-  export LOG_LEVEL=$original_value
-else
+if [ "$original_value_set" = false ]; then
   unset LOG_LEVEL
 fi
 
