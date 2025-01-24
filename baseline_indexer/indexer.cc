@@ -9,6 +9,7 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
+#include <mutex>
 
 #include <Eigen/Dense>
 #include <argparse/argparse.hpp>
@@ -37,16 +38,20 @@ using Eigen::Vector3d;
 using Eigen::Vector3i;
 using json = nlohmann::json;
 
+std::mutex mtx;
+
 struct score_and_crystal {
     double score;
     Crystal crystal;
     double num_indexed;
     double rmsdxy;
 };
+
+std::map<int,score_and_crystal> results_map;
     
 void calc_score(Crystal const &crystal,
   reflection_data const& obs, std::vector<Vector3d> const &rlp_select, std::vector<double> const &phi_select,
-  Goniometer gonio, MonochromaticBeam beam, Panel panel, double width){
+  Goniometer gonio, MonochromaticBeam beam, Panel panel, double width, int n){
   std::vector<Vector3i> miller_indices;
   int count;
   auto preassign = std::chrono::system_clock::now();
@@ -62,6 +67,34 @@ void calc_score(Crystal const &crystal,
   auto postfilter = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_timefilter = postfilter - prefilter;
   std::cout << "Time for reflection_filter: " << elapsed_timefilter.count() << " s" << std::endl;
+  //write the score to the results map
+  double xsum = 0;
+  double ysum = 0;
+  double zsum = 0;
+  for (int i=0;i<sel_obs.flags.size();i++){
+      //if (sel_obs.miller_indices[i] == null){
+      //    continue;
+      //}
+      Vector3d xyzobs = sel_obs.xyzobs_mm[i];
+      Vector3d xyzcal = sel_obs.xyzcal_mm[i];
+      xsum += std::pow(xyzobs[0] - xyzcal[0],2);
+      ysum += std::pow(xyzobs[1] - xyzcal[1],2);
+      zsum += std::pow(xyzobs[2] - xyzcal[2],2);
+  }
+  double rmsdx = std::pow(xsum / sel_obs.xyzcal_mm.size(), 0.5);
+  double rmsdy = std::pow(ysum / sel_obs.xyzcal_mm.size(), 0.5);
+  double rmsdz = std::pow(zsum / sel_obs.xyzcal_mm.size(), 0.5);
+  double xyrmsd = std::pow(std::pow(rmsdx, 2)+std::pow(rmsdy, 2), 0.5);
+
+  // FIXME score the refined model
+  score_and_crystal sac;
+  sac.score = n;
+  sac.crystal = crystal;
+  sac.num_indexed = count;
+  sac.rmsdxy = xyrmsd;
+  mtx.lock();
+  results_map[n] = sac;
+  mtx.unlock();
   std::cout<< "Done from thread# " << std::this_thread::get_id() << std::endl;
 }
 
@@ -284,12 +317,13 @@ int main(int argc, char** argv) {
     Vector3i null{{0,0,0}};
     int n = 0;
 
+    // FIXME check somewhere that there are solutions
     CandidateOrientationMatrices candidates(candidate_lattice_vectors, 1000); //quick (<1ms)
     // iterate over candidates; assign indices, refine, score.
     // need a map of scores for candidates: index to score and xtal. What about miller indices?
     int max_refine = 50;
     std::vector<Vector3i> miller_indices;
-    std::map<int,score_and_crystal> results_map;
+    
     int count;
     int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
     double width = scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
@@ -308,7 +342,8 @@ int main(int argc, char** argv) {
         Crystal crystal = candidates.next(); //quick (<0.1ms)
         n++;
         //calc_score(crystal, obs, rlp_select, phi_select, gonio, beam, panel, width);
-        threads.emplace_back(std::thread(calc_score, crystal, obs, rlp_select, phi_select, gonio, beam, panel, width));
+        threads.emplace_back(std::thread(calc_score, crystal, obs, rlp_select, phi_select,
+         gonio, beam, panel, width, n));
     }
     for (auto &t : threads){
         t.join();
@@ -370,7 +405,7 @@ int main(int argc, char** argv) {
         sac.num_indexed = count;
         sac.rmsdxy = xyrmsd;
         results_map[n] = sac;
-    }
+    }*/
     std::cout << "Unit cell, #indexed, rmsd_xy" << std::endl;
     for (auto it=results_map.begin();it!=results_map.end();it++){
         gemmi::UnitCell cell = (*it).second.crystal.get_unit_cell();
@@ -395,7 +430,7 @@ int main(int argc, char** argv) {
     // For now, let's just write out the candidate vectors and write out the unrefined experiment models with the
     // first combination of candidate vectors as an example crystal, to demonstrate an example experiment list data
     // structure.
-    */
+    
     // dump the candidate vectors to json
     std::string n_vecs = std::to_string(candidate_lattice_vectors.size() - 1);
     size_t n_zero = n_vecs.length();
@@ -419,14 +454,14 @@ int main(int argc, char** argv) {
         //Crystal best_xtal{candidate_lattice_vectors[0],
         //                  candidate_lattice_vectors[1],
         //                  candidate_lattice_vectors[2],
-        //                  space_group};
-        expt.set_crystal(best_xtal);
-        json elist_out = expt.to_json();
-        std::string efile_name = "elist.json";
-        std::ofstream efile(efile_name);
-        efile << elist_out.dump(4);
-        logger->info("Saved experiment list to {}", efile_name);
-    }*/
+        //                  space_group};*/
+    expt.set_crystal(best_xtal);
+    json elist_out = expt.to_json();
+    std::string efile_name = "elist.json";
+    std::ofstream efile(efile_name);
+    efile << elist_out.dump(4);
+    logger->info("Saved experiment list to {}", efile_name);
+    //}*/
 
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;
