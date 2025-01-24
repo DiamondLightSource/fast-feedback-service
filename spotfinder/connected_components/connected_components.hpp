@@ -172,7 +172,7 @@ class ConnectedComponents {
                         const pixel_t *original_image,
                         const ushort width,
                         const ushort height,
-                        const uint32_t min_spot_size);
+                        const uint min_spot_size);
 
     uint get_num_strong_pixels() const {
         return num_strong_pixels;
@@ -224,7 +224,8 @@ class ConnectedComponents {
       const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
       const ushort width,
       const ushort height,
-      const uint min_spot_size);
+      const uint min_spot_size,
+      const uint max_peak_centroid_separation);
 
   private:
     uint num_strong_pixels;           // Number of strong pixels

@@ -16,7 +16,7 @@ ConnectedComponents::ConnectedComponents(const uint8_t *result_image,
                                          const pixel_t *original_image,
                                          const ushort width,
                                          const ushort height,
-                                         const uint32_t min_spot_size)
+                                         const uint min_spot_size)
     : num_strong_pixels(0), num_strong_pixels_filtered(0) {
     // Construct signals
     size_t k = 0;  // Linear index for the image
@@ -133,7 +133,8 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
   const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
   const ushort width,
   const ushort height,
-  const uint min_spot_size) {
+  const uint min_spot_size,
+  const uint max_peak_centroid_separation) {
     /*
      * Initialize global containers for the 3D connected components
      */
@@ -309,10 +310,11 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
 
     /*
      * Finally, filter the reflections based on the minimum spot size and
-     * return the final list of 3D reflections.
+     * maximum peak centroid separation. Then return the filtered reflections.
      */
 
     if (min_spot_size > 0) {
+        logger->info("Filtering reflections by minimum spot size");
         reflections_3d.erase(std::remove_if(reflections_3d.begin(),
                                             reflections_3d.end(),
                                             [min_spot_size](const auto &reflection) {
@@ -320,6 +322,18 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
                                                        < min_spot_size;
                                             }),
                              reflections_3d.end());
+    }
+
+    if (max_peak_centroid_separation > 0) {
+        logger->info("Filtering reflections by maximum peak centroid separation");
+        reflections_3d.erase(
+          std::remove_if(reflections_3d.begin(),
+                         reflections_3d.end(),
+                         [max_peak_centroid_separation](const auto &reflection) {
+                             return reflection.peak_centroid_distance()
+                                    > max_peak_centroid_separation;
+                         }),
+          reflections_3d.end());
     }
 
     for (const auto &reflection : reflections_3d) {
