@@ -208,7 +208,7 @@ reflection_data initial_refman_filter(
         else if (hkl[i] == null){
             sel[i] = false;
         }
-        else if (std::abs(s1[i].cross(s0).dot(axis)) < close_to_spindle_cutoff){
+        else if (std::abs(s1[i].cross(s0).dot(axis)) <= close_to_spindle_cutoff){
             sel[i] = false;
         }
         /*else if (!((*experiment.get_scan()).is_angle_valid(xyzobs[i][2]))){
@@ -228,8 +228,8 @@ reflection_data initial_refman_filter(
     //    reflections, sel.const_ref());
     // now calculate entering flags (needed for prediction) and frame numbers
     size_t used_in_refinement_value = (1 << 3); //used in refinement flag
-    for (int i=0;i<flags.size();i++){
-        flags[i] &= ~used_in_refinement_value; //unset the flag
+    for (int i=0;i<subrefls.flags.size();i++){
+        subrefls.flags[i] &= ~used_in_refinement_value; //unset the flag
     }
 
     std::vector<bool> enterings(subrefls.flags.size(), false);
@@ -240,7 +240,6 @@ reflection_data initial_refman_filter(
         enterings[i] = (s1_sub[i].dot(vec) < 0.0);
     }
     subrefls.entering = enterings;
-    subrefls.flags = flags;
     return subrefls;
 }
 

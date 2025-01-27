@@ -31,12 +31,12 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, s
         Vector3d rlp_this = rlp[i];
         Vector3d hkl_f = A_inv * rlp_this;
         for (std::size_t j = 0; j < 3; j++) {
-            miller_indices[i][j] = (int)round(hkl_f[j]);
+            miller_indices[i][j] = static_cast<int>(round(hkl_f[j]));
         }
         Vector3d diff{{0,0,0}};
-        diff[0] = (double)miller_indices[i][0] - hkl_f[0];
-        diff[1] = (double)miller_indices[i][1] - hkl_f[1];
-        diff[2] = (double)miller_indices[i][2] - hkl_f[2];
+        diff[0] = static_cast<double>(miller_indices[i][0]) - hkl_f[0];
+        diff[1] = static_cast<double>(miller_indices[i][1]) - hkl_f[1];
+        diff[2] = static_cast<double>(miller_indices[i][2]) - hkl_f[2];
         double l_sq = diff.squaredNorm();
         if (l_sq > tolsq){
             miller_indices[i] = {0,0,0};
@@ -67,7 +67,7 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, s
                         if (std::abs(phi_i - phi_j) > pi_4) {
                             continue;
                         }
-                        if (lsq_vector[i_ref] < lsq_vector[j_ref]){
+                        if (lsq_vector[j_ref] < lsq_vector[i_ref]){
                             if (crystal_ids[i_ref] != -1){
                                 miller_indices[i_ref] = {0,0,0};
                                 crystal_ids[i_ref] = -1;
@@ -101,7 +101,7 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, s
                 if (std::abs(phi_i - phi_j) > pi_4) {
                     continue;
                 }
-                if (lsq_vector[i_ref] < lsq_vector[j_ref]){
+                if (lsq_vector[j_ref] < lsq_vector[i_ref]){
                     if (crystal_ids[i_ref] != -1){
                         miller_indices[i_ref] = {0,0,0};
                         crystal_ids[i_ref] = -1;

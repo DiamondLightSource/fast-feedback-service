@@ -97,6 +97,7 @@ void calc_score(Crystal const &crystal,
   mtx.unlock();
   std::cout<< "Done from thread# " << std::this_thread::get_id() << std::endl;
 }
+constexpr double RAD2DEG = 180.0 / M_PI;
 
 int main(int argc, char** argv) {
     // The purpose of an indexer is to determine the lattice model that best
@@ -263,6 +264,7 @@ int main(int argc, char** argv) {
     double osc_start = oscillation[0];
     int image_range_start = scan.get_image_range()[0];
     double DEG2RAD = M_PI / 180.0;
+    double wl = beam.get_wavelength();
     for (int i = 0; i < rlp.size(); ++i) {
         int vec_idx= 3*i;
         double x1 = xyzobs_px[vec_idx];
@@ -272,7 +274,9 @@ int main(int argc, char** argv) {
         double rot_angle = (((x3 + 1 - image_range_start) * osc_width) + osc_start) * DEG2RAD;
         phi[i] = rot_angle;
         Vector3d m = {xymm[0], xymm[1], 1.0};
-        s1[i] = d_matrix * m;
+        Vector3d s1_this = d_matrix * m;
+        s1_this.normalize();
+        s1[i] = s1_this / wl;
         xyzobs_mm[i] = {xymm[0], xymm[1], rot_angle};
     }
 
@@ -293,7 +297,7 @@ int main(int argc, char** argv) {
     int selcount=0;
     // also select flags, xyzobs/cal, s1 and enterings
     for (int i=0;i<phi_select.size();i++){
-        if ((1.0/rlp[i].norm()) > d_min){
+        if ((1.0/rlp[i].norm()) > d_min && (phi[i]*RAD2DEG <= 360.0)){
             phi_select[selcount] = phi[i];
             rlp_select[selcount] = rlp[i];
             flags_select[selcount] = flags[i];
@@ -409,14 +413,7 @@ int main(int argc, char** argv) {
     std::cout << "Unit cell, #indexed, rmsd_xy" << std::endl;
     for (auto it=results_map.begin();it!=results_map.end();it++){
         gemmi::UnitCell cell = (*it).second.crystal.get_unit_cell();
-        std::string printcell;
-        std::string a = std::to_string(cell.a);
-        std::string b = std::to_string(cell.b);
-        std::string c = std::to_string(cell.c);
-        std::string al = std::to_string(cell.alpha);
-        std::string be = std::to_string(cell.beta);
-        std::string ga = std::to_string(cell.gamma);
-        std::cout << a << ", " << b << ", " << c << ", " << al << ", " << be << ", "<< ga << ", "<< (*it).second.num_indexed << ", " << (*it).second.rmsdxy << std::endl;
+        logger->info("{:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {}, {:>7.4f}", cell.a,cell.b,cell.c,cell.alpha,cell.beta,cell.gamma,(*it).second.num_indexed, (*it).second.rmsdxy);
     }
 
     // find the best crystal from the map - lowest score
