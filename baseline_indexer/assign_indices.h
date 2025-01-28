@@ -1,4 +1,4 @@
-#include <math.h>
+#include <cmath>
 #include <Eigen/Dense>
 #include <iostream>
 
@@ -64,22 +64,24 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, s
                         const std::size_t j_ref = i_same_hkl[j];
                         double phi_i = phi[i_ref];
                         double phi_j = phi[j_ref];
+                        if (crystal_ids[i_ref] == -1){
+                            continue;
+                        }
+                        if (crystal_ids[j_ref] == -1){
+                            continue;
+                        }
                         if (std::abs(phi_i - phi_j) > pi_4) {
                             continue;
                         }
                         if (lsq_vector[j_ref] < lsq_vector[i_ref]){
-                            if (crystal_ids[i_ref] != -1){
-                                miller_indices[i_ref] = {0,0,0};
-                                crystal_ids[i_ref] = -1;
-                                count--;
-                            }
+                            miller_indices[i_ref] = {0,0,0};
+                            crystal_ids[i_ref] = -1;
+                            count--;
                         }
                         else {
-                            if (crystal_ids[j_ref] != -1){
-                                miller_indices[j_ref] = {0,0,0};
-                                crystal_ids[j_ref] = -1;
-                                count--;
-                            }
+                            miller_indices[j_ref] = {0,0,0};
+                            crystal_ids[j_ref] = -1;
+                            count--;
                         }
                     }
                 }
