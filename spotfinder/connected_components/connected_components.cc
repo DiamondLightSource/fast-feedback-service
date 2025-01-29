@@ -331,7 +331,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
         reflections_3d.erase(std::remove_if(reflections_3d.begin(),
                                             reflections_3d.end(),
                                             [min_spot_size](const auto &reflection) {
-                                                return reflection.num_pixels
+                                                return reflection.get_num_pixels()
                                                        < min_spot_size;
                                             }),
                              reflections_3d.end());

@@ -993,12 +993,12 @@ int main(int argc, char **argv) {
 
                 std::string reflection_info =
                   fmt::format("X: [{}, {}] Y: [{}, {}] Z: [{}, {}] COM: ({}, {}, {})",
-                              reflection.x_min,
-                              reflection.x_max,
-                              reflection.y_min,
-                              reflection.y_max,
-                              reflection.z_min,
-                              reflection.z_max,
+                              reflection.get_x_min(),
+                              reflection.get_x_max(),
+                              reflection.get_y_min(),
+                              reflection.get_y_max(),
+                              reflection.get_z_min(),
+                              reflection.get_z_max(),
                               x,
                               y,
                               z);
@@ -1006,11 +1006,14 @@ int main(int argc, char **argv) {
 
                 // Print all members of the reflection
                 // Print x bounds
-                out << "X: [" << reflection.x_min << ", " << reflection.x_max << "] ";
+                out << "X: [" << reflection.get_x_min() << ", "
+                    << reflection.get_x_max() << "] ";
                 // Print y bounds
-                out << "Y: [" << reflection.y_min << ", " << reflection.y_max << "] ";
+                out << "Y: [" << reflection.get_y_min() << ", "
+                    << reflection.get_y_max() << "] ";
                 // Print z bounds
-                out << "Z: [" << reflection.z_min << ", " << reflection.z_max << "] ";
+                out << "Z: [" << reflection.get_z_min() << ", "
+                    << reflection.get_z_max() << "] ";
                 // Print Centre of Mass
                 out << "COM: (" << x << ", " << y << ", " << z << ")\n";
             }

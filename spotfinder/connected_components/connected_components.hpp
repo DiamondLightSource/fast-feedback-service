@@ -23,49 +23,39 @@ struct Reflection {
     int num_pixels = 0;
 };
 
-struct Reflection3D {
-    std::vector<Signal> signals;  // List of signals
-    // Bounding box min/max coordinates
-    int x_min, x_max;
-    int y_min, y_max;
-    int z_min, z_max;
-    int num_pixels = 0;  // Number of pixels in the reflection
-
-    // com cache for lazy evaluation
-    mutable bool com_cached = false;
-    mutable std::tuple<float, float, float> com_cache;
-
+class Reflection3D {
+  public:
     Reflection3D()
-        : x_min(std::numeric_limits<int>::max()),
-          x_max(std::numeric_limits<int>::min()),
-          y_min(std::numeric_limits<int>::max()),
-          y_max(std::numeric_limits<int>::min()),
-          z_min(std::numeric_limits<int>::max()),
-          z_max(std::numeric_limits<int>::min()),
-          com_cached(false) {}
+        : x_min_(std::numeric_limits<int>::max()),
+          x_max_(std::numeric_limits<int>::min()),
+          y_min_(std::numeric_limits<int>::max()),
+          y_max_(std::numeric_limits<int>::min()),
+          z_min_(std::numeric_limits<int>::max()),
+          z_max_(std::numeric_limits<int>::min()),
+          num_pixels_(0),
+          com_cached_(false) {}
 
     void add_signal(const Signal &signal) {
-        signals.push_back(signal);
+        signals_.push_back(signal);
 
         // Invalidate cached center of mass
-        com_cached = false;
+        com_cached_ = false;
 
         // Update bounding box
         if (signal.z.has_value()) {
-            z_min = std::min(z_min, signal.z.value());
-            z_max = std::max(z_max, signal.z.value());
+            z_min_ = std::min(z_min_, signal.z.value());
+            z_max_ = std::max(z_max_, signal.z.value());
         } else {
             std::string msg = "Signal missing z-index";
             logger->error(msg);
             throw std::runtime_error(msg);
         }
+        x_min_ = std::min(x_min_, signal.x);
+        x_max_ = std::max(x_max_, signal.x);
+        y_min_ = std::min(y_min_, signal.y);
+        y_max_ = std::max(y_max_, signal.y);
 
-        x_min = std::min(x_min, signal.x);
-        x_max = std::max(x_max, signal.x);
-        y_min = std::min(y_min, signal.y);
-        y_max = std::max(y_max, signal.y);
-
-        ++num_pixels;  // Increment the number of pixels in the reflection
+        ++num_pixels_;  // Increment the number of pixels in the reflection
     }
 
     /**
@@ -74,11 +64,11 @@ struct Reflection3D {
      * @return A tuple containing the x, y, and z coordinates of the center of mass.
      */
     std::tuple<float, float, float> center_of_mass() const {
-        if (com_cached) {
-            return com_cache;
+        if (com_cached_) {
+            return com_cache_;
         }
 
-        if (signals.empty()) {
+        if (signals_.empty()) {
             logger->error("No pixels in 3D reflection");
             throw std::runtime_error("No pixels in 3D reflection");
         }
@@ -86,7 +76,7 @@ struct Reflection3D {
         double weighted_sum_x = 0, weighted_sum_y = 0, weighted_sum_z = 0;
         double total_intensity = 0;
 
-        for (const auto &signal : signals) {
+        for (const auto &signal : signals_) {
             weighted_sum_x += (signal.x + 0.5) * signal.intensity;
             weighted_sum_y += (signal.y + 0.5) * signal.intensity;
             weighted_sum_z += (signal.z.value() + 0.5) * signal.intensity;
@@ -99,13 +89,12 @@ struct Reflection3D {
         }
 
         // Compute and cache the result
-        com_cache = {weighted_sum_x / total_intensity,
-                     weighted_sum_y / total_intensity,
-                     weighted_sum_z / total_intensity};
+        com_cache_ = {weighted_sum_x / total_intensity,
+                      weighted_sum_y / total_intensity,
+                      weighted_sum_z / total_intensity};
 
-        com_cached = true;  // Mark cache as valid
-
-        return com_cache;
+        com_cached_ = true;  // Mark cache as valid
+        return com_cache_;
     }
 
     /**
@@ -115,7 +104,7 @@ struct Reflection3D {
      * @return The Euclidean distance between the peak pixel and the center of mass.
      */
     float peak_centroid_distance() const {
-        if (signals.empty()) {
+        if (signals_.empty()) {
             logger->error("No pixels in 3D reflection");
             throw std::runtime_error("No pixels in 3D reflection");
         }
@@ -124,7 +113,7 @@ struct Reflection3D {
         const Signal *peak_signal = nullptr;
         double max_intensity = std::numeric_limits<double>::min();
 
-        for (const auto &signal : signals) {
+        for (const auto &signal : signals_) {
             if (signal.intensity > max_intensity) {
                 max_intensity = signal.intensity;
                 peak_signal = &signal;
@@ -146,6 +135,40 @@ struct Reflection3D {
 
         return std::sqrt(dx * dx + dy * dy + dz * dz);
     }
+
+    // Getters for bounding box
+    inline int get_x_min() const {
+        return x_min_;
+    }
+    inline int get_x_max() const {
+        return x_max_;
+    }
+    inline int get_y_min() const {
+        return y_min_;
+    }
+    inline int get_y_max() const {
+        return y_max_;
+    }
+    inline int get_z_min() const {
+        return z_min_;
+    }
+    inline int get_z_max() const {
+        return z_max_;
+    }
+    inline int get_num_pixels() const {
+        return num_pixels_;
+    }
+
+  private:
+    std::vector<Signal> signals_;
+    int x_min_, x_max_;
+    int y_min_, y_max_;
+    int z_min_, z_max_;
+    int num_pixels_;
+
+    // com cache for lazy evaluation
+    mutable bool com_cached_;
+    mutable std::tuple<float, float, float> com_cache_;
 };
 
 /**
