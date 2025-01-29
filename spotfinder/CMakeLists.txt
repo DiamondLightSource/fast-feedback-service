@@ -30,6 +30,7 @@ target_link_libraries(spotfinder
     lodepng
     nlohmann_json::nlohmann_json
     spdlog::spdlog
+    dx2
     version
 )
 
