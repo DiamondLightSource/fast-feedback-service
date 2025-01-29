@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <dx2/h5/h5write.hpp>
 #include <iostream>
 #include <memory>
 #include <ranges>
@@ -1018,6 +1019,31 @@ int main(int argc, char **argv) {
                 out << "COM: (" << x << ", " << y << ", " << z << ")\n";
             }
             logger->flush();  // Flush to ensure all messages printed before continuing
+
+            // Step 4: Write the 3D reflections to a `.h5` file
+            try {
+                std::vector<std::array<double, 3>> refl(reflections_3d.size());
+                std::transform(reflections_3d.begin(),
+                               reflections_3d.end(),
+                               refl.begin(),
+                               [](const auto &reflection) {
+                                   auto [x, y, z] = reflection.center_of_mass();
+                                   return std::array<double, 3>{x, y, z};
+                               });
+
+                std::filesystem::path cwd = std::filesystem::current_path();
+                std::string file_path = cwd.generic_string();
+                file_path.append("/test_write.h5");
+
+                std::string dataset_path = "dials/processing/group_0/xyzobs.px.value";
+
+                logger->info("Writing data to HDF5 file: {}", file_path);
+                write_data_to_h5_file(file_path, dataset_path, refl);
+            } catch (const std::exception &e) {
+                logger->error("Error writing data to HDF5 file: {}", e.what());
+            } catch (...) {
+                logger->error("Unknown error writing data to HDF5 file");
+            }
         }
 
         logger->info("3D spot analysis complete");

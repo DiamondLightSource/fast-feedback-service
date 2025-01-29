@@ -20,6 +20,12 @@ For example, you can create a conda/mamba environment with the following command
 mamba create -c conda-forge -p ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog
 ```
 
+### Initialising submodules
+This repository uses submodules for the `dx2` dependency. To initialise the submodules, run the following in the root of the repository:
+```bash
+git submodule update --init --recursive
+```
+
 ### Compiling the CUDA code
 To compile the CUDA code, you need to run the following:
 ```bash
