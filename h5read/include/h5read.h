@@ -53,6 +53,9 @@ float h5read_get_wavelength(h5read_handle *obj);
 /// Get the pixel size for this dataset
 float h5read_get_pixel_size_slow(h5read_handle *obj);
 float h5read_get_pixel_size_fast(h5read_handle *obj);
+/// Get the oscillation for this dataset
+float h5read_get_oscillation_start(h5read_handle *obj);
+float h5read_get_oscillation_width(h5read_handle *obj);
 float h5read_get_detector_distance(h5read_handle *obj);
 float h5read_get_beam_center_x(h5read_handle *obj);
 float h5read_get_beam_center_y(h5read_handle *obj);
@@ -166,6 +169,8 @@ class Reader {
       const = 0;  ///< Beam center (y, x), in pixels
     virtual std::optional<float> get_detector_distance()
       const = 0;  ///< Distance to detector, in meters.
+    virtual std::array<float, 2> get_oscillation()
+      const = 0;  ///< Oscillation (start, width), in degrees
 };
 
 // Declare a C++ "object" version so we don't have to keep track of allocations
@@ -258,6 +263,13 @@ class H5Read : public Reader {
             std::optional<float> result = wavelength;
             return result;
         }
+    }
+    /// Get the oscillation range, in (start, width) degrees
+    virtual std::array<float, 2> get_oscillation() const {
+        float start = h5read_get_oscillation_start(_handle.get());
+        float width = h5read_get_oscillation_width(_handle.get());
+
+        return {{start, width}};
     }
 
     virtual std::optional<std::array<float, 2>> get_pixel_size() const {
