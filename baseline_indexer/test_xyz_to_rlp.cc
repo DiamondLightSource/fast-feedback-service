@@ -14,6 +14,9 @@ using Eigen::Vector3d;
 using json = nlohmann::json;
 
 TEST(BaselineIndexer, XyztoRlptest) {
+    // Test the xyz_to_rlp function. Compare output to the dials
+    // equivalent on the same data: centroid_px_to_mm plus
+    // map_centroids_to_reciprocal_space
     std::vector<double> xyzobs_px{{10.1,10.1,50.2, 20.1,20.1,70.2}};
     Scan scan{{1,100}, {0.0,0.1}}; //image range and oscillation.
     Goniometer gonio{{{1.0,0.0,0.0}}, {{0.0}}, {{"phi"}}, 0}; //axes, angles, names, scan-axis.
@@ -40,8 +43,11 @@ TEST(BaselineIndexer, XyztoRlptest) {
     std::vector<Vector3d> rlp = xyz_to_rlp(
         xyzobs_px, panel, beam, scan, gonio
     );
+    // Check against the equivalent results from the dials calculation
     Vector3d expected_0{{-0.5021752936083477, 0.5690514955867707, 0.27788051106787137}};
     Vector3d expected_1{{-0.5009709068399325, 0.5770958485799975, 0.2562207980973077}};
-    EXPECT_EQ(rlp[0], expected_0);
-    EXPECT_EQ(rlp[1], expected_1);
+    for (int i=0;i<3;i++){
+        EXPECT_DOUBLE_EQ(rlp[0][i], expected_0[i]);
+        EXPECT_DOUBLE_EQ(rlp[1][i], expected_1[i]);
+    }
 }
