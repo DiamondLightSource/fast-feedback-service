@@ -30,8 +30,8 @@ target_include_directories(pocketfft INTERFACE ${pocketfft_SOURCE_DIR})
 if(NOT TARGET GTest::gtest_main)
     FetchContent_MakeAvailable(GTest)
 endif()
-enable_testing()
 
+add_subdirectory(tests)
 add_executable(baseline_indexer
     indexer.cc
 )
@@ -46,11 +46,3 @@ target_link_libraries(baseline_indexer
     spdlog::spdlog
     ${CMAKE_THREAD_LIBS_INIT}
 )
-add_executable(test_xyz_to_rlp test_xyz_to_rlp.cc)
-target_link_libraries(
-    test_xyz_to_rlp GTest::gtest_main dx2 Eigen3::Eigen nlohmann_json::nlohmann_json)
-add_executable(test_fft3d test_fft3d.cc)
-target_link_libraries(
-    test_fft3d GTest::gtest_main fmt Eigen3::Eigen pocketfft spdlog::spdlog)
-include(GoogleTest)
-gtest_discover_tests(test_xyz_to_rlp test_fft3d PROPERTIES LABELS baseline-indexer-tests)

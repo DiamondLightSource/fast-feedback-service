@@ -39,6 +39,11 @@ void map_centroids_to_reciprocal_space_grid(
     assert(data_in.size() == n_points * n_points * n_points);
     // Determine the resolution span of the grid so we know how to map
     // each coordinate to the grid.
+    // -dmin to +dmin spans the coordinate range from 0 to N (in each dimension),
+    // but the discrete FFT requires input coefficients 0 to N-1, and so our
+    // grid goes from 0 .. N-1 and we don't use data that maps to grid point N
+    // (which is equivalent to grid point 0)
+
     const double rlgrid = 2 / (d_min * n_points);
     const double one_over_rlgrid = 1 / rlgrid;
     const int half_n_points = n_points / 2;
@@ -58,6 +63,7 @@ void map_centroids_to_reciprocal_space_grid(
             coord[j] = static_cast<int>(round(v[j] * one_over_rlgrid)) + half_n_points;
         }
         if ((coord.maxCoeff() >= n_points) || coord.minCoeff() < 0) {
+            // We can get maxcoeff == n_points if we anear +dmin, see comment above.
             selection[i] = false;
             continue;
         }

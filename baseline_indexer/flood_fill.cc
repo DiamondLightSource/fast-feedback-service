@@ -74,8 +74,6 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     int nn_sq_minus_n = n_points * n_points * (n_points - 1);
     for (auto& it : grid_binary) {
         if (it.second == target) {
-            //for (int i = 0; i < grid_binary.size(); i++) {
-            //if (grid_binary[i] == target) {
             // Convert the array index into xyz coordinates.
             // Store xyz coordinates on the stack, but index the array with 1D index.
             int i = it.first;
@@ -127,10 +125,6 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
                             stack.push(neighbor);
                         }
                     }
-                    //if (grid_binary[array_index] == target) {
-                    //    grid_binary[array_index] = replacement;
-                    //    stack.push(neighbor);
-                    //}
                 }
             }
             replacement++;
@@ -167,12 +161,13 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill_filter(
   double peak_volume_cutoff = 0.15) {
     // Filter out based on iqr range and peak_volume_cutoff
     std::vector<int> grid_points_per_void_unsorted(grid_points_per_void);
+    // Acting on a copy of the input data.
     std::sort(grid_points_per_void.begin(), grid_points_per_void.end());
     // The peak around the origin of the FFT can be very large in volume,
     // so use the IQR range to filter high-volume peaks out that are not
     // from the typical distribution of points, before applying the peak
     // volume cutoff based on a fraction of the max volume in the remaining
-    // array.
+    // array. But the large volume peaks are still contained in the output.
     int Q3_index = grid_points_per_void.size() * 3 / 4;
     int Q1_index = grid_points_per_void.size() / 4;
     int iqr = grid_points_per_void[Q3_index] - grid_points_per_void[Q1_index];
