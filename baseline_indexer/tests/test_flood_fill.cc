@@ -26,7 +26,7 @@ TEST(BaselineIndexer, flood_fill_test) {
         grid[i] = 100;
     }
     // now add a weak point (next to the corner), which should get filtered out by the rmsd cutoff filter.
-    grid[1] = 1; // the RMSD is approx 35, so anything below this is filtered out.
+    grid[1] = 1;  // the RMSD is approx 35, so anything below this is filtered out.
     std::vector<int> grid_points_per_void;
     std::vector<Vector3d> centres_of_mass_frac;
     std::tie(grid_points_per_void, centres_of_mass_frac) =
