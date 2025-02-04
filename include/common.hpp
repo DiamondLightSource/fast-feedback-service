@@ -1,7 +1,9 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <fmt/color.h>
 #include <fmt/core.h>
+#include <fmt/os.h>
 
 #include <algorithm>
 #include <cinttypes>
@@ -16,8 +18,19 @@
 #define VALID_PIXEL 1
 #define MASKED_PIXEL 0
 
+// FMT colour formatting
+constexpr auto fmt_cyan = fmt::fg(fmt::terminal_color::cyan) | fmt::emphasis::bold;
+constexpr auto fmt_green = fmt::fg(fmt::terminal_color::green) | fmt::emphasis::bold;
+constexpr auto fmt_magenta =
+  fmt::fg(fmt::terminal_color::magenta) | fmt::emphasis::bold;
+
 // Global static access to the logger
 static auto &logger = FFSLogger::getInstance();
+
+/// Very basic comparison operator for convenience
+inline auto operator==(const int2 &left, const int2 &right) -> bool {
+    return left.x == right.x && left.y == right.y;
+}
 
 template <typename T1, typename... TS>
 auto with_formatting(const std::string &code, const T1 &first, TS... args)

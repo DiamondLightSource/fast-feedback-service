@@ -14,6 +14,7 @@ add_executable(spotfinder
     kernels/masking.cu
     kernels/thresholding.cu
     kernels/erosion.cu
+    connected_components/connected_components.cc
 )
 target_link_libraries(spotfinder
     PRIVATE
@@ -29,6 +30,7 @@ target_link_libraries(spotfinder
     lodepng
     nlohmann_json::nlohmann_json
     spdlog::spdlog
+    dx2
     version
 )
 
