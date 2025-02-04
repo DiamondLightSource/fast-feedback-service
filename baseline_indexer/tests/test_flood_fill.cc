@@ -1,9 +1,3 @@
-// Test the flood fill algorithm with a small grid e.g. 6^3.
-
-// both with rmsd cutoff and without
-
-// Test the filter
-
 #include <gtest/gtest.h>
 #include <math.h>
 
@@ -26,15 +20,17 @@ TEST(BaselineIndexer, flood_fill_test) {
       {12, 37, 38, 39, 42, 43, 62, 63, 67, 112}};  // a channel with a break
     // channel: fractional coords along z: 1 at 0, 5 at 0.2, 3 at 0.4, 1 at 0.8 (==-0.2)
     for (auto& i : corner_cube) {
-        grid[i] = 1;
+        grid[i] = 100;
     }
     for (auto& i : channel) {
-        grid[i] = 1;
+        grid[i] = 100;
     }
+    // now add a weak point (next to the corner), which should get filtered out by the rmsd cutoff filter.
+    grid[1] = 1; // the RMSD is approx 35, so anything below this is filtered out.
     std::vector<int> grid_points_per_void;
     std::vector<Vector3d> centres_of_mass_frac;
     std::tie(grid_points_per_void, centres_of_mass_frac) =
-      flood_fill(grid, 0.0001, n_points);
+      flood_fill(grid, 1.0, n_points);
 
     EXPECT_EQ(grid_points_per_void[0], 10);  // channel
     EXPECT_EQ(grid_points_per_void[1], 8);   // corner cube
