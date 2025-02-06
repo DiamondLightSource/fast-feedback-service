@@ -71,7 +71,7 @@ bool is_approximate_integer_multiple(Vector3d v1,
  * @param n_points The size of each dimension of the FFT grid.
  * @returns Unique vectors, sorted by volume, that give describe the FFT peaks.
  */
-std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
+std::vector<Vector3d> peaks_to_rlvs(std::vector<Vector3d> centres_of_mass_frac,
                                     std::vector<int> grid_points_per_void,
                                     double d_min,
                                     double min_cell = 3.0,
@@ -181,6 +181,6 @@ std::vector<Vector3d> sites_to_vecs(std::vector<Vector3d> centres_of_mass_frac,
 
     std::chrono::duration<double> elapsed_seconds =
       std::chrono::system_clock::now() - start;
-    logger->debug("elapsed time for sites_to_vecs: {:.5f}s", elapsed_seconds.count());
+    logger->debug("elapsed time for peaks_to_rlvs: {:.5f}s", elapsed_seconds.count());
     return unique_vectors_sorted;
 }

@@ -24,7 +24,7 @@
 #include "fft3d.cc"
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
-#include "sites_to_vecs.cc"
+#include "peaks_to_rlvs.cc"
 #include "xyz_to_rlp.cc"
 
 using Eigen::Matrix3d;
@@ -165,20 +165,20 @@ int main(int argc, char** argv) {
     // perhaps this could be done with connected components analysis.
     // So do the flood fill, and extract the centres of mass of the peaks and the number of grid points
     // that contribute to each peak.
-    std::vector<int> grid_points_per_void;
-    std::vector<Vector3d> centres_of_mass_frac;
+    std::vector<int> grid_points_per_peak;
+    std::vector<Vector3d> fractional_centres_of_mass;
     // 15.0 is the DIALS 'rmsd_cutoff' parameter to filter out weak peaks.
-    std::tie(grid_points_per_void, centres_of_mass_frac) =
+    std::tie(grid_points_per_peak, fractional_centres_of_mass) =
       flood_fill(real_fft_result, 15.0, n_points);
     // Do some further filtering, 0.15 is the DIALS peak_volume_cutoff parameter.
-    std::tie(grid_points_per_void, centres_of_mass_frac) =
-      flood_fill_filter(grid_points_per_void, centres_of_mass_frac, 0.15);
+    std::tie(grid_points_per_peak, fractional_centres_of_mass) =
+      flood_fill_filter(grid_points_per_peak, fractional_centres_of_mass, 0.15);
 
     // Convert the peak centres from the fft grid into vectors in reciprocal space. These are our candidate
     // lattice vectors.
     // 3.0 is the min cell parameter.
-    std::vector<Vector3d> candidate_lattice_vectors = sites_to_vecs(
-      centres_of_mass_frac, grid_points_per_void, d_min, 3.0, max_cell, n_points);
+    std::vector<Vector3d> candidate_lattice_vectors = peaks_to_rlvs(
+      fractional_centres_of_mass, grid_points_per_peak, d_min, 3.0, max_cell, n_points);
 
     // at this point, we will test combinations of the candidate vectors, use those to index the spots, do some
     // refinement of the candidates and choose the best one. Then we will do some more refinement including extra
