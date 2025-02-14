@@ -49,6 +49,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
+# Handle inclusion of dx2 dependency using git submodule
+set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
+
+if(EXISTS ${dx2_SOURCE_DIR}/CMakeLists.txt)
+    add_subdirectory(${dx2_SOURCE_DIR})
+    message(STATUS "Found dx2: ${dx2_SOURCE_DIR}")
+else()
+    message(FATAL_ERROR "dx2 submodule not found. Please run 'git submodule update --init --recursive'.")
+endif()
+
+include_directories(${dx2_SOURCE_DIR}/include)
+
 # Make a small library that we can link to to get the version
 project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)

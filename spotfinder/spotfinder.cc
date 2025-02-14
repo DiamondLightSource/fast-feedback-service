@@ -1,9 +1,6 @@
 #include "spotfinder.cuh"
 
 #include <bitshuffle.h>
-#include <fmt/color.h>
-#include <fmt/core.h>
-#include <fmt/os.h>
 #include <lodepng.h>
 #include <spdlog/spdlog.h>
 
@@ -17,6 +14,7 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <dx2/h5/h5write.hpp>
 #include <iostream>
 #include <memory>
 #include <ranges>
@@ -26,6 +24,7 @@
 
 #include "cbfread.hpp"
 #include "common.hpp"
+#include "connected_components/connected_components.hpp"
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
@@ -41,9 +40,6 @@ using json = nlohmann::json;
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
 
-constexpr auto fmt_cyan = fmt::fg(fmt::terminal_color::cyan) | fmt::emphasis::bold;
-constexpr auto fmt_green = fmt::fg(fmt::terminal_color::green) | fmt::emphasis::bold;
-
 // Function for passing to std::signal to register the stop request
 extern "C" void stop_processing(int sig) {
     if (global_stop.stop_requested()) {
@@ -55,19 +51,9 @@ extern "C" void stop_processing(int sig) {
     }
 }
 
-/// Very basic comparison operator for convenience
-auto operator==(const int2 &left, const int2 &right) -> bool {
-    return left.x == right.x && left.y == right.y;
-}
-
 bool are_close(float a, float b, float tolerance) {
     return std::fabs(a - b) < tolerance;
 }
-
-struct Reflection {
-    int l, t, r, b;
-    int num_pixels = 0;
-};
 
 /// Copy the mask from a reader into a pitched GPU area
 template <typename T>
@@ -291,7 +277,12 @@ int main(int argc, char **argv) {
       .default_value(false)
       .implicit_value(true);
     parser.add_argument("--min-spot-size")
-      .help("Reflections with a pixel count below this will be discarded.")
+      .help("2D Reflections with a pixel count below this will be discarded.")
+      .metavar("N")
+      .default_value<uint32_t>(3)
+      .scan<'u', uint32_t>();
+    parser.add_argument("--min-spot-size-3d")
+      .help("3D Reflections with a pixel count below this will be discarded.")
       .metavar("N")
       .default_value<uint32_t>(3)
       .scan<'u', uint32_t>();
@@ -348,6 +339,7 @@ int main(int argc, char **argv) {
         std::exit(1);
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
+    uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
 
     std::unique_ptr<Reader> reader_ptr;
 
@@ -493,6 +485,18 @@ int main(int argc, char **argv) {
       styled(detector.beam_center_y, fmt_cyan),
       styled(wavelength, fmt_cyan));
 
+    auto [oscillation_start, oscillation_width] = reader.get_oscillation();
+
+    /*
+     * If the oscillation width is greater than 0, then this is a
+     * rotation dataset. Otherwise, it is a still dataset.
+    */
+    if (oscillation_width > 0) {
+        print("Oscillation:  Start: {:.2f}°  Width: {:.2f}°\n",
+              styled(oscillation_start, fmt_cyan),
+              styled(oscillation_width, fmt_cyan));
+    }
+
 #pragma endregion Argument Parsing
 
     std::signal(SIGINT, stop_processing);
@@ -593,6 +597,19 @@ int main(int argc, char **argv) {
         pipeHandler = std::make_unique<PipeHandler>(pipe_fd);
     }
 
+    // Create a unique pointer to store the image slices if this is a rotation dataset
+    std::unique_ptr<std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>
+      rotation_slices = nullptr;
+    std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
+    if (oscillation_width > 0) {
+        // If oscillation information is available then this is a rotation dataset
+        print("Dataset type: {}\n", styled("Rotation set", fmt_magenta));
+        rotation_slices = std::make_unique<
+          std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>();
+    } else {
+        print("Dataset type: {}\n", styled("Still set", fmt_magenta));
+    }
+
     // Spawn the reader threads
     std::vector<std::jthread> threads;
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
@@ -612,11 +629,6 @@ int main(int argc, char **argv) {
             // Buffer for reading compressed chunk data in
             auto raw_chunk_buffer =
               std::vector<uint8_t>(width * height * sizeof(pixel_t));
-
-            // Allocate buffers for DIALS-style extraction
-            auto px_coords = std::vector<int2>();
-            auto px_values = std::vector<pixel_t>();
-            auto px_kvals = std::vector<size_t>();
 
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
@@ -775,103 +787,25 @@ int main(int argc, char **argv) {
 #pragma endregion Spotfinding
 
 #pragma region Connected Components
-                // Manually reproduce what the DIALS connected components does
-                // Start with the behaviour of the PixelList class:
-                size_t num_strong_pixels = 0;
-                size_t num_strong_pixels_filtered = 0;
-                px_values.clear();
-                px_coords.clear();
-                px_kvals.clear();
+                std::unique_ptr<ConnectedComponents> connected_components_2d =
+                  std::make_unique<ConnectedComponents>(
+                    host_results.get(), host_image.get(), width, height, min_spot_size);
 
-                for (int y = 0, k = 0; y < height; ++y) {
-                    for (int x = 0; x < width; ++x, ++k) {
-                        if (host_results[k]) {
-                            px_coords.emplace_back(x, y);
-                            px_values.push_back(host_image[k]);
-                            px_kvals.push_back(k);
-                            ++num_strong_pixels;
-                        }
-                    }
+                auto boxes = connected_components_2d->get_boxes();
+                size_t num_strong_pixels =
+                  connected_components_2d->get_num_strong_pixels();
+                size_t num_strong_pixels_filtered =
+                  connected_components_2d->get_num_strong_pixels_filtered();
+
+                // If this is a rotation dataset, store the connected component slice
+                if (rotation_slices) {
+                    // Lock the mutex to protect the map
+                    std::lock_guard<std::mutex> lock(rotation_slices_mutex);
+                    // Store the connected components slice in the map
+                    (*rotation_slices)[offset_image_num] =
+                      std::move(connected_components_2d);
                 }
 
-                auto graph =
-                  boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS>{
-                    px_values.size()};
-
-                // Index for next pixel to search when looking for pixels
-                // below the current one. This will only ever increase, because
-                // we are guaranteed to always look for one after the last found
-                // pixel.
-                int idx_pixel_below = 1;
-
-                for (int i = 0; i < static_cast<int>(px_coords.size()) - 1; ++i) {
-                    auto coord = px_coords[i];
-                    auto coord_right = int2{coord.x + 1, coord.y};
-                    auto k = px_kvals[i];
-
-                    if (px_coords[i + 1] == coord_right) {
-                        // Since we generate strong pixels coordinates horizontally,
-                        // if there is a pixel to the right then it is guaranteed
-                        // to be the next one in the list. Connect these.
-                        boost::add_edge(i, i + 1, graph);
-                    }
-                    // Now, check the pixel directly below this one. We need to scan
-                    // to find it, because _if_ there is a matching strong pixel,
-                    // then we don't know how far ahead it is in the coordinates array
-                    if (coord.y < height - 1) {
-                        auto coord_below = int2{coord.x, coord.y + 1};
-                        auto k_below = k + width;
-                        // int idx = i + 1;
-                        while (idx_pixel_below < px_coords.size() - 1
-                               && px_kvals[idx_pixel_below] < k_below) {
-                            ++idx_pixel_below;
-                        }
-                        // Either we've got the pixel below, past that - or the
-                        // last pixel in the coordinate set.
-                        if (px_coords[idx_pixel_below] == coord_below) {
-                            boost::add_edge(i, idx_pixel_below, graph);
-                        }
-                    }
-                }
-                auto labels = std::vector<int>(boost::num_vertices(graph));
-                auto num_labels = boost::connected_components(graph, labels.data());
-
-                auto boxes = std::vector<Reflection>(num_labels, {width, height, 0, 0});
-
-                assert(labels.size() == px_coords.size());
-                for (int i = 0; i < labels.size(); ++i) {
-                    auto label = labels[i];
-                    auto coord = px_coords[i];
-                    Reflection &box = boxes[label];
-                    box.l = std::min(box.l, coord.x);
-                    box.r = std::max(box.r, coord.x);
-                    box.t = std::min(box.t, coord.y);
-                    box.b = std::max(box.b, coord.y);
-                    box.num_pixels += 1;
-                }
-
-                if (min_spot_size > 0) {
-                    std::vector<Reflection> filtered_boxes;
-                    for (auto &box : boxes) {
-                        if (box.num_pixels >= min_spot_size) {
-                            filtered_boxes.emplace_back(box);
-                            num_strong_pixels_filtered += box.num_pixels;
-                        }
-                    }
-                    boxes = std::move(filtered_boxes);
-
-                    // Print out shoebox details for debugging
-                    // for (auto &box : boxes) {
-                    //     // Print the shoebox details
-                    //     print("Shoebox: ({:3d}, {:3d}) - ({:3d}, {:3d})\n",
-                    //           box.l,
-                    //           box.t,
-                    //           box.r,
-                    //           box.b);
-                    // }
-                } else {
-                    num_strong_pixels_filtered = num_strong_pixels;
-                }
                 end.record(stream);
                 // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -1032,6 +966,89 @@ int main(int argc, char **argv) {
     for (auto &thread : threads) {
         thread.join();
     }
+
+#pragma region 3D Connected Components
+    // After all threads have finished processing slices
+    if (rotation_slices) {
+        logger->info("Processing 3D spots");
+
+        // Step 1: Convert rotation_slices map to a vector
+        std::vector<std::unique_ptr<ConnectedComponents>> slices;
+        for (auto &[image_num, connected_components] : *rotation_slices) {
+            slices.push_back(std::move(connected_components));
+        }
+
+        // Step 2: Call find_3d_components
+        constexpr uint max_peak_centroid_separation = 2;  // Hardcoded for now
+        auto reflections_3d = ConnectedComponents::find_3d_components(
+          slices, width, height, min_spot_size_3d, max_peak_centroid_separation);
+
+        // Step 3: Output the 3D reflections
+        logger->info(
+          fmt::format("Found {} spots", styled(reflections_3d.size(), fmt_cyan)));
+
+        if (do_writeout) {
+            std::ofstream out("3d_reflections.txt");
+            for (const auto &reflection : reflections_3d) {
+                auto [x, y, z] = reflection.center_of_mass();
+
+                std::string reflection_info =
+                  fmt::format("X: [{}, {}] Y: [{}, {}] Z: [{}, {}] COM: ({}, {}, {})",
+                              reflection.get_x_min(),
+                              reflection.get_x_max(),
+                              reflection.get_y_min(),
+                              reflection.get_y_max(),
+                              reflection.get_z_min(),
+                              reflection.get_z_max(),
+                              x,
+                              y,
+                              z);
+                logger->trace(reflection_info);
+
+                // Print all members of the reflection
+                // Print x bounds
+                out << "X: [" << reflection.get_x_min() << ", "
+                    << reflection.get_x_max() << "] ";
+                // Print y bounds
+                out << "Y: [" << reflection.get_y_min() << ", "
+                    << reflection.get_y_max() << "] ";
+                // Print z bounds
+                out << "Z: [" << reflection.get_z_min() << ", "
+                    << reflection.get_z_max() << "] ";
+                // Print Centre of Mass
+                out << "COM: (" << x << ", " << y << ", " << z << ")\n";
+            }
+            logger->flush();  // Flush to ensure all messages printed before continuing
+
+            // Step 4: Write the 3D reflections to a `.h5` file
+            try {
+                std::vector<std::array<double, 3>> refl(reflections_3d.size());
+                std::transform(reflections_3d.begin(),
+                               reflections_3d.end(),
+                               refl.begin(),
+                               [](const auto &reflection) {
+                                   auto [x, y, z] = reflection.center_of_mass();
+                                   return std::array<double, 3>{x, y, z};
+                               });
+
+                std::filesystem::path cwd = std::filesystem::current_path();
+                std::string file_path = cwd.generic_string();
+                file_path.append("/test_write.h5");
+
+                std::string dataset_path = "dials/processing/group_0/xyzobs.px.value";
+
+                logger->info("Writing data to HDF5 file: {}", file_path);
+                write_data_to_h5_file(file_path, dataset_path, refl);
+            } catch (const std::exception &e) {
+                logger->error("Error writing data to HDF5 file: {}", e.what());
+            } catch (...) {
+                logger->error("Unknown error writing data to HDF5 file");
+            }
+        }
+
+        logger->info("3D spot analysis complete");
+    }
+#pragma endregion 3D Connected Components
 
     float total_time =
       std::chrono::duration_cast<std::chrono::duration<double>>(
