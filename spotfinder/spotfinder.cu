@@ -290,6 +290,7 @@ void call_do_spotfinding_extended(dim3 blocks,
     // Perform erosion
     erosion<<<blocks, threads, shared_memory, stream>>>(d_dispersion_mask.get(),
                                                         d_erosion_mask.get(),
+                                                        // mask.get(),
                                                         d_dispersion_mask.pitch,
                                                         d_erosion_mask.pitch,
                                                         KERNEL_RADIUS);
