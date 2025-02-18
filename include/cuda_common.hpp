@@ -24,6 +24,11 @@
 // }
 // #endif
 
+/// Very basic comparison operator for convenience
+inline auto operator==(const int2 &left, const int2 &right) -> bool {
+    return left.x == right.x && left.y == right.y;
+}
+
 class cuda_error : public std::runtime_error {
   public:
     using std::runtime_error::runtime_error;

@@ -2,7 +2,7 @@ project(indexer CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 
-find_package (Threads)
+find_package (Threads REQUIRED)
 
 # Automatic Dependencies
 set(FETCHCONTENT_QUIET OFF)
