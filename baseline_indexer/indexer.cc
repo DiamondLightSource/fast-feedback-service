@@ -4,7 +4,7 @@
 #include <dx2/detector.h>
 #include <dx2/experiment.h>
 #include <dx2/goniometer.h>
-#include <dx2/h5read_processed.h>
+#include <dx2/h5/h5read_processed.hpp>
 #include <dx2/scan.h>
 #include <fmt/color.h>
 #include <fmt/core.h>

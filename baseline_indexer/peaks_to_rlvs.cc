@@ -100,7 +100,7 @@ std::vector<Vector3d> peaks_to_rlvs(std::vector<Vector3d> centres_of_mass_frac,
         }
     }
 
-    // Now sort the filtered data. Ggroup together those
+    // Now sort the filtered data. Group together those
     // with similar angles and lengths (e.g. inverse pairs from the FFT).
     double relative_length_tolerance = 0.1;
     double angular_tolerance = 5.0;
