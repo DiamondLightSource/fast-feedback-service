@@ -11,13 +11,21 @@ include(AlwaysColourCompilation)
 
 find_package(Dials)
 
-include_directories(../../common/include)
+include_directories(../../include)
 
 if (NOT TARGET h5read)
     add_subdirectory(../../h5read h5read)
 endif()
 if (NOT TARGET fmt::fmt)
-    add_subdirectory(../../dependencies/fmt fmt)
+    set(FETCHCONTENT_QUIET OFF)
+    include(FetchContent)
+    FetchContent_Declare(
+        fmt
+        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+        GIT_TAG        11.0.2
+        FIND_PACKAGE_ARGS
+    )
+    FetchContent_MakeAvailable(fmt)
 endif()
 
 
