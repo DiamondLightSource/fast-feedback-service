@@ -66,7 +66,7 @@ zocalo.service -s GPUPerImageAnalysis
 ## Repository Structure
 | Folder Name       | Implementation                                             |
 | -------------     | ---------------------------------------------------------- |
-| [`baseline/`]     | A standalone implementation of the standard DIALS dispersion spotfinder that can be used for comparison. |
+| [`baseline/spotfinder`]     | A standalone implementation of the standard DIALS dispersion spotfinder that can be used for comparison. |
 | [`h5read/`]       | A small C/C++ library to read hdf5 files in a standard way |
 | [`include/`]      | Common utility code, like coloring output, or image comparison, is stored here. |
 | [`src/`]          | Service to run the spotfinder |
@@ -76,7 +76,7 @@ zocalo.service -s GPUPerImageAnalysis
 [`src/`]: src/
 [`spotfinder/`]: spotfinder/
 [`build/bin/`]: build/bin/
-[`baseline/`]: baseline/
+[`baseline/spotfinder`]: baseline/spotfinder
 [`h5read/`]: h5read/
 [`include/`]: include/
 [`tests/`]: tests/
