@@ -108,8 +108,13 @@ int main(int argc, char** argv) {
                       ex.byte);
         std::exit(1);
     }
-
-    Experiment<MonochromaticBeam> expt(elist_json_obj);
+    Experiment<MonochromaticBeam> expt;
+    try {
+        expt = Experiment<MonochromaticBeam>(elist_json_obj);
+    } catch (std::invalid_argument const& ex){
+        logger->error("Unable to create MonochromaticBeam experiment: {}", ex.what());
+        std::exit(1);
+    }
     Scan scan = expt.scan();
     MonochromaticBeam beam = expt.beam();
     Goniometer gonio = expt.goniometer();
