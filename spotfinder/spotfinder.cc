@@ -140,7 +140,7 @@ void wait_for_ready_for_read(const std::string &path,
     if (!checker(path)) {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto message_prefix =
-          format("Waiting for \033[1;35m{}\033[0m to be ready for read", path);
+          fmt::format("Waiting for \033[1;35m{}\033[0m to be ready for read", path);
         std::vector<std::string> ball = {
           "( ●    )",
           "(  ●   )",
@@ -850,7 +850,7 @@ int main(int argc, char **argv) {
                             }
                         }
                     }
-                    lodepng::encode(format("image_{:05d}.png", image_num),
+                    lodepng::encode(fmt::format("image_{:05d}.png", image_num),
                                     reinterpret_cast<uint8_t *>(buffer.data()),
                                     width,
                                     height,

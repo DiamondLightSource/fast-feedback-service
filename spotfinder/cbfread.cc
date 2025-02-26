@@ -20,7 +20,7 @@ auto expand_template(const std::string &template_path, size_t index) -> std::str
     std::string suffix = template_path.substr(template_path.rfind("#") + 1);
     int template_length = template_path.length() - prefix.length() - suffix.length();
 
-    return format("{}{:0{}d}{}", prefix, index, template_length, suffix);
+    return fmt::format("{}{:0{}d}{}", prefix, index, template_length, suffix);
 }
 
 // template <>
