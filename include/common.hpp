@@ -27,11 +27,6 @@ constexpr auto fmt_magenta =
 // Global static access to the logger
 static auto &logger = FFSLogger::getInstance();
 
-/// Very basic comparison operator for convenience
-inline auto operator==(const int2 &left, const int2 &right) -> bool {
-    return left.x == right.x && left.y == right.y;
-}
-
 template <typename T1, typename... TS>
 auto with_formatting(const std::string &code, const T1 &first, TS... args)
   -> std::string {

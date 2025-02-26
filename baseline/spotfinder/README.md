@@ -18,7 +18,7 @@ second `baseline_dials` target will be created with a C-API declared in
 
 | Target Name      | Purpose                                                    |
 | ---------------- | ---------------------------------------------------------- |
-| `./bm`           | Uses Google Benchmark to run basic algorith implementations, for speed comparison.                 
+| `./bm`           | Uses Google Benchmark to run basic algorithm implementations, for speed comparison.                 
 | `./check_no_tbx` | Use h5read to read a nexus file or sample data, and compare the output from the original and standalone algorithm.
 | `./miniapp`      | A simple miniapp for running the DIALS dispersion algorithm against a nexus file.
 
