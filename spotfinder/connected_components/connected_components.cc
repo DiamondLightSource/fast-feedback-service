@@ -324,7 +324,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      */
     uint initial_spot_count = reflections_3d.size();
     logger->info(
-      fmt::format("Calculated {} spots", styled(initial_spot_count, fmt_cyan)));
+      fmt::format("Calculated {} spots", fmt::styled(initial_spot_count, fmt_cyan)));
 
     if (min_spot_size > 0) {
         logger->debug("Filtering reflections by minimum spot size");
@@ -339,8 +339,8 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
 
     logger->info(
       fmt::format("Filtered {} spots with size < {} pixels",
-                  styled(initial_spot_count - reflections_3d.size(), fmt_cyan),
-                  styled(min_spot_size, fmt_cyan)));
+                  fmt::styled(initial_spot_count - reflections_3d.size(), fmt_cyan),
+                  fmt::styled(min_spot_size, fmt_cyan)));
     uint filtered_spot_count = reflections_3d.size();
 
     if (max_peak_centroid_separation > 0) {
@@ -357,8 +357,8 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
 
     logger->info(
       fmt::format("Filtered {} spots with peak-centroid distance > {}",
-                  styled(filtered_spot_count - reflections_3d.size(), fmt_cyan),
-                  styled(max_peak_centroid_separation, fmt_cyan)));
+                  fmt::styled(filtered_spot_count - reflections_3d.size(), fmt_cyan),
+                  fmt::styled(max_peak_centroid_separation, fmt_cyan)));
 
     return reflections_3d;
 }

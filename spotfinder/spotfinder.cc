@@ -331,7 +331,7 @@ int main(int argc, char **argv) {
 
     DispersionAlgorithm dispersion_algorithm(parser.get<std::string>("algorithm"));
     fmt::print("Algorithm: {}\n",
-               styled(dispersion_algorithm.algorithm_str, fmt_green));
+               fmt::styled(dispersion_algorithm.algorithm_str, fmt_green));
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -480,10 +480,10 @@ int main(int argc, char **argv) {
       "    Distance:    {0:.1f} mm\n"
       "    Beam Center: {1:.1f} px {2:.1f} px\n"
       "Beam Wavelength: {3:.2f} Å\n",
-      styled(detector.distance * 1000, fmt_cyan),
-      styled(detector.beam_center_x, fmt_cyan),
-      styled(detector.beam_center_y, fmt_cyan),
-      styled(wavelength, fmt_cyan));
+      fmt::styled(detector.distance * 1000, fmt_cyan),
+      fmt::styled(detector.beam_center_x, fmt_cyan),
+      fmt::styled(detector.beam_center_y, fmt_cyan),
+      fmt::styled(wavelength, fmt_cyan));
 
     auto [oscillation_start, oscillation_width] = reader.get_oscillation();
 
@@ -493,8 +493,8 @@ int main(int argc, char **argv) {
     */
     if (oscillation_width > 0) {
         fmt::print("Oscillation:  Start: {:.2f}°  Width: {:.2f}°\n",
-                   styled(oscillation_start, fmt_cyan),
-                   styled(oscillation_width, fmt_cyan));
+                   fmt::styled(oscillation_start, fmt_cyan),
+                   fmt::styled(oscillation_width, fmt_cyan));
     }
 
 #pragma endregion Argument Parsing
@@ -603,11 +603,11 @@ int main(int argc, char **argv) {
     std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
-        fmt::print("Dataset type: {}\n", styled("Rotation set", fmt_magenta));
+        fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
         rotation_slices = std::make_unique<
           std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>();
     } else {
-        fmt::print("Dataset type: {}\n", styled("Still set", fmt_magenta));
+        fmt::print("Dataset type: {}\n", fmt::styled("Still set", fmt_magenta));
     }
 
     // Spawn the reader threads
@@ -986,7 +986,7 @@ int main(int argc, char **argv) {
 
         // Step 3: Output the 3D reflections
         logger->info(
-          fmt::format("Found {} spots", styled(reflections_3d.size(), fmt_cyan)));
+          fmt::format("Found {} spots", fmt::styled(reflections_3d.size(), fmt_cyan)));
 
         if (do_writeout) {
             std::ofstream out("3d_reflections.txt");
