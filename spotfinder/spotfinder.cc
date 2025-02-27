@@ -92,9 +92,9 @@ auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
 
     float memcpy_time = end.elapsed_time(start);
     fmt::print("Uploaded mask ({:.2f} Mpx) in {:.2f} ms ({:.1f} GBps)\n",
-          static_cast<float>(valid_pixels) / 1e6,
-          memcpy_time,
-          GBps(memcpy_time, width * height));
+               static_cast<float>(valid_pixels) / 1e6,
+               memcpy_time,
+               GBps(memcpy_time, width * height));
 
     return PitchedMalloc{
       dev_mask,
@@ -330,7 +330,8 @@ int main(int argc, char **argv) {
     float dmax = parser.get<float>("dmax");
 
     DispersionAlgorithm dispersion_algorithm(parser.get<std::string>("algorithm"));
-    fmt::print("Algorithm: {}\n", styled(dispersion_algorithm.algorithm_str, fmt_green));
+    fmt::print("Algorithm: {}\n",
+               styled(dispersion_algorithm.algorithm_str, fmt_green));
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -492,8 +493,8 @@ int main(int argc, char **argv) {
     */
     if (oscillation_width > 0) {
         fmt::print("Oscillation:  Start: {:.2f}°  Width: {:.2f}°\n",
-              styled(oscillation_start, fmt_cyan),
-              styled(oscillation_width, fmt_cyan));
+                   styled(oscillation_start, fmt_cyan),
+                   styled(oscillation_width, fmt_cyan));
     }
 
 #pragma endregion Argument Parsing
@@ -509,14 +510,14 @@ int main(int argc, char **argv) {
     const int num_blocks = blocks_dims.x * blocks_dims.y * blocks_dims.z;
     fmt::print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
     fmt::print("GPU Threads: {:4d} x {:<4d} = {}\n",
-          gpu_thread_block_size.x,
-          gpu_thread_block_size.y,
-          num_threads_per_block);
+               gpu_thread_block_size.x,
+               gpu_thread_block_size.y,
+               num_threads_per_block);
     fmt::print("Blocks:      {:4d} x {:<4d} x {:2d} = {}\n",
-          blocks_dims.x,
-          blocks_dims.y,
-          blocks_dims.z,
-          num_blocks);
+               blocks_dims.x,
+               blocks_dims.y,
+               blocks_dims.z,
+               num_blocks);
     fmt::print("Running with {} CPU threads\n", num_cpu_threads);
 
     auto mask = upload_mask(reader);
@@ -664,7 +665,8 @@ int main(int argc, char **argv) {
                             .count();
 
                         if (elapsed_wait_time > wait_timeout) {
-                            fmt::print("Timeout waiting for image {}\n", offset_image_num);
+                            fmt::print("Timeout waiting for image {}\n",
+                                       offset_image_num);
                             global_stop.request_stop();
                             break;
                         }
@@ -1066,9 +1068,9 @@ int main(int argc, char **argv) {
       height);
     if (time_waiting_for_images < 10) {
         fmt::print("Total time waiting for images to appear: {:.0f} ms\n",
-              time_waiting_for_images * 1000);
+                   time_waiting_for_images * 1000);
     } else {
         fmt::print("Total time waiting for images to appear: {:.2f} s\n",
-              time_waiting_for_images);
+                   time_waiting_for_images);
     }
 }
