@@ -11,7 +11,6 @@
 #include "cuda_common.hpp"
 
 using json = nlohmann::json;
-using namespace fmt;
 
 SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     // Read the header
