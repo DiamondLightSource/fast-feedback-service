@@ -33,7 +33,6 @@
 #include "standalone.h"
 #include "version.hpp"
 
-using namespace fmt;
 using namespace std::chrono_literals;
 using json = nlohmann::json;
 
@@ -46,7 +45,7 @@ extern "C" void stop_processing(int sig) {
         // We already requested before, but we want it faster. Abort.
         std::quick_exit(1);
     } else {
-        print("Running interrupted by user request\n");
+        fmt::print("Running interrupted by user request\n");
         global_stop.request_stop();
     }
 }
@@ -92,10 +91,10 @@ auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
     end.synchronize();
 
     float memcpy_time = end.elapsed_time(start);
-    print("Uploaded mask ({:.2f} Mpx) in {:.2f} ms ({:.1f} GBps)\n",
-          static_cast<float>(valid_pixels) / 1e6,
-          memcpy_time,
-          GBps(memcpy_time, width * height));
+    fmt::print("Uploaded mask ({:.2f} Mpx) in {:.2f} ms ({:.1f} GBps)\n",
+               static_cast<float>(valid_pixels) / 1e6,
+               memcpy_time,
+               GBps(memcpy_time, width * height));
 
     return PitchedMalloc{
       dev_mask,
@@ -140,7 +139,7 @@ void wait_for_ready_for_read(const std::string &path,
     if (!checker(path)) {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto message_prefix =
-          format("Waiting for \033[1;35m{}\033[0m to be ready for read", path);
+          fmt::format("Waiting for \033[1;35m{}\033[0m to be ready for read", path);
         std::vector<std::string> ball = {
           "( ●    )",
           "(  ●   )",
@@ -158,17 +157,17 @@ void wait_for_ready_for_read(const std::string &path,
             auto wait_time = std::chrono::duration_cast<std::chrono::duration<double>>(
                                std::chrono::high_resolution_clock::now() - start_time)
                                .count();
-            print("\r{}  {} [{:4.1f} s] ", message_prefix, ball[i], wait_time);
+            fmt::print("\r{}  {} [{:4.1f} s] ", message_prefix, ball[i], wait_time);
             i = (i + 1) % ball.size();
             std::cout << std::flush;
 
             if (wait_time > timeout) {
-                print("\nError: Waited too long for read availability\n");
+                fmt::print("\nError: Waited too long for read availability\n");
                 std::exit(1);
             }
             std::this_thread::sleep_for(80ms);
         }
-        print("\n");
+        fmt::print("\n");
     }
 }
 
@@ -215,7 +214,7 @@ class PipeHandler {
      */
     PipeHandler(int pipe_fd) : pipe_fd(pipe_fd) {
         // Constructor to initialize the pipe handler
-        print("PipeHandler initialized with pipe_fd: {}\n", pipe_fd);
+        fmt::print("PipeHandler initialized with pipe_fd: {}\n", pipe_fd);
     }
 
     /**
@@ -247,7 +246,7 @@ class PipeHandler {
         if (bytes_written == -1) {
             std::cerr << "Error writing to pipe: " << strerror(errno) << std::endl;
         } else {
-            // print("Data sent through the pipe: {}\n", stringified_json);
+            // fmt::print("Data sent through the pipe: {}\n", stringified_json);
         }
     }
 };
@@ -331,11 +330,12 @@ int main(int argc, char **argv) {
     float dmax = parser.get<float>("dmax");
 
     DispersionAlgorithm dispersion_algorithm(parser.get<std::string>("algorithm"));
-    print("Algorithm: {}\n", styled(dispersion_algorithm.algorithm_str, fmt_green));
+    fmt::print("Algorithm: {}\n",
+               fmt::styled(dispersion_algorithm.algorithm_str, fmt_green));
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
-        print("Error: Thread count must be >= 1\n");
+        fmt::print("Error: Thread count must be >= 1\n");
         std::exit(1);
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
@@ -356,7 +356,7 @@ int main(int argc, char **argv) {
         reader_ptr = std::make_unique<SHMRead>(args.file);
     } else if (args.file.ends_with(".cbf")) {
         if (!parser.is_used("images")) {
-            print("Error: CBF reading must specify --images\n");
+            fmt::print("Error: CBF reading must specify --images\n");
             std::exit(1);
         }
         reader_ptr = std::make_unique<CBFRead>(args.file,
@@ -394,7 +394,7 @@ int main(int argc, char **argv) {
                 && (!are_close(detector.beam_center_x, beam_center.value()[1], 0.1)
                     || !are_close(
                       detector.beam_center_y, beam_center.value()[0], 0.1))) {
-                print(
+                fmt::print(
                   "Warning: Beam center mismatched:\n    json:   {} px, {} px (used)\n "
                   "   "
                   "reader: "
@@ -408,7 +408,7 @@ int main(int argc, char **argv) {
                 && (!are_close(detector.pixel_size_x, pixel_size.value()[1], 1e-9)
                     || !are_close(
                       detector.pixel_size_y, pixel_size.value()[0], 1e-9))) {
-                print(
+                fmt::print(
                   "Warning: Pixel size mismatched:\n    json:   {} µm, {} µm (used)\n  "
                   "  "
                   "reader: "
@@ -419,7 +419,7 @@ int main(int argc, char **argv) {
                   pixel_size.value()[0] * 1e6);
             }
             if (distance && !are_close(distance.value(), detector.distance, 0.1e-6)) {
-                print(
+                fmt::print(
                   "Warning: Detector distance mismatched:\n    json:   {} m (used)\n   "
                   " "
                   "reader: "
@@ -434,19 +434,19 @@ int main(int argc, char **argv) {
         auto pixel_size = reader.get_pixel_size();
         auto distance = reader.get_detector_distance();
         if (!beam_center) {
-            print(
+            fmt::print(
               "Error: No beam center available from file. Please pass detector "
               "metadata with --distance.\n");
             std::exit(1);
         }
         if (!pixel_size) {
-            print(
+            fmt::print(
               "Error: No pixel size available from file. Please pass detector metadata "
               "with --distance.\n");
             std::exit(1);
         }
         if (!distance) {
-            print(
+            fmt::print(
               "Error: No detector distance available from file. Please pass metadata "
               "with --distance.\n");
             std::exit(1);
@@ -459,7 +459,7 @@ int main(int argc, char **argv) {
         wavelength = parser.get<float>("wavelength");
         if (do_validate && reader.get_wavelength()
             && reader.get_wavelength().value() != wavelength) {
-            print(
+            fmt::print(
               "Warning: Wavelength mismatch:\n    Argument: {} Å\n    Reader:   {} Å\n",
               wavelength,
               reader.get_wavelength().value());
@@ -467,7 +467,7 @@ int main(int argc, char **argv) {
     } else {
         auto wavelength_opt = reader.get_wavelength();
         if (!wavelength_opt) {
-            print(
+            fmt::print(
               "Error: No wavelength provided. Please pass wavelength using: "
               "--wavelength\n");
             std::exit(1);
@@ -475,15 +475,15 @@ int main(int argc, char **argv) {
         wavelength = wavelength_opt.value();
         printf("Got wavelength from file: %f Å\n", wavelength);
     }
-    print(
+    fmt::print(
       "Detector geometry:\n"
       "    Distance:    {0:.1f} mm\n"
       "    Beam Center: {1:.1f} px {2:.1f} px\n"
       "Beam Wavelength: {3:.2f} Å\n",
-      styled(detector.distance * 1000, fmt_cyan),
-      styled(detector.beam_center_x, fmt_cyan),
-      styled(detector.beam_center_y, fmt_cyan),
-      styled(wavelength, fmt_cyan));
+      fmt::styled(detector.distance * 1000, fmt_cyan),
+      fmt::styled(detector.beam_center_x, fmt_cyan),
+      fmt::styled(detector.beam_center_y, fmt_cyan),
+      fmt::styled(wavelength, fmt_cyan));
 
     auto [oscillation_start, oscillation_width] = reader.get_oscillation();
 
@@ -492,9 +492,9 @@ int main(int argc, char **argv) {
      * rotation dataset. Otherwise, it is a still dataset.
     */
     if (oscillation_width > 0) {
-        print("Oscillation:  Start: {:.2f}°  Width: {:.2f}°\n",
-              styled(oscillation_start, fmt_cyan),
-              styled(oscillation_width, fmt_cyan));
+        fmt::print("Oscillation:  Start: {:.2f}°  Width: {:.2f}°\n",
+                   fmt::styled(oscillation_start, fmt_cyan),
+                   fmt::styled(oscillation_width, fmt_cyan));
     }
 
 #pragma endregion Argument Parsing
@@ -508,17 +508,17 @@ int main(int argc, char **argv) {
       static_cast<unsigned int>(ceilf((float)height / gpu_thread_block_size.y))};
     const int num_threads_per_block = gpu_thread_block_size.x * gpu_thread_block_size.y;
     const int num_blocks = blocks_dims.x * blocks_dims.y * blocks_dims.z;
-    print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
-    print("GPU Threads: {:4d} x {:<4d} = {}\n",
-          gpu_thread_block_size.x,
-          gpu_thread_block_size.y,
-          num_threads_per_block);
-    print("Blocks:      {:4d} x {:<4d} x {:2d} = {}\n",
-          blocks_dims.x,
-          blocks_dims.y,
-          blocks_dims.z,
-          num_blocks);
-    print("Running with {} CPU threads\n", num_cpu_threads);
+    fmt::print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
+    fmt::print("GPU Threads: {:4d} x {:<4d} = {}\n",
+               gpu_thread_block_size.x,
+               gpu_thread_block_size.y,
+               num_threads_per_block);
+    fmt::print("Blocks:      {:4d} x {:<4d} x {:2d} = {}\n",
+               blocks_dims.x,
+               blocks_dims.y,
+               blocks_dims.z,
+               num_blocks);
+    fmt::print("Running with {} CPU threads\n", num_cpu_threads);
 
     auto mask = upload_mask(reader);
 
@@ -603,11 +603,11 @@ int main(int argc, char **argv) {
     std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
-        print("Dataset type: {}\n", styled("Rotation set", fmt_magenta));
+        fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
         rotation_slices = std::make_unique<
           std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>();
     } else {
-        print("Dataset type: {}\n", styled("Still set", fmt_magenta));
+        fmt::print("Dataset type: {}\n", fmt::styled("Still set", fmt_magenta));
     }
 
     // Spawn the reader threads
@@ -665,7 +665,8 @@ int main(int argc, char **argv) {
                             .count();
 
                         if (elapsed_wait_time > wait_timeout) {
-                            print("Timeout waiting for image {}\n", offset_image_num);
+                            fmt::print("Timeout waiting for image {}\n",
+                                       offset_image_num);
                             global_stop.request_stop();
                             break;
                         }
@@ -698,7 +699,7 @@ int main(int argc, char **argv) {
                     }
                     // /dev/shm we might not have an atomic write
                     if (buffer.size() == 0) {
-                        print(fmt::runtime(
+                        fmt::print(fmt::runtime(
                           "\033[1mRace Condition?!?? Got buffer size 0 for image "
                           "{image_num}. "
                           "Sleeping.\033[0m\n"));
@@ -850,7 +851,7 @@ int main(int argc, char **argv) {
                             }
                         }
                     }
-                    lodepng::encode(format("image_{:05d}.png", image_num),
+                    lodepng::encode(fmt::format("image_{:05d}.png", image_num),
                                     reinterpret_cast<uint8_t *>(buffer.data()),
                                     width,
                                     height,
@@ -907,14 +908,14 @@ int main(int argc, char **argv) {
                                                               &mismatch_x,
                                                               &mismatch_y);
                     if (validation_matches) {
-                        print(
+                        fmt::print(
                           "Thread {:2d}, Image {:4d}: Compared: \033[32mMatch {} "
                           "px\033[0m\n",
                           thread_id,
                           image_num,
                           num_strong_pixels);
                     } else {
-                        print(
+                        fmt::print(
                           "Thread {:2d}, Image {:4d}: Compared: "
                           "\033[1;31mMismatch ({} px from kernel)\033[0m\n",
                           thread_id,
@@ -924,7 +925,7 @@ int main(int argc, char **argv) {
 
                 } else {
                     if (num_cpu_threads == 1) {
-                        print(
+                        fmt::print(
                           "Thread {:2d} finished image {:4d}\n"
                           "       Copy: {:5.1f} ms\n"
                           "     Kernel: {:5.1f} ms\n"
@@ -946,7 +947,7 @@ int main(int argc, char **argv) {
                           bold(boxes.size()),
                           bold(num_strong_pixels_filtered));
                     } else {
-                        print(
+                        fmt::print(
                           "Thread {:2d} finished image {:4d} with {:5d} strong pixels, "
                           "{:4d} filtered reflections ({} pixels)\n",
                           thread_id,
@@ -985,7 +986,7 @@ int main(int argc, char **argv) {
 
         // Step 3: Output the 3D reflections
         logger->info(
-          fmt::format("Found {} spots", styled(reflections_3d.size(), fmt_cyan)));
+          fmt::format("Found {} spots", fmt::styled(reflections_3d.size(), fmt_cyan)));
 
         if (do_writeout) {
             std::ofstream out("3d_reflections.txt");
@@ -1054,7 +1055,7 @@ int main(int argc, char **argv) {
       std::chrono::duration_cast<std::chrono::duration<double>>(
         std::chrono::high_resolution_clock::now() - all_images_start_time)
         .count();
-    print(
+    fmt::print(
       "\n{} images in {:.2f} s (\033[1;34m{:.2f} GBps\033[0m) (\033[1;34m{:.1f} "
       "fps\033[0m)\n",
       int(completed_images),
@@ -1066,10 +1067,10 @@ int main(int argc, char **argv) {
       width,
       height);
     if (time_waiting_for_images < 10) {
-        print("Total time waiting for images to appear: {:.0f} ms\n",
-              time_waiting_for_images * 1000);
+        fmt::print("Total time waiting for images to appear: {:.0f} ms\n",
+                   time_waiting_for_images * 1000);
     } else {
-        print("Total time waiting for images to appear: {:.2f} s\n",
-              time_waiting_for_images);
+        fmt::print("Total time waiting for images to appear: {:.2f} s\n",
+                   time_waiting_for_images);
     }
 }

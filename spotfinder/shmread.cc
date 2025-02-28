@@ -11,7 +11,6 @@
 #include "cuda_common.hpp"
 
 using json = nlohmann::json;
-using namespace fmt;
 
 SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     // Read the header
@@ -29,7 +28,7 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     uint8_t bit_depth_image = data["bit_depth_image"].template get<uint8_t>();
 
     if (bit_depth_image != 16) {
-        throw std::runtime_error(format(
+        throw std::runtime_error(fmt::format(
           "Can not read image with bit_depth_image={}, only 16", bit_depth_image));
     }
     _trusted_range = {
@@ -57,7 +56,7 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     // Read the mask
     std::vector<int32_t> raw_mask;
     raw_mask.resize(_image_shape[0] * _image_shape[1]);
-    auto mask_filename = format("{}/start_5", _base_path);
+    auto mask_filename = fmt::format("{}/start_5", _base_path);
     if (std::filesystem::file_size(mask_filename)
         != raw_mask.size() * sizeof(decltype(raw_mask)::value_type)) {
         throw std::runtime_error("Error: Mask file does not match expected size");
@@ -74,12 +73,12 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
 }
 
 bool SHMRead::is_image_available(size_t index) {
-    return std::filesystem::exists(format("{}/image_{:06d}_2", _base_path, index));
+    return std::filesystem::exists(fmt::format("{}/image_{:06d}_2", _base_path, index));
 }
 
 std::span<uint8_t> SHMRead::get_raw_chunk(size_t index,
                                           std::span<uint8_t> destination) {
-    std::ifstream f(format("{}/image_{:06d}_2", _base_path, index),
+    std::ifstream f(fmt::format("{}/image_{:06d}_2", _base_path, index),
                     std::ios::in | std::ios::binary);
     f.read(reinterpret_cast<char *>(destination.data()), destination.size());
     return {destination.data(), static_cast<size_t>(f.gcount())};
@@ -88,6 +87,6 @@ std::span<uint8_t> SHMRead::get_raw_chunk(size_t index,
 template <>
 bool is_ready_for_read<SHMRead>(const std::string &path) {
     // We need headers.1, and headers.5, to read the metadata
-    return std::filesystem::exists(format("{}/start_1", path))
-           && std::filesystem::exists(format("{}/start_4", path));
+    return std::filesystem::exists(fmt::format("{}/start_1", path))
+           && std::filesystem::exists(fmt::format("{}/start_4", path));
 }

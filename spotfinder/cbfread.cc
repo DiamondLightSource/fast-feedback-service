@@ -10,7 +10,6 @@
 
 #include "bitshuffle.h"
 #include "common.hpp"
-using namespace fmt;
 
 // const std::string BINARY_MARKER = "--CIF-BINARY-FORMAT-SECTION--";
 const std::string BINARY_MARKER = "\x0c\x1a\x04\xd5";
@@ -20,7 +19,7 @@ auto expand_template(const std::string &template_path, size_t index) -> std::str
     std::string suffix = template_path.substr(template_path.rfind("#") + 1);
     int template_length = template_path.length() - prefix.length() - suffix.length();
 
-    return format("{}{:0{}d}{}", prefix, index, template_length, suffix);
+    return fmt::format("{}{:0{}d}{}", prefix, index, template_length, suffix);
 }
 
 // template <>
@@ -38,7 +37,7 @@ auto get_value_contents(const std::string &input) -> std::string {
 CBFRead::CBFRead(const std::string &templatestr, size_t num_images, size_t first_index)
     : _num_images(num_images), _first_index(first_index), _template_path(templatestr) {
     if (first_index > 1) {
-        print("Error: Can only handle CBF start index of 0 or 1\n");
+        fmt::print("Error: Can only handle CBF start index of 0 or 1\n");
         std::exit(1);
     }
     // We must have our first file, as we read this for mask and metadata
@@ -66,9 +65,9 @@ CBFRead::CBFRead(const std::string &templatestr, size_t num_images, size_t first
     auto compressed_data_buffer = std::make_unique<uint8_t[]>(num_pixels * 4);
     get_raw_chunk(0, {compressed_data_buffer.get(), num_pixels * 4});
     for (int i = 0; i < 32; ++i) {
-        print("{:02x} ", compressed_data_buffer[i]);
+        fmt::print("{:02x} ", compressed_data_buffer[i]);
     }
-    print("\n");
+    fmt::print("\n");
     // auto compressed_data =
     //   get_raw_chunk(0, {compressed_data_buffer.get(), 4 * num_pixels});
     auto image_data = std::make_unique<int16_t[]>(num_pixels);
