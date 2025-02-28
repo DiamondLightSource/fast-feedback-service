@@ -56,7 +56,7 @@ if(EXISTS ${dx2_SOURCE_DIR}/CMakeLists.txt)
     add_subdirectory(${dx2_SOURCE_DIR})
     message(STATUS "Found dx2: ${dx2_SOURCE_DIR}")
 else()
-    message(FATAL_ERROR "dx2 submodule not found. Please run 'git submodule update --init --recursive'.")
+    message(FATAL_ERROR "dx2 not found. Please clone dx2 from https://github.com/dials/dx2.git.")
 endif()
 
 include_directories(${dx2_SOURCE_DIR}/include)

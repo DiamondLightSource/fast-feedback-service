@@ -21,11 +21,18 @@ For example, you can create a conda/mamba environment with the following command
 mamba create -c conda-forge -p ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog gemmi
 ```
 
-### Initialising submodules
-This repository uses submodules for the `dx2` dependency. To initialise the submodules, run the following in the root of the repository:
-```bash
-git submodule update --init --recursive
+### Installing dx2
+To use dx2 with this repository, follow the following steps, starting at the Fast Feedback Service's root:
 ```
+mkdir dx2
+cd dx2
+git clone https://github.com/dials/dx2.git
+mkdir build
+cd build
+cmake ..
+make
+```
+The name of the `dx2` directory is important, as building `fast-feedback-service` depends on it.
 
 ### Compiling the CUDA code
 To compile the CUDA code, you need to run the following:
