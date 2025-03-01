@@ -80,3 +80,14 @@ if(BUILD_CUDA)
 endif()
 
 include_directories(bitshuffle/src bitshuffle/lz4)
+
+## TODO: add info on how to use bitshuffle on ARM. The below commands do not CMake properly ()
+## CMake Error: Error required internal CMake variable not set, cmake may not be built correctly.
+## Missing variable is:
+## CMAKE_C_COMPILE_OBJECT
+
+# add_library(bitshuffle
+#                bitshuffle/src/bitshuffle.c
+#                bitshuffle/lz4/lz4.c
+#                bitshuffle/src/bitshuffle_core.c
+#                bitshuffle/src/iochain.c)
