@@ -8,7 +8,7 @@ include(ResolveGitVersion)
 
 option(BUILD_CUDA "Build CUDA" ON)
 # Uncomment the line below when running on CUDA-incompatible platforms
-# set(BUILD_CUDA OFF)
+set(BUILD_CUDA OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 20)
@@ -78,3 +78,5 @@ add_subdirectory(baseline)
 if(BUILD_CUDA)
     add_subdirectory(spotfinder)
 endif()
+
+include_directories(bitshuffle/src bitshuffle/lz4)
