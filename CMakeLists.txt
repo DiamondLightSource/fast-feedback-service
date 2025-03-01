@@ -6,6 +6,10 @@ cmake_minimum_required(VERSION 3.20...3.30)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
 include(ResolveGitVersion)
 
+option(BUILD_CUDA "Build CUDA" ON)
+# Uncomment the line below when running on CUDA-incompatible platforms
+# set(BUILD_CUDA OFF)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 20)
 project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
@@ -70,4 +74,7 @@ enable_testing()
 
 add_subdirectory(h5read)
 add_subdirectory(baseline)
-add_subdirectory(spotfinder)
+
+if(BUILD_CUDA)
+    add_subdirectory(spotfinder)
+endif()
