@@ -6,10 +6,6 @@ cmake_minimum_required(VERSION 3.20...3.30)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
 include(ResolveGitVersion)
 
-option(BUILD_CUDA "Build CUDA" ON)
-# Uncomment the line below when running on CUDA-incompatible platforms
-set(BUILD_CUDA OFF)
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 20)
 project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
@@ -19,6 +15,16 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
+
+include(CheckLanguage)
+check_language(CUDA)
+if(CMAKE_CUDA_COMPILER)
+    message("CUDA compiler available; building with CUDA enabled.")
+    set(BUILD_CUDA ON)
+else()
+    message("CUDA compiler NOT available; building with CUDA disabled.")
+    set(BUILD_CUDA OFF)
+endif()
 
 include_directories(include)
 
