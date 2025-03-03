@@ -22,7 +22,7 @@ if(CMAKE_CUDA_COMPILER)
     message("CUDA compiler available; building with CUDA enabled.")
     set(BUILD_CUDA ON)
 else()
-    message("CUDA compiler NOT available; building with CUDA disabled.")
+    message("CUDA compiler unavailable; building with CUDA disabled.")
     set(BUILD_CUDA OFF)
 endif()
 
