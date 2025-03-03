@@ -16,6 +16,16 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
+include(CheckLanguage)
+check_language(CUDA)
+if(CMAKE_CUDA_COMPILER)
+    message("CUDA compiler available; building with CUDA enabled.")
+    set(BUILD_CUDA ON)
+else()
+    message("CUDA compiler unavailable; building with CUDA disabled.")
+    set(BUILD_CUDA OFF)
+endif()
+
 include_directories(include)
 
 # Dependency fetching
@@ -70,4 +80,7 @@ enable_testing()
 
 add_subdirectory(h5read)
 add_subdirectory(baseline)
-add_subdirectory(spotfinder)
+
+if(BUILD_CUDA)
+    add_subdirectory(spotfinder)
+endif()
