@@ -7,6 +7,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
 include(ResolveGitVersion)
 
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_C_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 20)
 project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
 
@@ -62,7 +63,7 @@ endif()
 include_directories(${dx2_SOURCE_DIR}/include)
 
 # Make a small library that we can link to to get the version
-project(version CXX)
+project(version CXX C)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
@@ -70,4 +71,12 @@ enable_testing()
 
 add_subdirectory(h5read)
 add_subdirectory(baseline)
-add_subdirectory(spotfinder)
+
+include_directories(bitshuffle/src bitshuffle/lz4)
+
+add_subdirectory(bitshuffle/zstd/build/cmake)
+add_library(bitshuffle
+               bitshuffle/src/bitshuffle.c
+               bitshuffle/lz4/lz4.c
+               bitshuffle/src/bitshuffle_core.c
+               bitshuffle/src/iochain.c)

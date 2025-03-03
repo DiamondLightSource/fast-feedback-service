@@ -1,3 +1,7 @@
 [submodule "dx2"]
 	path = dx2
 	url = https://github.com/dials/dx2.git
+
+[submodule "bitshuffle"]
+	path = bitshuffle
+	url = https://github.com/kiyo-masui/bitshuffle.git
