@@ -20,7 +20,7 @@ For example, you can create a conda/mamba environment with the following command
 ```bash
 mamba create -c conda-forge -p ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog gemmi
 ```
-Note: On **ARM MacOS**, omit `bitshuffle` from the above expression as `bitshuffle` on conda-forge is incompatible with the ARM platform.
+Note: On **ARM MacOS**, omit `bitshuffle` from the above expression since `bitshuffle` on conda-forge is incompatible with the ARM platform. Instead, include `cython` and `setuptools` and install `bitshuffle` manually by following the instructions at [https://github.com/kiyo-masui/bitshuffle.git](https://github.com/kiyo-masui/bitshuffle.git).
 
 ### Initialising submodules
 This repository uses submodules for the `dx2` dependency. To initialise the submodules, run the following in the root of the repository:
