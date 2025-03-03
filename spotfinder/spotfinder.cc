@@ -484,10 +484,6 @@ int main(int argc, char **argv) {
       fmt::styled(detector.beam_center_x, fmt_cyan),
       fmt::styled(detector.beam_center_y, fmt_cyan),
       fmt::styled(wavelength, fmt_cyan));
-      fmt::styled(detector.distance * 1000, fmt_cyan),
-      fmt::styled(detector.beam_center_x, fmt_cyan),
-      fmt::styled(detector.beam_center_y, fmt_cyan),
-      fmt::styled(wavelength, fmt_cyan));
 
     auto [oscillation_start, oscillation_width] = reader.get_oscillation();
 
@@ -990,7 +986,6 @@ int main(int argc, char **argv) {
 
         // Step 3: Output the 3D reflections
         logger->info(
-          fmt::format("Found {} spots", fmt::styled(reflections_3d.size(), fmt_cyan)));
           fmt::format("Found {} spots", fmt::styled(reflections_3d.size(), fmt_cyan)));
 
         if (do_writeout) {
