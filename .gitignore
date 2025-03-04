@@ -16,6 +16,7 @@ _build/
 *.pyc
 build*/
 .vscode/
+bitshuffle/
 compile_commands.json
 
 .dials_build
