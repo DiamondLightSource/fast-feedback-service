@@ -7,14 +7,24 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
 include(ResolveGitVersion)
 
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_C_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 20)
-project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
+project(fast-feedback-service LANGUAGES CXX C VERSION ${FFS_VERSION_CMAKE})
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
+
+include(CheckCCompilerFlag)
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
+    set (SYSTEM_ARCH_x86 TRUE)
+    message("x86 architechture detected.")
+else ()
+    set (SYSTEM_ARCH_x86 FALSE)
+    message("x86 architechture not detected.")
+endif ()
 
 include_directories(include)
 
@@ -62,7 +72,7 @@ endif()
 include_directories(${dx2_SOURCE_DIR}/include)
 
 # Make a small library that we can link to to get the version
-project(version CXX)
+project(version CXX C)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
@@ -71,3 +81,13 @@ enable_testing()
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
+
+if(NOT SYSTEM_ARCH_x86)
+    include_directories(bitshuffle/src bitshuffle/lz4)
+    add_subdirectory(bitshuffle/zstd/build/cmake)
+    add_library(bitshuffle
+                bitshuffle/src/bitshuffle.c
+                bitshuffle/lz4/lz4.c
+                bitshuffle/src/bitshuffle_core.c
+                bitshuffle/src/iochain.c)
+endif()
