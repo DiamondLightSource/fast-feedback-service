@@ -19,10 +19,10 @@ include(AlwaysColourCompilation)
 
 include(CheckCCompilerFlag)
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
-    set (SYSTEM_IS_x86 TRUE)
+    set (SYSTEM_ARCH_x86 TRUE)
     message("x86 architechture detected.")
 else ()
-    set (SYSTEM_IS_x86 FALSE)
+    set (SYSTEM_ARCH_x86 FALSE)
     message("x86 architechture not detected.")
 endif ()
 
@@ -82,7 +82,7 @@ add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
 
-if(NOT SYSTEM_IS_x86)
+if(NOT SYSTEM_ARCH_x86)
     include_directories(bitshuffle/src bitshuffle/lz4)
     add_subdirectory(bitshuffle/zstd/build/cmake)
     add_library(bitshuffle
