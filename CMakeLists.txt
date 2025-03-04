@@ -80,6 +80,7 @@ enable_testing()
 
 add_subdirectory(h5read)
 add_subdirectory(baseline)
+add_subdirectory(spotfinder)
 
 if(NOT SYSTEM_IS_x86)
     include_directories(bitshuffle/src bitshuffle/lz4)
