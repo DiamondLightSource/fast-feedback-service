@@ -116,11 +116,7 @@ int main(int argc, char** argv) {
         std::exit(1);
     }
     Scan scan = expt.scan();
-    MonochromaticBeam* beam = dynamic_cast<MonochromaticBeam*>(expt.beam().get());
-    if (beam == nullptr){
-      logger->error("The indexer requires a monochromatic Beam model");
-      std::exit(1);
-    }
+    MonochromaticBeam& beam = expt.get_beam<MonochromaticBeam>();
     Goniometer gonio = expt.goniometer();
     Detector detector = expt.detector();
     assert(detector.panels().size()
@@ -140,7 +136,7 @@ int main(int argc, char** argv) {
     // The diffraction spots form a lattice in reciprocal space (if the experimental
     // geometry is accurate). So use the experimental models to transform the spot
     // coordinates on the detector into reciprocal space.
-    std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, panel, *beam, scan, gonio);
+    std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
     logger->info("Number of reflections: {}", rlp.size());
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
