@@ -32,6 +32,17 @@ using Eigen::Vector3d;
 using Eigen::Vector3i;
 using json = nlohmann::json;
 
+TypedExperiment<MonochromaticBeam> try_to_load(json elist_json_obj){
+  try {
+      TypedExperiment<MonochromaticBeam> expt = make_typed_experiment<MonochromaticBeam>(elist_json_obj);
+      return expt;
+  }
+  catch (const std::runtime_error& ex){
+      logger->error("Unable to create MonochromaticBeam experiment, error: {}", ex.what());
+      std::exit(1);
+  }
+}
+
 int main(int argc, char** argv) {
     // The purpose of an indexer is to determine the lattice model that best
     // explains the positions of the strong spots found during spot-finding.
@@ -108,15 +119,9 @@ int main(int argc, char** argv) {
                       ex.byte);
         std::exit(1);
     }
-    Experiment expt;
-    try {
-        expt = Experiment(elist_json_obj);
-    } catch (std::invalid_argument const& ex) {
-        logger->error("Unable to create MonochromaticBeam experiment: {}", ex.what());
-        std::exit(1);
-    }
+    TypedExperiment<MonochromaticBeam> expt = try_to_load(elist_json_obj);
     Scan scan = expt.scan();
-    MonochromaticBeam& beam = expt.get_beam<MonochromaticBeam>();
+    MonochromaticBeam& beam = expt.get_beam();
     Goniometer gonio = expt.goniometer();
     Detector detector = expt.detector();
     assert(detector.panels().size()
