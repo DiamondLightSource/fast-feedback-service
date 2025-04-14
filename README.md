@@ -14,10 +14,17 @@ In order to create a development environment and compile the service, you need t
 - cmake
 - hdf5
 - hdf5-external-filter-plugins
+- gemmi
 
 For example, you can create a conda/mamba environment with the following command:
 ```bash
-mamba create -c conda-forge -p ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog
+mamba create -c conda-forge -p ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog gemmi
+```
+
+### Initialising submodules
+This repository uses submodules for the `dx2` dependency. To initialise the submodules, run the following in the root of the repository:
+```bash
+git submodule update --init --recursive
 ```
 
 ### Compiling the CUDA code
@@ -60,7 +67,7 @@ zocalo.service -s GPUPerImageAnalysis
 ## Repository Structure
 | Folder Name       | Implementation                                             |
 | -------------     | ---------------------------------------------------------- |
-| [`baseline/`]     | A standalone implementation of the standard DIALS dispersion spotfinder that can be used for comparison. |
+| [`baseline/spotfinder`]     | A standalone implementation of the standard DIALS dispersion spotfinder that can be used for comparison. |
 | [`h5read/`]       | A small C/C++ library to read hdf5 files in a standard way |
 | [`include/`]      | Common utility code, like coloring output, or image comparison, is stored here. |
 | [`src/`]          | Service to run the spotfinder |
@@ -70,7 +77,7 @@ zocalo.service -s GPUPerImageAnalysis
 [`src/`]: src/
 [`spotfinder/`]: spotfinder/
 [`build/bin/`]: build/bin/
-[`baseline/`]: baseline/
+[`baseline/spotfinder`]: baseline/spotfinder
 [`h5read/`]: h5read/
 [`include/`]: include/
 [`tests/`]: tests/

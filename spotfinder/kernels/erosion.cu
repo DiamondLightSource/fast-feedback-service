@@ -52,7 +52,7 @@ extern __constant__ KernelConstants kernel_constants;
  */
 __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
                         uint8_t __restrict__ *erosion_mask_ptr,
-                        // uint8_t __restrict__ *mask,
+                        // uint8_t __restrict__ *mask_ptr,
                         size_t dispersion_mask_pitch,
                         size_t erosion_mask_pitch,
                         uint8_t radius) {
@@ -60,6 +60,7 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
     PitchedArray2D<uint8_t> dispersion_mask{dispersion_mask_ptr,
                                             &dispersion_mask_pitch};
     PitchedArray2D<uint8_t> erosion_mask{erosion_mask_ptr, &erosion_mask_pitch};
+    // PitchedArray2D<uint8_t> mask{mask_ptr, &mask_pitch};
 
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
@@ -95,7 +96,7 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
              * however DIALS does not do this. May be a bug, may be on
              * purpose? Investigate!
             */
-            // if (mask[kernel_y * kernel_constants.mask_pitch + kernel_x] == 0) {
+            // if (mask(lx, ly) == 0) {
             //     continue;
             // }
 

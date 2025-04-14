@@ -1,9 +1,6 @@
 #include "spotfinder.cuh"
 
 #include <bitshuffle.h>
-#include <fmt/color.h>
-#include <fmt/core.h>
-#include <fmt/os.h>
 #include <lodepng.h>
 #include <spdlog/spdlog.h>
 
@@ -17,6 +14,7 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <dx2/h5/h5write.hpp>
 #include <iostream>
 #include <memory>
 #include <ranges>
@@ -26,6 +24,7 @@
 
 #include "cbfread.hpp"
 #include "common.hpp"
+#include "connected_components/connected_components.hpp"
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
@@ -34,15 +33,11 @@
 #include "standalone.h"
 #include "version.hpp"
 
-using namespace fmt;
 using namespace std::chrono_literals;
 using json = nlohmann::json;
 
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
-
-constexpr auto fmt_cyan = fmt::fg(fmt::terminal_color::cyan) | fmt::emphasis::bold;
-constexpr auto fmt_green = fmt::fg(fmt::terminal_color::green) | fmt::emphasis::bold;
 
 // Function for passing to std::signal to register the stop request
 extern "C" void stop_processing(int sig) {
@@ -50,24 +45,14 @@ extern "C" void stop_processing(int sig) {
         // We already requested before, but we want it faster. Abort.
         std::quick_exit(1);
     } else {
-        print("Running interrupted by user request\n");
+        fmt::print("Running interrupted by user request\n");
         global_stop.request_stop();
     }
-}
-
-/// Very basic comparison operator for convenience
-auto operator==(const int2 &left, const int2 &right) -> bool {
-    return left.x == right.x && left.y == right.y;
 }
 
 bool are_close(float a, float b, float tolerance) {
     return std::fabs(a - b) < tolerance;
 }
-
-struct Reflection {
-    int l, t, r, b;
-    int num_pixels = 0;
-};
 
 /// Copy the mask from a reader into a pitched GPU area
 template <typename T>
@@ -106,10 +91,10 @@ auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
     end.synchronize();
 
     float memcpy_time = end.elapsed_time(start);
-    print("Uploaded mask ({:.2f} Mpx) in {:.2f} ms ({:.1f} GBps)\n",
-          static_cast<float>(valid_pixels) / 1e6,
-          memcpy_time,
-          GBps(memcpy_time, width * height));
+    fmt::print("Uploaded mask ({:.2f} Mpx) in {:.2f} ms ({:.1f} GBps)\n",
+               static_cast<float>(valid_pixels) / 1e6,
+               memcpy_time,
+               GBps(memcpy_time, width * height));
 
     return PitchedMalloc{
       dev_mask,
@@ -154,7 +139,7 @@ void wait_for_ready_for_read(const std::string &path,
     if (!checker(path)) {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto message_prefix =
-          format("Waiting for \033[1;35m{}\033[0m to be ready for read", path);
+          fmt::format("Waiting for \033[1;35m{}\033[0m to be ready for read", path);
         std::vector<std::string> ball = {
           "( ●    )",
           "(  ●   )",
@@ -172,17 +157,17 @@ void wait_for_ready_for_read(const std::string &path,
             auto wait_time = std::chrono::duration_cast<std::chrono::duration<double>>(
                                std::chrono::high_resolution_clock::now() - start_time)
                                .count();
-            print("\r{}  {} [{:4.1f} s] ", message_prefix, ball[i], wait_time);
+            fmt::print("\r{}  {} [{:4.1f} s] ", message_prefix, ball[i], wait_time);
             i = (i + 1) % ball.size();
             std::cout << std::flush;
 
             if (wait_time > timeout) {
-                print("\nError: Waited too long for read availability\n");
+                fmt::print("\nError: Waited too long for read availability\n");
                 std::exit(1);
             }
             std::this_thread::sleep_for(80ms);
         }
-        print("\n");
+        fmt::print("\n");
     }
 }
 
@@ -229,7 +214,7 @@ class PipeHandler {
      */
     PipeHandler(int pipe_fd) : pipe_fd(pipe_fd) {
         // Constructor to initialize the pipe handler
-        print("PipeHandler initialized with pipe_fd: {}\n", pipe_fd);
+        fmt::print("PipeHandler initialized with pipe_fd: {}\n", pipe_fd);
     }
 
     /**
@@ -261,7 +246,7 @@ class PipeHandler {
         if (bytes_written == -1) {
             std::cerr << "Error writing to pipe: " << strerror(errno) << std::endl;
         } else {
-            // print("Data sent through the pipe: {}\n", stringified_json);
+            // fmt::print("Data sent through the pipe: {}\n", stringified_json);
         }
     }
 };
@@ -291,7 +276,12 @@ int main(int argc, char **argv) {
       .default_value(false)
       .implicit_value(true);
     parser.add_argument("--min-spot-size")
-      .help("Reflections with a pixel count below this will be discarded.")
+      .help("2D Reflections with a pixel count below this will be discarded.")
+      .metavar("N")
+      .default_value<uint32_t>(3)
+      .scan<'u', uint32_t>();
+    parser.add_argument("--min-spot-size-3d")
+      .help("3D Reflections with a pixel count below this will be discarded.")
       .metavar("N")
       .default_value<uint32_t>(3)
       .scan<'u', uint32_t>();
@@ -340,14 +330,16 @@ int main(int argc, char **argv) {
     float dmax = parser.get<float>("dmax");
 
     DispersionAlgorithm dispersion_algorithm(parser.get<std::string>("algorithm"));
-    print("Algorithm: {}\n", styled(dispersion_algorithm.algorithm_str, fmt_green));
+    fmt::print("Algorithm: {}\n",
+               fmt::styled(dispersion_algorithm.algorithm_str, fmt_green));
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
-        print("Error: Thread count must be >= 1\n");
+        fmt::print("Error: Thread count must be >= 1\n");
         std::exit(1);
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
+    uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
 
     std::unique_ptr<Reader> reader_ptr;
 
@@ -364,7 +356,7 @@ int main(int argc, char **argv) {
         reader_ptr = std::make_unique<SHMRead>(args.file);
     } else if (args.file.ends_with(".cbf")) {
         if (!parser.is_used("images")) {
-            print("Error: CBF reading must specify --images\n");
+            fmt::print("Error: CBF reading must specify --images\n");
             std::exit(1);
         }
         reader_ptr = std::make_unique<CBFRead>(args.file,
@@ -402,7 +394,7 @@ int main(int argc, char **argv) {
                 && (!are_close(detector.beam_center_x, beam_center.value()[1], 0.1)
                     || !are_close(
                       detector.beam_center_y, beam_center.value()[0], 0.1))) {
-                print(
+                fmt::print(
                   "Warning: Beam center mismatched:\n    json:   {} px, {} px (used)\n "
                   "   "
                   "reader: "
@@ -416,7 +408,7 @@ int main(int argc, char **argv) {
                 && (!are_close(detector.pixel_size_x, pixel_size.value()[1], 1e-9)
                     || !are_close(
                       detector.pixel_size_y, pixel_size.value()[0], 1e-9))) {
-                print(
+                fmt::print(
                   "Warning: Pixel size mismatched:\n    json:   {} µm, {} µm (used)\n  "
                   "  "
                   "reader: "
@@ -427,7 +419,7 @@ int main(int argc, char **argv) {
                   pixel_size.value()[0] * 1e6);
             }
             if (distance && !are_close(distance.value(), detector.distance, 0.1e-6)) {
-                print(
+                fmt::print(
                   "Warning: Detector distance mismatched:\n    json:   {} m (used)\n   "
                   " "
                   "reader: "
@@ -442,19 +434,19 @@ int main(int argc, char **argv) {
         auto pixel_size = reader.get_pixel_size();
         auto distance = reader.get_detector_distance();
         if (!beam_center) {
-            print(
+            fmt::print(
               "Error: No beam center available from file. Please pass detector "
               "metadata with --distance.\n");
             std::exit(1);
         }
         if (!pixel_size) {
-            print(
+            fmt::print(
               "Error: No pixel size available from file. Please pass detector metadata "
               "with --distance.\n");
             std::exit(1);
         }
         if (!distance) {
-            print(
+            fmt::print(
               "Error: No detector distance available from file. Please pass metadata "
               "with --distance.\n");
             std::exit(1);
@@ -467,7 +459,7 @@ int main(int argc, char **argv) {
         wavelength = parser.get<float>("wavelength");
         if (do_validate && reader.get_wavelength()
             && reader.get_wavelength().value() != wavelength) {
-            print(
+            fmt::print(
               "Warning: Wavelength mismatch:\n    Argument: {} Å\n    Reader:   {} Å\n",
               wavelength,
               reader.get_wavelength().value());
@@ -475,7 +467,7 @@ int main(int argc, char **argv) {
     } else {
         auto wavelength_opt = reader.get_wavelength();
         if (!wavelength_opt) {
-            print(
+            fmt::print(
               "Error: No wavelength provided. Please pass wavelength using: "
               "--wavelength\n");
             std::exit(1);
@@ -483,15 +475,27 @@ int main(int argc, char **argv) {
         wavelength = wavelength_opt.value();
         printf("Got wavelength from file: %f Å\n", wavelength);
     }
-    print(
+    fmt::print(
       "Detector geometry:\n"
       "    Distance:    {0:.1f} mm\n"
       "    Beam Center: {1:.1f} px {2:.1f} px\n"
       "Beam Wavelength: {3:.2f} Å\n",
-      styled(detector.distance * 1000, fmt_cyan),
-      styled(detector.beam_center_x, fmt_cyan),
-      styled(detector.beam_center_y, fmt_cyan),
-      styled(wavelength, fmt_cyan));
+      fmt::styled(detector.distance * 1000, fmt_cyan),
+      fmt::styled(detector.beam_center_x, fmt_cyan),
+      fmt::styled(detector.beam_center_y, fmt_cyan),
+      fmt::styled(wavelength, fmt_cyan));
+
+    auto [oscillation_start, oscillation_width] = reader.get_oscillation();
+
+    /*
+     * If the oscillation width is greater than 0, then this is a
+     * rotation dataset. Otherwise, it is a still dataset.
+    */
+    if (oscillation_width > 0) {
+        fmt::print("Oscillation:  Start: {:.2f}°  Width: {:.2f}°\n",
+                   fmt::styled(oscillation_start, fmt_cyan),
+                   fmt::styled(oscillation_width, fmt_cyan));
+    }
 
 #pragma endregion Argument Parsing
 
@@ -504,17 +508,17 @@ int main(int argc, char **argv) {
       static_cast<unsigned int>(ceilf((float)height / gpu_thread_block_size.y))};
     const int num_threads_per_block = gpu_thread_block_size.x * gpu_thread_block_size.y;
     const int num_blocks = blocks_dims.x * blocks_dims.y * blocks_dims.z;
-    print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
-    print("GPU Threads: {:4d} x {:<4d} = {}\n",
-          gpu_thread_block_size.x,
-          gpu_thread_block_size.y,
-          num_threads_per_block);
-    print("Blocks:      {:4d} x {:<4d} x {:2d} = {}\n",
-          blocks_dims.x,
-          blocks_dims.y,
-          blocks_dims.z,
-          num_blocks);
-    print("Running with {} CPU threads\n", num_cpu_threads);
+    fmt::print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
+    fmt::print("GPU Threads: {:4d} x {:<4d} = {}\n",
+               gpu_thread_block_size.x,
+               gpu_thread_block_size.y,
+               num_threads_per_block);
+    fmt::print("Blocks:      {:4d} x {:<4d} x {:2d} = {}\n",
+               blocks_dims.x,
+               blocks_dims.y,
+               blocks_dims.z,
+               num_blocks);
+    fmt::print("Running with {} CPU threads\n", num_cpu_threads);
 
     auto mask = upload_mask(reader);
 
@@ -593,6 +597,19 @@ int main(int argc, char **argv) {
         pipeHandler = std::make_unique<PipeHandler>(pipe_fd);
     }
 
+    // Create a unique pointer to store the image slices if this is a rotation dataset
+    std::unique_ptr<std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>
+      rotation_slices = nullptr;
+    std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
+    if (oscillation_width > 0) {
+        // If oscillation information is available then this is a rotation dataset
+        fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
+        rotation_slices = std::make_unique<
+          std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>();
+    } else {
+        fmt::print("Dataset type: {}\n", fmt::styled("Still set", fmt_magenta));
+    }
+
     // Spawn the reader threads
     std::vector<std::jthread> threads;
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
@@ -612,11 +629,6 @@ int main(int argc, char **argv) {
             // Buffer for reading compressed chunk data in
             auto raw_chunk_buffer =
               std::vector<uint8_t>(width * height * sizeof(pixel_t));
-
-            // Allocate buffers for DIALS-style extraction
-            auto px_coords = std::vector<int2>();
-            auto px_values = std::vector<pixel_t>();
-            auto px_kvals = std::vector<size_t>();
 
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
@@ -653,7 +665,8 @@ int main(int argc, char **argv) {
                             .count();
 
                         if (elapsed_wait_time > wait_timeout) {
-                            print("Timeout waiting for image {}\n", offset_image_num);
+                            fmt::print("Timeout waiting for image {}\n",
+                                       offset_image_num);
                             global_stop.request_stop();
                             break;
                         }
@@ -686,7 +699,7 @@ int main(int argc, char **argv) {
                     }
                     // /dev/shm we might not have an atomic write
                     if (buffer.size() == 0) {
-                        print(fmt::runtime(
+                        fmt::print(fmt::runtime(
                           "\033[1mRace Condition?!?? Got buffer size 0 for image "
                           "{image_num}. "
                           "Sleeping.\033[0m\n"));
@@ -775,103 +788,25 @@ int main(int argc, char **argv) {
 #pragma endregion Spotfinding
 
 #pragma region Connected Components
-                // Manually reproduce what the DIALS connected components does
-                // Start with the behaviour of the PixelList class:
-                size_t num_strong_pixels = 0;
-                size_t num_strong_pixels_filtered = 0;
-                px_values.clear();
-                px_coords.clear();
-                px_kvals.clear();
+                std::unique_ptr<ConnectedComponents> connected_components_2d =
+                  std::make_unique<ConnectedComponents>(
+                    host_results.get(), host_image.get(), width, height, min_spot_size);
 
-                for (int y = 0, k = 0; y < height; ++y) {
-                    for (int x = 0; x < width; ++x, ++k) {
-                        if (host_results[k]) {
-                            px_coords.emplace_back(x, y);
-                            px_values.push_back(host_image[k]);
-                            px_kvals.push_back(k);
-                            ++num_strong_pixels;
-                        }
-                    }
+                auto boxes = connected_components_2d->get_boxes();
+                size_t num_strong_pixels =
+                  connected_components_2d->get_num_strong_pixels();
+                size_t num_strong_pixels_filtered =
+                  connected_components_2d->get_num_strong_pixels_filtered();
+
+                // If this is a rotation dataset, store the connected component slice
+                if (rotation_slices) {
+                    // Lock the mutex to protect the map
+                    std::lock_guard<std::mutex> lock(rotation_slices_mutex);
+                    // Store the connected components slice in the map
+                    (*rotation_slices)[offset_image_num] =
+                      std::move(connected_components_2d);
                 }
 
-                auto graph =
-                  boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS>{
-                    px_values.size()};
-
-                // Index for next pixel to search when looking for pixels
-                // below the current one. This will only ever increase, because
-                // we are guaranteed to always look for one after the last found
-                // pixel.
-                int idx_pixel_below = 1;
-
-                for (int i = 0; i < static_cast<int>(px_coords.size()) - 1; ++i) {
-                    auto coord = px_coords[i];
-                    auto coord_right = int2{coord.x + 1, coord.y};
-                    auto k = px_kvals[i];
-
-                    if (px_coords[i + 1] == coord_right) {
-                        // Since we generate strong pixels coordinates horizontally,
-                        // if there is a pixel to the right then it is guaranteed
-                        // to be the next one in the list. Connect these.
-                        boost::add_edge(i, i + 1, graph);
-                    }
-                    // Now, check the pixel directly below this one. We need to scan
-                    // to find it, because _if_ there is a matching strong pixel,
-                    // then we don't know how far ahead it is in the coordinates array
-                    if (coord.y < height - 1) {
-                        auto coord_below = int2{coord.x, coord.y + 1};
-                        auto k_below = k + width;
-                        // int idx = i + 1;
-                        while (idx_pixel_below < px_coords.size() - 1
-                               && px_kvals[idx_pixel_below] < k_below) {
-                            ++idx_pixel_below;
-                        }
-                        // Either we've got the pixel below, past that - or the
-                        // last pixel in the coordinate set.
-                        if (px_coords[idx_pixel_below] == coord_below) {
-                            boost::add_edge(i, idx_pixel_below, graph);
-                        }
-                    }
-                }
-                auto labels = std::vector<int>(boost::num_vertices(graph));
-                auto num_labels = boost::connected_components(graph, labels.data());
-
-                auto boxes = std::vector<Reflection>(num_labels, {width, height, 0, 0});
-
-                assert(labels.size() == px_coords.size());
-                for (int i = 0; i < labels.size(); ++i) {
-                    auto label = labels[i];
-                    auto coord = px_coords[i];
-                    Reflection &box = boxes[label];
-                    box.l = std::min(box.l, coord.x);
-                    box.r = std::max(box.r, coord.x);
-                    box.t = std::min(box.t, coord.y);
-                    box.b = std::max(box.b, coord.y);
-                    box.num_pixels += 1;
-                }
-
-                if (min_spot_size > 0) {
-                    std::vector<Reflection> filtered_boxes;
-                    for (auto &box : boxes) {
-                        if (box.num_pixels >= min_spot_size) {
-                            filtered_boxes.emplace_back(box);
-                            num_strong_pixels_filtered += box.num_pixels;
-                        }
-                    }
-                    boxes = std::move(filtered_boxes);
-
-                    // Print out shoebox details for debugging
-                    // for (auto &box : boxes) {
-                    //     // Print the shoebox details
-                    //     print("Shoebox: ({:3d}, {:3d}) - ({:3d}, {:3d})\n",
-                    //           box.l,
-                    //           box.t,
-                    //           box.r,
-                    //           box.b);
-                    // }
-                } else {
-                    num_strong_pixels_filtered = num_strong_pixels;
-                }
                 end.record(stream);
                 // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -916,7 +851,7 @@ int main(int argc, char **argv) {
                             }
                         }
                     }
-                    lodepng::encode(format("image_{:05d}.png", image_num),
+                    lodepng::encode(fmt::format("image_{:05d}.png", image_num),
                                     reinterpret_cast<uint8_t *>(buffer.data()),
                                     width,
                                     height,
@@ -973,14 +908,14 @@ int main(int argc, char **argv) {
                                                               &mismatch_x,
                                                               &mismatch_y);
                     if (validation_matches) {
-                        print(
+                        fmt::print(
                           "Thread {:2d}, Image {:4d}: Compared: \033[32mMatch {} "
                           "px\033[0m\n",
                           thread_id,
                           image_num,
                           num_strong_pixels);
                     } else {
-                        print(
+                        fmt::print(
                           "Thread {:2d}, Image {:4d}: Compared: "
                           "\033[1;31mMismatch ({} px from kernel)\033[0m\n",
                           thread_id,
@@ -990,7 +925,7 @@ int main(int argc, char **argv) {
 
                 } else {
                     if (num_cpu_threads == 1) {
-                        print(
+                        fmt::print(
                           "Thread {:2d} finished image {:4d}\n"
                           "       Copy: {:5.1f} ms\n"
                           "     Kernel: {:5.1f} ms\n"
@@ -1012,7 +947,7 @@ int main(int argc, char **argv) {
                           bold(boxes.size()),
                           bold(num_strong_pixels_filtered));
                     } else {
-                        print(
+                        fmt::print(
                           "Thread {:2d} finished image {:4d} with {:5d} strong pixels, "
                           "{:4d} filtered reflections ({} pixels)\n",
                           thread_id,
@@ -1033,11 +968,94 @@ int main(int argc, char **argv) {
         thread.join();
     }
 
+#pragma region 3D Connected Components
+    // After all threads have finished processing slices
+    if (rotation_slices) {
+        logger->info("Processing 3D spots");
+
+        // Step 1: Convert rotation_slices map to a vector
+        std::vector<std::unique_ptr<ConnectedComponents>> slices;
+        for (auto &[image_num, connected_components] : *rotation_slices) {
+            slices.push_back(std::move(connected_components));
+        }
+
+        // Step 2: Call find_3d_components
+        constexpr uint max_peak_centroid_separation = 2;  // Hardcoded for now
+        auto reflections_3d = ConnectedComponents::find_3d_components(
+          slices, width, height, min_spot_size_3d, max_peak_centroid_separation);
+
+        // Step 3: Output the 3D reflections
+        logger->info(
+          fmt::format("Found {} spots", fmt::styled(reflections_3d.size(), fmt_cyan)));
+
+        if (do_writeout) {
+            std::ofstream out("3d_reflections.txt");
+            for (const auto &reflection : reflections_3d) {
+                auto [x, y, z] = reflection.center_of_mass();
+
+                std::string reflection_info =
+                  fmt::format("X: [{}, {}] Y: [{}, {}] Z: [{}, {}] COM: ({}, {}, {})",
+                              reflection.get_x_min(),
+                              reflection.get_x_max(),
+                              reflection.get_y_min(),
+                              reflection.get_y_max(),
+                              reflection.get_z_min(),
+                              reflection.get_z_max(),
+                              x,
+                              y,
+                              z);
+                logger->trace(reflection_info);
+
+                // Print all members of the reflection
+                // Print x bounds
+                out << "X: [" << reflection.get_x_min() << ", "
+                    << reflection.get_x_max() << "] ";
+                // Print y bounds
+                out << "Y: [" << reflection.get_y_min() << ", "
+                    << reflection.get_y_max() << "] ";
+                // Print z bounds
+                out << "Z: [" << reflection.get_z_min() << ", "
+                    << reflection.get_z_max() << "] ";
+                // Print Centre of Mass
+                out << "COM: (" << x << ", " << y << ", " << z << ")\n";
+            }
+            logger->flush();  // Flush to ensure all messages printed before continuing
+
+            // Step 4: Write the 3D reflections to a `.h5` file
+            try {
+                std::vector<std::array<double, 3>> refl(reflections_3d.size());
+                std::transform(reflections_3d.begin(),
+                               reflections_3d.end(),
+                               refl.begin(),
+                               [](const auto &reflection) {
+                                   auto [x, y, z] = reflection.center_of_mass();
+                                   return std::array<double, 3>{x, y, z};
+                               });
+
+                std::filesystem::path cwd = std::filesystem::current_path();
+                std::string file_path = cwd.generic_string();
+                file_path.append("/test_write.h5");
+
+                std::string dataset_path = "dials/processing/group_0/xyzobs.px.value";
+
+                logger->info("Writing data to HDF5 file: {}", file_path);
+                write_data_to_h5_file(file_path, dataset_path, refl);
+            } catch (const std::exception &e) {
+                logger->error("Error writing data to HDF5 file: {}", e.what());
+            } catch (...) {
+                logger->error("Unknown error writing data to HDF5 file");
+            }
+        }
+
+        logger->info("3D spot analysis complete");
+    }
+#pragma endregion 3D Connected Components
+
     float total_time =
       std::chrono::duration_cast<std::chrono::duration<double>>(
         std::chrono::high_resolution_clock::now() - all_images_start_time)
         .count();
-    print(
+    fmt::print(
       "\n{} images in {:.2f} s (\033[1;34m{:.2f} GBps\033[0m) (\033[1;34m{:.1f} "
       "fps\033[0m)\n",
       int(completed_images),
@@ -1049,10 +1067,10 @@ int main(int argc, char **argv) {
       width,
       height);
     if (time_waiting_for_images < 10) {
-        print("Total time waiting for images to appear: {:.0f} ms\n",
-              time_waiting_for_images * 1000);
+        fmt::print("Total time waiting for images to appear: {:.0f} ms\n",
+                   time_waiting_for_images * 1000);
     } else {
-        print("Total time waiting for images to appear: {:.2f} s\n",
-              time_waiting_for_images);
+        fmt::print("Total time waiting for images to appear: {:.2f} s\n",
+                   time_waiting_for_images);
     }
 }

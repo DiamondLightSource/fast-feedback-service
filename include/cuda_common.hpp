@@ -17,12 +17,12 @@
 
 #include "common.hpp"
 
-#if __has_include(<hdf5.h>)
-#define HAS_HDF5
-namespace _hdf5 {
-#include <hdf5.h>
-}
-#endif
+// #if __has_include(<hdf5.h>)
+// #define HAS_HDF5
+// namespace _hdf5 {
+// #include <hdf5.h>
+// }
+// #endif
 
 class cuda_error : public std::runtime_error {
   public:

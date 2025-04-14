@@ -49,36 +49,24 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
-# Handle inclusion of dx2 dependency in a choice of several ways
-set(dx2_SOURCE "" CACHE FILEPATH "Location of dx2 source directory")
-set(_dx2_already_populated "${dx2_SOURCE_DIR}")
-if(dx2_SOURCE)
-    # Explicitly told where to find dx2
-    add_subdirectory(${dx2_SOURCE} dx2)
-    set(dx2_SOURCE_DIR "${dx2_SOURCE}")
-elseif(EXISTS ${CMAKE_SOURCE_DIR}/dx2)
-    # dx2 exists as a local checkout
-    add_subdirectory(dx2)
-    set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
-else()
-    # Try finding an installed dx2, or fetch
-    FetchContent_Declare(
-        dx2
-        GIT_REPOSITORY  https://github.com/dials/dx2
-        GIT_TAG 2654929bc73e0d699dfdfcc2d924c3454e434ccf
-        FIND_PACKAGE_ARGS
-    )
-    FetchContent_MakeAvailable(dx2)
-endif()
-# Only print a message when as a new action
-if (NOT dx2_SOURCE_DIR STREQUAL _dx2_already_populated)
+# Handle inclusion of dx2 dependency using git submodule
+set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
+
+if(EXISTS ${dx2_SOURCE_DIR}/CMakeLists.txt)
+    add_subdirectory(${dx2_SOURCE_DIR})
     message(STATUS "Found dx2: ${dx2_SOURCE_DIR}")
+else()
+    message(FATAL_ERROR "dx2 submodule not found. Please run 'git submodule update --init --recursive'.")
 endif()
+
+include_directories(${dx2_SOURCE_DIR}/include)
 
 # Make a small library that we can link to to get the version
 project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
+
+enable_testing()
 
 add_subdirectory(h5read)
 add_subdirectory(baseline)
