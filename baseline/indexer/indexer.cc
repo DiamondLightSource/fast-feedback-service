@@ -8,6 +8,7 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
+#include <mutex>
 
 #include <Eigen/Dense>
 #include <argparse/argparse.hpp>
@@ -27,10 +28,79 @@
 #include "peaks_to_rlvs.cc"
 #include "xyz_to_rlp.cc"
 
+#include "refman_filter.cc"
+#include "assign_indices.h"
+#include "reflection_data.h"
+#include "scanstaticpredictor.cc"
+#include "combinations.cc"
+
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 using json = nlohmann::json;
+
+std::mutex mtx;
+
+struct score_and_crystal {
+    double score;
+    Crystal crystal;
+    double num_indexed;
+    double rmsdxy;
+};
+
+std::map<int,score_and_crystal> results_map;
+    
+void calc_score(Crystal const &crystal,
+  reflection_data const& obs,
+  Goniometer gonio, MonochromaticBeam beam, Panel panel, double width, int n){
+  std::vector<Vector3i> miller_indices;
+  int count;
+  auto preassign = std::chrono::system_clock::now();
+  std::tie(miller_indices, count) = assign_indices_global(crystal.get_A_matrix(), obs.rlp, obs.xyzobs_mm);
+  auto t2 = std::chrono::system_clock::now();
+  std::chrono::duration<double> elapsed_time = t2 - preassign;
+  std::cout << "Time for assigning: " << elapsed_time.count() << " s" << std::endl;
+
+  auto prefilter = std::chrono::system_clock::now();
+  reflection_data sel_obs = reflection_filter_preevaluation(
+      obs, miller_indices, gonio, crystal, beam, panel, width, 20
+  );
+  auto postfilter = std::chrono::system_clock::now();
+  std::chrono::duration<double> elapsed_timefilter = postfilter - prefilter;
+  std::cout << "Time for reflection_filter: " << elapsed_timefilter.count() << " s" << std::endl;
+  
+  // FIXME need to implement sys_absent_threshold (i.e. non_primitive_basis)
+  //write the score to the results map
+  double xsum = 0;
+  double ysum = 0;
+  double zsum = 0;
+  for (int i=0;i<sel_obs.flags.size();i++){
+      //if (sel_obs.miller_indices[i] == null){
+      //    continue;
+      //}
+      Vector3d xyzobs = sel_obs.xyzobs_mm[i];
+      Vector3d xyzcal = sel_obs.xyzcal_mm[i];
+      xsum += std::pow(xyzobs[0] - xyzcal[0],2);
+      ysum += std::pow(xyzobs[1] - xyzcal[1],2);
+      zsum += std::pow(xyzobs[2] - xyzcal[2],2);
+  }
+  double rmsdx = std::pow(xsum / sel_obs.xyzcal_mm.size(), 0.5);
+  double rmsdy = std::pow(ysum / sel_obs.xyzcal_mm.size(), 0.5);
+  double rmsdz = std::pow(zsum / sel_obs.xyzcal_mm.size(), 0.5);
+  double xyrmsd = std::pow(std::pow(rmsdx, 2)+std::pow(rmsdy, 2), 0.5);
+
+  // FIXME score the refined model
+  score_and_crystal sac;
+  sac.score = n;
+  sac.crystal = crystal;
+  sac.num_indexed = count;
+  sac.rmsdxy = xyrmsd;
+  mtx.lock();
+  results_map[n] = sac;
+  mtx.unlock();
+  std::cout<< "Done from thread# " << std::this_thread::get_id() << std::endl;
+}
+constexpr double RAD2DEG = 180.0 / M_PI;
 
 int main(int argc, char** argv) {
     // The purpose of an indexer is to determine the lattice model that best
@@ -136,7 +206,11 @@ int main(int argc, char** argv) {
     // The diffraction spots form a lattice in reciprocal space (if the experimental
     // geometry is accurate). So use the experimental models to transform the spot
     // coordinates on the detector into reciprocal space.
-    std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
+    std::vector<Vector3d> rlp;
+    std::vector<Vector3d> s1;
+    std::vector<Vector3d> xyzobs_mm;
+    
+    std::tie(rlp, s1, xyzobs_mm)= xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
     logger->info("Number of reflections: {}", rlp.size());
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
@@ -192,6 +266,67 @@ int main(int argc, char** argv) {
     // For now, let's just write out the candidate vectors and write out the unrefined experiment models with the
     // first combination of candidate vectors as an example crystal, to demonstrate an example experiment list data
     // structure.
+
+    std::string flags_array_name = "/dials/processing/group_0/flags";
+    std::vector<std::size_t> flags = read_array_from_h5_file<std::size_t>(filename, flags_array_name);
+    // calculate entering array
+    std::vector<bool> enterings(rlp.size());
+    Vector3d s0 = beam.get_s0();
+    Vector3d axis = gonio.get_rotation_axis();
+    Vector3d vec = s0.cross(axis);
+    for (int i=0;i<s1.size();i++){
+        enterings[i] = ((s1[i].dot(vec)) < 0.0);
+    }
+
+    // Make a selection on dmin and rotation angle like dials
+    std::vector<bool> selection(rlp.size(), true);
+    for (int i=0;i<rlp.size();i++){
+      if (!((1.0/rlp[i].norm()) > d_min && (xyzobs_mm[i][2]*RAD2DEG <= 360.0))){
+        selection[i] = false;
+      }
+    }
+    reflection_data reflections;
+    reflections.flags = flags;
+    reflections.xyzobs_mm = xyzobs_mm;
+    reflections.s1 = s1;
+    reflections.entering=enterings;
+    reflections.rlp = rlp;
+    reflections = select(reflections, selection);
+
+    Vector3i null{{0,0,0}};
+    int n = 0;
+    // FIXME check somewhere that there are solutions
+    CandidateOrientationMatrices candidates(candidate_lattice_vectors, 1000);
+    // iterate over candidates; assign indices, refine, score.
+    // need a map of scores for candidates: index to score and xtal. What about miller indices?
+    int max_refine = 50;
+    std::vector<Vector3i> miller_indices;
+    int count;
+    int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
+    double width = scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
+
+    std::vector<std::thread> threads;
+    
+    while (candidates.has_next() && n < max_refine){
+        // could do all this threaded.
+        Crystal crystal = candidates.next(); //quick (<0.1ms)
+        n++;
+        //calc_score(crystal, obs, rlp_select, phi_select, gonio, beam, panel, width);
+        threads.emplace_back(std::thread(calc_score, crystal, reflections, gonio, beam, panel, width, n));
+    }
+    for (auto &t : threads){
+        t.join();
+    }
+    std::cout << "Unit cell, #indexed, rmsd_xy" << std::endl;
+    for (auto it=results_map.begin();it!=results_map.end();it++){
+        gemmi::UnitCell cell = (*it).second.crystal.get_unit_cell();
+        logger->info("{:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {}, {:>7.4f}", cell.a,cell.b,cell.c,cell.alpha,cell.beta,cell.gamma,(*it).second.num_indexed, (*it).second.rmsdxy);
+    }
+
+    // find the best crystal from the map - lowest score
+    auto it = *std::min_element(results_map.begin(), results_map.end(),
+            [](const auto& l, const auto& r) { return l.second.score < r.second.score; });
+    Crystal best_xtal = it.second.crystal;
 
     // dump the candidate vectors to json
     std::string n_vecs = std::to_string(candidate_lattice_vectors.size() - 1);

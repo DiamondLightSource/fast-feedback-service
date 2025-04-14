@@ -6,7 +6,7 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 
-std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, std::vector<Vector3d> const &rlp, std::vector<double> const &phi, double tolerance = 0.3){
+std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, std::vector<Vector3d> const &rlp, std::vector<Vector3d> const &xyzobs_mm, double tolerance = 0.3){
     // Consider only a single lattice.
     std::vector<Vector3i> miller_indices(rlp.size());
     std::vector<int> crystal_ids(rlp.size());
@@ -68,8 +68,8 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, s
                         if (crystal_ids[j_ref] == -1){
                             continue;
                         }
-                        double phi_i = phi[i_ref];
-                        double phi_j = phi[j_ref];
+                        double phi_i = xyzobs_mm[i_ref][2];
+                        double phi_j = xyzobs_mm[j_ref][2];
                         if (std::abs(phi_i - phi_j) > pi_4) {
                             continue;
                         }
@@ -104,8 +104,8 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, s
                 if (crystal_ids[j_ref] == -1){
                     continue;
                 }
-                double phi_i = phi[i_ref];
-                double phi_j = phi[j_ref];
+                double phi_i = xyzobs_mm[i_ref][2];
+                double phi_j = xyzobs_mm[j_ref][2];
                 if (std::abs(phi_i - phi_j) > pi_4) {
                     continue;
                 }

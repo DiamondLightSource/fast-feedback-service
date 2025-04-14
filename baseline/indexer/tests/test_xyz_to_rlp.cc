@@ -42,7 +42,11 @@ TEST(BaselineIndexer, XyztoRlptest) {
     panel_data["px_mm_strategy"] = pxdata;
     Panel panel{panel_data};      // use defaults
     MonochromaticBeam beam{1.0};  //wavelength
-    std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
+    std::vector<Vector3d> rlp;
+    std::vector<Vector3d> s1;
+    std::vector<Vector3d> xyzobs_mm;
+    
+    std::tie(rlp, s1, xyzobs_mm) = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
     // Check against the equivalent results from the dials calculation
     Vector3d expected_0{{-0.5021752936083477, 0.5690514955867707, 0.27788051106787137}};
     Vector3d expected_1{{-0.5009709068399325, 0.5770958485799975, 0.2562207980973077}};

@@ -47,7 +47,7 @@ void simple_reflection_predictor(
   const std::vector<Vector3d> xyzobs_mm = reflections.xyzobs_mm;
   const std::vector<bool> entering = reflections.entering;
   std::vector<std::size_t> flags = reflections.flags;
-  std::vector<Vector3d> xyzcal_mm = reflections.xyzcal_mm;
+  std::vector<Vector3d> xyzcal_mm(flags.size());// = reflections.xyzcal_mm;
   const std::vector<Vector3i> hkl = reflections.miller_indices;
   // these setup bits are the same for all refls.
   Vector3d s0 = beam.get_s0();
@@ -134,7 +134,6 @@ void simple_reflection_predictor(
     //Vector3d v = D * s1;
     std::array<double, 2> mm = panel.get_ray_intersection(s1_this); //v = D * s1; v[0]/v[2], v[1]/v[2]
     //scitbx::vec2<double> px = Detector[0].millimeter_to_pixel(mm); // requires call to parallax corr
-    
     // match full turns
     double phiobs = xyzobs_mm[i][2];
     // first fmod positive
@@ -145,7 +144,6 @@ void simple_reflection_predictor(
     double val2 = std::fmod(resid+M_PI, two_pi);
     while (val2 < 0) val2 += two_pi;
     val2 -= M_PI;
-    
     xyzcal_mm[i] = {mm[0], mm[1], phiobs + val2};
     //xyzcalpx[i] = {px[0], px[1], frame};
     s1[i] = s1_this;
