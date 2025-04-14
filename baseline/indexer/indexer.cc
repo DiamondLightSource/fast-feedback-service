@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
         std::exit(1);
     }
     TypedExperiment<MonochromaticBeam> expt = try_to_load(elist_json_obj);
-    Scan scan = expt.scan();
+    Scan& scan = expt.get_scan();
     MonochromaticBeam& beam = expt.get_beam();
     Goniometer gonio = expt.goniometer();
     Detector detector = expt.detector();
@@ -223,11 +223,11 @@ int main(int argc, char** argv) {
                           candidate_lattice_vectors[2],
                           space_group};
         expt.set_crystal(best_xtal);
-        json elist_out = expt.to_json();
+        /*json elist_out = expt.to_json();
         std::string efile_name = "elist.json";
         std::ofstream efile(efile_name);
         efile << elist_out.dump(4);
-        logger->info("Saved experiment list to {}", efile_name);
+        logger->info("Saved experiment list to {}", efile_name);*/
     }
 
     auto t2 = std::chrono::system_clock::now();
