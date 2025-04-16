@@ -8,13 +8,19 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 
-std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, std::vector<Vector3d> const &rlp, std::vector<Vector3d> const &xyzobs_mm, double tolerance = 0.3){
+constexpr double pi_4 = M_PI / 4;
+
+std::pair<std::vector<Vector3i>, int> assign_indices_global(
+    Matrix3d const &A,
+    std::vector<Vector3d> const &rlp,
+    std::vector<Vector3d> const &xyzobs_mm,
+    double tolerance = 0.3
+){
     // Consider only a single lattice.
     std::vector<Vector3i> miller_indices(rlp.size());
     std::vector<int> crystal_ids(rlp.size());
     std::vector<double> lsq_vector(rlp.size());
-
-    // map of milleridx to
+    Vector3i miller_index_zero{{0, 0, 0}};
     typedef std::multimap<Vector3i, std::size_t, std::function<bool(const Eigen::Vector3i&,const Eigen::Vector3i&)> > hklmap;
     
     hklmap miller_idx_to_iref([](const Vector3i & a, const Vector3i & b)->bool
@@ -24,12 +30,10 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, s
         b.data(),b.data()+b.size());
     });
     
-    double pi_4 = M_PI / 4;
-    Vector3i miller_index_zero{{0, 0, 0}};
-    Matrix3d A_inv = A.inverse();
-    double tolsq = std::pow(tolerance, 2);
+    const Matrix3d A_inv = A.inverse();
+    const double tolsq = tolerance * tolerance;
     int count = 0;
-    for (int i=0;i<rlp.size();i++){
+    for (int i=0;i<rlp.size();++i){
         Vector3d rlp_this = rlp[i];
         Vector3d hkl_f = A_inv * rlp_this;
         for (std::size_t j = 0; j < 3; j++) {
@@ -48,7 +52,7 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, s
             crystal_ids[i] = -1;
         }
         else {
-            miller_idx_to_iref.insert({miller_indices[i],i});
+            miller_idx_to_iref.emplace(miller_indices[i],i);
             lsq_vector[i] = l_sq;
             count++;
         }

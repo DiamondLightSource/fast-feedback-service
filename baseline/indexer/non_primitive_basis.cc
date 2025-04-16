@@ -19,10 +19,9 @@ inline int mod_positive(int x, int y){
 
 std::vector<int> absence_test(const std::vector<Vector3i>& hkl, const int& mod, Vector3i vecrep){
     std::vector<int> cumulative(mod, 0);
-    for (auto it=hkl.begin(); it!=hkl.end(); ++it){
-        int pattern_sum = (*it).dot(vecrep);
-        int index = mod_positive(pattern_sum, mod);
-        cumulative[index] += 1;
+    for (const Vector3i& millerindex : hkl){
+        int pattern_sum = millerindex.dot(vecrep);
+        cumulative[mod_positive(pattern_sum, mod)]++;
     }
     return cumulative;
 }
@@ -35,7 +34,7 @@ struct reindex_transforms {
 
 // This is always the same, ideally would make a constexpr but issues with Eigen objects not being literal types
 std::vector<reindex_transforms> generate_reindex_transformations(){
-    std::vector<int> modularities = {2,3,5};
+    const std::vector<int> modularities = {2,3,5};
     // generate combinations
     std::vector<Vector3i> points;
     points.reserve(11*11*11);
@@ -64,15 +63,13 @@ std::vector<reindex_transforms> generate_reindex_transformations(){
 
     Vector3i zero = {0,0,0};
     std::vector<Vector3i> representatives;
-    for (auto it=points.begin();it !=points.end();++it){
-        Vector3i point = *it;
+    for (const Vector3i& point: points){
         if (point.dot(point) > 6){
             break;
         }
         // see if collinear with any existing;
         bool is_collinear = false;
-        for (auto it2=representatives.begin(); it2!=representatives.end();++it2){
-            Vector3i repr = *it2;
+        for (const Vector3i& repr: representatives){
             if (point.cross(repr) == zero){
                 is_collinear = true;
                 break;
@@ -85,10 +82,8 @@ std::vector<reindex_transforms> generate_reindex_transformations(){
 
     // Now generate reindex matrices
     std::vector<reindex_transforms> reindex;
-    for (auto it=representatives.begin();it!=representatives.end();++it){
-        Vector3i repr=*it;
-        for (auto it2=modularities.begin(); it2!=modularities.end();++it2){
-            int modularity = *it2;
+    for (const Vector3i& repr: representatives){
+        for (const int& modularity : modularities){
             std::vector<Vector3i> candidate_points;
             for (const Vector3i& point : points){
                 if ((point.dot(repr) % modularity) == 0){

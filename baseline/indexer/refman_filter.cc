@@ -8,11 +8,13 @@
 #include <dx2/crystal.h>
 #include <dx2/goniometer.h>
 #include "reflection_data.h"
-// select on id before here.
+
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
 using Eigen::Vector3i;
 
+constexpr double iqr_multiplier = 3.0;
+constexpr size_t predicted_value = (1 << 0); //predicted flag
 
 std::vector<std::size_t> random_selection(int pop_size, int sample_size, int seed=43){
     std::mt19937 mt(seed);
@@ -33,13 +35,8 @@ std::vector<std::size_t> random_selection(int pop_size, int sample_size, int see
     return result;
 }
 
-
-
-
-
 std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double> yresid, std::vector<double>phi_resid){
     std::vector<size_t> sel {};//(xresid.size(), true);
-    double iqr_multiplier = 3.0;
     std::vector<double> xresid_unsorted(xresid.begin(), xresid.end());
     std::vector<double> yresid_unsorted(yresid.begin(), yresid.end());
     std::vector<double> phi_resid_unsorted(phi_resid.begin(), phi_resid.end());
@@ -92,30 +89,15 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double>
     double uppercutp = (iqrp * iqr_multiplier) + Q3p;
     double lowercutp = Q1p -(iqrp * iqr_multiplier);
 
+    auto is_outlier = [](double value, double upper, double lower) -> bool {
+        return value > upper || value < lower;
+    }; // helper lambda function
+
     for (int i=0;i<xresid_unsorted.size();i++){
-        if (xresid_unsorted[i] > uppercutx){
+        if (is_outlier(xresid_unsorted[i], uppercutx, lowercutx) ||
+            is_outlier(yresid_unsorted[i], uppercuty, lowercuty) ||
+            is_outlier(phi_resid_unsorted[i], uppercutp, lowercutp)){
             sel.push_back(i);
-            //sel[i] = false;
-        }
-        else if (xresid_unsorted[i] < lowercutx){
-            sel.push_back(i);
-            //sel[i] = false;
-        }
-        else if (yresid_unsorted[i] > uppercuty){
-            sel.push_back(i);
-            //sel[i] = false;
-        }
-        else if (yresid_unsorted[i] < lowercuty){
-            sel.push_back(i);
-            //sel[i] = false;
-        }
-        else if (phi_resid_unsorted[i] > uppercutp){
-            sel.push_back(i);
-            //sel[i] = false;
-        }
-        else if (phi_resid_unsorted[i] < lowercutp){
-            sel.push_back(i);
-            //sel[i] = false;
         }
     }
     return sel;
@@ -131,7 +113,6 @@ reflection_data outlier_filter(reflection_data &reflections){
     std::vector<double> phi_resid(reflections.flags.size(), 0.0);
     std::vector<std::size_t> sel {};
     
-    size_t predicted_value = (1 << 0); //predicted flag
     for (int i=0;i<flags.size();i++){
         if ((flags[i] & predicted_value) == predicted_value){
             Vector3d xyzobsi = xyzobs[i];
@@ -156,8 +137,8 @@ reflection_data outlier_filter(reflection_data &reflections){
     std::vector<size_t> outlier_isel = simple_tukey(x_resid_sel, y_resid_sel, phi_resid_sel);
     // get indices of good, then loop over good indics from first.
     std::vector<bool> good_sel(x_resid_sel.size(), true);
-    for (int i=0;i<outlier_isel.size();i++){
-        good_sel[outlier_isel[i]] = false;
+    for (const size_t& isel: outlier_isel){
+        good_sel[isel] = false;
     }
     std::vector<std::size_t> final_sel {}; 
     for (int i=0;i<good_sel.size();i++){
@@ -172,9 +153,9 @@ reflection_data outlier_filter(reflection_data &reflections){
     // set used_in_refinement
     size_t used_in_refinement_value = (1 << 3); //used in refinement flag
     size_t centroid_outlier_value = (1 << 17); //ucentroid outlier flag
-    for (int i=0;i<subrefls.flags.size();i++){
-        subflags[i] |= used_in_refinement_value;
-        subflags[i] &= ~centroid_outlier_value;
+    for (size_t& flag : subrefls.flags){
+        flag |= used_in_refinement_value;
+        flag &= ~centroid_outlier_value;
     }
     subrefls.flags = subflags;
 
@@ -187,9 +168,7 @@ reflection_data initial_refman_filter(
     Goniometer gonio, MonochromaticBeam beam,
     double close_to_spindle_cutoff){
     std::vector<std::size_t> flags = reflections.flags;
-    //std::vector<Vector3i> hkl = miller_indices;
     std::vector<Vector3d> s1 = reflections.s1;
-    //std::vector<int> id = reflections["id"];
     std::vector<Vector3d> xyzobs = reflections.xyzobs_mm;
     Vector3d axis = gonio.get_rotation_axis();
     Vector3d s0 = beam.get_s0();
@@ -224,12 +203,10 @@ reflection_data initial_refman_filter(
     }
     subrefls.miller_indices = filtered_hkl;
 
-    //dials::af::reflection_table subrefls = dials::af::boost_python::reflection_table_suite::select_rows_flags(
-    //    reflections, sel.const_ref());
     // now calculate entering flags (needed for prediction) and frame numbers
     size_t used_in_refinement_value = (1 << 3); //used in refinement flag
-    for (int i=0;i<subrefls.flags.size();i++){
-        subrefls.flags[i] &= ~used_in_refinement_value; //unset the flag
+    for (size_t& flag : subrefls.flags){
+        flag &= ~used_in_refinement_value; //unset the flag
     }
 
     std::vector<bool> enterings(subrefls.flags.size(), false);
