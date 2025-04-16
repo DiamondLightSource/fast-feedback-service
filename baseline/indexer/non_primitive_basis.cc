@@ -1,0 +1,182 @@
+#include <vector>
+#include <iostream>
+#include <Eigen/Dense>
+#include "reflection_data.h"
+#include "assign_indices.h"
+#include <dx2/crystal.h>
+
+using Eigen::Vector3d;
+using Eigen::Vector3i;
+using Eigen::Matrix3d;
+
+inline int mod_positive(int x, int y){
+    x %= y;
+    if (x < 0){
+        x += y;
+    }
+    return x;
+}
+
+std::vector<int> absence_test(const std::vector<Vector3i>& hkl, const int& mod, Vector3i vecrep){
+    std::vector<int> cumulative(mod, 0);
+    for (auto it=hkl.begin(); it!=hkl.end(); ++it){
+        int pattern_sum = (*it).dot(vecrep);
+        int index = mod_positive(pattern_sum, mod);
+        cumulative[index] += 1;
+    }
+    return cumulative;
+}
+
+struct reindex_transforms {
+    int modularity;
+    Vector3i vector;
+    Matrix3d transformation;
+};
+
+// This is always the same, ideally would make a constexpr but issues with Eigen objects not being literal types
+std::vector<reindex_transforms> generate_reindex_transformations(){
+    std::vector<int> modularities = {2,3,5};
+    // generate combinations
+    std::vector<Vector3i> points;
+    points.reserve(11*11*11);
+    for (int i=5; i>-6;--i){
+        for (int j=5; j>-6;--j){
+            for (int k=5; k>-6;--k){
+                points.push_back({i,j,k});
+            }
+        }
+    }
+    std::sort(points.begin(), points.end(),[](const Vector3i a, const Vector3i b){
+        int d1 = a.dot(a);
+        int d2 = b.dot(b);
+        if (d1 == d2){
+            if (a.sum() == b.sum()){
+               return !std::lexicographical_compare(
+                a.data(),a.data()+a.size(),
+                b.data(),b.data()+b.size()); // (1,0,0) before (0,1,0), before (0,0,1).
+            }
+            return a.sum() > b.sum(); // Secondary criterion - points with higher sum prioritised
+        }
+        return d1 < d2; // Primary criterion - return closest to origin
+    });
+    // remove the first element (0,0,0)
+    points.erase(points.begin());
+
+    Vector3i zero = {0,0,0};
+    std::vector<Vector3i> representatives;
+    for (auto it=points.begin();it !=points.end();++it){
+        Vector3i point = *it;
+        if (point.dot(point) > 6){
+            break;
+        }
+        // see if collinear with any existing;
+        bool is_collinear = false;
+        for (auto it2=representatives.begin(); it2!=representatives.end();++it2){
+            Vector3i repr = *it2;
+            if (point.cross(repr) == zero){
+                is_collinear = true;
+                break;
+            }
+        }
+        if (!is_collinear){
+            representatives.push_back(point);
+        }
+    }
+
+    // Now generate reindex matrices
+    std::vector<reindex_transforms> reindex;
+    for (auto it=representatives.begin();it!=representatives.end();++it){
+        Vector3i repr=*it;
+        for (auto it2=modularities.begin(); it2!=modularities.end();++it2){
+            int modularity = *it2;
+            std::vector<Vector3i> candidate_points;
+            for (const Vector3i& point : points){
+                if ((point.dot(repr) % modularity) == 0){
+                    candidate_points.push_back(point);
+                }
+            }
+            Vector3i first = candidate_points.front();
+            Vector3i second;
+            Vector3i third;
+            candidate_points.erase(candidate_points.begin());
+            while (true) {
+                second = candidate_points.front();
+                candidate_points.erase(candidate_points.begin());
+                if (!(second.cross(first) == zero)){
+                    break;
+                }
+            }
+            while (true) {
+                third = candidate_points.front();
+                candidate_points.erase(candidate_points.begin());
+                if (!(second.cross(first).dot(third) == 0)){
+                    break;
+                }
+            }
+            Matrix3d A{
+                {(double)first[0], (double)first[1], (double)first[2]},
+                {(double)second[0], (double)second[1], (double)second[2]},
+                {(double)third[0], (double)third[1], (double)third[2]}
+            };
+            if (A.determinant() < 0){
+                A = Matrix3d{
+                    {(double)second[0], (double)second[1], (double)second[2]},
+                    {(double)first[0], (double)first[1], (double)first[2]},
+                    {(double)third[0], (double)third[1], (double)third[2]}
+                };
+            }
+            reindex_transforms r{modularity, repr, A};
+            reindex.push_back(r);
+        }
+    }
+    return reindex;
+}
+
+std::vector<reindex_transforms> transforms = generate_reindex_transformations();
+
+Matrix3d null{};
+
+Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold=0.9){
+    for (const reindex_transforms& transform:transforms){
+        std::vector<int> cumulative = absence_test(hkl, transform.modularity, transform.vector);
+        for (int i=0;i<transform.modularity;++i){
+            if (((double)cumulative[i] / hkl.size()) > threshold && i==0){
+                std::cout << "Detected exclusive presence of " << transform.vector[0] << "H ";
+                std::cout << transform.vector[1] << "K " << transform.vector[2] << "L = ";
+                std::cout << transform.modularity << "n, remainder " << i << std::endl;
+                return transform.transformation;
+            }
+        }
+    }
+    return null;
+}
+
+int correct(std::vector<Vector3i>& hkl, Crystal& crystal, const std::vector<Vector3d>& rlp, const std::vector<Vector3d>& xyzobs_mm, double threshold=0.9){
+    Vector3i null_miller = {0,0,0};
+    int count; // num indexed
+    while (true) {
+        std::vector<Vector3i> selected_miller;
+        selected_miller.reserve(hkl.size());
+        for (int i=0;i<hkl.size();++i){
+            Vector3i midx = hkl[i];
+            if (midx != null_miller){
+                selected_miller.push_back(midx);
+            }
+        }
+        count = selected_miller.size();
+        if (selected_miller.size() == 0){
+            break;
+        }
+        Matrix3d T = detect(selected_miller, threshold);
+        if (T == null){
+            break;
+        }
+        Matrix3d direct_matrix = crystal.get_A_matrix().inverse();
+        Matrix3d M = T.inverse().transpose();
+        Matrix3d new_direct = M * direct_matrix;
+        crystal.set_A_matrix(new_direct.inverse());
+        crystal.niggli_reduce();
+        std::tie(hkl, count) = assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
+    }
+    return count;
+}

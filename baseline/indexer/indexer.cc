@@ -33,6 +33,7 @@
 #include "reflection_data.h"
 #include "scanstaticpredictor.cc"
 #include "combinations.cc"
+#include "non_primitive_basis.cc"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -50,7 +51,7 @@ struct score_and_crystal {
 
 std::map<int,score_and_crystal> results_map;
     
-void calc_score(Crystal const &crystal,
+void calc_score(Crystal crystal,
   reflection_data const& obs,
   Goniometer gonio, MonochromaticBeam beam, Panel panel, double width, int n){
   std::vector<Vector3i> miller_indices;
@@ -60,7 +61,12 @@ void calc_score(Crystal const &crystal,
   auto t2 = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_time = t2 - preassign;
   std::cout << "Time for assigning: " << elapsed_time.count() << " s" << std::endl;
-
+  //obs.miller_indices = miller_indices;
+  auto t3 = std::chrono::system_clock::now();
+  count = correct(miller_indices, crystal, obs.rlp, obs.xyzobs_mm);
+  auto t4 = std::chrono::system_clock::now();
+  std::chrono::duration<double> elapsed_time1 = t4 - t3;
+  std::cout << "Time for correct: " << elapsed_time1.count() << " s" << std::endl;
   auto prefilter = std::chrono::system_clock::now();
   reflection_data sel_obs = reflection_filter_preevaluation(
       obs, miller_indices, gonio, crystal, beam, panel, width, 20
@@ -121,6 +127,10 @@ int main(int argc, char** argv) {
     parser.add_argument("--max-cell")
       .help("The maximum possible cell length to consider during indexing")
       .scan<'f', float>();
+    parser.add_argument("--max-refine")
+      .help("The maximum number of candidate lattices to refine during indexing")
+      .default_value<size_t>(50)
+      .scan<'u', size_t>();
     parser
       .add_argument(
         "--fft-npoints")  // mainly for testing, likely would always want to keep it as 256.
@@ -165,6 +175,7 @@ int main(int argc, char** argv) {
     std::string filename = parser.get<std::string>("refl");
     double max_cell = parser.get<float>("max-cell");
     double d_min = parser.get<float>("dmin");
+    size_t max_refine = parser.get<size_t>("max-refine");
 
     // Parse the experiment list (a json file) and load the models.
     // Will be moved to dx2.
@@ -299,7 +310,6 @@ int main(int argc, char** argv) {
     CandidateOrientationMatrices candidates(candidate_lattice_vectors, 1000);
     // iterate over candidates; assign indices, refine, score.
     // need a map of scores for candidates: index to score and xtal. What about miller indices?
-    int max_refine = 50;
     std::vector<Vector3i> miller_indices;
     int count;
     int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
@@ -322,7 +332,6 @@ int main(int argc, char** argv) {
         gemmi::UnitCell cell = (*it).second.crystal.get_unit_cell();
         logger->info("{:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {}, {:>7.4f}", cell.a,cell.b,cell.c,cell.alpha,cell.beta,cell.gamma,(*it).second.num_indexed, (*it).second.rmsdxy);
     }
-
     // find the best crystal from the map - lowest score
     auto it = *std::min_element(results_map.begin(), results_map.end(),
             [](const auto& l, const auto& r) { return l.second.score < r.second.score; });

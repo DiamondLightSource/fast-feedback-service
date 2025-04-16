@@ -1,3 +1,5 @@
+#ifndef ASSIGN_INDICES_H
+#define ASSIGN_INDICES_H
 #include <cmath>
 #include <Eigen/Dense>
 #include <iostream>
@@ -125,3 +127,5 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(Matrix3d const &A, s
 
     return {miller_indices, count};
 }
+
+#endif
