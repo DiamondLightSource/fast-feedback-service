@@ -14,7 +14,9 @@ using Eigen::Matrix3d;
 using Eigen::Vector3i;
 
 constexpr double iqr_multiplier = 3.0;
-constexpr size_t predicted_value = (1 << 0); //predicted flag
+// imported from scanstaticpredictor constexpr size_t predicted_value = (1 << 0); //predicted flag 
+constexpr size_t used_in_refinement_value = (1 << 3); //used in refinement flag
+constexpr size_t centroid_outlier_value = (1 << 17); //ucentroid outlier flag
 
 std::vector<std::size_t> random_selection(int pop_size, int sample_size, int seed=43){
     std::mt19937 mt(seed);
@@ -36,7 +38,7 @@ std::vector<std::size_t> random_selection(int pop_size, int sample_size, int see
 }
 
 std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double> yresid, std::vector<double>phi_resid){
-    std::vector<size_t> sel {};//(xresid.size(), true);
+    std::vector<size_t> sel {};
     std::vector<double> xresid_unsorted(xresid.begin(), xresid.end());
     std::vector<double> yresid_unsorted(yresid.begin(), yresid.end());
     std::vector<double> phi_resid_unsorted(phi_resid.begin(), phi_resid.end());
@@ -151,8 +153,7 @@ reflection_data outlier_filter(reflection_data &reflections){
 
     // unset centroid outlier flag (necessary?)
     // set used_in_refinement
-    size_t used_in_refinement_value = (1 << 3); //used in refinement flag
-    size_t centroid_outlier_value = (1 << 17); //ucentroid outlier flag
+    
     for (size_t& flag : subrefls.flags){
         flag |= used_in_refinement_value;
         flag &= ~centroid_outlier_value;
@@ -204,7 +205,6 @@ reflection_data initial_refman_filter(
     subrefls.miller_indices = filtered_hkl;
 
     // now calculate entering flags (needed for prediction) and frame numbers
-    size_t used_in_refinement_value = (1 << 3); //used in refinement flag
     for (size_t& flag : subrefls.flags){
         flag &= ~used_in_refinement_value; //unset the flag
     }

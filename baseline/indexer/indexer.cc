@@ -47,6 +47,7 @@ struct score_and_crystal {
     Crystal crystal;
     double num_indexed;
     double rmsdxy;
+    double fraction_indexed;
 };
 
 std::map<int,score_and_crystal> results_map;
@@ -63,6 +64,7 @@ void calc_score(Crystal crystal,
   std::cout << "Time for assigning: " << elapsed_time.count() << " s" << std::endl;
   //obs.miller_indices = miller_indices;
   auto t3 = std::chrono::system_clock::now();
+  // Perform the non-primivite basis correction.
   count = correct(miller_indices, crystal, obs.rlp, obs.xyzobs_mm);
   auto t4 = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_time1 = t4 - t3;
@@ -75,37 +77,64 @@ void calc_score(Crystal crystal,
   std::chrono::duration<double> elapsed_timefilter = postfilter - prefilter;
   std::cout << "Time for reflection_filter: " << elapsed_timefilter.count() << " s" << std::endl;
   
-  // FIXME need to implement sys_absent_threshold (i.e. non_primitive_basis)
   //write the score to the results map
   double xsum = 0;
   double ysum = 0;
   double zsum = 0;
   for (int i=0;i<sel_obs.flags.size();i++){
-      //if (sel_obs.miller_indices[i] == null){
-      //    continue;
-      //}
       Vector3d xyzobs = sel_obs.xyzobs_mm[i];
       Vector3d xyzcal = sel_obs.xyzcal_mm[i];
       xsum += std::pow(xyzobs[0] - xyzcal[0],2);
       ysum += std::pow(xyzobs[1] - xyzcal[1],2);
       zsum += std::pow(xyzobs[2] - xyzcal[2],2);
   }
-  double rmsdx = std::pow(xsum / sel_obs.xyzcal_mm.size(), 0.5);
-  double rmsdy = std::pow(ysum / sel_obs.xyzcal_mm.size(), 0.5);
-  double rmsdz = std::pow(zsum / sel_obs.xyzcal_mm.size(), 0.5);
-  double xyrmsd = std::pow(std::pow(rmsdx, 2)+std::pow(rmsdy, 2), 0.5);
+  double rmsdx = std::sqrt(xsum / sel_obs.xyzcal_mm.size());
+  double rmsdy = std::sqrt(ysum / sel_obs.xyzcal_mm.size());
+  double rmsdz = std::sqrt(zsum / sel_obs.xyzcal_mm.size());
+  double xyrmsd = std::sqrt(rmsdx * rmsdx + rmsdy * rmsdy);
 
-  // FIXME score the refined model
   score_and_crystal sac;
   sac.score = n;
   sac.crystal = crystal;
   sac.num_indexed = count;
   sac.rmsdxy = xyrmsd;
+  sac.fraction_indexed = (double)count / obs.flags.size();
   mtx.lock();
   results_map[n] = sac;
   mtx.unlock();
   std::cout<< "Done from thread# " << std::this_thread::get_id() << std::endl;
 }
+
+void score_solutions(std::map<int,score_and_crystal>& results_map){
+  // Score the refined models.
+  // Score is defined as volume_score + rmsd_score + fraction_indexed_score
+  int length = results_map.size();
+  std::vector<double> rmsd_scores(length, 0);
+  std::vector<double> volume_scores(length, 0);
+  std::vector<double> fraction_indexed_scores(length, 0);
+  std::vector<double> combined_scores(length, 0);
+  double log2 = std::log(2);
+  for (int i=0;i<length;++i){
+    rmsd_scores[i] = std::log(results_map[i+1].rmsdxy) / log2;
+    fraction_indexed_scores[i] = std::log(results_map[i+1].fraction_indexed) / log2;
+    volume_scores[i] = std::log(results_map[i+1].crystal.get_unit_cell().volume) / log2;
+  }
+  double min_rmsd_score = *std::min_element(rmsd_scores.begin(), rmsd_scores.end());
+  double max_frac_score = *std::max_element(fraction_indexed_scores.begin(), fraction_indexed_scores.end());
+  double min_volume_score = *std::min_element(volume_scores.begin(), volume_scores.end());
+  for (int i=0;i<length;++i){
+    rmsd_scores[i] -= min_rmsd_score;
+    fraction_indexed_scores[i] *= -1;
+    fraction_indexed_scores[i] += max_frac_score;
+    volume_scores[i] -= min_volume_score;
+  }
+  for (int i=0;i<length;++i){
+    results_map[i+1].score = rmsd_scores[i] + fraction_indexed_scores[i] + volume_scores[i];
+  }
+}
+
+
+
 constexpr double RAD2DEG = 180.0 / M_PI;
 
 int main(int argc, char** argv) {
@@ -327,10 +356,16 @@ int main(int argc, char** argv) {
     for (auto &t : threads){
         t.join();
     }
-    std::cout << "Unit cell, #indexed, rmsd_xy" << std::endl;
-    for (auto it=results_map.begin();it!=results_map.end();it++){
-        gemmi::UnitCell cell = (*it).second.crystal.get_unit_cell();
-        logger->info("{:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {}, {:>7.4f}", cell.a,cell.b,cell.c,cell.alpha,cell.beta,cell.gamma,(*it).second.num_indexed, (*it).second.rmsdxy);
+    score_solutions(results_map);
+    std::vector<std::pair<int, score_and_crystal>> results_vector(results_map.begin(), results_map.end());
+    std::sort(results_vector.begin(), results_vector.end(), [](const auto& a, const auto& b) {
+        return a.second.score < b.second.score; // Ascending order by score
+    });
+
+    std::cout << "Unit cell, #indexed, rmsd_xy, score" << std::endl;
+    for (const auto& result: results_vector){
+        gemmi::UnitCell cell = result.second.crystal.get_unit_cell();
+        logger->info("{:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {}, {:>7.4f} {:>7.3f}", cell.a,cell.b,cell.c,cell.alpha,cell.beta,cell.gamma,result.second.num_indexed, result.second.rmsdxy, result.second.score);
     }
     // find the best crystal from the map - lowest score
     auto it = *std::min_element(results_map.begin(), results_map.end(),

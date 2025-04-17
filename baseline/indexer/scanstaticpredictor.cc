@@ -8,11 +8,13 @@
 #include <cassert>
 #include <iostream>
 #include "reflection_data.h"
-const double two_pi = 2 * M_PI;
+constexpr double two_pi = 2 * M_PI;
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
+
+constexpr size_t predicted_value = (1 << 0); //predicted flag
 
 inline double mod2pi(double angle) {
   // E.g. treat 359.9999999 as 360
@@ -32,22 +34,15 @@ Vector3d unit_rotate_around_origin(Vector3d vec, Vector3d unit, double angle){
 void simple_reflection_predictor(
   const MonochromaticBeam beam,
   const Goniometer gonio,
-  //const Vector3d s0,//beam s0
-  //const Matrix3d F,//fixed rot
-  //const Matrix3d S,//setting rot
-  //const Vector3d R, //get_rotation_axis_datum
   const Matrix3d UB,
   const Panel &panel,
   reflection_data &reflections
-  //const int image_range_start,
-  //const double osc_start,
-  //const double osc_width
 ){
   std::vector<Vector3d> s1 = reflections.s1;
   const std::vector<Vector3d> xyzobs_mm = reflections.xyzobs_mm;
   const std::vector<bool> entering = reflections.entering;
   std::vector<std::size_t> flags = reflections.flags;
-  std::vector<Vector3d> xyzcal_mm(flags.size());// = reflections.xyzcal_mm;
+  std::vector<Vector3d> xyzcal_mm(flags.size());
   const std::vector<Vector3i> hkl = reflections.miller_indices;
   // these setup bits are the same for all refls.
   Vector3d s0 = beam.get_s0();
@@ -57,7 +52,6 @@ void simple_reflection_predictor(
   Vector3d s0_ = S.inverse() * s0;
   Matrix3d FUB = F * UB;
   Vector3d m2 = R / R.norm();
-  //Vector3d m2 = R.normalize();//fixed during refine
   Vector3d s0_m2_plane = s0.cross(S * R);
   s0_m2_plane.normalize();
 
@@ -68,13 +62,6 @@ void simple_reflection_predictor(
   double s0_d_m2 = s0_.dot(m2);
   double s0_d_m3 = s0_.dot(m3);
 
-  /*std::vector<Vector3d> xyzcalmm = obs["xyzcal.mm"];
-  std::vector<Vector3d> s1_all = obs["s1"];
-  std::vector<bool> entering = obs["entering"];
-  std::vector<Vector3d> xyzobs = obs["xyzobs.mm.value"];
-  std::vector<Vector3i> hkl = obs["miller_index"];
-  std::vector<std::size_t> flags = obs["flags"];*/
-  size_t predicted_value = (1 << 0); //predicted flag
   // now call predict_rays with h and UB for a given refl
   for (int i=0;i<hkl.size();i++){
     const Vector3i h = hkl[i];
@@ -145,7 +132,6 @@ void simple_reflection_predictor(
     while (val2 < 0) val2 += two_pi;
     val2 -= M_PI;
     xyzcal_mm[i] = {mm[0], mm[1], phiobs + val2};
-    //xyzcalpx[i] = {px[0], px[1], frame};
     s1[i] = s1_this;
     flags[i] = flags[i] | predicted_value;
   }
