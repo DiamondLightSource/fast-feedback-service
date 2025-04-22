@@ -3,8 +3,9 @@
 #include <dx2/goniometer.h>
 #include <dx2/scan.h>
 #include <math.h>
-#include <tuple>
+
 #include <Eigen/Dense>
+#include <tuple>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -18,11 +19,12 @@ using Eigen::Vector3d;
  * @param gonio A dx2 Goniometer object.
  * @returns A vector of reciprocal space coordinates.
  */
-std::tuple<std::vector<Vector3d>, std::vector<Vector3d>, std::vector<Vector3d>> xyz_to_rlp(const std::vector<double> &xyzobs_px,
-                                 const Panel &panel,
-                                 const MonochromaticBeam &beam,
-                                 const Scan &scan,
-                                 const Goniometer &gonio) {
+std::tuple<std::vector<Vector3d>, std::vector<Vector3d>, std::vector<Vector3d>>
+xyz_to_rlp(const std::vector<double> &xyzobs_px,
+           const Panel &panel,
+           const MonochromaticBeam &beam,
+           const Scan &scan,
+           const Goniometer &gonio) {
     // Use the experimental models to perform a coordinate transformation from
     // pixel coordinates in detector space to reciprocal space, in units of
     // inverse angstrom.

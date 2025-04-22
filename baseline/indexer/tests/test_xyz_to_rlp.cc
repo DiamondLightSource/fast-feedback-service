@@ -45,7 +45,7 @@ TEST(BaselineIndexer, XyztoRlptest) {
     std::vector<Vector3d> rlp;
     std::vector<Vector3d> s1;
     std::vector<Vector3d> xyzobs_mm;
-    
+
     std::tie(rlp, s1, xyzobs_mm) = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
     // Check against the equivalent results from the dials calculation
     Vector3d expected_0{{-0.5021752936083477, 0.5690514955867707, 0.27788051106787137}};

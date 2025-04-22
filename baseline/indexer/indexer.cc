@@ -8,7 +8,6 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
-#include <mutex>
 
 #include <Eigen/Dense>
 #include <argparse/argparse.hpp>
@@ -16,20 +15,21 @@
 #include <cstring>
 #include <dx2/h5/h5read_processed.hpp>
 #include <fstream>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "combinations.cc"
 #include "common.hpp"
 #include "fft3d.cc"
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
 #include "peaks_to_rlvs.cc"
-#include "xyz_to_rlp.cc"
-#include "combinations.cc"
 #include "reflection_data.cc"
 #include "score_crystals.cc"
+#include "xyz_to_rlp.cc"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -154,8 +154,8 @@ int main(int argc, char** argv) {
     std::vector<Vector3d> rlp;
     std::vector<Vector3d> s1;
     std::vector<Vector3d> xyzobs_mm;
-    
-    std::tie(rlp, s1, xyzobs_mm)= xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
+
+    std::tie(rlp, s1, xyzobs_mm) = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
     logger->info("Number of reflections: {}", rlp.size());
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
@@ -205,47 +205,49 @@ int main(int argc, char** argv) {
       fractional_centres_of_mass, grid_points_per_peak, d_min, 3.0, max_cell, n_points);
 
     if (candidate_lattice_vectors.size() < 3) {
-      logger->info("Insufficient number of candidate vectors to make a crystal model.");
-      std::exit(0);
+        logger->info(
+          "Insufficient number of candidate vectors to make a crystal model.");
+        std::exit(0);
     }
 
     // Now we need to generate candidate crystals from the lattice vectors and evaluate them
 
     std::string flags_array_name = "/dials/processing/group_0/flags";
-    std::vector<std::size_t> flags = read_array_from_h5_file<std::size_t>(filename, flags_array_name);
+    std::vector<std::size_t> flags =
+      read_array_from_h5_file<std::size_t>(filename, flags_array_name);
     // calculate entering array
     std::vector<bool> enterings(rlp.size());
     Vector3d s0 = beam.get_s0();
     Vector3d axis = gonio.get_rotation_axis();
     Vector3d vec = s0.cross(axis);
-    for (int i=0;i<s1.size();i++){
+    for (int i = 0; i < s1.size(); i++) {
         enterings[i] = ((s1[i].dot(vec)) < 0.0);
     }
 
     // Make a selection on dmin and rotation angle like dials
     std::vector<bool> selection(rlp.size(), true);
     double osc_trim_limit = scan.get_oscillation()[0] + 360.0;
-    for (int i=0;i<rlp.size();i++){
-      if (1.0/rlp[i].norm() <= d_min){
-        selection[i] = false;
-      }
-      else if (xyzobs_mm[i][2]*RAD2DEG > osc_trim_limit){
-        selection[i] = false;
-      }
+    for (int i = 0; i < rlp.size(); i++) {
+        if (1.0 / rlp[i].norm() <= d_min) {
+            selection[i] = false;
+        } else if (xyzobs_mm[i][2] * RAD2DEG > osc_trim_limit) {
+            selection[i] = false;
+        }
     }
     reflection_data reflections;
     reflections.flags = flags;
     reflections.xyzobs_mm = xyzobs_mm;
     reflections.s1 = s1;
-    reflections.entering=enterings;
+    reflections.entering = enterings;
     reflections.rlp = rlp;
     reflections = select(reflections, selection);
 
-    Vector3i null{{0,0,0}};
-    int n = 0; // Candidate number
+    Vector3i null{{0, 0, 0}};
+    int n = 0;  // Candidate number
     int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
-    double scan_width = scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
-    
+    double scan_width =
+      scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
+
     // Initialise a class that will generate canditate orientation matrices.
     CandidateOrientationMatrices candidates(candidate_lattice_vectors, 1000);
 
@@ -254,35 +256,54 @@ int main(int argc, char** argv) {
 
     // Limit the number of active threads to the max concurrency, without needing to manage a threadpool.
     int batch_size = std::min(max_refine, nthreads);
-    for (int i=0; i<max_refine; i += nthreads){
-      threads.clear();
-      int j=0;
-      while (candidates.has_next() && n < max_refine && j < batch_size){
-        Crystal crystal = candidates.next(); //quick (<0.1ms)
-        n++;
-        j++;
-        threads.emplace_back(std::thread(evaluate_crystal, crystal, reflections, gonio, beam, panel, scan_width, n));
-      }
-      for (auto &t : threads){
-          t.join();
-      }
+    for (int i = 0; i < max_refine; i += nthreads) {
+        threads.clear();
+        int j = 0;
+        while (candidates.has_next() && n < max_refine && j < batch_size) {
+            Crystal crystal = candidates.next();  //quick (<0.1ms)
+            n++;
+            j++;
+            threads.emplace_back(std::thread(evaluate_crystal,
+                                             crystal,
+                                             reflections,
+                                             gonio,
+                                             beam,
+                                             panel,
+                                             scan_width,
+                                             n));
+        }
+        for (auto& t : threads) {
+            t.join();
+        }
     }
 
     // Determine a relative score for all candidates and print a summary to the log.
     score_solutions(results_map);
-    std::vector<std::pair<int, score_and_crystal>> results_vector(results_map.begin(), results_map.end());
-    std::sort(results_vector.begin(), results_vector.end(), [](const auto& a, const auto& b) {
-        return a.second.score < b.second.score; // Ascending order by score
-    });
+    std::vector<std::pair<int, score_and_crystal>> results_vector(results_map.begin(),
+                                                                  results_map.end());
+    std::sort(
+      results_vector.begin(), results_vector.end(), [](const auto& a, const auto& b) {
+          return a.second.score < b.second.score;  // Ascending order by score
+      });
     logger->info("Candidate solutions:");
-    logger->info("| Unit cell                                 | volume & score | #indexed % & score | rmsd_xy & score | overall score |");
-    for (const auto& result: results_vector){
+    logger->info(
+      "| Unit cell                                 | volume & score | #indexed % & "
+      "score | rmsd_xy & score | overall score |");
+    for (const auto& result : results_vector) {
         gemmi::UnitCell cell = result.second.crystal.get_unit_cell();
-        logger->info("| {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} | {:>8.0f}  {:.2f} | {:>7.0f}  {:>3.0f}  {:.2f} | {:>6.2f}    {:>5.2f} |        {:>6.2f} |",
-          cell.a,cell.b,cell.c,cell.alpha,cell.beta,cell.gamma,
-          cell.volume, result.second.volume_score,
+        logger->info(
+          "| {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} | {:>8.0f}  {:.2f} "
+          "| {:>7.0f}  {:>3.0f}  {:.2f} | {:>6.2f}    {:>5.2f} |        {:>6.2f} |",
+          cell.a,
+          cell.b,
+          cell.c,
+          cell.alpha,
+          cell.beta,
+          cell.gamma,
+          cell.volume,
+          result.second.volume_score,
           result.second.num_indexed,
-          result.second.fraction_indexed*100,
+          result.second.fraction_indexed * 100,
           result.second.indexed_score,
           result.second.rmsdxy,
           result.second.rmsd_score,
@@ -291,32 +312,32 @@ int main(int argc, char** argv) {
     Crystal best_xtal = results_vector[0].second.crystal;
 
     bool test = parser.get<bool>("test");
-    if (test){
-      // dump the candidate vectors to json
-      std::string n_vecs = std::to_string(candidate_lattice_vectors.size() - 1);
-      size_t n_zero = n_vecs.length();
-      json vecs_out;
-      for (int i = 0; i < candidate_lattice_vectors.size(); i++) {
-          std::string s = std::to_string(i);
-          auto pad_s = std::string(n_zero - std::min(n_zero, s.length()), '0') + s;
-          vecs_out[pad_s] = candidate_lattice_vectors[i];
-      }
-      std::string outfile = "candidate_vectors.json";
-      std::ofstream vecs_file(outfile);
-      vecs_file << vecs_out.dump(4);
-      logger->info("Saved candidate vectors to {}", outfile);
+    if (test) {
+        // dump the candidate vectors to json
+        std::string n_vecs = std::to_string(candidate_lattice_vectors.size() - 1);
+        size_t n_zero = n_vecs.length();
+        json vecs_out;
+        for (int i = 0; i < candidate_lattice_vectors.size(); i++) {
+            std::string s = std::to_string(i);
+            auto pad_s = std::string(n_zero - std::min(n_zero, s.length()), '0') + s;
+            vecs_out[pad_s] = candidate_lattice_vectors[i];
+        }
+        std::string outfile = "candidate_vectors.json";
+        std::ofstream vecs_file(outfile);
+        vecs_file << vecs_out.dump(4);
+        logger->info("Saved candidate vectors to {}", outfile);
 
-      size_t offset = std::to_string(results_vector.size() - 1).length();
-      json crystals_out;
-      for (int i = 0; i < results_vector.size(); i++) {
-        std::string s = std::to_string(i);
-        auto pad_s = std::string(offset - std::min(offset, s.length()), '0') + s;
-        crystals_out[pad_s] = results_vector[i].second.to_json();
-      }
-      std::string candidates_outfile = "candidate_crystals.json";
-      std::ofstream candidates_file(candidates_outfile);
-      candidates_file << crystals_out.dump(4);
-      logger->info("Saved candidate crystals to {}", candidates_outfile);
+        size_t offset = std::to_string(results_vector.size() - 1).length();
+        json crystals_out;
+        for (int i = 0; i < results_vector.size(); i++) {
+            std::string s = std::to_string(i);
+            auto pad_s = std::string(offset - std::min(offset, s.length()), '0') + s;
+            crystals_out[pad_s] = results_vector[i].second.to_json();
+        }
+        std::string candidates_outfile = "candidate_crystals.json";
+        std::ofstream candidates_file(candidates_outfile);
+        candidates_file << crystals_out.dump(4);
+        logger->info("Saved candidate crystals to {}", candidates_outfile);
     }
 
     // Now save an experiment list with the models.
