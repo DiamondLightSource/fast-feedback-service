@@ -48,6 +48,9 @@ struct score_and_crystal {
     double num_indexed;
     double rmsdxy;
     double fraction_indexed;
+    double volume_score;
+    double indexed_score;
+    double rmsd_score;
 };
 
 std::map<int,score_and_crystal> results_map;
@@ -124,9 +127,12 @@ void score_solutions(std::map<int,score_and_crystal>& results_map){
   double min_volume_score = *std::min_element(volume_scores.begin(), volume_scores.end());
   for (int i=0;i<length;++i){
     rmsd_scores[i] -= min_rmsd_score;
+    results_map[i+1].rmsd_score = rmsd_scores[i];
     fraction_indexed_scores[i] *= -1;
     fraction_indexed_scores[i] += max_frac_score;
+    results_map[i+1].indexed_score = fraction_indexed_scores[i];
     volume_scores[i] -= min_volume_score;
+    results_map[i+1].volume_score = volume_scores[i];
   }
   for (int i=0;i<length;++i){
     results_map[i+1].score = rmsd_scores[i] + fraction_indexed_scores[i] + volume_scores[i];
@@ -321,7 +327,10 @@ int main(int argc, char** argv) {
     // Make a selection on dmin and rotation angle like dials
     std::vector<bool> selection(rlp.size(), true);
     for (int i=0;i<rlp.size();i++){
-      if (!((1.0/rlp[i].norm()) > d_min && (xyzobs_mm[i][2]*RAD2DEG <= 360.0))){
+      if (1.0/rlp[i].norm() <= d_min){
+        selection[i] = false;
+      }
+      else if (xyzobs_mm[i][2]*RAD2DEG > 360.0){
         selection[i] = false;
       }
     }
@@ -362,10 +371,18 @@ int main(int argc, char** argv) {
         return a.second.score < b.second.score; // Ascending order by score
     });
 
-    std::cout << "Unit cell, #indexed, rmsd_xy, score" << std::endl;
+    logger->info("| Unit cell                                 | volume & score | #indexed % & score | rmsd_xy & score | overall score |");
     for (const auto& result: results_vector){
         gemmi::UnitCell cell = result.second.crystal.get_unit_cell();
-        logger->info("{:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {:>7.3f}, {}, {:>7.4f} {:>7.3f}", cell.a,cell.b,cell.c,cell.alpha,cell.beta,cell.gamma,result.second.num_indexed, result.second.rmsdxy, result.second.score);
+        logger->info("| {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} | {:>8.0f}  {:.2f} | {:>7.0f}  {:>3.0f}  {:.2f} | {:>6.2f}    {:>5.2f} |        {:>6.2f} |",
+          cell.a,cell.b,cell.c,cell.alpha,cell.beta,cell.gamma,
+          cell.volume, result.second.volume_score,
+          result.second.num_indexed,
+          result.second.fraction_indexed*100,
+          result.second.indexed_score,
+          result.second.rmsdxy,
+          result.second.rmsd_score,
+          result.second.score);
     }
     // find the best crystal from the map - lowest score
     auto it = *std::min_element(results_map.begin(), results_map.end(),

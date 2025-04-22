@@ -46,38 +46,32 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double>
     std::sort(yresid.begin(), yresid.end());
     std::sort(phi_resid.begin(), phi_resid.end());
 
-    // this is the way scitbx.math.five_number_summary does iqr
+    // this is the way scitbx.math.five_number_summary does iqr (which matches R)
     int n_lower=0;
-    double Q1x=0.0;
-    double Q1y=0.0;
-    double Q1p=0.0;
-    double Q3x=0.0;
-    double Q3y=0.0;
-    double Q3p=0.0;
-    int inc = 0; // an overlap offset if the number of items is odd.
-    if (xresid.size() % 2){
-        n_lower = (xresid.size() / 2) + 1;
-        inc = -1;
+    double Q1x,Q1y,Q1p,Q3x,Q3y,Q3p;
+    int n = xresid.size();
+    int upper_start = n / 2;
+    if (n % 2){
+        n_lower = (n / 2) + 1;
     }
     else {
-        n_lower = xresid.size() / 2;
+        n_lower = n / 2;
     }
     if (n_lower % 2){
-        // FIXME verify this branch correct
         Q1x = xresid[n_lower / 2];
+        Q3x = xresid[upper_start + (n_lower / 2)];
         Q1y = yresid[n_lower / 2];
+        Q3y = yresid[upper_start + (n_lower / 2)];
         Q1p = phi_resid[n_lower / 2];
-        Q3x = xresid[n_lower + 1 + (n_lower/ 2)]; 
-        Q3y = yresid[n_lower + 1 + (n_lower/ 2)];
-        Q3p = phi_resid[n_lower + 1 + (n_lower/ 2)];
+        Q3p = phi_resid[upper_start + (n_lower / 2)];
     }
     else {
-        Q1x = (xresid[n_lower / 2] + xresid[(n_lower / 2) -1]) / 2.0;
-        Q1y = (yresid[n_lower / 2] + yresid[(n_lower / 2) -1]) / 2.0;
-        Q1p = (phi_resid[n_lower / 2] + phi_resid[(n_lower / 2) -1]) / 2.0;
-        Q3x = (xresid[n_lower + inc+(n_lower / 2)] + xresid[n_lower +inc+(n_lower / 2) -1]) / 2.0;
-        Q3y = (yresid[n_lower +inc+(n_lower / 2)] + yresid[n_lower +inc+(n_lower / 2) -1]) / 2.0;
-        Q3p = (phi_resid[n_lower +inc+(n_lower / 2)] + phi_resid[n_lower +inc+(n_lower / 2) -1]) / 2.0;
+        Q1x = (xresid[n_lower / 2] + xresid[(n_lower / 2) - 1]) / 2;
+        Q3x = (xresid[upper_start + (n_lower / 2)] + xresid[upper_start + (n_lower / 2) - 1]) / 2;
+        Q1y = (yresid[n_lower / 2] + yresid[(n_lower / 2) - 1]) / 2;
+        Q3y = (yresid[upper_start + (n_lower / 2)] + yresid[upper_start + (n_lower / 2) - 1]) / 2;
+        Q1p = (phi_resid[n_lower / 2] + phi_resid[(n_lower / 2) - 1]) / 2;
+        Q3p = (phi_resid[upper_start + (n_lower / 2)] + phi_resid[upper_start + (n_lower / 2) - 1]) / 2;
     }
     double iqrx = Q3x - Q1x;
     double uppercutx = (iqrx * iqr_multiplier) + Q3x;
