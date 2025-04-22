@@ -2,13 +2,15 @@
 #include <Eigen/Dense>
 
 #include "common.hpp"
-#include "reflection_data.h"
-#include "assign_indices.h"
+#include "reflection_data.cc"
+#include "assign_indices.cc"
 #include <dx2/crystal.h>
 
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 using Eigen::Matrix3d;
+
+// Following the code in dials/algorithms/indexing/non_primivite_basis.py
 
 inline int mod_positive(int x, int y){
     x %= y;
@@ -132,6 +134,12 @@ std::vector<reindex_transforms> transforms = generate_reindex_transformations();
 
 Matrix3d null{};
 
+/**
+ * @brief Perform absence tests to evaluate potential systematic absences.
+ * @param hkl A vector of miller indices.
+ * @param threshold A threshold for positive identification of an absence.
+ * @returns A transformation matrix to reindex and remove the absence.
+ */
 Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold=0.9){
     for (const reindex_transforms& transform:transforms){
         std::vector<int> cumulative = absence_test(hkl, transform.modularity, transform.vector);
@@ -146,6 +154,15 @@ Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold=0.9){
     return null;
 }
 
+/**
+ * @brief Correct the miller indices and crystal cell for non-primitive basis set choices.
+ * @param hkl The miller indices.
+ * @param crystal The crystal model.
+ * @param rlp The vector of reciprocal lattice points.
+ * @param xyzobs_mm The vector of observed xyz positions, in mm.
+ * @param threshold A threshold for positive identification of an absence.
+ * @returns The number of rlps that are indexed after application of this function.
+ */
 int correct(std::vector<Vector3i>& hkl, Crystal& crystal, const std::vector<Vector3d>& rlp, const std::vector<Vector3d>& xyzobs_mm, double threshold=0.9){
     Vector3i null_miller = {0,0,0};
     int count; // num indexed

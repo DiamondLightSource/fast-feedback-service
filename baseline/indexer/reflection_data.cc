@@ -5,8 +5,10 @@
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 
+// A placeholder struct to represent a reflection table.
+
 struct reflection_data {
-    std::vector<std::size_t> flags; // needed?
+    std::vector<std::size_t> flags;
     std::vector<Vector3d> xyzobs_mm;
     std::vector<Vector3d> xyzcal_mm; // starts empty
     std::vector<Vector3d> s1;

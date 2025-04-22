@@ -10,6 +10,14 @@ using Eigen::Vector3i;
 
 constexpr double pi_4 = M_PI / 4;
 
+/**
+ * @brief Assigns miller indices to reciprocal lattice points.
+ * @param A The crystal A-matrix.
+ * @param rlp The vector of reciprocal lattice points.
+ * @param xyzobs_mm The vector of observed xyz positions, in mm.
+ * @param tolerance The tolerance within which the fractional miller index must be for acceptance.
+ * @returns A pair containing the assigned miller indices and the number of reciprocal lattice points successfully indexed.
+ */
 std::pair<std::vector<Vector3i>, int> assign_indices_global(
     Matrix3d const &A,
     std::vector<Vector3d> const &rlp,
@@ -29,7 +37,7 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(
         a.data(),a.data()+a.size(),
         b.data(),b.data()+b.size());
     });
-    
+    // Iterate through the data, assigning a miller index if within the tolerance.
     const Matrix3d A_inv = A.inverse();
     const double tolsq = tolerance * tolerance;
     int count = 0;

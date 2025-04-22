@@ -15,6 +15,8 @@ using Eigen::Matrix3d;
 constexpr double half_pi = 90.0;
 constexpr double min_angle = 20.0;
 
+// A class to determine candadite orientation matrices by combining potential lattice vectors.
+
 class CandidateOrientationMatrices {
 public:
     CandidateOrientationMatrices(
@@ -22,6 +24,7 @@ public:
         :  max_combinations(max_combinations), index(0) {
             n = basis_vectors.size();
             n = std::min(n, 100);
+            // Calculate combinations of lattice vectors
             truncated_basis_vectors = {basis_vectors.begin(), basis_vectors.begin() + n};
             combinations.reserve(n*n*n/4); // could work this out exactly...
             for (int i=0;i<n;i++){
@@ -31,9 +34,11 @@ public:
                     }
                 }
             }
+            // Sort them from lowest to highest magnitude.
             std::stable_sort(combinations.begin(), combinations.end(), [](Vector3i a, Vector3i b){
                 return a.squaredNorm() < b.squaredNorm(); // note can't use norm as get int truncation after std::sqrt.
             });
+            // Truncate to the maximum number.
             truncated_combinations = {combinations.begin(), combinations.begin()+max_combinations};
         }
 
@@ -41,6 +46,7 @@ public:
         return index < truncated_combinations.size();
     }
 
+    // Generate the next valid combination that meets a set of criteria.
     Crystal next() {
         while (index < truncated_combinations.size()){
             Vector3i comb = truncated_combinations[index];

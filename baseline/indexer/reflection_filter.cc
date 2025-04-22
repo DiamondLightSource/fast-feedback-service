@@ -1,13 +1,13 @@
 #include <Eigen/Dense>
 #include <iostream>
 #include <random>
-#include "scanstaticpredictor.cc"
+#include "scan_static_predictor.cc"
 #include <dx2/detector.h>
 #include <dx2/beam.h>
 #include <dx2/scan.h>
 #include <dx2/crystal.h>
 #include <dx2/goniometer.h>
-#include "reflection_data.h"
+#include "reflection_data.cc"
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
@@ -16,12 +16,18 @@ using Eigen::Vector3i;
 constexpr double iqr_multiplier = 3.0;
 // imported from scanstaticpredictor constexpr size_t predicted_value = (1 << 0); //predicted flag 
 constexpr size_t used_in_refinement_value = (1 << 3); //used in refinement flag
-constexpr size_t centroid_outlier_value = (1 << 17); //ucentroid outlier flag
+constexpr size_t centroid_outlier_value = (1 << 17); //centroid outlier flag
+constexpr size_t overloaded_value = (1 << 10); //overloaded flag
 
+/**
+ * @brief Generate a random selection of indices from a population up to a given sample size.
+ * @param pop_size The size of the population that is to be selected from.
+ * @param sample_size The number of random elements to select.
+ * @param seed The seed value for the mt19937 Mersenne-Twister pseudo-random generator.
+ * @returns A vector of indices.
+*/
 std::vector<std::size_t> random_selection(int pop_size, int sample_size, int seed=43){
     std::mt19937 mt(seed);
-    // get random selection up to pop size, then cut down to sample size
-    // then sort
     std::vector<size_t> result(pop_size);
     std::vector<size_t>::iterator r = result.begin();
     for (size_t i=0;i<pop_size;i++){
@@ -37,18 +43,25 @@ std::vector<std::size_t> random_selection(int pop_size, int sample_size, int see
     return result;
 }
 
-std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double> yresid, std::vector<double>phi_resid){
+/**
+ * @brief Perform Tukey outlier rejection on 3D residuals, using an iqr multiplier of 3.
+ * @param xresid A vector of residuals in the first dimension.
+ * @param yresid A vector of residuals in the second dimension.
+ * @param zresid A vector of residuals in the third dimension.
+ * @returns A vector of outlier indices.
+ */
+std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double> yresid, std::vector<double>zresid){
     std::vector<size_t> sel {};
     std::vector<double> xresid_unsorted(xresid.begin(), xresid.end());
     std::vector<double> yresid_unsorted(yresid.begin(), yresid.end());
-    std::vector<double> phi_resid_unsorted(phi_resid.begin(), phi_resid.end());
+    std::vector<double> zresid_unsorted(zresid.begin(), zresid.end());
     std::sort(xresid.begin(), xresid.end());
     std::sort(yresid.begin(), yresid.end());
-    std::sort(phi_resid.begin(), phi_resid.end());
+    std::sort(zresid.begin(), zresid.end());
 
     // this is the way scitbx.math.five_number_summary does iqr (which matches R)
     int n_lower=0;
-    double Q1x,Q1y,Q1p,Q3x,Q3y,Q3p;
+    double Q1x,Q1y,Q1z,Q3x,Q3y,Q3z;
     int n = xresid.size();
     int upper_start = n / 2;
     if (n % 2){
@@ -62,16 +75,16 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double>
         Q3x = xresid[upper_start + (n_lower / 2)];
         Q1y = yresid[n_lower / 2];
         Q3y = yresid[upper_start + (n_lower / 2)];
-        Q1p = phi_resid[n_lower / 2];
-        Q3p = phi_resid[upper_start + (n_lower / 2)];
+        Q1z = zresid[n_lower / 2];
+        Q3z = zresid[upper_start + (n_lower / 2)];
     }
     else {
         Q1x = (xresid[n_lower / 2] + xresid[(n_lower / 2) - 1]) / 2;
         Q3x = (xresid[upper_start + (n_lower / 2)] + xresid[upper_start + (n_lower / 2) - 1]) / 2;
         Q1y = (yresid[n_lower / 2] + yresid[(n_lower / 2) - 1]) / 2;
         Q3y = (yresid[upper_start + (n_lower / 2)] + yresid[upper_start + (n_lower / 2) - 1]) / 2;
-        Q1p = (phi_resid[n_lower / 2] + phi_resid[(n_lower / 2) - 1]) / 2;
-        Q3p = (phi_resid[upper_start + (n_lower / 2)] + phi_resid[upper_start + (n_lower / 2) - 1]) / 2;
+        Q1z = (zresid[n_lower / 2] + zresid[(n_lower / 2) - 1]) / 2;
+        Q3z = (zresid[upper_start + (n_lower / 2)] + zresid[upper_start + (n_lower / 2) - 1]) / 2;
     }
     double iqrx = Q3x - Q1x;
     double uppercutx = (iqrx * iqr_multiplier) + Q3x;
@@ -81,9 +94,9 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double>
     double uppercuty = (iqry * iqr_multiplier) + Q3y;
     double lowercuty = Q1y -(iqry * iqr_multiplier);
 
-    double iqrp = Q3p - Q1p;
-    double uppercutp = (iqrp * iqr_multiplier) + Q3p;
-    double lowercutp = Q1p -(iqrp * iqr_multiplier);
+    double iqrz = Q3z - Q1z;
+    double uppercutz = (iqrz * iqr_multiplier) + Q3z;
+    double lowercutz = Q1z -(iqrz * iqr_multiplier);
 
     auto is_outlier = [](double value, double upper, double lower) -> bool {
         return value > upper || value < lower;
@@ -92,15 +105,20 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid, std::vector<double>
     for (int i=0;i<xresid_unsorted.size();i++){
         if (is_outlier(xresid_unsorted[i], uppercutx, lowercutx) ||
             is_outlier(yresid_unsorted[i], uppercuty, lowercuty) ||
-            is_outlier(phi_resid_unsorted[i], uppercutp, lowercutp)){
+            is_outlier(zresid_unsorted[i], uppercutz, lowercutz)){
             sel.push_back(i);
         }
     }
     return sel;
 }
 
+/**
+ * @brief Perform outlier rejection on a reflection table based on centroid residuals.
+ * @param reflection_data The reflection table.
+ * @returns A reflection table that is a subset of the input table.
+ */
 reflection_data outlier_filter(reflection_data &reflections){
-    // filter on predicted
+    // First make sure the reflections have the predicted flag.
     std::vector<std::size_t> flags = reflections.flags;
     std::vector<Vector3d> xyzobs = reflections.xyzobs_mm;
     std::vector<Vector3d> xyzcal = reflections.xyzcal_mm;
@@ -119,7 +137,7 @@ reflection_data outlier_filter(reflection_data &reflections){
             sel.push_back(i);
         }
     }
-    // avoid selecting on the whole table.
+    // Avoid selecting on the whole table, just the data of interest.
     std::vector<double> x_resid_sel(sel.size());
     std::vector<double> y_resid_sel(sel.size());
     std::vector<double> phi_resid_sel(sel.size());
@@ -130,6 +148,7 @@ reflection_data outlier_filter(reflection_data &reflections){
         phi_resid_sel[i] = phi_resid[idx];
     }
 
+    // Do Tukey outlier rejection.
     std::vector<size_t> outlier_isel = simple_tukey(x_resid_sel, y_resid_sel, phi_resid_sel);
     // get indices of good, then loop over good indics from first.
     std::vector<bool> good_sel(x_resid_sel.size(), true);
@@ -142,22 +161,29 @@ reflection_data outlier_filter(reflection_data &reflections){
             final_sel.push_back(sel[i]);
         }
     }
+    // Do the selection and update the flags.
     reflection_data subrefls = select(reflections, final_sel);
     std::vector<std::size_t> subflags = subrefls.flags;
-
-    // unset centroid outlier flag (necessary?)
-    // set used_in_refinement
     
     for (size_t& flag : subrefls.flags){
         flag |= used_in_refinement_value;
-        flag &= ~centroid_outlier_value;
+        flag &= ~centroid_outlier_value; // necessary?
     }
     subrefls.flags = subflags;
 
     return subrefls;
 }
 
-reflection_data initial_refman_filter(
+/**
+ * @brief An initial filter of the reflection table
+ * @param reflections The input reflection table.
+ * @param hkl The input miller indices.
+ * @param gonio The goniometer model.
+ * @param beam The beam model.
+ * @param close_to_spindle_cutoff The cutoff threshold for removing reflection for being close to the rotation axis.
+ * @returns A subset of the input reflection table.
+ */
+reflection_data initial_filter(
     reflection_data const& reflections,
     std::vector<Vector3i> const& hkl,
     Goniometer gonio, MonochromaticBeam beam,
@@ -168,14 +194,11 @@ reflection_data initial_refman_filter(
     Vector3d axis = gonio.get_rotation_axis();
     Vector3d s0 = beam.get_s0();
 
-    // get flags ('overloaded')
-    size_t overloaded_value = (1 << 10); //overloaded flag
+    // First select reflections that are not overloaded, have a valid hkl and
+    // are not too close to the rotation axis.
     std::vector<bool> sel(flags.size(), true);
     Vector3i null = {0,0,0};
     for (int i=0;i<sel.size();i++){
-        /*if (id[i] != 0.0){
-            sel[i] = false;
-        }*/
         if ((flags[i] & overloaded_value) == overloaded_value){
             sel[i] = false;
         }
@@ -189,6 +212,7 @@ reflection_data initial_refman_filter(
             sel[i] = false;
         }*/
     }
+    // Filter the table and the miller indices.
     reflection_data subrefls = select(reflections, sel);
     std::vector<Vector3i> filtered_hkl;
     for (int i=0;i<sel.size();i++){
@@ -198,22 +222,22 @@ reflection_data initial_refman_filter(
     }
     subrefls.miller_indices = filtered_hkl;
 
-    // now calculate entering flags (needed for prediction) and frame numbers
     for (size_t& flag : subrefls.flags){
         flag &= ~used_in_refinement_value; //unset the flag
     }
 
-    std::vector<bool> enterings(subrefls.flags.size(), false);
-    // calculate the entering column - Move to one of above loops?
-    std::vector<Vector3d> s1_sub = subrefls.s1;
-    Vector3d vec = s0.cross(axis);
-    for (int i=0;i<subrefls.flags.size();i++){
-        enterings[i] = (s1_sub[i].dot(vec) < 0.0);
-    }
-    subrefls.entering = enterings;
     return subrefls;
 }
 
+/**
+ * @brief Select a subset of a specified suze from a reflection table
+ * @param obs The input reflection table.
+ * @param nref_per_degree The number of reflections per degree to select.
+ * @param scan_width_degrees The extent of the scan, in degrees.
+ * @param min_sample_size The minimum sample size to return.
+ * @param max_sample_size The maximum sample size to return.
+ * @returns A subset of the input reflection table.
+ */
 reflection_data select_sample(
     reflection_data &obs,
     int nref_per_degree,
@@ -222,7 +246,7 @@ reflection_data select_sample(
     int max_sample_size){
     int nrefs = obs.flags.size();
     int sample_size = (nref_per_degree * std::max(std::round(scan_width_degrees),1.0)) / 1;
-    sample_size = std::max(sample_size,min_sample_size);
+    sample_size = std::max(sample_size, min_sample_size);
     if (max_sample_size){
         sample_size = std::min(sample_size, max_sample_size);
     }
@@ -234,6 +258,21 @@ reflection_data select_sample(
     return obs;
 }
 
+/**
+ * @brief Perform filtering before refinement, as done in the dials.refine reflection manager.
+ * @param obs The input reflection table.
+ * @param miller_indices The miller indices assigned to the data.
+ * @param gonio The goniometer model.
+ * @param crystal The crystal model.
+ * @param beam The beam model.
+ * @param panel The panel from the detector model.
+ * @param scan_width_degrees The extent of the scan, in degrees.
+ * @param n_ref_per_degree The number of reflections per degree to select.
+ * @param close_to_spindle_cutoff A rejection threshold for reflections close to the rotation axis.
+ * @param min_sample_size The minimum sample size to return.
+ * @param max_sample_size The maximum sample size to return.
+ * @returns A filtered subset of the input reflection table.
+ */
 reflection_data reflection_filter_preevaluation(
     reflection_data const& obs,
     std::vector<Vector3i> const& miller_indices,
@@ -247,8 +286,10 @@ reflection_data reflection_filter_preevaluation(
     int min_sample_size=1000,
     int max_sample_size=0
     ){
-    reflection_data filter_obs = initial_refman_filter(obs, miller_indices, gonio, beam, close_to_spindle_cutoff);
+    // First do an initial filter
+    reflection_data filter_obs = initial_filter(obs, miller_indices, gonio, beam, close_to_spindle_cutoff);
     Matrix3d UB = crystal.get_A_matrix();
+    // Predict the location of the reflections.
     simple_reflection_predictor(
         beam,
         gonio,
@@ -256,6 +297,7 @@ reflection_data reflection_filter_preevaluation(
         panel,
         filter_obs
     );
+    // Do some outlier rejection and select a suitable subset.
     filter_obs = outlier_filter(filter_obs);
     reflection_data sel_obs = select_sample(filter_obs, n_ref_per_degree, scan_width_degrees, min_sample_size, max_sample_size);
     return sel_obs;

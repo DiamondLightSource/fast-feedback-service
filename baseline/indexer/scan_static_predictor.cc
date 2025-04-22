@@ -7,7 +7,7 @@
 #include <cmath>
 #include <cassert>
 #include <iostream>
-#include "reflection_data.h"
+#include "reflection_data.cc"
 constexpr double two_pi = 2 * M_PI;
 
 using Eigen::Matrix3d;
@@ -30,7 +30,15 @@ Vector3d unit_rotate_around_origin(Vector3d vec, Vector3d unit, double angle){
     return res;
 }
 
-// actually a repredictor, assumes all successful.
+
+/**
+ * @brief Predict the positions of the reflections from the experiment models. Updates the table.
+ * @param beam The beam model.
+ * @param gonio The goniometer model.
+ * @param UB The crystal UB matrix.
+ * @param panel The panel from the detector model.
+ * @param reflections The reflection table.
+ */
 void simple_reflection_predictor(
   const MonochromaticBeam beam,
   const Goniometer gonio,
@@ -38,6 +46,7 @@ void simple_reflection_predictor(
   const Panel &panel,
   reflection_data &reflections
 ){
+  // actually a repredictor as assumes all successful.
   std::vector<Vector3d> s1 = reflections.s1;
   const std::vector<Vector3d> xyzobs_mm = reflections.xyzobs_mm;
   const std::vector<bool> entering = reflections.entering;
@@ -116,11 +125,7 @@ void simple_reflection_predictor(
       angle = mod2pi(a2);
     }
 
-    // only need frame if calculating xyzcalpx, but not needed for evaluation
-    //double frame = image_range_start + ((angle - osc_start) / osc_width) - 1;
-    //Vector3d v = D * s1;
-    std::array<double, 2> mm = panel.get_ray_intersection(s1_this); //v = D * s1; v[0]/v[2], v[1]/v[2]
-    //scitbx::vec2<double> px = Detector[0].millimeter_to_pixel(mm); // requires call to parallax corr
+    std::array<double, 2> mm = panel.get_ray_intersection(s1_this);
     // match full turns
     double phiobs = xyzobs_mm[i][2];
     // first fmod positive

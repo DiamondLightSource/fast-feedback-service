@@ -27,132 +27,14 @@
 #include "gemmi/symmetry.hpp"
 #include "peaks_to_rlvs.cc"
 #include "xyz_to_rlp.cc"
-
-#include "refman_filter.cc"
-#include "assign_indices.h"
-#include "reflection_data.h"
-#include "scanstaticpredictor.cc"
 #include "combinations.cc"
-#include "non_primitive_basis.cc"
+#include "reflection_data.cc"
+#include "score_crystals.cc"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 using json = nlohmann::json;
-
-std::mutex mtx;
-
-struct score_and_crystal {
-    double score;
-    Crystal crystal;
-    double num_indexed;
-    double rmsdxy;
-    double fraction_indexed;
-    double volume_score;
-    double indexed_score;
-    double rmsd_score;
-
-    json to_json(){
-      json data;
-      data["score"] = score;
-      data["num_indexed"] = num_indexed;
-      data["rmsdxy"] = rmsdxy;
-      data["fraction_indexed"] = fraction_indexed;
-      data["volume_score"] = volume_score;
-      data["indexed_score"] = indexed_score;
-      data["rmsd_score"] = rmsd_score;
-      data["crystal"] = crystal.to_json();
-      return data;
-    }
-};
-
-std::map<int,score_and_crystal> results_map;
-    
-void calc_score(Crystal crystal,
-  reflection_data const& obs,
-  Goniometer gonio, MonochromaticBeam beam, Panel panel, double width, int n){
-  std::vector<Vector3i> miller_indices;
-  int count;
-  auto preassign = std::chrono::system_clock::now();
-  std::tie(miller_indices, count) = assign_indices_global(crystal.get_A_matrix(), obs.rlp, obs.xyzobs_mm);
-  auto t2 = std::chrono::system_clock::now();
-  std::chrono::duration<double> elapsed_time = t2 - preassign;
-  logger->debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
-  //obs.miller_indices = miller_indices;
-  auto t3 = std::chrono::system_clock::now();
-  // Perform the non-primivite basis correction.
-  count = correct(miller_indices, crystal, obs.rlp, obs.xyzobs_mm);
-  auto t4 = std::chrono::system_clock::now();
-  std::chrono::duration<double> elapsed_time1 = t4 - t3;
-  logger->debug("Time for correct: {:.5f}s", elapsed_time1.count());
-  auto prefilter = std::chrono::system_clock::now();
-  reflection_data sel_obs = reflection_filter_preevaluation(
-      obs, miller_indices, gonio, crystal, beam, panel, width, 20
-  );
-  auto postfilter = std::chrono::system_clock::now();
-  std::chrono::duration<double> elapsed_timefilter = postfilter - prefilter;
-  logger->debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
-  
-  //write the score to the results map
-  double xsum = 0;
-  double ysum = 0;
-  double zsum = 0;
-  for (int i=0;i<sel_obs.flags.size();i++){
-      Vector3d xyzobs = sel_obs.xyzobs_mm[i];
-      Vector3d xyzcal = sel_obs.xyzcal_mm[i];
-      xsum += std::pow(xyzobs[0] - xyzcal[0],2);
-      ysum += std::pow(xyzobs[1] - xyzcal[1],2);
-      zsum += std::pow(xyzobs[2] - xyzcal[2],2);
-  }
-  double rmsdx = std::sqrt(xsum / sel_obs.xyzcal_mm.size());
-  double rmsdy = std::sqrt(ysum / sel_obs.xyzcal_mm.size());
-  double rmsdz = std::sqrt(zsum / sel_obs.xyzcal_mm.size());
-  double xyrmsd = std::sqrt(rmsdx * rmsdx + rmsdy * rmsdy);
-
-  score_and_crystal sac;
-  sac.score = n;
-  sac.crystal = crystal;
-  sac.num_indexed = count;
-  sac.rmsdxy = xyrmsd;
-  sac.fraction_indexed = (double)count / obs.flags.size();
-  logger->info("Scored candidate crystal {}", n);
-  mtx.lock();
-  results_map[n] = sac;
-  mtx.unlock();
-}
-
-void score_solutions(std::map<int,score_and_crystal>& results_map){
-  // Score the refined models.
-  // Score is defined as volume_score + rmsd_score + fraction_indexed_score
-  int length = results_map.size();
-  std::vector<double> rmsd_scores(length, 0);
-  std::vector<double> volume_scores(length, 0);
-  std::vector<double> fraction_indexed_scores(length, 0);
-  std::vector<double> combined_scores(length, 0);
-  double log2 = std::log(2);
-  for (int i=0;i<length;++i){
-    rmsd_scores[i] = std::log(results_map[i+1].rmsdxy) / log2;
-    fraction_indexed_scores[i] = std::log(results_map[i+1].fraction_indexed) / log2;
-    volume_scores[i] = std::log(results_map[i+1].crystal.get_unit_cell().volume) / log2;
-  }
-  double min_rmsd_score = *std::min_element(rmsd_scores.begin(), rmsd_scores.end());
-  double max_frac_score = *std::max_element(fraction_indexed_scores.begin(), fraction_indexed_scores.end());
-  double min_volume_score = *std::min_element(volume_scores.begin(), volume_scores.end());
-  for (int i=0;i<length;++i){
-    rmsd_scores[i] -= min_rmsd_score;
-    results_map[i+1].rmsd_score = rmsd_scores[i];
-    fraction_indexed_scores[i] *= -1;
-    fraction_indexed_scores[i] += max_frac_score;
-    results_map[i+1].indexed_score = fraction_indexed_scores[i];
-    volume_scores[i] -= min_volume_score;
-    results_map[i+1].volume_score = volume_scores[i];
-  }
-  for (int i=0;i<length;++i){
-    results_map[i+1].score = rmsd_scores[i] + fraction_indexed_scores[i] + volume_scores[i];
-  }
-}
-
-
 
 constexpr double RAD2DEG = 180.0 / M_PI;
 
@@ -327,13 +209,7 @@ int main(int argc, char** argv) {
       std::exit(0);
     }
 
-    // at this point, we will test combinations of the candidate vectors, use those to index the spots, do some
-    // refinement of the candidates and choose the best one. Then we will do some more refinement including extra
-    // model parameters. At then end, we will have a list of refined experiment models (including a crystal)
-
-    // For now, let's just write out the candidate vectors and write out the unrefined experiment models with the
-    // first combination of candidate vectors as an example crystal, to demonstrate an example experiment list data
-    // structure.
+    // Now we need to generate candidate crystals from the lattice vectors and evaluate them
 
     std::string flags_array_name = "/dials/processing/group_0/flags";
     std::vector<std::size_t> flags = read_array_from_h5_file<std::size_t>(filename, flags_array_name);
@@ -365,17 +241,16 @@ int main(int argc, char** argv) {
     reflections = select(reflections, selection);
 
     Vector3i null{{0,0,0}};
-    int n = 0;
-    // FIXME check somewhere that there are solutions
-    CandidateOrientationMatrices candidates(candidate_lattice_vectors, 1000);
-    // iterate over candidates; assign indices, refine, score.
-    // need a map of scores for candidates: index to score and xtal. What about miller indices?
-    std::vector<Vector3i> miller_indices;
-    int count;
+    int n = 0; // Candidate number
     int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
-    double width = scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
+    double scan_width = scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
+    
+    // Initialise a class that will generate canditate orientation matrices.
+    CandidateOrientationMatrices candidates(candidate_lattice_vectors, 1000);
 
+    // Initialise a vector of threads
     std::vector<std::thread> threads;
+
     // Limit the number of active threads to the max concurrency, without needing to manage a threadpool.
     int batch_size = std::min(max_refine, nthreads);
     for (int i=0; i<max_refine; i += nthreads){
@@ -385,13 +260,14 @@ int main(int argc, char** argv) {
         Crystal crystal = candidates.next(); //quick (<0.1ms)
         n++;
         j++;
-        threads.emplace_back(std::thread(calc_score, crystal, reflections, gonio, beam, panel, width, n));
+        threads.emplace_back(std::thread(evaluate_crystal, crystal, reflections, gonio, beam, panel, scan_width, n));
       }
       for (auto &t : threads){
           t.join();
       }
     }
 
+    // Determine a relative score for all candidates and print a summary to the log.
     score_solutions(results_map);
     std::vector<std::pair<int, score_and_crystal>> results_vector(results_map.begin(), results_map.end());
     std::sort(results_vector.begin(), results_vector.end(), [](const auto& a, const auto& b) {
