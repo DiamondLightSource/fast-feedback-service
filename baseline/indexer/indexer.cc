@@ -51,6 +51,19 @@ struct score_and_crystal {
     double volume_score;
     double indexed_score;
     double rmsd_score;
+
+    json to_json(){
+      json data;
+      data["score"] = score;
+      data["num_indexed"] = num_indexed;
+      data["rmsdxy"] = rmsdxy;
+      data["fraction_indexed"] = fraction_indexed;
+      data["volume_score"] = volume_score;
+      data["indexed_score"] = indexed_score;
+      data["rmsd_score"] = rmsd_score;
+      data["crystal"] = crystal.to_json();
+      return data;
+    }
 };
 
 std::map<int,score_and_crystal> results_map;
@@ -64,21 +77,21 @@ void calc_score(Crystal crystal,
   std::tie(miller_indices, count) = assign_indices_global(crystal.get_A_matrix(), obs.rlp, obs.xyzobs_mm);
   auto t2 = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_time = t2 - preassign;
-  std::cout << "Time for assigning: " << elapsed_time.count() << " s" << std::endl;
+  logger->debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
   //obs.miller_indices = miller_indices;
   auto t3 = std::chrono::system_clock::now();
   // Perform the non-primivite basis correction.
   count = correct(miller_indices, crystal, obs.rlp, obs.xyzobs_mm);
   auto t4 = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_time1 = t4 - t3;
-  std::cout << "Time for correct: " << elapsed_time1.count() << " s" << std::endl;
+  logger->debug("Time for correct: {:.5f}s", elapsed_time1.count());
   auto prefilter = std::chrono::system_clock::now();
   reflection_data sel_obs = reflection_filter_preevaluation(
       obs, miller_indices, gonio, crystal, beam, panel, width, 20
   );
   auto postfilter = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_timefilter = postfilter - prefilter;
-  std::cout << "Time for reflection_filter: " << elapsed_timefilter.count() << " s" << std::endl;
+  logger->debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
   
   //write the score to the results map
   double xsum = 0;
@@ -102,10 +115,10 @@ void calc_score(Crystal crystal,
   sac.num_indexed = count;
   sac.rmsdxy = xyrmsd;
   sac.fraction_indexed = (double)count / obs.flags.size();
+  logger->info("Scored candidate crystal {}", n);
   mtx.lock();
   results_map[n] = sac;
   mtx.unlock();
-  std::cout<< "Done from thread# " << std::this_thread::get_id() << std::endl;
 }
 
 void score_solutions(std::map<int,score_and_crystal>& results_map){
@@ -166,6 +179,10 @@ int main(int argc, char** argv) {
       .help("The maximum number of candidate lattices to refine during indexing")
       .default_value<size_t>(50)
       .scan<'u', size_t>();
+    parser.add_argument("--test")
+      .help("Enable additional output for testing")
+      .default_value<bool>(false)
+      .implicit_value(true);
     parser
       .add_argument(
         "--fft-npoints")  // mainly for testing, likely would always want to keep it as 256.
@@ -305,6 +322,11 @@ int main(int argc, char** argv) {
     std::vector<Vector3d> candidate_lattice_vectors = peaks_to_rlvs(
       fractional_centres_of_mass, grid_points_per_peak, d_min, 3.0, max_cell, n_points);
 
+    if (candidate_lattice_vectors.size() < 3) {
+      logger->info("Insufficient number of candidate vectors to make a crystal model.");
+      std::exit(0);
+    }
+
     // at this point, we will test combinations of the candidate vectors, use those to index the spots, do some
     // refinement of the candidates and choose the best one. Then we will do some more refinement including extra
     // model parameters. At then end, we will have a list of refined experiment models (including a crystal)
@@ -354,23 +376,28 @@ int main(int argc, char** argv) {
     double width = scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
 
     std::vector<std::thread> threads;
-    
-    while (candidates.has_next() && n < max_refine){
-        // could do all this threaded.
+    // Limit the number of active threads to the max concurrency, without needing to manage a threadpool.
+    int batch_size = std::min(max_refine, nthreads);
+    for (int i=0; i<max_refine; i += nthreads){
+      threads.clear();
+      int j=0;
+      while (candidates.has_next() && n < max_refine && j < batch_size){
         Crystal crystal = candidates.next(); //quick (<0.1ms)
         n++;
-        //calc_score(crystal, obs, rlp_select, phi_select, gonio, beam, panel, width);
+        j++;
         threads.emplace_back(std::thread(calc_score, crystal, reflections, gonio, beam, panel, width, n));
+      }
+      for (auto &t : threads){
+          t.join();
+      }
     }
-    for (auto &t : threads){
-        t.join();
-    }
+
     score_solutions(results_map);
     std::vector<std::pair<int, score_and_crystal>> results_vector(results_map.begin(), results_map.end());
     std::sort(results_vector.begin(), results_vector.end(), [](const auto& a, const auto& b) {
         return a.second.score < b.second.score; // Ascending order by score
     });
-
+    logger->info("Candidate solutions:");
     logger->info("| Unit cell                                 | volume & score | #indexed % & score | rmsd_xy & score | overall score |");
     for (const auto& result: results_vector){
         gemmi::UnitCell cell = result.second.crystal.get_unit_cell();
@@ -384,42 +411,44 @@ int main(int argc, char** argv) {
           result.second.rmsd_score,
           result.second.score);
     }
-    // find the best crystal from the map - lowest score
-    auto it = *std::min_element(results_map.begin(), results_map.end(),
-            [](const auto& l, const auto& r) { return l.second.score < r.second.score; });
-    Crystal best_xtal = it.second.crystal;
+    Crystal best_xtal = results_vector[0].second.crystal;
 
-    // dump the candidate vectors to json
-    std::string n_vecs = std::to_string(candidate_lattice_vectors.size() - 1);
-    size_t n_zero = n_vecs.length();
-    json vecs_out;
-    for (int i = 0; i < candidate_lattice_vectors.size(); i++) {
+    bool test = parser.get<bool>("test");
+    if (test){
+      // dump the candidate vectors to json
+      std::string n_vecs = std::to_string(candidate_lattice_vectors.size() - 1);
+      size_t n_zero = n_vecs.length();
+      json vecs_out;
+      for (int i = 0; i < candidate_lattice_vectors.size(); i++) {
+          std::string s = std::to_string(i);
+          auto pad_s = std::string(n_zero - std::min(n_zero, s.length()), '0') + s;
+          vecs_out[pad_s] = candidate_lattice_vectors[i];
+      }
+      std::string outfile = "candidate_vectors.json";
+      std::ofstream vecs_file(outfile);
+      vecs_file << vecs_out.dump(4);
+      logger->info("Saved candidate vectors to {}", outfile);
+
+      size_t offset = std::to_string(results_vector.size() - 1).length();
+      json crystals_out;
+      for (int i = 0; i < results_vector.size(); i++) {
         std::string s = std::to_string(i);
-        auto pad_s = std::string(n_zero - std::min(n_zero, s.length()), '0') + s;
-        vecs_out[pad_s] = candidate_lattice_vectors[i];
+        auto pad_s = std::string(offset - std::min(offset, s.length()), '0') + s;
+        crystals_out[pad_s] = results_vector[i].second.to_json();
+      }
+      std::string candidates_outfile = "candidate_crystals.json";
+      std::ofstream candidates_file(candidates_outfile);
+      candidates_file << crystals_out.dump(4);
+      logger->info("Saved candidate crystals to {}", candidates_outfile);
     }
-    std::string outfile = "candidate_vectors.json";
-    std::ofstream vecs_file(outfile);
-    vecs_file << vecs_out.dump(4);
-    logger->info("Saved candidate vectors to {}", outfile);
 
-    // Now make a crystal and save an experiment list with the models.
-    if (candidate_lattice_vectors.size() < 3) {
-        logger->info(
-          "Insufficient number of candidate vectors to make a crystal model.");
-    } else {
-        gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
-        Crystal best_xtal{candidate_lattice_vectors[0],
-                          candidate_lattice_vectors[1],
-                          candidate_lattice_vectors[2],
-                          space_group};
-        expt.set_crystal(best_xtal);
-        json elist_out = expt.to_json();
-        std::string efile_name = "elist.json";
-        std::ofstream efile(efile_name);
-        efile << elist_out.dump(4);
-        logger->info("Saved experiment list to {}", efile_name);
-    }
+    // Now save an experiment list with the models.
+    expt.set_crystal(best_xtal);
+    json elist_out = expt.to_json();
+    std::string efile_name = "elist.json";
+    std::ofstream efile(efile_name);
+    efile << elist_out.dump(4);
+    logger->info("Saved experiment list to {}", efile_name);
 
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;

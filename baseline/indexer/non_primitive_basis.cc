@@ -1,6 +1,7 @@
 #include <vector>
-#include <iostream>
 #include <Eigen/Dense>
+
+#include "common.hpp"
 #include "reflection_data.h"
 #include "assign_indices.h"
 #include <dx2/crystal.h>
@@ -136,9 +137,8 @@ Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold=0.9){
         std::vector<int> cumulative = absence_test(hkl, transform.modularity, transform.vector);
         for (int i=0;i<transform.modularity;++i){
             if (((double)cumulative[i] / hkl.size()) > threshold && i==0){
-                std::cout << "Detected exclusive presence of " << transform.vector[0] << "H ";
-                std::cout << transform.vector[1] << "K " << transform.vector[2] << "L = ";
-                std::cout << transform.modularity << "n, remainder " << i << std::endl;
+                logger->debug("Detected exclusive presence of {}H {}K {}L = {}N, remainder {}",
+                transform.vector[0], transform.vector[1], transform.vector[2], transform.modularity, i);
                 return transform.transformation;
             }
         }
