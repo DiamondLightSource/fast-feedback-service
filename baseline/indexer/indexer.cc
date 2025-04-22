@@ -224,11 +224,12 @@ int main(int argc, char** argv) {
 
     // Make a selection on dmin and rotation angle like dials
     std::vector<bool> selection(rlp.size(), true);
+    double osc_trim_limit = scan.get_oscillation()[0] + 360.0;
     for (int i=0;i<rlp.size();i++){
       if (1.0/rlp[i].norm() <= d_min){
         selection[i] = false;
       }
-      else if (xyzobs_mm[i][2]*RAD2DEG > 360.0){
+      else if (xyzobs_mm[i][2]*RAD2DEG > osc_trim_limit){
         selection[i] = false;
       }
     }
