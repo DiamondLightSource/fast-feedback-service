@@ -20,6 +20,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <algorithm>
 
 #include "combinations.cc"
 #include "common.hpp"
@@ -100,15 +101,9 @@ int main(int argc, char** argv) {
         logger->error("Must specify --max-cell\n");
         std::exit(1);
     }
-    // FIXME use highest resolution by default to remove this requirement.
-    if (!parser.is_used("dmin")) {
-        logger->error("Must specify --dmin\n");
-        std::exit(1);
-    }
     std::string imported_expt = parser.get<std::string>("expt");
     std::string filename = parser.get<std::string>("refl");
     double max_cell = parser.get<float>("max-cell");
-    double d_min = parser.get<float>("dmin");
     size_t max_refine = parser.get<size_t>("max-refine");
 
     // Parse the experiment list (a json file) and load the models.
@@ -157,6 +152,18 @@ int main(int argc, char** argv) {
 
     std::tie(rlp, s1, xyzobs_mm) = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
     logger->info("Number of reflections: {}", rlp.size());
+
+    // If a resolution limit was not specified, determine from the highest resolution spot.
+    double d_min;
+    if (parser.is_used("dmin")) {
+        d_min = parser.get<float>("dmin");
+    } else {
+        Vector3d highest_res_spot = *std::min_element(rlp.begin(), rlp.end(),[](const Vector3d &a, const Vector3d &b) -> bool{
+          return (1.0 / a.norm()) < (1.0 / b.norm());
+        });
+        d_min = 1.0 / highest_res_spot.norm();
+        logger->info("Setting dmin based on highest resolution spot: {:.5f}", d_min);
+    }
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
     // i.e. high resolution (weaker) spots are downweighted by the expected
