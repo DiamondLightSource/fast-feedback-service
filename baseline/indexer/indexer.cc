@@ -10,6 +10,7 @@
 #include <fmt/os.h>
 
 #include <Eigen/Dense>
+#include <algorithm>
 #include <argparse/argparse.hpp>
 #include <chrono>
 #include <cstring>
@@ -20,7 +21,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <algorithm>
 
 #include "combinations.cc"
 #include "common.hpp"
@@ -158,9 +158,10 @@ int main(int argc, char** argv) {
     if (parser.is_used("dmin")) {
         d_min = parser.get<float>("dmin");
     } else {
-        Vector3d highest_res_spot = *std::min_element(rlp.begin(), rlp.end(),[](const Vector3d &a, const Vector3d &b) -> bool{
-          return (1.0 / a.norm()) < (1.0 / b.norm());
-        });
+        Vector3d highest_res_spot = *std::min_element(
+          rlp.begin(), rlp.end(), [](const Vector3d& a, const Vector3d& b) -> bool {
+              return (1.0 / a.norm()) < (1.0 / b.norm());
+          });
         d_min = 1.0 / highest_res_spot.norm();
         logger->info("Setting dmin based on highest resolution spot: {:.5f}", d_min);
     }
