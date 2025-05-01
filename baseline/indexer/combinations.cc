@@ -42,9 +42,10 @@ class CandidateOrientationMatrices {
               return a.squaredNorm()
                      < b.squaredNorm();  // note can't use norm as get int truncation after std::sqrt.
           });
-        // Truncate to the maximum number.
+        // Truncate to the minimum of the number of possible combinations or the requested limit.
+        int extent = std::min(max_combinations, static_cast<int>(combinations.size()));
         truncated_combinations = {combinations.begin(),
-                                  combinations.begin() + max_combinations};
+                                  combinations.begin() + extent};
     }
 
     bool has_next() {
