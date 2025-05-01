@@ -44,8 +44,7 @@ class CandidateOrientationMatrices {
           });
         // Truncate to the minimum of the number of possible combinations or the requested limit.
         int extent = std::min(max_combinations, static_cast<int>(combinations.size()));
-        truncated_combinations = {combinations.begin(),
-                                  combinations.begin() + extent};
+        truncated_combinations = {combinations.begin(), combinations.begin() + extent};
     }
 
     bool has_next() {
