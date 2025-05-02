@@ -11,8 +11,8 @@ TEST(BaselineIndexer, assign_indices_test) {
     // Reflections (22,-2,-1) x2, (22,-4,-4) x2 and (22,-4,5) from beta lactamase example dataset (c2sum)
     // These will loop through in the order (22,-4,4), (22,-4,5), (22,-2,-1).
     Matrix3d A{{-0.0134, -0.0227, -0.0009},
-                {-0.0053,  0.0030, -0.0140},
-                { 0.0203, -0.0098, -0.0036}};
+               {-0.0053, 0.0030, -0.0140},
+               {0.0203, -0.0098, -0.0036}};
     std::vector<Vector3d> rlp;
     std::vector<Vector3d> xyzobs_mm;
     rlp.push_back({-0.20806554291174043, -0.20006695964877577, 0.46900930253991086});
@@ -32,9 +32,10 @@ TEST(BaselineIndexer, assign_indices_test) {
     std::vector<Vector3i> miller_index;
     // Use a tolerance of 0.2 to filter out the last point.
     std::tie(miller_index, count) = assign_indices_global(A, rlp, xyzobs_mm, 0.2);
-    std::vector<Vector3i> expected_miller_indices{{22, -4, 5}, {22, -4, 4}, {22, -2, -1}, {22, -4, 4}, {22, -2, -1}};
+    std::vector<Vector3i> expected_miller_indices{
+      {22, -4, 5}, {22, -4, 4}, {22, -2, -1}, {22, -4, 4}, {22, -2, -1}};
     EXPECT_EQ(count, 5);
-    for (int i=0;i<expected_miller_indices.size();++i){
+    for (int i = 0; i < expected_miller_indices.size(); ++i) {
         EXPECT_EQ(miller_index[i], expected_miller_indices[i]);
     }
-}   
+}

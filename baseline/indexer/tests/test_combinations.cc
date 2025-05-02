@@ -4,8 +4,8 @@
 #include <Eigen/Dense>
 #include <gemmi/unitcell.hpp>
 #include <iostream>
-#include <vector>
 #include <optional>
+#include <vector>
 
 #include "combinations.cc"
 
@@ -24,7 +24,8 @@ TEST(BaselineIndexer, combinations_test) {
     expected_cells.push_back({2.5, 10.0499, 50, 90, 90, 95.7106});
     while (candidates.has_next()) {
         std::optional<Crystal> next_crystal = candidates.next();
-        EXPECT_TRUE(next_crystal.has_value()); // Should always be true due to has_next check
+        EXPECT_TRUE(
+          next_crystal.has_value());  // Should always be true due to has_next check
         Crystal crystal = next_crystal.value();
         gemmi::UnitCell cell = crystal.get_unit_cell();
         EXPECT_NEAR(cell.a, expected_cells[count].a, 1e-4);

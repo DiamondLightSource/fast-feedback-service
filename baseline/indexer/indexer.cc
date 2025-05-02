@@ -18,10 +18,10 @@
 #include <fstream>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
-#include <optional>
 
 #include "combinations.cc"
 #include "common.hpp"
@@ -270,21 +270,20 @@ int main(int argc, char** argv) {
         int j = 0;
         while (candidates.has_next() && n < max_refine && j < batch_size) {
             std::optional<Crystal> next_crystal = candidates.next();
-            if (next_crystal.has_value()){
-              Crystal crystal = next_crystal.value();
-              n++;
-              j++;
-              threads.emplace_back(std::thread(evaluate_crystal,
-                                              crystal,
-                                              reflections,
-                                              gonio,
-                                              beam,
-                                              panel,
-                                              scan_width,
-                                              n));
-            }
-            else {
-              break;
+            if (next_crystal.has_value()) {
+                Crystal crystal = next_crystal.value();
+                n++;
+                j++;
+                threads.emplace_back(std::thread(evaluate_crystal,
+                                                 crystal,
+                                                 reflections,
+                                                 gonio,
+                                                 beam,
+                                                 panel,
+                                                 scan_width,
+                                                 n));
+            } else {
+                break;
             }
         }
         for (auto& t : threads) {

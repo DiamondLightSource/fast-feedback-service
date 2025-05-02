@@ -4,8 +4,8 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cmath>
-#include <vector>
 #include <optional>
+#include <vector>
 
 #include "gemmi/symmetry.hpp"
 #include "gemmi/unitcell.hpp"
