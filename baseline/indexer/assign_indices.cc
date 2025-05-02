@@ -2,7 +2,6 @@
 #define ASSIGN_INDICES_H
 #include <Eigen/Dense>
 #include <cmath>
-#include <iostream>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -22,7 +21,7 @@ std::pair<std::vector<Vector3i>, int> assign_indices_global(
   Matrix3d const &A,
   std::vector<Vector3d> const &rlp,
   std::vector<Vector3d> const &xyzobs_mm,
-  double tolerance = 0.3) {
+  const double tolerance = 0.3) {
     // Consider only a single lattice.
     std::vector<Vector3i> miller_indices(rlp.size());
     std::vector<int> crystal_ids(rlp.size());
