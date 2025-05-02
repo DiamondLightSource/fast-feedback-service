@@ -7,7 +7,7 @@
 #   a strong reflection table (in DIALS new H5 format)
 #   an experiment list (standard dials format)
 #   a max cell (i.e. upper limit on basis vector length)
-#   a dmin (resolution limit of spots to use in fourier transform)
+
 if test -f "candidate_vectors.json"; then
     rm candidate_vectors.json
 fi
@@ -24,7 +24,6 @@ fi
   --max-refine 5 \
   --test
 
-# Read the output from the candidate vecs, which is all we have for now.
 output=$(cat candidate_vectors.json)
 
 crystals_output=$(cat candidate_crystals.json)
