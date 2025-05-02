@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <optional>
 
 #include "gemmi/symmetry.hpp"
 #include "gemmi/unitcell.hpp"
@@ -52,7 +53,7 @@ class CandidateOrientationMatrices {
     }
 
     // Generate the next valid combination that meets a set of criteria.
-    Crystal next() {
+    std::optional<Crystal> next() {
         while (index < truncated_combinations.size()) {
             Vector3i comb = truncated_combinations[index];
             Vector3d v1 = truncated_basis_vectors[comb[0]];
@@ -89,7 +90,7 @@ class CandidateOrientationMatrices {
                 return c;
             }
         }
-        throw std::out_of_range("No more combinations available");
+        return {};
     }
 
   private:

@@ -5,6 +5,7 @@
 #include <gemmi/unitcell.hpp>
 #include <iostream>
 #include <vector>
+#include <optional>
 
 #include "combinations.cc"
 
@@ -22,7 +23,9 @@ TEST(BaselineIndexer, combinations_test) {
     expected_cells.push_back({2.5, 10, 50, 90, 90, 90});
     expected_cells.push_back({2.5, 10.0499, 50, 90, 90, 95.7106});
     while (candidates.has_next()) {
-        Crystal crystal = candidates.next();
+        std::optional<Crystal> next_crystal = candidates.next();
+        EXPECT_TRUE(next_crystal.has_value()); // Should always be true due to has_next check
+        Crystal crystal = next_crystal.value();
         gemmi::UnitCell cell = crystal.get_unit_cell();
         EXPECT_NEAR(cell.a, expected_cells[count].a, 1e-4);
         EXPECT_NEAR(cell.b, expected_cells[count].b, 1e-4);
@@ -32,4 +35,7 @@ TEST(BaselineIndexer, combinations_test) {
         EXPECT_NEAR(cell.gamma, expected_cells[count].gamma, 1e-4);
         count++;
     }
+    // should be no more candidates
+    std::optional<Crystal> next_crystal = candidates.next();
+    EXPECT_FALSE(next_crystal.has_value());
 }

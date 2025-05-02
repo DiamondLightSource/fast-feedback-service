@@ -21,6 +21,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <optional>
 
 #include "combinations.cc"
 #include "common.hpp"
@@ -251,7 +252,6 @@ int main(int argc, char** argv) {
     reflections = select(reflections, selection);
 
     Vector3i null{{0, 0, 0}};
-    int n = 0;  // Candidate number
     int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
     double scan_width =
       scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
@@ -264,21 +264,28 @@ int main(int argc, char** argv) {
 
     // Limit the number of active threads to the max concurrency, without needing to manage a threadpool.
     int batch_size = std::min(max_refine, nthreads);
+    int n = 0;  // Candidate number
     for (int i = 0; i < max_refine; i += nthreads) {
         threads.clear();
         int j = 0;
         while (candidates.has_next() && n < max_refine && j < batch_size) {
-            Crystal crystal = candidates.next();  //quick (<0.1ms)
-            n++;
-            j++;
-            threads.emplace_back(std::thread(evaluate_crystal,
-                                             crystal,
-                                             reflections,
-                                             gonio,
-                                             beam,
-                                             panel,
-                                             scan_width,
-                                             n));
+            std::optional<Crystal> next_crystal = candidates.next();
+            if (next_crystal.has_value()){
+              Crystal crystal = next_crystal.value();
+              n++;
+              j++;
+              threads.emplace_back(std::thread(evaluate_crystal,
+                                              crystal,
+                                              reflections,
+                                              gonio,
+                                              beam,
+                                              panel,
+                                              scan_width,
+                                              n));
+            }
+            else {
+              break;
+            }
         }
         for (auto& t : threads) {
             t.join();
