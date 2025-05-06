@@ -5,6 +5,7 @@
 #include <math.h>
 
 #include <Eigen/Dense>
+#include <tuple>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -18,11 +19,12 @@ using Eigen::Vector3d;
  * @param gonio A dx2 Goniometer object.
  * @returns A vector of reciprocal space coordinates.
  */
-std::vector<Vector3d> xyz_to_rlp(const std::vector<double> &xyzobs_px,
-                                 const Panel &panel,
-                                 const MonochromaticBeam &beam,
-                                 const Scan &scan,
-                                 const Goniometer &gonio) {
+std::tuple<std::vector<Vector3d>, std::vector<Vector3d>, std::vector<Vector3d>>
+xyz_to_rlp(const std::vector<double> &xyzobs_px,
+           const Panel &panel,
+           const MonochromaticBeam &beam,
+           const Scan &scan,
+           const Goniometer &gonio) {
     // Use the experimental models to perform a coordinate transformation from
     // pixel coordinates in detector space to reciprocal space, in units of
     // inverse angstrom.
@@ -33,6 +35,8 @@ std::vector<Vector3d> xyz_to_rlp(const std::vector<double> &xyzobs_px,
     // xyzobs_px is a flattened array, we want to return a vector of Vector3ds,
     // so the size is divided by 3.
     std::vector<Vector3d> rlp(xyzobs_px.size() / 3);
+    std::vector<Vector3d> s1(rlp.size());
+    std::vector<Vector3d> xyzobs_mm(rlp.size());
 
     // Extract the quantities from the models that are needed for the calculation.
     Vector3d s0 = beam.get_s0();
@@ -62,6 +66,8 @@ std::vector<Vector3d> xyz_to_rlp(const std::vector<double> &xyzobs_px,
         s1_i.normalize();
         // convert into inverse ansgtroms
         Vector3d s1_this = s1_i / wl;
+        s1[i] = s1_this;
+        xyzobs_mm[i] = {xymm[0], xymm[1], rot_angle};
 
         // now apply the goniometer matrices
         // see https://dials.github.io/documentation/conventions.html for full conventions
@@ -77,5 +83,5 @@ std::vector<Vector3d> xyz_to_rlp(const std::vector<double> &xyzobs_px,
 
         rlp[i] = sample_rotation_inverse * rlp_this;
     }
-    return rlp;
+    return std::make_tuple(rlp, s1, xyzobs_mm);
 }

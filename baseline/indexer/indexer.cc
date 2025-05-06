@@ -10,27 +10,35 @@
 #include <fmt/os.h>
 
 #include <Eigen/Dense>
+#include <algorithm>
 #include <argparse/argparse.hpp>
 #include <chrono>
 #include <cstring>
 #include <dx2/h5/h5read_processed.hpp>
 #include <fstream>
+#include <mutex>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "combinations.cc"
 #include "common.hpp"
 #include "fft3d.cc"
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
 #include "peaks_to_rlvs.cc"
+#include "reflection_data.cc"
+#include "score_crystals.cc"
 #include "xyz_to_rlp.cc"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 using json = nlohmann::json;
+
+constexpr double RAD2DEG = 180.0 / M_PI;
 
 int main(int argc, char** argv) {
     // The purpose of an indexer is to determine the lattice model that best
@@ -51,6 +59,14 @@ int main(int argc, char** argv) {
     parser.add_argument("--max-cell")
       .help("The maximum possible cell length to consider during indexing")
       .scan<'f', float>();
+    parser.add_argument("--max-refine")
+      .help("The maximum number of candidate lattices to refine during indexing")
+      .default_value<size_t>(50)
+      .scan<'u', size_t>();
+    parser.add_argument("--test")
+      .help("Enable additional output for testing")
+      .default_value<bool>(false)
+      .implicit_value(true);
     parser
       .add_argument(
         "--fft-npoints")  // mainly for testing, likely would always want to keep it as 256.
@@ -86,15 +102,10 @@ int main(int argc, char** argv) {
         logger->error("Must specify --max-cell\n");
         std::exit(1);
     }
-    // FIXME use highest resolution by default to remove this requirement.
-    if (!parser.is_used("dmin")) {
-        logger->error("Must specify --dmin\n");
-        std::exit(1);
-    }
     std::string imported_expt = parser.get<std::string>("expt");
     std::string filename = parser.get<std::string>("refl");
     double max_cell = parser.get<float>("max-cell");
-    double d_min = parser.get<float>("dmin");
+    size_t max_refine = parser.get<size_t>("max-refine");
 
     // Parse the experiment list (a json file) and load the models.
     // Will be moved to dx2.
@@ -136,8 +147,25 @@ int main(int argc, char** argv) {
     // The diffraction spots form a lattice in reciprocal space (if the experimental
     // geometry is accurate). So use the experimental models to transform the spot
     // coordinates on the detector into reciprocal space.
-    std::vector<Vector3d> rlp = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
+    std::vector<Vector3d> rlp;
+    std::vector<Vector3d> s1;
+    std::vector<Vector3d> xyzobs_mm;
+
+    std::tie(rlp, s1, xyzobs_mm) = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
     logger->info("Number of reflections: {}", rlp.size());
+
+    // If a resolution limit was not specified, determine from the highest resolution spot.
+    double d_min;
+    if (parser.is_used("dmin")) {
+        d_min = parser.get<float>("dmin");
+    } else {
+        Vector3d highest_res_spot = *std::min_element(
+          rlp.begin(), rlp.end(), [](const Vector3d& a, const Vector3d& b) -> bool {
+              return (1.0 / a.norm()) < (1.0 / b.norm());
+          });
+        d_min = 1.0 / highest_res_spot.norm();
+        logger->info("Setting dmin based on highest resolution spot: {:.5f}", d_min);
+    }
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
     // i.e. high resolution (weaker) spots are downweighted by the expected
@@ -185,45 +213,154 @@ int main(int argc, char** argv) {
     std::vector<Vector3d> candidate_lattice_vectors = peaks_to_rlvs(
       fractional_centres_of_mass, grid_points_per_peak, d_min, 3.0, max_cell, n_points);
 
-    // at this point, we will test combinations of the candidate vectors, use those to index the spots, do some
-    // refinement of the candidates and choose the best one. Then we will do some more refinement including extra
-    // model parameters. At then end, we will have a list of refined experiment models (including a crystal)
-
-    // For now, let's just write out the candidate vectors and write out the unrefined experiment models with the
-    // first combination of candidate vectors as an example crystal, to demonstrate an example experiment list data
-    // structure.
-
-    // dump the candidate vectors to json
-    std::string n_vecs = std::to_string(candidate_lattice_vectors.size() - 1);
-    size_t n_zero = n_vecs.length();
-    json vecs_out;
-    for (int i = 0; i < candidate_lattice_vectors.size(); i++) {
-        std::string s = std::to_string(i);
-        auto pad_s = std::string(n_zero - std::min(n_zero, s.length()), '0') + s;
-        vecs_out[pad_s] = candidate_lattice_vectors[i];
-    }
-    std::string outfile = "candidate_vectors.json";
-    std::ofstream vecs_file(outfile);
-    vecs_file << vecs_out.dump(4);
-    logger->info("Saved candidate vectors to {}", outfile);
-
-    // Now make a crystal and save an experiment list with the models.
     if (candidate_lattice_vectors.size() < 3) {
         logger->info(
           "Insufficient number of candidate vectors to make a crystal model.");
-    } else {
-        gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
-        Crystal best_xtal{candidate_lattice_vectors[0],
-                          candidate_lattice_vectors[1],
-                          candidate_lattice_vectors[2],
-                          space_group};
-        expt.set_crystal(best_xtal);
-        json elist_out = expt.to_json();
-        std::string efile_name = "elist.json";
-        std::ofstream efile(efile_name);
-        efile << elist_out.dump(4);
-        logger->info("Saved experiment list to {}", efile_name);
+        std::exit(0);
     }
+
+    // Now we need to generate candidate crystals from the lattice vectors and evaluate them
+
+    std::string flags_array_name = "/dials/processing/group_0/flags";
+    std::vector<std::size_t> flags =
+      read_array_from_h5_file<std::size_t>(filename, flags_array_name);
+    // calculate entering array
+    std::vector<bool> enterings(rlp.size());
+    Vector3d s0 = beam.get_s0();
+    Vector3d axis = gonio.get_rotation_axis();
+    Vector3d vec = s0.cross(axis);
+    for (int i = 0; i < s1.size(); i++) {
+        enterings[i] = ((s1[i].dot(vec)) < 0.0);
+    }
+
+    // Make a selection on dmin and rotation angle like dials
+    std::vector<bool> selection(rlp.size(), true);
+    double osc_trim_limit = scan.get_oscillation()[0] + 360.0;
+    for (int i = 0; i < rlp.size(); i++) {
+        if (1.0 / rlp[i].norm() <= d_min) {
+            selection[i] = false;
+        } else if (xyzobs_mm[i][2] * RAD2DEG > osc_trim_limit) {
+            selection[i] = false;
+        }
+    }
+    reflection_data reflections;
+    reflections.flags = flags;
+    reflections.xyzobs_mm = xyzobs_mm;
+    reflections.s1 = s1;
+    reflections.entering = enterings;
+    reflections.rlp = rlp;
+    reflections = select(reflections, selection);
+
+    Vector3i null{{0, 0, 0}};
+    int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
+    double scan_width =
+      scan.get_oscillation()[0] + (scan.get_oscillation()[1] * n_images);
+
+    // Initialise a class that will generate canditate orientation matrices.
+    CandidateOrientationMatrices candidates(candidate_lattice_vectors, 1000);
+
+    // Initialise a vector of threads
+    std::vector<std::thread> threads;
+
+    // Limit the number of active threads to the max concurrency, without needing to manage a threadpool.
+    int batch_size = std::min(max_refine, nthreads);
+    int n = 0;  // Candidate number
+    for (int i = 0; i < max_refine; i += nthreads) {
+        threads.clear();
+        int j = 0;
+        while (candidates.has_next() && n < max_refine && j < batch_size) {
+            std::optional<Crystal> next_crystal = candidates.next();
+            if (next_crystal.has_value()) {
+                Crystal crystal = next_crystal.value();
+                n++;
+                j++;
+                threads.emplace_back(std::thread(evaluate_crystal,
+                                                 crystal,
+                                                 reflections,
+                                                 gonio,
+                                                 beam,
+                                                 panel,
+                                                 scan_width,
+                                                 n));
+            } else {
+                break;
+            }
+        }
+        for (auto& t : threads) {
+            t.join();
+        }
+    }
+
+    // Determine a relative score for all candidates and print a summary to the log.
+    score_solutions(results_map);
+    std::vector<std::pair<int, score_and_crystal>> results_vector(results_map.begin(),
+                                                                  results_map.end());
+    std::sort(
+      results_vector.begin(), results_vector.end(), [](const auto& a, const auto& b) {
+          return a.second.score < b.second.score;  // Ascending order by score
+      });
+    logger->info("Candidate solutions:");
+    logger->info(
+      "| Unit cell                                 | volume & score | #indexed % & "
+      "score | rmsd_xy & score | overall score |");
+    for (const auto& result : results_vector) {
+        gemmi::UnitCell cell = result.second.crystal.get_unit_cell();
+        logger->info(
+          "| {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} | {:>8.0f}  {:.2f} "
+          "| {:>7.0f}  {:>3.0f}  {:.2f} | {:>6.2f}    {:>5.2f} |        {:>6.2f} |",
+          cell.a,
+          cell.b,
+          cell.c,
+          cell.alpha,
+          cell.beta,
+          cell.gamma,
+          cell.volume,
+          result.second.volume_score,
+          result.second.num_indexed,
+          result.second.fraction_indexed * 100,
+          result.second.indexed_score,
+          result.second.rmsdxy,
+          result.second.rmsd_score,
+          result.second.score);
+    }
+    Crystal best_xtal = results_vector[0].second.crystal;
+
+    bool test = parser.get<bool>("test");
+    if (test) {
+        // dump the candidate vectors to json
+        std::string n_vecs = std::to_string(candidate_lattice_vectors.size() - 1);
+        size_t n_zero = n_vecs.length();
+        json vecs_out;
+        for (int i = 0; i < candidate_lattice_vectors.size(); i++) {
+            std::string s = std::to_string(i);
+            auto pad_s = std::string(n_zero - std::min(n_zero, s.length()), '0') + s;
+            vecs_out[pad_s] = candidate_lattice_vectors[i];
+        }
+        std::string outfile = "candidate_vectors.json";
+        std::ofstream vecs_file(outfile);
+        vecs_file << vecs_out.dump(4);
+        logger->info("Saved candidate vectors to {}", outfile);
+
+        size_t offset = std::to_string(results_vector.size() - 1).length();
+        json crystals_out;
+        for (int i = 0; i < results_vector.size(); i++) {
+            std::string s = std::to_string(i);
+            auto pad_s = std::string(offset - std::min(offset, s.length()), '0') + s;
+            crystals_out[pad_s] = results_vector[i].second.to_json();
+        }
+        std::string candidates_outfile = "candidate_crystals.json";
+        std::ofstream candidates_file(candidates_outfile);
+        candidates_file << crystals_out.dump(4);
+        logger->info("Saved candidate crystals to {}", candidates_outfile);
+    }
+
+    // Now save an experiment list with the models.
+    expt.set_crystal(best_xtal);
+    json elist_out = expt.to_json();
+    std::string efile_name = "elist.json";
+    std::ofstream efile(efile_name);
+    efile << elist_out.dump(4);
+    logger->info("Saved experiment list to {}", efile_name);
 
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;
