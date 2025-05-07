@@ -52,15 +52,16 @@ extern __constant__ KernelConstants kernel_constants;
  */
 __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
                         uint8_t __restrict__ *erosion_mask_ptr,
-                        // uint8_t __restrict__ *mask_ptr,
+                        uint8_t __restrict__ *mask_ptr,
                         size_t dispersion_mask_pitch,
                         size_t erosion_mask_pitch,
+                        size_t mask_pitch,
                         uint8_t radius) {
     // Create pitched arrays for data access
     PitchedArray2D<uint8_t> dispersion_mask{dispersion_mask_ptr,
                                             &dispersion_mask_pitch};
     PitchedArray2D<uint8_t> erosion_mask{erosion_mask_ptr, &erosion_mask_pitch};
-    // PitchedArray2D<uint8_t> mask{mask_ptr, &mask_pitch};
+    PitchedArray2D<uint8_t> mask{mask_ptr, &mask_pitch};
 
     // Calculate the pixel coordinates
     auto block = cg::this_thread_block();
@@ -90,15 +91,12 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
         for (int j = -radius; j <= radius; ++j) {  // Iterate over x offsets
             int lx = x + j;                        // Offset x coordinate
             int ly = y + i;                        // Offset y coordinate
-            /*
-             * TODO: Investigate whether we should be doing this or not!
-             * Intuition says that we should be considering the mask,
-             * however DIALS does not do this. May be a bug, may be on
-             * purpose? Investigate!
-            */
-            // if (mask(lx, ly) == 0) {
-            //     continue;
-            // }
+
+            // Check if the pixel is masked
+            if (mask(lx, ly) == 0) {
+                // If so, skip the pixel
+                continue;
+            }
 
             // Get pixel from step in kernel
             uint8_t this_pixel = dispersion_mask(lx, ly);
