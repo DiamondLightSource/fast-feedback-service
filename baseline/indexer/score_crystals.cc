@@ -3,6 +3,7 @@
 #include <dx2/detector.h>
 #include <dx2/experiment.h>
 #include <dx2/goniometer.h>
+#include <dx2/reflection.hpp>
 
 #include <chrono>
 #include <mutex>
@@ -10,7 +11,7 @@
 #include <vector>
 
 #include "assign_indices.cc"
-#include "non_primitive_basis.cc"
+//#include "non_primitive_basis.cc"
 #include "reflection_data.cc"
 #include "reflection_filter.cc"
 
@@ -54,25 +55,29 @@ std::map<int, score_and_crystal> results_map;
  * @param n The candidate number, starting at 1.
  */
 void evaluate_crystal(Crystal crystal,
-                      reflection_data const& obs,
+                      ReflectionTable const& obs,
                       Goniometer gonio,
                       MonochromaticBeam beam,
                       Panel panel,
                       double scan_width,
                       int n) {
-    std::vector<Vector3i> miller_indices;
+    std::vector<int> miller_indices;
     int count;
     auto preassign = std::chrono::system_clock::now();
 
     // First assign miller indices to the data using the crystal model.
+    auto rlp = obs.column<double>("rlp");
+    const mdspan_type<double> &rlp_span = rlp.value();
+    auto xyzobs_mm = obs.column<double>("xyzobs_mm");
+    const mdspan_type<double> &xyzobs_mm_span = xyzobs_mm.value();
     std::tie(miller_indices, count) =
-      assign_indices_global(crystal.get_A_matrix(), obs.rlp, obs.xyzobs_mm);
+      assign_indices_global(crystal.get_A_matrix(), rlp_span, xyzobs_mm_span);
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - preassign;
     logger->debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
 
     // Perform the (potential) non-primivite basis correction.
-    count = correct(miller_indices, crystal, obs.rlp, obs.xyzobs_mm);
+    /*count = correct(miller_indices, crystal, obs.rlp, obs.xyzobs_mm);
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time1 = t3 - t2;
     logger->debug("Time for correct: {:.5f}s", elapsed_time1.count());
@@ -83,7 +88,7 @@ void evaluate_crystal(Crystal crystal,
     auto postfilter = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_timefilter = postfilter - t3;
     logger->debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
-
+    
     // Refinement will go here in future.
 
     // Calculate rmsds
@@ -100,14 +105,14 @@ void evaluate_crystal(Crystal crystal,
     double rmsdx = std::sqrt(xsum / sel_obs.xyzcal_mm.size());
     double rmsdy = std::sqrt(ysum / sel_obs.xyzcal_mm.size());
     double rmsdz = std::sqrt(zsum / sel_obs.xyzcal_mm.size());
-    double xyrmsd = std::sqrt(rmsdx * rmsdx + rmsdy * rmsdy);
+    double xyrmsd = std::sqrt(rmsdx * rmsdx + rmsdy * rmsdy);*/
 
     // Write some data to the results map
     score_and_crystal sac;
     sac.crystal = crystal;
     sac.num_indexed = count;
-    sac.rmsdxy = xyrmsd;
-    sac.fraction_indexed = (double)count / obs.flags.size();
+    //sac.rmsdxy = xyrmsd;
+    //sac.fraction_indexed = (double)count / obs.flags.size();
     logger->info("Scored candidate crystal {}", n);
     score_and_crystal_mtx.lock();
     results_map[n] = sac;
