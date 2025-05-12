@@ -30,7 +30,6 @@
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
 #include "peaks_to_rlvs.cc"
-#include "reflection_data.cc"
 #include "score_crystals.cc"
 #include "xyz_to_rlp.cc"
 
@@ -232,13 +231,13 @@ int main(int argc, char** argv) {
     std::vector<std::size_t> flags =
       read_array_from_h5_file<std::size_t>(filename, flags_array_name);
     // calculate entering array
-    std::vector<bool> enterings(rlp_span.extent(0));
+    std::vector<int> enterings(rlp_span.extent(0));
     Vector3d s0 = beam.get_s0();
     Vector3d axis = gonio.get_rotation_axis();
     Vector3d vec = s0.cross(axis);
     for (int i = 0; i < s1_span.extent(0); i++) {
         Eigen::Map<Vector3d> s1_i(&s1_span(i,0));
-        enterings[i] = ((s1_i.dot(vec)) < 0.0);
+        enterings[i] = ((s1_i.dot(vec)) < 0.0) ? 1 : 0;
     }
 
     // Make a selection on dmin and rotation angle like dials
@@ -254,7 +253,7 @@ int main(int argc, char** argv) {
     }
     ReflectionTable reflections;
     std::vector<size_t> length = {flags.size()};
-    reflections.add_column<std::size_t>(std::string("flags"), length, flags);
+    reflections.add_column<std::size_t>(std::string("flags"), flags);
 
     /*reflection_data reflections;
     reflections.flags = flags;
@@ -266,7 +265,8 @@ int main(int argc, char** argv) {
     reflections.add_column<double>(std::string("xyzobs_mm"), xyzobs_mm_span.extent(0), 3, xyzobs_mm);
     reflections.add_column<double>(std::string("s1"), s1_span.extent(0), 3, s1);
     reflections.add_column<double>(std::string("rlp"), rlp_span.extent(0), 3, rlp);
-    //reflections.add_column<bool>(std::string("entering"), length, enterings);
+    //std::vector<uint8_t> enterings2(s1_span.extent(0));
+    reflections.add_column<int>(std::string("entering"), enterings);
     const ReflectionTable filtered = reflections.select(selection);
        
     Vector3i null{{0, 0, 0}};
@@ -294,7 +294,7 @@ int main(int argc, char** argv) {
                 j++;
                 threads.emplace_back(std::thread(evaluate_crystal,
                                                  crystal,
-                                                 std::cref(filtered),
+                                                 std::ref(filtered),
                                                  gonio,
                                                  beam,
                                                  panel,

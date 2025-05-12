@@ -5,11 +5,12 @@
 
 #include "assign_indices.cc"
 #include "common.hpp"
-#include "reflection_data.cc"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
+template <typename T>
+using mdspan_type = std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 
 // Following the code in dials/algorithms/indexing/non_primivite_basis.py
 
@@ -171,18 +172,20 @@ Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold = 0.9) {
  * @param threshold A threshold for positive identification of an absence.
  * @returns The number of rlps that are indexed after application of this function.
  */
-int correct(std::vector<Vector3i>& hkl,
+int correct(std::vector<int> &hkl,
             Crystal& crystal,
-            const std::vector<Vector3d>& rlp,
-            const std::vector<Vector3d>& xyzobs_mm,
+            mdspan_type<double> const &rlp,
+            mdspan_type<double> const &xyzobs_mm,
             double threshold = 0.9) {
     Vector3i null_miller = {0, 0, 0};
     int count;  // num indexed
+    //std::vector<int> corrected_miller_indices;
     while (true) {
+        mdspan_type<int> miller_indices(hkl.data(), hkl.size() / 3, 3);
         std::vector<Vector3i> selected_miller;
-        selected_miller.reserve(hkl.size());
-        for (int i = 0; i < hkl.size(); ++i) {
-            Vector3i midx = hkl[i];
+        selected_miller.reserve(hkl.size() / 3);
+        for (int i = 0; i < miller_indices.extent(0); ++i) {
+            Vector3i midx = {miller_indices(i,0), miller_indices(i,1), miller_indices(i,2)};
             if (midx != null_miller) {
                 selected_miller.push_back(midx);
             }
