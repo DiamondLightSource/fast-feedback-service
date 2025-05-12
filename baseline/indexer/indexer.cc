@@ -161,17 +161,16 @@ int main(int argc, char** argv) {
 
     // If a resolution limit was not specified, determine from the highest resolution spot.
     double d_min;
-    d_min = parser.get<float>("dmin");
-    /*if (parser.is_used("dmin")) {
+    if (parser.is_used("dmin")) {
         d_min = parser.get<float>("dmin");
     } else {
-        Vector3d highest_res_spot = *std::min_element(
-          rlp.begin(), rlp.end(), [](const Vector3d& a, const Vector3d& b) -> bool {
-              return (1.0 / a.norm()) < (1.0 / b.norm());
-          });
-        d_min = 1.0 / highest_res_spot.norm();
+        std::vector<double> d_values(rlp_span.extent(0), 0);
+        for (int i=0;i<rlp_span.extent(0);++i){
+          d_values[i] = 1.0 / Eigen::Map<Vector3d>(&rlp_span(i,0)).norm();
+        }
+        d_min = *std::min_element(d_values.begin(), d_values.end());
         logger->info("Setting dmin based on highest resolution spot: {:.5f}", d_min);
-    }*/
+    }
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
     // i.e. high resolution (weaker) spots are downweighted by the expected
