@@ -73,7 +73,6 @@ void evaluate_crystal(Crystal crystal,
     const mdspan_type<double> &xyzobs_mm_span = xyzobs_mm.value();
     std::tie(miller_indices_data, count) =
       assign_indices_global(crystal.get_A_matrix(), rlp_span, xyzobs_mm_span);
-    //mdspan_type<int> miller_indices(miller_indices_data.data(), miller_indices_data.size() / 3, 3);
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - preassign;
     logger->debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
@@ -106,8 +105,6 @@ void evaluate_crystal(Crystal crystal,
     auto xyzcal_ = sel_obs.column<double>("xyzcal_mm");
     const auto& xyzcal_mm_sel = xyzcal_.value();
     for (int i = 0; i < flags.size(); i++) {
-        //Vector3d xyzobs = sel_obs.xyzobs_mm[i];
-        //Vector3d xyzcal = sel_obs.xyzcal_mm[i];
         xsum += std::pow(xyzobs_mm_sel(i, 0) - xyzcal_mm_sel(i, 0), 2);
         ysum += std::pow(xyzobs_mm_sel(i, 1) - xyzcal_mm_sel(i, 1), 2);
         zsum += std::pow(xyzobs_mm_sel(i, 2) - xyzcal_mm_sel(i, 2), 2);

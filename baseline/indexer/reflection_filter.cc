@@ -129,17 +129,12 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid,
  */
 ReflectionTable outlier_filter(ReflectionTable& reflections) {
     // First make sure the reflections have the predicted flag.
-    /*std::vector<std::size_t> flags = reflections.flags;
-    std::vector<Vector3d> xyzobs = reflections.xyzobs_mm;
-    std::vector<Vector3d> xyzcal = reflections.xyzcal_mm;*/
-
     auto flags_ = reflections.column<std::size_t>("flags");
     auto& flags = flags_.value();
     auto xyzobs_ = reflections.column<double>("xyzobs_mm");
     const auto& xyzobs_mm = xyzobs_.value();
     auto xyzcal_ = reflections.column<double>("xyzcal_mm");
     const auto& xyzcal_mm = xyzcal_.value();
-
 
     std::vector<double> x_resid(flags.size(), 0.0);
     std::vector<double> y_resid(flags.size(), 0.0);
@@ -148,8 +143,6 @@ ReflectionTable outlier_filter(ReflectionTable& reflections) {
 
     for (int i = 0; i < flags.size(); i++) {
         if ((flags(i,0) & predicted_value) == predicted_value) {
-            /*Vector3d xyzobsi = xyzobs[i];
-            Vector3d xyzcali = xyzcal[i];*/
             x_resid[i] = xyzcal_mm(i, 0) - xyzobs_mm(i, 0);
             y_resid[i] = xyzcal_mm(i, 1) - xyzobs_mm(i, 1);
             phi_resid[i] = xyzcal_mm(i, 2) - xyzobs_mm(i, 2);
@@ -215,17 +208,12 @@ ReflectionTable initial_filter(const ReflectionTable& reflections,
     const auto& s1 = s1_.value();
     auto xyzobs_ = reflections.column<double>("xyzobs_mm");
     const auto& xyzobs = xyzobs_.value();
-    
-    //std::vector<std::size_t> flags = reflections.flags;
-    //std::vector<Vector3d> s1 = reflections.s1;
-    //std::vector<Vector3d> xyzobs = reflections.xyzobs_mm;
     Vector3d axis = gonio.get_rotation_axis();
     Vector3d s0 = beam.get_s0();
 
     // First select reflections that are not overloaded, have a valid hkl and
     // are not too close to the rotation axis.
     std::vector<bool> sel(flags.extent(0), true);
-    //Vector3i null = {0, 0, 0};
     for (int i = 0; i < sel.size(); i++) {
         if ((flags(i,0) & overloaded_value) == overloaded_value) {
             sel[i] = false;
@@ -251,13 +239,9 @@ ReflectionTable initial_filter(const ReflectionTable& reflections,
     subrefls.add_column<int>("miller_index", filtered_hkl.size() /3, 3, filtered_hkl);
     auto subflags_ = subrefls.column<std::size_t>("flags");
     auto& subflags = subflags_.value();
-
     for (int i=0; i<subflags.extent(0);++i){
         subflags(i,0) &= ~used_in_refinement_value;  //unset the flag
     }
-    /*    size_t& flag : subflags) {
-        flag &= ~used_in_refinement_value;  //unset the flag
-    }*/
 
     return subrefls;
 }

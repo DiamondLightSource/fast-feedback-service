@@ -255,17 +255,9 @@ int main(int argc, char** argv) {
     std::vector<size_t> length = {flags.size()};
     reflections.add_column<std::size_t>(std::string("flags"), flags);
 
-    /*reflection_data reflections;
-    reflections.flags = flags;
-    reflections.xyzobs_mm = xyzobs_mm;
-    reflections.s1 = s1;
-    reflections.entering = enterings;
-    reflections.rlp = rlp;
-    reflections = select(reflections, selection); */
     reflections.add_column<double>(std::string("xyzobs_mm"), xyzobs_mm_span.extent(0), 3, xyzobs_mm);
     reflections.add_column<double>(std::string("s1"), s1_span.extent(0), 3, s1);
     reflections.add_column<double>(std::string("rlp"), rlp_span.extent(0), 3, rlp);
-    //std::vector<uint8_t> enterings2(s1_span.extent(0));
     reflections.add_column<int>(std::string("entering"), enterings);
     const ReflectionTable filtered = reflections.select(selection);
        

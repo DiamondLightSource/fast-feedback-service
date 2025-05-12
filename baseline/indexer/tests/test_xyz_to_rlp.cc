@@ -50,7 +50,7 @@ TEST(BaselineIndexer, XyztoRlptest) {
 
     std::tie(rlp, s1, xyzobs_mm) = xyz_to_rlp(xyzobs_px_span, panel, beam, scan, gonio);
     
-    mdspan_type<double> rlp_span = mdspan_type<double>(xyzobs_px.size() / 3, 3);
+    mdspan_type<double> rlp_span = mdspan_type<double>(rlp.data(), rlp.size() / 3, 3);
     // Check against the equivalent results from the dials calculation
     Vector3d expected_0{{-0.5021752936083477, 0.5690514955867707, 0.27788051106787137}};
     Vector3d expected_1{{-0.5009709068399325, 0.5770958485799975, 0.2562207980973077}};

@@ -30,7 +30,6 @@ std::pair<std::vector<int>, int> assign_indices_global(
     // Consider only a single lattice.
     std::vector<int> miller_indices_data(rlp.size());
     mdspan_type<int> miller_indices(miller_indices_data.data(), rlp.extent(0), 3);
-    //std::vector<Vector3i> miller_indices(rlp.size());
     std::vector<int> crystal_ids(rlp.extent(0));
     std::vector<double> lsq_vector(rlp.extent(0));
     Vector3i miller_index_zero{{0, 0, 0}};
@@ -50,7 +49,6 @@ std::pair<std::vector<int>, int> assign_indices_global(
     int count = 0;
     for (int i = 0; i < rlp.extent(0); ++i) {
         Eigen::Map<Vector3d> rlp_this(&rlp(i,0));
-        //Vector3d rlp_this = rlp[i];
         Vector3d hkl_f = A_inv * rlp_this;
         for (std::size_t j = 0; j < 3; j++) {
             miller_indices(i,j) = static_cast<int>(round(hkl_f[j]));

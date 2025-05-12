@@ -179,7 +179,6 @@ int correct(std::vector<int> &hkl,
             double threshold = 0.9) {
     Vector3i null_miller = {0, 0, 0};
     int count;  // num indexed
-    //std::vector<int> corrected_miller_indices;
     while (true) {
         mdspan_type<int> miller_indices(hkl.data(), hkl.size() / 3, 3);
         std::vector<Vector3i> selected_miller;

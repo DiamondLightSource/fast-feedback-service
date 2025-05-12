@@ -61,13 +61,6 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     std::vector<double> xyzcal_mm_data(xyzobs_mm.size(), 0.0);
     mdspan_type<double> xyzcal_mm(xyzcal_mm_data.data(), xyzcal_mm_data.size() / 3, 3);
 
-    /*std::vector<Vector3d> s1 = reflections.s1;
-    const std::vector<Vector3d> xyzobs_mm = reflections.xyzobs_mm;
-    const std::vector<bool> entering = reflections.entering;
-    std::vector<std::size_t> flags = reflections.flags;
-    std::vector<Vector3d> xyzcal_mm(flags.size());
-    const std::vector<Vector3i> hkl = reflections.miller_indices;*/
-
     // these setup bits are the same for all refls.
     Vector3d s0 = beam.get_s0();
     Matrix3d F = gonio.get_sample_rotation();   //fixed rot
@@ -89,8 +82,6 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     // now call predict_rays with h and UB for a given refl
     for (int i = 0; i < hkl.extent(0); i++) {
         const Vector3i h{hkl(i,0), hkl(i,1), hkl(i,2)};
-        //Eigen::Map<int> h(&hkl(i,0));
-        //Vector3i h = Eigen::Map<int>(&hkl(i,0));
         const Vector3d hf{(double)h[0], (double)h[1], (double)h[2]};
         int entering_i = entering(i,0);
 
@@ -161,7 +152,6 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
         s1(i,2) = s1_this[2];
         flags(i,0) = flags(i,0) | predicted_value;
     }
-    //reflections.flags = flags;
     reflections.add_column<double>("xyzcal_mm", xyzcal_mm.extent(0), xyzcal_mm.extent(1), xyzcal_mm_data);
 }
 

@@ -9,13 +9,15 @@
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 
+template <typename T>
+using mdspan_type = std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
+
 TEST(BaselineIndexer, map_centroids_to_reciprocal_space_test) {
-    std::vector<Vector3d> reciprocal_space_vectors{};
-    reciprocal_space_vectors.push_back({-0.2, 0.2, 0.25});
-    reciprocal_space_vectors.push_back({-0.2, 0.1, 0.10});
+    std::vector<double> reciprocal_space_vectors_data = {-0.2,0.2,0.25,-0.2,0.1,0.1};
+    mdspan_type<double> reciprocal_space_vectors(reciprocal_space_vectors_data.data(),reciprocal_space_vectors_data.size() / 3,3);
     uint32_t n_points = 64;
     std::vector<std::complex<double>> complex_data_in(n_points * n_points * n_points);
-    std::vector<bool> used_in_indexing(reciprocal_space_vectors.size(), true);
+    std::vector<bool> used_in_indexing(reciprocal_space_vectors.extent(0), true);
     double d_min = 2.0;
     // First test with no biso;
     double b_iso = 0.0;
