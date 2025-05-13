@@ -9,8 +9,8 @@ using Eigen::Vector3d;
 using Eigen::Vector3i;
 
 template <typename T>
-using mdspan_type = std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
-
+using mdspan_type =
+  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 
 constexpr double pi_4 = M_PI / 4;
 
@@ -36,7 +36,7 @@ std::pair<std::vector<int>, int> assign_indices_global(
     typedef std::multimap<
       Vector3i,
       std::size_t,
-      std::function<bool(const Eigen::Vector3i &, const Eigen::Vector3i &)> >
+      std::function<bool(const Eigen::Vector3i &, const Eigen::Vector3i &)>>
       hklmap;
 
     hklmap miller_idx_to_iref([](const Vector3i &a, const Vector3i &b) -> bool {
@@ -48,25 +48,27 @@ std::pair<std::vector<int>, int> assign_indices_global(
     const double tolsq = tolerance * tolerance;
     int count = 0;
     for (int i = 0; i < rlp.extent(0); ++i) {
-        Eigen::Map<Vector3d> rlp_this(&rlp(i,0));
+        Eigen::Map<Vector3d> rlp_this(&rlp(i, 0));
         Vector3d hkl_f = A_inv * rlp_this;
         for (std::size_t j = 0; j < 3; j++) {
-            miller_indices(i,j) = static_cast<int>(round(hkl_f[j]));
+            miller_indices(i, j) = static_cast<int>(round(hkl_f[j]));
         }
         Vector3d diff{{0, 0, 0}};
-        diff[0] = static_cast<double>(miller_indices(i,0)) - hkl_f[0];
-        diff[1] = static_cast<double>(miller_indices(i,1)) - hkl_f[1];
-        diff[2] = static_cast<double>(miller_indices(i,2)) - hkl_f[2];
+        diff[0] = static_cast<double>(miller_indices(i, 0)) - hkl_f[0];
+        diff[1] = static_cast<double>(miller_indices(i, 1)) - hkl_f[1];
+        diff[2] = static_cast<double>(miller_indices(i, 2)) - hkl_f[2];
         double l_sq = diff.squaredNorm();
         if (l_sq > tolsq) {
-            miller_indices(i,0) = 0;
-            miller_indices(i,1) = 0;
-            miller_indices(i,2) = 0;
+            miller_indices(i, 0) = 0;
+            miller_indices(i, 1) = 0;
+            miller_indices(i, 2) = 0;
             crystal_ids[i] = -1;
-        } else if (miller_indices(i,0) == 0 && miller_indices(i,1) == 0 && miller_indices(i,2) == 0) {
+        } else if (miller_indices(i, 0) == 0 && miller_indices(i, 1) == 0
+                   && miller_indices(i, 2) == 0) {
             crystal_ids[i] = -1;
         } else {
-            Vector3i midx = {miller_indices(i,0), miller_indices(i,1), miller_indices(i,2)};
+            Vector3i midx = {
+              miller_indices(i, 0), miller_indices(i, 1), miller_indices(i, 2)};
             miller_idx_to_iref.emplace(midx, i);
             lsq_vector[i] = l_sq;
             count++;
@@ -97,15 +99,15 @@ std::pair<std::vector<int>, int> assign_indices_global(
                             continue;
                         }
                         if (lsq_vector[j_ref] < lsq_vector[i_ref]) {
-                            miller_indices(i_ref,0) = 0;
-                            miller_indices(i_ref,1) = 0;
-                            miller_indices(i_ref,2) = 0;
+                            miller_indices(i_ref, 0) = 0;
+                            miller_indices(i_ref, 1) = 0;
+                            miller_indices(i_ref, 2) = 0;
                             crystal_ids[i_ref] = -1;
                             count--;
                         } else {
-                            miller_indices(j_ref,0) = 0;
-                            miller_indices(j_ref,1) = 0;
-                            miller_indices(j_ref,2) = 0;
+                            miller_indices(j_ref, 0) = 0;
+                            miller_indices(j_ref, 1) = 0;
+                            miller_indices(j_ref, 2) = 0;
                             crystal_ids[j_ref] = -1;
                             count--;
                         }

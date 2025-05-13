@@ -141,8 +141,10 @@ int main(int argc, char** argv) {
     // Note, xyzobs_px is the flattened, on-disk representation of the array
     // i.e. if there are 100 spots, the length of xyzobs_px is 300, and
     // contains the elements [x0, y0, z0, x1, y1, z1, ..., x99, y99, z99]
-    std::vector<double> xyzobs_px = read_array_from_h5_file<double>(filename, array_name);
-    mdspan_type<double> xyzobs_px_span = mdspan_type<double>(xyzobs_px.data(), xyzobs_px.size() / 3, 3);
+    std::vector<double> xyzobs_px =
+      read_array_from_h5_file<double>(filename, array_name);
+    mdspan_type<double> xyzobs_px_span =
+      mdspan_type<double>(xyzobs_px.data(), xyzobs_px.size() / 3, 3);
 
     // The diffraction spots form a lattice in reciprocal space (if the experimental
     // geometry is accurate). So use the experimental models to transform the spot
@@ -152,12 +154,12 @@ int main(int argc, char** argv) {
     std::vector<double> xyzobs_mm;
 
     std::tie(rlp, s1, xyzobs_mm) = xyz_to_rlp(xyzobs_px_span, panel, beam, scan, gonio);
-    
+
     mdspan_type<double> rlp_span = mdspan_type<double>(rlp.data(), rlp.size() / 3, 3);
     mdspan_type<double> s1_span = mdspan_type<double>(s1.data(), s1.size() / 3, 3);
-    mdspan_type<double> xyzobs_mm_span = mdspan_type<double>(xyzobs_mm.data(), xyzobs_mm.size() / 3, 3);
+    mdspan_type<double> xyzobs_mm_span =
+      mdspan_type<double>(xyzobs_mm.data(), xyzobs_mm.size() / 3, 3);
     logger->info("Number of reflections: {}", rlp_span.extent(0));
-
 
     // If a resolution limit was not specified, determine from the highest resolution spot.
     double d_min;
@@ -165,8 +167,8 @@ int main(int argc, char** argv) {
         d_min = parser.get<float>("dmin");
     } else {
         std::vector<double> d_values(rlp_span.extent(0), 0);
-        for (int i=0;i<rlp_span.extent(0);++i){
-          d_values[i] = 1.0 / Eigen::Map<Vector3d>(&rlp_span(i,0)).norm();
+        for (int i = 0; i < rlp_span.extent(0); ++i) {
+            d_values[i] = 1.0 / Eigen::Map<Vector3d>(&rlp_span(i, 0)).norm();
         }
         d_min = *std::min_element(d_values.begin(), d_values.end());
         logger->info("Setting dmin based on highest resolution spot: {:.5f}", d_min);
@@ -235,7 +237,7 @@ int main(int argc, char** argv) {
     Vector3d axis = gonio.get_rotation_axis();
     Vector3d vec = s0.cross(axis);
     for (int i = 0; i < s1_span.extent(0); i++) {
-        Eigen::Map<Vector3d> s1_i(&s1_span(i,0));
+        Eigen::Map<Vector3d> s1_i(&s1_span(i, 0));
         enterings[i] = ((s1_i.dot(vec)) < 0.0) ? 1 : 0;
     }
 
@@ -243,7 +245,7 @@ int main(int argc, char** argv) {
     std::vector<bool> selection(rlp_span.extent(0), true);
     double osc_trim_limit = scan.get_oscillation()[0] + 360.0;
     for (int i = 0; i < rlp_span.extent(0); i++) {
-        Eigen::Map<Vector3d> rlp_i(&rlp_span(i,0));
+        Eigen::Map<Vector3d> rlp_i(&rlp_span(i, 0));
         if (1.0 / rlp_i.norm() <= d_min) {
             selection[i] = false;
         } else if (xyzobs_mm_span(i, 2) * RAD2DEG > osc_trim_limit) {
@@ -254,12 +256,13 @@ int main(int argc, char** argv) {
     std::vector<size_t> length = {flags.size()};
     reflections.add_column<std::size_t>(std::string("flags"), flags);
 
-    reflections.add_column<double>(std::string("xyzobs_mm"), xyzobs_mm_span.extent(0), 3, xyzobs_mm);
+    reflections.add_column<double>(
+      std::string("xyzobs_mm"), xyzobs_mm_span.extent(0), 3, xyzobs_mm);
     reflections.add_column<double>(std::string("s1"), s1_span.extent(0), 3, s1);
     reflections.add_column<double>(std::string("rlp"), rlp_span.extent(0), 3, rlp);
     reflections.add_column<int>(std::string("entering"), enterings);
     const ReflectionTable filtered = reflections.select(selection);
-       
+
     Vector3i null{{0, 0, 0}};
     int n_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
     double scan_width =

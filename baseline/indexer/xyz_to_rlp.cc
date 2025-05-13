@@ -3,16 +3,17 @@
 #include <dx2/goniometer.h>
 #include <dx2/scan.h>
 #include <math.h>
-#include <experimental/mdspan>
 
 #include <Eigen/Dense>
+#include <experimental/mdspan>
 #include <tuple>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 
 template <typename T>
-using mdspan_type = std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
+using mdspan_type =
+  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 
 /**
  * @brief Transform detector pixel coordinates into reciprocal space coordinates.
@@ -23,12 +24,12 @@ using mdspan_type = std::experimental::mdspan<T, std::experimental::dextents<siz
  * @param gonio A dx2 Goniometer object.
  * @returns A vector of reciprocal space coordinates.
  */
-std::tuple<std::vector<double>, std::vector<double>, std::vector<double>>
-xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
-           const Panel &panel,
-           const MonochromaticBeam &beam,
-           const Scan &scan,
-           const Goniometer &gonio) {
+std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> xyz_to_rlp(
+  const mdspan_type<double> &xyzobs_px,
+  const Panel &panel,
+  const MonochromaticBeam &beam,
+  const Scan &scan,
+  const Goniometer &gonio) {
     // Use the experimental models to perform a coordinate transformation from
     // pixel coordinates in detector space to reciprocal space, in units of
     // inverse angstrom.
@@ -42,9 +43,12 @@ xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
     std::vector<double> s1_data(xyzobs_px.size());
     std::vector<double> xyzobs_mm_data(xyzobs_px.size());
     // Create spans for convenience when setting elements into the data arrays.
-    mdspan_type<double> rlp = mdspan_type<double>(rlp_data.data(), xyzobs_px.size() / 3, 3);
-    mdspan_type<double> s1 = mdspan_type<double>(s1_data.data(), xyzobs_px.size() / 3, 3);
-    mdspan_type<double> xyzobs_mm = mdspan_type<double>(xyzobs_mm_data.data(), xyzobs_px.size() / 3, 3);
+    mdspan_type<double> rlp =
+      mdspan_type<double>(rlp_data.data(), xyzobs_px.size() / 3, 3);
+    mdspan_type<double> s1 =
+      mdspan_type<double>(s1_data.data(), xyzobs_px.size() / 3, 3);
+    mdspan_type<double> xyzobs_mm =
+      mdspan_type<double>(xyzobs_mm_data.data(), xyzobs_px.size() / 3, 3);
 
     // Extract the quantities from the models that are needed for the calculation.
     Vector3d s0 = beam.get_s0();
@@ -74,12 +78,12 @@ xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
         s1_i.normalize();
         // convert into inverse ansgtroms
         Vector3d s1_this = s1_i / wl;
-        s1(i,0) = s1_this[0];
-        s1(i,1) = s1_this[1];
-        s1(i,2) = s1_this[2];
-        xyzobs_mm(i,0) = xymm[0];
-        xyzobs_mm(i,1) = xymm[1];
-        xyzobs_mm(i,2) = rot_angle;
+        s1(i, 0) = s1_this[0];
+        s1(i, 1) = s1_this[1];
+        s1(i, 2) = s1_this[2];
+        xyzobs_mm(i, 0) = xymm[0];
+        xyzobs_mm(i, 1) = xymm[1];
+        xyzobs_mm(i, 2) = rot_angle;
 
         // now apply the goniometer matrices
         // see https://dials.github.io/documentation/conventions.html for full conventions
@@ -94,9 +98,12 @@ xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
                             + (sin * rotation_axis.cross(S));
 
         rlp_this = sample_rotation_inverse * rlp_this;
-        rlp(i,0) = rlp_this[0];
-        rlp(i,1) = rlp_this[1];
-        rlp(i,2) = rlp_this[2];
+        rlp(i, 0) = rlp_this[0];
+        rlp(i, 1) = rlp_this[1];
+        rlp(i, 2) = rlp_this[2];
     }
-    return std::make_tuple(rlp_data, s1_data, xyzobs_mm_data); // Return the data, not the non-owning span view.
+    return std::make_tuple(
+      rlp_data,
+      s1_data,
+      xyzobs_mm_data);  // Return the data, not the non-owning span view.
 }

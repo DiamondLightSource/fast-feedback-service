@@ -10,11 +10,16 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 
 template <typename T>
-using mdspan_type = std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
+using mdspan_type =
+  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 
 TEST(BaselineIndexer, map_centroids_to_reciprocal_space_test) {
-    std::vector<double> reciprocal_space_vectors_data = {-0.2,0.2,0.25,-0.2,0.1,0.1};
-    mdspan_type<double> reciprocal_space_vectors(reciprocal_space_vectors_data.data(),reciprocal_space_vectors_data.size() / 3,3);
+    std::vector<double> reciprocal_space_vectors_data = {
+      -0.2, 0.2, 0.25, -0.2, 0.1, 0.1};
+    mdspan_type<double> reciprocal_space_vectors(
+      reciprocal_space_vectors_data.data(),
+      reciprocal_space_vectors_data.size() / 3,
+      3);
     uint32_t n_points = 64;
     std::vector<std::complex<double>> complex_data_in(n_points * n_points * n_points);
     std::vector<bool> used_in_indexing(reciprocal_space_vectors.extent(0), true);

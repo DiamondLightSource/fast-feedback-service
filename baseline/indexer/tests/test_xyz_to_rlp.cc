@@ -2,11 +2,11 @@
 #include <dx2/detector.h>
 #include <dx2/goniometer.h>
 #include <dx2/scan.h>
-#include <dx2/reflection.hpp>
 #include <gtest/gtest.h>
 #include <math.h>
 
 #include <Eigen/Dense>
+#include <dx2/reflection.hpp>
 #include <nlohmann/json.hpp>
 
 #include "xyz_to_rlp.cc"
@@ -20,7 +20,8 @@ TEST(BaselineIndexer, XyztoRlptest) {
     // equivalent on the same data: centroid_px_to_mm plus
     // map_centroids_to_reciprocal_space
     std::vector<double> xyzobs_px{{10.1, 10.1, 50.2, 20.1, 20.1, 70.2}};
-    mdspan_type<double> xyzobs_px_span = mdspan_type<double>(xyzobs_px.data(), xyzobs_px.size() / 3, 3);
+    mdspan_type<double> xyzobs_px_span =
+      mdspan_type<double>(xyzobs_px.data(), xyzobs_px.size() / 3, 3);
     Scan scan{{1, 100}, {0.0, 0.1}};  //image range and oscillation.
     Goniometer gonio{
       {{1.0, 0.0, 0.0}}, {{0.0}}, {{"phi"}}, 0};  //axes, angles, names, scan-axis.
@@ -49,13 +50,13 @@ TEST(BaselineIndexer, XyztoRlptest) {
     std::vector<double> xyzobs_mm;
 
     std::tie(rlp, s1, xyzobs_mm) = xyz_to_rlp(xyzobs_px_span, panel, beam, scan, gonio);
-    
+
     mdspan_type<double> rlp_span = mdspan_type<double>(rlp.data(), rlp.size() / 3, 3);
     // Check against the equivalent results from the dials calculation
     Vector3d expected_0{{-0.5021752936083477, 0.5690514955867707, 0.27788051106787137}};
     Vector3d expected_1{{-0.5009709068399325, 0.5770958485799975, 0.2562207980973077}};
     for (int i = 0; i < 3; i++) {
-        EXPECT_DOUBLE_EQ(rlp_span(0,i), expected_0[i]);
-        EXPECT_DOUBLE_EQ(rlp_span(1,i), expected_1[i]);
+        EXPECT_DOUBLE_EQ(rlp_span(0, i), expected_0[i]);
+        EXPECT_DOUBLE_EQ(rlp_span(1, i), expected_1[i]);
     }
 }

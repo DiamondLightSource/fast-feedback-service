@@ -5,9 +5,9 @@
 #include <dx2/detector.h>
 #include <dx2/experiment.h>
 #include <dx2/goniometer.h>
-#include <dx2/reflection.hpp>
 
 #include <chrono>
+#include <dx2/reflection.hpp>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <vector>
@@ -68,30 +68,31 @@ void evaluate_crystal(Crystal crystal,
 
     // First assign miller indices to the data using the crystal model.
     auto rlp = obs.column<double>("rlp");
-    const mdspan_type<double> &rlp_span = rlp.value();
+    const mdspan_type<double>& rlp_span = rlp.value();
     auto xyzobs_mm = obs.column<double>("xyzobs_mm");
-    const mdspan_type<double> &xyzobs_mm_span = xyzobs_mm.value();
+    const mdspan_type<double>& xyzobs_mm_span = xyzobs_mm.value();
     std::tie(miller_indices_data, count) =
       assign_indices_global(crystal.get_A_matrix(), rlp_span, xyzobs_mm_span);
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - preassign;
     logger->debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
-    
+
     // Perform the (potential) non-primivite basis correction.
     count = correct(miller_indices_data, crystal, rlp_span, xyzobs_mm_span);
-    mdspan_type<int> miller_indices(miller_indices_data.data(), miller_indices_data.size() / 3, 3);
-    
+    mdspan_type<int> miller_indices(
+      miller_indices_data.data(), miller_indices_data.size() / 3, 3);
+
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time1 = t3 - t2;
     logger->debug("Time for correct: {:.5f}s", elapsed_time1.count());
-    
+
     // Perform filtering of the data prior to candidate refinement.
     ReflectionTable sel_obs = reflection_filter_preevaluation(
       obs, miller_indices, gonio, crystal, beam, panel, scan_width, 20);
     auto postfilter = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_timefilter = postfilter - t3;
     logger->debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
-    
+
     // Refinement will go here in future.
 
     // Calculate rmsds
@@ -113,7 +114,7 @@ void evaluate_crystal(Crystal crystal,
     double rmsdy = std::sqrt(ysum / xyzobs_mm_sel.extent(0));
     double rmsdz = std::sqrt(zsum / xyzobs_mm_sel.extent(0));
     double xyrmsd = std::sqrt(rmsdx * rmsdx + rmsdy * rmsdy);
-    
+
     // Write some data to the results map
     score_and_crystal sac;
     sac.crystal = crystal;

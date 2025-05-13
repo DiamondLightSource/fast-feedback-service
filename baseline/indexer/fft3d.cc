@@ -5,10 +5,11 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <chrono>
+#include <experimental/mdspan>
 #include <map>
 #include <stack>
 #include <tuple>
-#include <experimental/mdspan>
+
 #include "common.hpp"
 
 using Eigen::Matrix3d;
@@ -19,7 +20,8 @@ using Eigen::Vector3i;
 #include <cmath>
 
 template <typename T>
-using mdspan_type = std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
+using mdspan_type =
+  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 
 using namespace pocketfft;
 
@@ -53,7 +55,7 @@ void map_centroids_to_reciprocal_space_grid(
     int count = 0;
 
     for (int i = 0; i < reciprocal_space_vectors.extent(0); i++) {
-        const Vector3d v =  Eigen::Map<Vector3d>(&reciprocal_space_vectors(i,0));
+        const Vector3d v = Eigen::Map<Vector3d>(&reciprocal_space_vectors(i, 0));
         const double v_length = v.norm();
         const double d_spacing = 1 / v_length;
         if (d_spacing < d_min) {

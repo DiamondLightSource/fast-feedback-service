@@ -10,7 +10,8 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 template <typename T>
-using mdspan_type = std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
+using mdspan_type =
+  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 
 // Following the code in dials/algorithms/indexing/non_primivite_basis.py
 
@@ -172,10 +173,10 @@ Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold = 0.9) {
  * @param threshold A threshold for positive identification of an absence.
  * @returns The number of rlps that are indexed after application of this function.
  */
-int correct(std::vector<int> &hkl,
+int correct(std::vector<int>& hkl,
             Crystal& crystal,
-            mdspan_type<double> const &rlp,
-            mdspan_type<double> const &xyzobs_mm,
+            mdspan_type<double> const& rlp,
+            mdspan_type<double> const& xyzobs_mm,
             double threshold = 0.9) {
     Vector3i null_miller = {0, 0, 0};
     int count;  // num indexed
@@ -184,7 +185,8 @@ int correct(std::vector<int> &hkl,
         std::vector<Vector3i> selected_miller;
         selected_miller.reserve(hkl.size() / 3);
         for (int i = 0; i < miller_indices.extent(0); ++i) {
-            Vector3i midx = {miller_indices(i,0), miller_indices(i,1), miller_indices(i,2)};
+            Vector3i midx = {
+              miller_indices(i, 0), miller_indices(i, 1), miller_indices(i, 2)};
             if (midx != null_miller) {
                 selected_miller.push_back(midx);
             }
