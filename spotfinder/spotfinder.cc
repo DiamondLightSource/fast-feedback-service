@@ -319,12 +319,18 @@ int main(int argc, char **argv) {
       .metavar("λ")
       .scan<'f', float>();
     parser.add_argument("--detector").help("Detector geometry JSON").metavar("JSON");
+    parser.add_argument("-h5", "--save-h5")
+      .help("Save the output to an HDF5 file")
+      .metavar("FILE")
+      .default_value(false)
+      .implicit_value(true);
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
     int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
+    bool save_to_h5 = parser.get<bool>("save-h5");
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
