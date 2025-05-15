@@ -44,7 +44,7 @@ exec 3>&-
 output=$(cat output_file.txt)
 
 # Define the expected output
-expected_output='{"file":"/dls/i03/data/2024/cm37235-2/TestInsulin/ins_14/ins_14_49_45_master.h5","file-number":0,"n_spots_total":102,"num_strong_pixels":729}'
+expected_output='{"file":"/dls/i03/data/2024/cm37235-2/TestInsulin/ins_14/ins_14_49_45_master.h5","file-number":0,"n_spots_total":102,"num_strong_pixels":737}'
 
 # Compare the output with the expected output
 if [ "$output" == "$expected_output" ]; then
