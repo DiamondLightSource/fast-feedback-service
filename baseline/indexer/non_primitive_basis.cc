@@ -118,13 +118,25 @@ std::vector<reindex_transforms> generate_reindex_transformations() {
                     break;
                 }
             }
-            Matrix3d A{{static_cast<double>(first[0]), static_cast<double>(first[1]), static_cast<double>(first[2])},
-                {static_cast<double>(second[0]), static_cast<double>(second[1]), static_cast<double>(second[2])},
-                {static_cast<double>(third[0]), static_cast<double>(third[1]), static_cast<double>(third[2])}};
+            Matrix3d A{{static_cast<double>(first[0]),
+                        static_cast<double>(first[1]),
+                        static_cast<double>(first[2])},
+                       {static_cast<double>(second[0]),
+                        static_cast<double>(second[1]),
+                        static_cast<double>(second[2])},
+                       {static_cast<double>(third[0]),
+                        static_cast<double>(third[1]),
+                        static_cast<double>(third[2])}};
             if (A.determinant() < 0) {
-                A = Matrix3d{{static_cast<double>(second[0]), static_cast<double>(second[1]), static_cast<double>(second[2])},
-                    {static_cast<double>(first[0]), static_cast<double>(first[1]), static_cast<double>(first[2])},
-                    {static_cast<double>(third[0]), static_cast<double>(third[1]), static_cast<double>(third[2])}};
+                A = Matrix3d{{static_cast<double>(second[0]),
+                              static_cast<double>(second[1]),
+                              static_cast<double>(second[2])},
+                             {static_cast<double>(first[0]),
+                              static_cast<double>(first[1]),
+                              static_cast<double>(first[2])},
+                             {static_cast<double>(third[0]),
+                              static_cast<double>(third[1]),
+                              static_cast<double>(third[2])}};
             }
             reindex_transforms r{modularity, repr, A};
             reindex.push_back(r);
@@ -148,7 +160,8 @@ Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold = 0.9) {
         std::vector<int> cumulative =
           absence_test(hkl, transform.modularity, transform.vector);
         for (int i = 0; i < transform.modularity; ++i) {
-            if ((static_cast<double>(cumulative[i]) / hkl.size()) > threshold && i == 0) {
+            if ((static_cast<double>(cumulative[i]) / hkl.size()) > threshold
+                && i == 0) {
                 logger->debug(
                   "Detected exclusive presence of {}H {}K {}L = {}N, remainder {}",
                   transform.vector[0],

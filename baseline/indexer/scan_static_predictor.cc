@@ -81,10 +81,9 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     // now call predict_rays with h and UB for a given refl
     for (int i = 0; i < hkl.extent(0); i++) {
         const Eigen::Map<Vector3i> h(&hkl(i, 0));
-        const Vector3d hf{
-            static_cast<double>(h[0]),
-            static_cast<double>(h[1]),
-            static_cast<double>(h[2])};
+        const Vector3d hf{static_cast<double>(h[0]),
+                          static_cast<double>(h[1]),
+                          static_cast<double>(h[2])};
         ReflectionTable::BoolEnum entering_i = entering(i, 0);
 
         Vector3d pstar0 = FUB * hf;
