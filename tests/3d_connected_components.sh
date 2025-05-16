@@ -30,6 +30,7 @@ exec 3> output_file.txt
   --algorithm "dispersion" \
   --threads 1 \
   --images 5 \
+  --save-h5 \
   --writeout
 
 # Close file descriptor 3

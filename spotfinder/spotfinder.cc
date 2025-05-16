@@ -14,7 +14,7 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
-#include <dx2/h5/h5write.hpp>
+#include <dx2/reflection.hpp>
 #include <iostream>
 #include <memory>
 #include <ranges>
@@ -319,12 +319,18 @@ int main(int argc, char **argv) {
       .metavar("λ")
       .scan<'f', float>();
     parser.add_argument("--detector").help("Detector geometry JSON").metavar("JSON");
+    parser.add_argument("-h5", "--save-h5")
+      .help("Save the output to an HDF5 file")
+      .metavar("FILE")
+      .default_value(false)
+      .implicit_value(true);
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
     int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
+    bool save_to_h5 = parser.get<bool>("save-h5");
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
@@ -496,7 +502,6 @@ int main(int argc, char **argv) {
                    fmt::styled(oscillation_start, fmt_cyan),
                    fmt::styled(oscillation_width, fmt_cyan));
     }
-
 #pragma endregion Argument Parsing
 
     std::signal(SIGINT, stop_processing);
@@ -1020,26 +1025,35 @@ int main(int argc, char **argv) {
                 out << "COM: (" << x << ", " << y << ", " << z << ")\n";
             }
             logger->flush();  // Flush to ensure all messages printed before continuing
+        }
 
-            // Step 4: Write the 3D reflections to a `.h5` file
+        if (save_to_h5) {
+            // Step 4: Write the 3D reflections to a `.h5` file using ReflectionTable
+            logger->debug("Writing 3D reflections to HDF5 file");
+
             try {
-                std::vector<std::array<double, 3>> refl(reflections_3d.size());
-                std::transform(reflections_3d.begin(),
-                               reflections_3d.end(),
-                               refl.begin(),
-                               [](const auto &reflection) {
-                                   auto [x, y, z] = reflection.center_of_mass();
-                                   return std::array<double, 3>{x, y, z};
-                               });
+                std::vector<double> flat_coms;
+                flat_coms.reserve(reflections_3d.size() * 3);
 
-                std::filesystem::path cwd = std::filesystem::current_path();
-                std::string file_path = cwd.generic_string();
-                file_path.append("/test_write.h5");
+                for (const auto &refl : reflections_3d) {
+                    auto [x, y, z] = refl.center_of_mass();
+                    flat_coms.push_back(x);
+                    flat_coms.push_back(y);
+                    flat_coms.push_back(z);
+                }
 
-                std::string dataset_path = "dials/processing/group_0/xyzobs.px.value";
+                ReflectionTable table;
+                // Add the 3D reflections to the table
+                table.add_column(
+                  "xyzobs.px.value", reflections_3d.size(), 3, flat_coms);
+                // Map each reflection to the generated experiment ID
+                std::vector<int> id(reflections_3d.size(),
+                                    table.get_experiment_ids()[0]);
+                table.add_column("id", reflections_3d.size(), 1, id);
 
-                logger->info("Writing data to HDF5 file: {}", file_path);
-                write_data_to_h5_file(file_path, dataset_path, refl);
+                // Write the table to an HDF5 file
+                table.write("results_ffs.h5", "dials/processing/group_0");
+                logger->info("Succesfully wrote 3D reflections to HDF5 file");
             } catch (const std::exception &e) {
                 logger->error("Error writing data to HDF5 file: {}", e.what());
             } catch (...) {
