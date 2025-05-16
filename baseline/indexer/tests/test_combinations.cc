@@ -1,4 +1,4 @@
-#include <dx2/crystal.h>
+#include <dx2/crystal.hpp>
 #include <gtest/gtest.h>
 
 #include <Eigen/Dense>

@@ -1,4 +1,4 @@
-#include <dx2/utils.h>
+#include <dx2/utils.hpp>
 #include <math.h>
 
 #include <algorithm>

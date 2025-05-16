@@ -1,5 +1,5 @@
-#include <dx2/crystal.h>
-#include <dx2/utils.h>
+#include <dx2/crystal.hpp>
+#include <dx2/utils.hpp>
 
 #include <Eigen/Dense>
 #include <algorithm>
