@@ -19,6 +19,14 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/mreineck/pocketfft
     GIT_TAG cpp
 )
+FetchContent_Declare(
+    mdspan
+    GIT_REPOSITORY https://github.com/kokkos/mdspan
+    GIT_TAG mdspan-0.6.0
+    EXCLUDE_FROM_ALL
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(mdspan)
 FetchContent_MakeAvailable(Eigen3)
 FetchContent_MakeAvailable(pocketfft)
 

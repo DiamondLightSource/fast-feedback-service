@@ -4,11 +4,13 @@
 
 #include "assign_indices.cc"
 #include "common.hpp"
-#include "reflection_data.cc"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
+template <typename T>
+using mdspan_type =
+  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 
 // Following the code in dials/algorithms/indexing/non_primivite_basis.py
 
@@ -116,13 +118,25 @@ std::vector<reindex_transforms> generate_reindex_transformations() {
                     break;
                 }
             }
-            Matrix3d A{{(double)first[0], (double)first[1], (double)first[2]},
-                       {(double)second[0], (double)second[1], (double)second[2]},
-                       {(double)third[0], (double)third[1], (double)third[2]}};
+            Matrix3d A{{static_cast<double>(first[0]),
+                        static_cast<double>(first[1]),
+                        static_cast<double>(first[2])},
+                       {static_cast<double>(second[0]),
+                        static_cast<double>(second[1]),
+                        static_cast<double>(second[2])},
+                       {static_cast<double>(third[0]),
+                        static_cast<double>(third[1]),
+                        static_cast<double>(third[2])}};
             if (A.determinant() < 0) {
-                A = Matrix3d{{(double)second[0], (double)second[1], (double)second[2]},
-                             {(double)first[0], (double)first[1], (double)first[2]},
-                             {(double)third[0], (double)third[1], (double)third[2]}};
+                A = Matrix3d{{static_cast<double>(second[0]),
+                              static_cast<double>(second[1]),
+                              static_cast<double>(second[2])},
+                             {static_cast<double>(first[0]),
+                              static_cast<double>(first[1]),
+                              static_cast<double>(first[2])},
+                             {static_cast<double>(third[0]),
+                              static_cast<double>(third[1]),
+                              static_cast<double>(third[2])}};
             }
             reindex_transforms r{modularity, repr, A};
             reindex.push_back(r);
@@ -146,7 +160,8 @@ Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold = 0.9) {
         std::vector<int> cumulative =
           absence_test(hkl, transform.modularity, transform.vector);
         for (int i = 0; i < transform.modularity; ++i) {
-            if (((double)cumulative[i] / hkl.size()) > threshold && i == 0) {
+            if ((static_cast<double>(cumulative[i]) / hkl.size()) > threshold
+                && i == 0) {
                 logger->debug(
                   "Detected exclusive presence of {}H {}K {}L = {}N, remainder {}",
                   transform.vector[0],
@@ -170,18 +185,20 @@ Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold = 0.9) {
  * @param threshold A threshold for positive identification of an absence.
  * @returns The number of rlps that are indexed after application of this function.
  */
-int correct(std::vector<Vector3i>& hkl,
+int correct(std::vector<int>& hkl,
             Crystal& crystal,
-            const std::vector<Vector3d>& rlp,
-            const std::vector<Vector3d>& xyzobs_mm,
+            mdspan_type<double> const& rlp,
+            mdspan_type<double> const& xyzobs_mm,
             double threshold = 0.9) {
     Vector3i null_miller = {0, 0, 0};
     int count;  // num indexed
     while (true) {
+        mdspan_type<int> miller_indices(hkl.data(), hkl.size() / 3, 3);
         std::vector<Vector3i> selected_miller;
-        selected_miller.reserve(hkl.size());
-        for (int i = 0; i < hkl.size(); ++i) {
-            Vector3i midx = hkl[i];
+        selected_miller.reserve(hkl.size() / 3);
+        for (int i = 0; i < miller_indices.extent(0); ++i) {
+            Vector3i midx = {
+              miller_indices(i, 0), miller_indices(i, 1), miller_indices(i, 2)};
             if (midx != null_miller) {
                 selected_miller.push_back(midx);
             }
@@ -199,8 +216,10 @@ int correct(std::vector<Vector3i>& hkl,
         Matrix3d new_direct = M * direct_matrix;
         crystal.set_A_matrix(new_direct.inverse());
         crystal.niggli_reduce();
-        std::tie(hkl, count) =
+        assign_indices_results results =
           assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
+        hkl = results.miller_indices_data;
+        count = results.number_indexed;
     }
     return count;
 }

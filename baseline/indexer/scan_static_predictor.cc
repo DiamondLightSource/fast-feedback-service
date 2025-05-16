@@ -6,9 +6,9 @@
 #include <dx2/beam.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/goniometer.hpp>
+#include <dx2/reflection.hpp>
 #include <iostream>
 
-#include "reflection_data.cc"
 constexpr double two_pi = 2 * M_PI;
 
 using Eigen::Matrix3d;
@@ -43,15 +43,23 @@ Vector3d unit_rotate_around_origin(Vector3d vec, Vector3d unit, double angle) {
 void simple_reflection_predictor(const MonochromaticBeam beam,
                                  const Goniometer gonio,
                                  const Matrix3d UB,
-                                 const Panel &panel,
-                                 reflection_data &reflections) {
+                                 const Panel& panel,
+                                 ReflectionTable& reflections) {
     // actually a repredictor as assumes all successful.
-    std::vector<Vector3d> s1 = reflections.s1;
-    const std::vector<Vector3d> xyzobs_mm = reflections.xyzobs_mm;
-    const std::vector<bool> entering = reflections.entering;
-    std::vector<std::size_t> flags = reflections.flags;
-    std::vector<Vector3d> xyzcal_mm(flags.size());
-    const std::vector<Vector3i> hkl = reflections.miller_indices;
+    auto flags_ = reflections.column<std::size_t>("flags");
+    auto& flags = flags_.value();
+    auto s1_ = reflections.column<double>("s1");
+    auto& s1 = s1_.value();
+    auto xyzobs_ = reflections.column<double>("xyzobs_mm");
+    const auto& xyzobs_mm = xyzobs_.value();
+    auto entering_ = reflections.column<ReflectionTable::BoolEnum>("entering");
+    const auto& entering = entering_.value();
+    auto hkl_ = reflections.column<int>("miller_index");
+    const auto& hkl = hkl_.value();
+
+    std::vector<double> xyzcal_mm_data(xyzobs_mm.size(), 0.0);
+    mdspan_type<double> xyzcal_mm(xyzcal_mm_data.data(), xyzcal_mm_data.size() / 3, 3);
+
     // these setup bits are the same for all refls.
     Vector3d s0 = beam.get_s0();
     Matrix3d F = gonio.get_sample_rotation();   //fixed rot
@@ -71,15 +79,17 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     double s0_d_m3 = s0_.dot(m3);
 
     // now call predict_rays with h and UB for a given refl
-    for (int i = 0; i < hkl.size(); i++) {
-        const Vector3i h = hkl[i];
-        const Vector3d hf{(double)h[0], (double)h[1], (double)h[2]};
-        bool entering_i = entering[i];
+    for (int i = 0; i < hkl.extent(0); i++) {
+        const Eigen::Map<Vector3i> h(&hkl(i, 0));
+        const Vector3d hf{static_cast<double>(h[0]),
+                          static_cast<double>(h[1]),
+                          static_cast<double>(h[2])};
+        ReflectionTable::BoolEnum entering_i = entering(i, 0);
 
         Vector3d pstar0 = FUB * hf;
         double pstar0_len_sq = pstar0.squaredNorm();
         if (pstar0_len_sq > 4 * s0_.squaredNorm()) {
-            flags[i] = flags[i] & ~predicted_value;
+            flags(i, 0) = flags(i, 0) & ~predicted_value;
             continue;
         }
         double pstar0_d_m1 = pstar0.dot(m1);
@@ -90,7 +100,7 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
         double rho_sq = (pstar0_len_sq - (pstar0_d_m2 * pstar0_d_m2));
         double psq = pstar_d_m3 * pstar_d_m3;
         if (rho_sq < psq) {
-            flags[i] = flags[i] & ~predicted_value;
+            flags(i, 0) = flags(i, 0) & ~predicted_value;
             continue;
         }
         //DIALS_ASSERT(rho_sq >= sqr(pstar_d_m3));
@@ -108,7 +118,9 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
         // check each angle
         Vector3d pstar = S * unit_rotate_around_origin(pstar0, m2, a1);
         Vector3d s1_this = s0_ + pstar;
-        bool this_entering = s1_this.dot(s0_m2_plane) < 0.;
+        ReflectionTable::BoolEnum this_entering = s1_this.dot(s0_m2_plane) < 0.
+                                                    ? ReflectionTable::BoolEnum::TRUE
+                                                    : ReflectionTable::BoolEnum::FALSE;
         double angle;
         if (this_entering == entering_i) {
             // use this s1 and a1 (mod 2pi)
@@ -119,14 +131,16 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
             double a2 = atan2(sinphi2, cosphi2);
             pstar = S * unit_rotate_around_origin(pstar0, m2, a2);
             s1_this = s0_ + pstar;
-            this_entering = s1_this.dot(s0_m2_plane) < 0.;
+            this_entering = s1_this.dot(s0_m2_plane) < 0.
+                              ? ReflectionTable::BoolEnum::TRUE
+                              : ReflectionTable::BoolEnum::FALSE;
             assert(this_entering == entering_i);
             angle = mod2pi(a2);
         }
 
         std::array<double, 2> mm = panel.get_ray_intersection(s1_this);
         // match full turns
-        double phiobs = xyzobs_mm[i][2];
+        double phiobs = xyzobs_mm(i, 2);
         // first fmod positive
         double val = std::fmod(phiobs, two_pi);
         while (val < 0) val += two_pi;
@@ -135,12 +149,16 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
         double val2 = std::fmod(resid + M_PI, two_pi);
         while (val2 < 0) val2 += two_pi;
         val2 -= M_PI;
-        xyzcal_mm[i] = {mm[0], mm[1], phiobs + val2};
-        s1[i] = s1_this;
-        flags[i] = flags[i] | predicted_value;
+        xyzcal_mm(i, 0) = mm[0];
+        xyzcal_mm(i, 1) = mm[1];
+        xyzcal_mm(i, 2) = phiobs + val2;
+        s1(i, 0) = s1_this[0];
+        s1(i, 1) = s1_this[1];
+        s1(i, 2) = s1_this[2];
+        flags(i, 0) = flags(i, 0) | predicted_value;
     }
-    reflections.flags = flags;
-    reflections.xyzcal_mm = xyzcal_mm;
+    reflections.add_column(
+      "xyzcal_mm", xyzcal_mm.extent(0), xyzcal_mm.extent(1), xyzcal_mm_data);
 }
 
 #endif  // DIALS_STATIC_PREDICTOR

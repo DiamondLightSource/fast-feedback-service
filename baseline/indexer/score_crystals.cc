@@ -1,16 +1,19 @@
+#ifndef SCORE_CRYSTALS_H
+#define SCORE_CRYSTALS_H
+
 #include <chrono>
 #include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
+#include <dx2/reflection.hpp>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <vector>
 
 #include "assign_indices.cc"
 #include "non_primitive_basis.cc"
-#include "reflection_data.cc"
 #include "reflection_filter.cc"
 
 std::mutex score_and_crystal_mtx;
@@ -53,32 +56,37 @@ std::map<int, score_and_crystal> results_map;
  * @param n The candidate number, starting at 1.
  */
 void evaluate_crystal(Crystal crystal,
-                      reflection_data const& obs,
+                      ReflectionTable const& obs,
                       Goniometer gonio,
                       MonochromaticBeam beam,
                       Panel panel,
                       double scan_width,
                       int n) {
-    std::vector<Vector3i> miller_indices;
+    std::vector<int> miller_indices_data;
     int count;
     auto preassign = std::chrono::system_clock::now();
 
     // First assign miller indices to the data using the crystal model.
-    std::tie(miller_indices, count) =
-      assign_indices_global(crystal.get_A_matrix(), obs.rlp, obs.xyzobs_mm);
+    auto rlp_ = obs.column<double>("rlp");
+    const mdspan_type<double>& rlp = rlp_.value();
+    auto xyzobs_mm_ = obs.column<double>("xyzobs_mm");
+    const mdspan_type<double>& xyzobs_mm = xyzobs_mm_.value();
+    assign_indices_results results =
+      assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - preassign;
     logger->debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
 
     // Perform the (potential) non-primivite basis correction.
-    count = correct(miller_indices, crystal, obs.rlp, obs.xyzobs_mm);
+    count = correct(results.miller_indices_data, crystal, rlp, xyzobs_mm);
+
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time1 = t3 - t2;
     logger->debug("Time for correct: {:.5f}s", elapsed_time1.count());
 
     // Perform filtering of the data prior to candidate refinement.
-    reflection_data sel_obs = reflection_filter_preevaluation(
-      obs, miller_indices, gonio, crystal, beam, panel, scan_width, 20);
+    ReflectionTable sel_obs = reflection_filter_preevaluation(
+      obs, results.miller_indices, gonio, crystal, beam, panel, scan_width, 20);
     auto postfilter = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_timefilter = postfilter - t3;
     logger->debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
@@ -89,16 +97,20 @@ void evaluate_crystal(Crystal crystal,
     double xsum = 0;
     double ysum = 0;
     double zsum = 0;
-    for (int i = 0; i < sel_obs.flags.size(); i++) {
-        Vector3d xyzobs = sel_obs.xyzobs_mm[i];
-        Vector3d xyzcal = sel_obs.xyzcal_mm[i];
-        xsum += std::pow(xyzobs[0] - xyzcal[0], 2);
-        ysum += std::pow(xyzobs[1] - xyzcal[1], 2);
-        zsum += std::pow(xyzobs[2] - xyzcal[2], 2);
+    auto flags_ = sel_obs.column<std::size_t>("flags");
+    auto& flags = flags_.value();
+    auto xyzobs_ = sel_obs.column<double>("xyzobs_mm");
+    const auto& xyzobs_mm_sel = xyzobs_.value();
+    auto xyzcal_ = sel_obs.column<double>("xyzcal_mm");
+    const auto& xyzcal_mm_sel = xyzcal_.value();
+    for (int i = 0; i < flags.size(); i++) {
+        xsum += std::pow(xyzobs_mm_sel(i, 0) - xyzcal_mm_sel(i, 0), 2);
+        ysum += std::pow(xyzobs_mm_sel(i, 1) - xyzcal_mm_sel(i, 1), 2);
+        zsum += std::pow(xyzobs_mm_sel(i, 2) - xyzcal_mm_sel(i, 2), 2);
     }
-    double rmsdx = std::sqrt(xsum / sel_obs.xyzcal_mm.size());
-    double rmsdy = std::sqrt(ysum / sel_obs.xyzcal_mm.size());
-    double rmsdz = std::sqrt(zsum / sel_obs.xyzcal_mm.size());
+    double rmsdx = std::sqrt(xsum / xyzobs_mm_sel.extent(0));
+    double rmsdy = std::sqrt(ysum / xyzobs_mm_sel.extent(0));
+    double rmsdz = std::sqrt(zsum / xyzobs_mm_sel.extent(0));
     double xyrmsd = std::sqrt(rmsdx * rmsdx + rmsdy * rmsdy);
 
     // Write some data to the results map
@@ -106,7 +118,7 @@ void evaluate_crystal(Crystal crystal,
     sac.crystal = crystal;
     sac.num_indexed = count;
     sac.rmsdxy = xyrmsd;
-    sac.fraction_indexed = (double)count / obs.flags.size();
+    sac.fraction_indexed = static_cast<double>(count) / rlp.extent(0);
     logger->info("Scored candidate crystal {}", n);
     score_and_crystal_mtx.lock();
     results_map[n] = sac;
@@ -152,3 +164,5 @@ void score_solutions(std::map<int, score_and_crystal>& results_map) {
           rmsd_scores[i] + fraction_indexed_scores[i] + volume_scores[i];
     }
 }
+
+#endif

@@ -5,10 +5,32 @@
 #include <dx2/detector.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/scan.hpp>
+#include <experimental/mdspan>
 #include <tuple>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
+
+template <typename T>
+using mdspan_type =
+  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
+
+struct xyz_to_rlp_results {
+    std::vector<double> rlp_data;
+    std::vector<double> s1_data;
+    std::vector<double> xyzobs_mm_data;
+    mdspan_type<double> rlp;
+    mdspan_type<double> s1;
+    mdspan_type<double> xyzobs_mm;
+
+    xyz_to_rlp_results(int extent)
+        : rlp_data(extent * 3),
+          s1_data(extent * 3),
+          xyzobs_mm_data(extent * 3),
+          rlp(rlp_data.data(), extent, 3),
+          s1(s1_data.data(), extent, 3),
+          xyzobs_mm(xyzobs_mm_data.data(), extent, 3) {}
+};
 
 /**
  * @brief Transform detector pixel coordinates into reciprocal space coordinates.
@@ -17,26 +39,20 @@ using Eigen::Vector3d;
  * @param beam A dx2 MonochromaticBeam object.
  * @param scan A dx2 Scan object.
  * @param gonio A dx2 Goniometer object.
- * @returns A vector of reciprocal space coordinates.
+ * @returns A struct containing reciprocal space coordinates, s1 vectors and pixel coordinates in mm.
  */
-std::tuple<std::vector<Vector3d>, std::vector<Vector3d>, std::vector<Vector3d>>
-xyz_to_rlp(const std::vector<double> &xyzobs_px,
-           const Panel &panel,
-           const MonochromaticBeam &beam,
-           const Scan &scan,
-           const Goniometer &gonio) {
+xyz_to_rlp_results xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
+                              const Panel &panel,
+                              const MonochromaticBeam &beam,
+                              const Scan &scan,
+                              const Goniometer &gonio) {
     // Use the experimental models to perform a coordinate transformation from
     // pixel coordinates in detector space to reciprocal space, in units of
     // inverse angstrom.
     // An equivalent to dials flex_ext.map_centroids_to_reciprocal_space method
 
     constexpr double DEG2RAD = M_PI / 180.0;
-
-    // xyzobs_px is a flattened array, we want to return a vector of Vector3ds,
-    // so the size is divided by 3.
-    std::vector<Vector3d> rlp(xyzobs_px.size() / 3);
-    std::vector<Vector3d> s1(rlp.size());
-    std::vector<Vector3d> xyzobs_mm(rlp.size());
+    xyz_to_rlp_results results(xyzobs_px.extent(0));  // extent of the underlying data.
 
     // Extract the quantities from the models that are needed for the calculation.
     Vector3d s0 = beam.get_s0();
@@ -49,12 +65,11 @@ xyz_to_rlp(const std::vector<double> &xyzobs_px,
     Vector3d rotation_axis = gonio.get_rotation_axis();
     Matrix3d d_matrix = panel.get_d_matrix();
 
-    for (int i = 0; i < rlp.size(); ++i) {
+    for (int i = 0; i < xyzobs_px.extent(0); ++i) {
         // first convert detector pixel positions into mm
-        int vec_idx = 3 * i;
-        double x1 = xyzobs_px[vec_idx];
-        double x2 = xyzobs_px[vec_idx + 1];
-        double x3 = xyzobs_px[vec_idx + 2];
+        double x1 = xyzobs_px(i, 0);
+        double x2 = xyzobs_px(i, 1);
+        double x3 = xyzobs_px(i, 2);
         std::array<double, 2> xymm = panel.px_to_mm(x1, x2);
         // convert the image 'z' coordinate to rotation angle based on the scan data
         double rot_angle =
@@ -66,8 +81,12 @@ xyz_to_rlp(const std::vector<double> &xyzobs_px,
         s1_i.normalize();
         // convert into inverse ansgtroms
         Vector3d s1_this = s1_i / wl;
-        s1[i] = s1_this;
-        xyzobs_mm[i] = {xymm[0], xymm[1], rot_angle};
+        results.s1(i, 0) = s1_this[0];
+        results.s1(i, 1) = s1_this[1];
+        results.s1(i, 2) = s1_this[2];
+        results.xyzobs_mm(i, 0) = xymm[0];
+        results.xyzobs_mm(i, 1) = xymm[1];
+        results.xyzobs_mm(i, 2) = rot_angle;
 
         // now apply the goniometer matrices
         // see https://dials.github.io/documentation/conventions.html for full conventions
@@ -81,7 +100,10 @@ xyz_to_rlp(const std::vector<double> &xyzobs_px,
                             + (rotation_axis * rotation_axis.dot(S) * (1 - cos))
                             + (sin * rotation_axis.cross(S));
 
-        rlp[i] = sample_rotation_inverse * rlp_this;
+        rlp_this = sample_rotation_inverse * rlp_this;
+        results.rlp(i, 0) = rlp_this[0];
+        results.rlp(i, 1) = rlp_this[1];
+        results.rlp(i, 2) = rlp_this[2];
     }
-    return std::make_tuple(rlp, s1, xyzobs_mm);
+    return results;  // Return the data and spans.
 }

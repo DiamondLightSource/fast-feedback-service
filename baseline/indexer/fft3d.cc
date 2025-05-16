@@ -5,6 +5,7 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <chrono>
+#include <experimental/mdspan>
 #include <map>
 #include <stack>
 #include <tuple>
@@ -18,6 +19,10 @@ using Eigen::Vector3i;
 #define _USE_MATH_DEFINES
 #include <cmath>
 
+template <typename T>
+using mdspan_type =
+  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
+
 using namespace pocketfft;
 
 /**
@@ -30,7 +35,7 @@ using namespace pocketfft;
  * @param n_points The size of each dimension of the FFT grid.
  */
 void map_centroids_to_reciprocal_space_grid(
-  std::vector<Vector3d> const &reciprocal_space_vectors,
+  mdspan_type<double> const &reciprocal_space_vectors,
   std::vector<std::complex<double>> &data_in,
   std::vector<bool> &selection,
   double d_min,
@@ -49,8 +54,8 @@ void map_centroids_to_reciprocal_space_grid(
     const int half_n_points = n_points / 2;
     int count = 0;
 
-    for (int i = 0; i < reciprocal_space_vectors.size(); i++) {
-        const Vector3d v = reciprocal_space_vectors[i];
+    for (int i = 0; i < reciprocal_space_vectors.extent(0); ++i) {
+        const Vector3d v = Eigen::Map<Vector3d>(&reciprocal_space_vectors(i, 0));
         const double v_length = v.norm();
         const double d_spacing = 1 / v_length;
         if (d_spacing < d_min) {
@@ -94,7 +99,7 @@ void map_centroids_to_reciprocal_space_grid(
  * @param n_points The size of each dimension of the FFT grid.
  * @returns A boolean array indicating which coordinates were used for the FFT.
  */
-std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
+std::vector<bool> fft3d(mdspan_type<double> const &reciprocal_space_vectors,
                         std::vector<double> &real_out,
                         double d_min,
                         double b_iso = 0,
@@ -110,7 +115,7 @@ std::vector<bool> fft3d(std::vector<Vector3d> const &reciprocal_space_vectors,
     std::vector<std::complex<double>> complex_data_in(n_points * n_points * n_points);
 
     // A boolean array of whether the vectors were used for the FFT.
-    std::vector<bool> used_in_indexing(reciprocal_space_vectors.size(), true);
+    std::vector<bool> used_in_indexing(reciprocal_space_vectors.extent(0), true);
     auto t1 = std::chrono::system_clock::now();
 
     // Map the vectors onto a discrete grid. The values of the grid points are weights
