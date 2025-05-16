@@ -1,8 +1,8 @@
-#include <dx2/utils.h>
 #include <math.h>
 
 #include <algorithm>
 #include <chrono>
+#include <dx2/utils.hpp>
 #include <map>
 #include <numeric>
 #include <tuple>

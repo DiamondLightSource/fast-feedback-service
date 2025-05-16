@@ -1,10 +1,10 @@
-#include <dx2/beam.h>
-#include <dx2/detector.h>
-#include <dx2/goniometer.h>
-#include <dx2/scan.h>
 #include <math.h>
 
 #include <Eigen/Dense>
+#include <dx2/beam.hpp>
+#include <dx2/detector.hpp>
+#include <dx2/goniometer.hpp>
+#include <dx2/scan.hpp>
 #include <tuple>
 
 using Eigen::Matrix3d;
