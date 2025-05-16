@@ -1,9 +1,8 @@
-#include <dx2/crystal.h>
-#include <dx2/utils.h>
-
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cmath>
+#include <dx2/crystal.hpp>
+#include <dx2/utils.hpp>
 #include <optional>
 #include <vector>
 

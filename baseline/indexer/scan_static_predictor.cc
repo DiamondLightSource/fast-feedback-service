@@ -1,13 +1,12 @@
 #ifndef DIALS_STATIC_PREDICTOR
 #define DIALS_STATIC_PREDICTOR
-#include <dx2/beam.h>
-#include <dx2/detector.h>
-#include <dx2/goniometer.h>
-
 #include <Eigen/Dense>
 #include <cassert>
 #include <cmath>
 #include <dx2/reflection.hpp>
+#include <dx2/beam.hpp>
+#include <dx2/detector.hpp>
+#include <dx2/goniometer.hpp>
 #include <iostream>
 
 constexpr double two_pi = 2 * M_PI;
