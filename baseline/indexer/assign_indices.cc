@@ -39,8 +39,6 @@ assign_indices_results assign_indices_global(Matrix3d const &A,
                                              const double tolerance = 0.3) {
     // Consider only a single lattice.
     assign_indices_results results(rlp.extent(0));
-    //std::vector<int> miller_indices_data(rlp.size());
-    //mdspan_type<int> miller_indices(miller_indices_data.data(), rlp.extent(0), 3);
     std::vector<int> crystal_ids(rlp.extent(0));
     std::vector<double> lsq_vector(rlp.extent(0));
     Vector3i miller_index_zero{{0, 0, 0}};
@@ -57,7 +55,6 @@ assign_indices_results assign_indices_global(Matrix3d const &A,
     // Iterate through the data, assigning a miller index if within the tolerance.
     const Matrix3d A_inv = A.inverse();
     const double tolsq = tolerance * tolerance;
-    //int number_indexed = 0;
     for (int i = 0; i < rlp.extent(0); ++i) {
         Eigen::Map<Vector3d> rlp_this(&rlp(i, 0));
         Vector3d hkl_f = A_inv * rlp_this;
@@ -166,7 +163,6 @@ assign_indices_results assign_indices_global(Matrix3d const &A,
             }
         }
     }
-
     return results;
 }
 

@@ -207,7 +207,6 @@ int correct(std::vector<int>& hkl,
           assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
         hkl = results.miller_indices_data;
         count = results.number_indexed;
-        //std::tie(hkl, count) =
     }
     return count;
 }
