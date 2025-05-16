@@ -23,13 +23,13 @@ struct xyz_to_rlp_results {
     mdspan_type<double> s1;
     mdspan_type<double> xyzobs_mm;
 
-    xyz_to_rlp_results(int extent) :
-      rlp_data(extent * 3),
-      s1_data(extent * 3),
-      xyzobs_mm_data(extent * 3),
-      rlp(rlp_data.data(), extent, 3),
-      s1(s1_data.data(), extent, 3),
-      xyzobs_mm(xyzobs_mm_data.data(), extent, 3){}
+    xyz_to_rlp_results(int extent)
+        : rlp_data(extent * 3),
+          s1_data(extent * 3),
+          xyzobs_mm_data(extent * 3),
+          rlp(rlp_data.data(), extent, 3),
+          s1(s1_data.data(), extent, 3),
+          xyzobs_mm(xyzobs_mm_data.data(), extent, 3) {}
 };
 
 /**
@@ -41,19 +41,18 @@ struct xyz_to_rlp_results {
  * @param gonio A dx2 Goniometer object.
  * @returns A vector of reciprocal space coordinates.
  */
-xyz_to_rlp_results xyz_to_rlp(
-  const mdspan_type<double> &xyzobs_px,
-  const Panel &panel,
-  const MonochromaticBeam &beam,
-  const Scan &scan,
-  const Goniometer &gonio) {
+xyz_to_rlp_results xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
+                              const Panel &panel,
+                              const MonochromaticBeam &beam,
+                              const Scan &scan,
+                              const Goniometer &gonio) {
     // Use the experimental models to perform a coordinate transformation from
     // pixel coordinates in detector space to reciprocal space, in units of
     // inverse angstrom.
     // An equivalent to dials flex_ext.map_centroids_to_reciprocal_space method
 
     constexpr double DEG2RAD = M_PI / 180.0;
-    xyz_to_rlp_results results(xyzobs_px.extent(0)); // extent of the underlying data.
+    xyz_to_rlp_results results(xyzobs_px.extent(0));  // extent of the underlying data.
 
     // Extract the quantities from the models that are needed for the calculation.
     Vector3d s0 = beam.get_s0();

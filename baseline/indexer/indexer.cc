@@ -248,7 +248,8 @@ int main(int argc, char** argv) {
     reflections.add_column(
       std::string("xyzobs_mm"), results.xyzobs_mm.extent(0), 3, results.xyzobs_mm_data);
     reflections.add_column(std::string("s1"), results.s1.extent(0), 3, results.s1_data);
-    reflections.add_column(std::string("rlp"), results.rlp.extent(0), 3, results.rlp_data);
+    reflections.add_column(
+      std::string("rlp"), results.rlp.extent(0), 3, results.rlp_data);
     reflections.add_column(std::string("entering"), enterings);
     const ReflectionTable filtered = reflections.select(selection);
 

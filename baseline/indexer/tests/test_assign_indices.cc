@@ -59,8 +59,9 @@ TEST(BaselineIndexer, assign_indices_test) {
       {22, -4, 5}, {22, -4, 4}, {22, -2, -1}, {22, -4, 4}, {22, -2, -1}};
     EXPECT_EQ(results.number_indexed, 5);
     for (int i = 0; i < expected_miller_indices.size(); ++i) {
-        Vector3i assigned_index = {
-          results.miller_indices(i, 0), results.miller_indices(i, 1), results.miller_indices(i, 2)};
+        Vector3i assigned_index = {results.miller_indices(i, 0),
+                                   results.miller_indices(i, 1),
+                                   results.miller_indices(i, 2)};
         EXPECT_EQ(assigned_index, expected_miller_indices[i]);
     }
 }

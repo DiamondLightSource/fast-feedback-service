@@ -19,10 +19,10 @@ struct assign_indices_results {
     mdspan_type<int> miller_indices;
     int number_indexed;
 
-    assign_indices_results(int extent) :
-      miller_indices_data(extent * 3),
-      miller_indices(miller_indices_data.data(), extent, 3),
-      number_indexed(0){}
+    assign_indices_results(int extent)
+        : miller_indices_data(extent * 3),
+          miller_indices(miller_indices_data.data(), extent, 3),
+          number_indexed(0) {}
 };
 
 /**
@@ -33,11 +33,10 @@ struct assign_indices_results {
  * @param tolerance The tolerance within which the fractional miller index must be for acceptance.
  * @returns A pair containing the assigned miller indices and the number of reciprocal lattice points successfully indexed.
  */
-assign_indices_results assign_indices_global(
-  Matrix3d const &A,
-  mdspan_type<double> const &rlp,
-  mdspan_type<double> const &xyzobs_mm,
-  const double tolerance = 0.3) {
+assign_indices_results assign_indices_global(Matrix3d const &A,
+                                             mdspan_type<double> const &rlp,
+                                             mdspan_type<double> const &xyzobs_mm,
+                                             const double tolerance = 0.3) {
     // Consider only a single lattice.
     assign_indices_results results(rlp.extent(0));
     //std::vector<int> miller_indices_data(rlp.size());
@@ -75,12 +74,14 @@ assign_indices_results assign_indices_global(
             results.miller_indices(i, 1) = 0;
             results.miller_indices(i, 2) = 0;
             crystal_ids[i] = -1;
-        } else if (results.miller_indices(i, 0) == 0 && results.miller_indices(i, 1) == 0
+        } else if (results.miller_indices(i, 0) == 0
+                   && results.miller_indices(i, 1) == 0
                    && results.miller_indices(i, 2) == 0) {
             crystal_ids[i] = -1;
         } else {
-            Vector3i midx = {
-              results.miller_indices(i, 0), results.miller_indices(i, 1), results.miller_indices(i, 2)};
+            Vector3i midx = {results.miller_indices(i, 0),
+                             results.miller_indices(i, 1),
+                             results.miller_indices(i, 2)};
             miller_idx_to_iref.emplace(midx, i);
             lsq_vector[i] = l_sq;
             results.number_indexed++;

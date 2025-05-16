@@ -71,7 +71,8 @@ void evaluate_crystal(Crystal crystal,
     const mdspan_type<double>& rlp = rlp_.value();
     auto xyzobs_mm_ = obs.column<double>("xyzobs_mm");
     const mdspan_type<double>& xyzobs_mm = xyzobs_mm_.value();
-    assign_indices_results results = assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
+    assign_indices_results results =
+      assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - preassign;
     logger->debug("Time for assigning indices: {:.5f}s", elapsed_time.count());

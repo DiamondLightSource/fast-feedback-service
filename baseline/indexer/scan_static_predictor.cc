@@ -116,7 +116,9 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
         // check each angle
         Vector3d pstar = S * unit_rotate_around_origin(pstar0, m2, a1);
         Vector3d s1_this = s0_ + pstar;
-        ReflectionTable::BoolEnum this_entering = s1_this.dot(s0_m2_plane) < 0. ? ReflectionTable::BoolEnum::TRUE : ReflectionTable::BoolEnum::FALSE;
+        ReflectionTable::BoolEnum this_entering = s1_this.dot(s0_m2_plane) < 0.
+                                                    ? ReflectionTable::BoolEnum::TRUE
+                                                    : ReflectionTable::BoolEnum::FALSE;
         double angle;
         if (this_entering == entering_i) {
             // use this s1 and a1 (mod 2pi)
@@ -127,7 +129,9 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
             double a2 = atan2(sinphi2, cosphi2);
             pstar = S * unit_rotate_around_origin(pstar0, m2, a2);
             s1_this = s0_ + pstar;
-            this_entering = s1_this.dot(s0_m2_plane) < 0. ? ReflectionTable::BoolEnum::TRUE : ReflectionTable::BoolEnum::FALSE;
+            this_entering = s1_this.dot(s0_m2_plane) < 0.
+                              ? ReflectionTable::BoolEnum::TRUE
+                              : ReflectionTable::BoolEnum::FALSE;
             assert(this_entering == entering_i);
             angle = mod2pi(a2);
         }

@@ -203,11 +203,11 @@ int correct(std::vector<int>& hkl,
         Matrix3d new_direct = M * direct_matrix;
         crystal.set_A_matrix(new_direct.inverse());
         crystal.niggli_reduce();
-        assign_indices_results results = assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
+        assign_indices_results results =
+          assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
         hkl = results.miller_indices_data;
         count = results.number_indexed;
         //std::tie(hkl, count) =
-          
     }
     return count;
 }

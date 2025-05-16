@@ -229,7 +229,7 @@ ReflectionTable initial_filter(const ReflectionTable& reflections,
     // Filter the table and the miller indices.
     ReflectionTable subrefls = reflections.select(sel);
     std::vector<int> filtered_hkl;
-    filtered_hkl.reserve(sel.size()*3);
+    filtered_hkl.reserve(sel.size() * 3);
     for (int i = 0; i < sel.size(); i++) {
         if (sel[i]) {
             filtered_hkl.push_back(hkl(i, 0));
