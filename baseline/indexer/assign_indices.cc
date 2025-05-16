@@ -31,7 +31,7 @@ struct assign_indices_results {
  * @param rlp The vector of reciprocal lattice points.
  * @param xyzobs_mm The vector of observed xyz positions, in mm.
  * @param tolerance The tolerance within which the fractional miller index must be for acceptance.
- * @returns A pair containing the assigned miller indices and the number of reciprocal lattice points successfully indexed.
+ * @returns A struct containing the assigned miller indices and the number of reciprocal lattice points successfully indexed.
  */
 assign_indices_results assign_indices_global(Matrix3d const &A,
                                              mdspan_type<double> const &rlp,

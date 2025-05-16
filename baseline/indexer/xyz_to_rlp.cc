@@ -39,7 +39,7 @@ struct xyz_to_rlp_results {
  * @param beam A dx2 MonochromaticBeam object.
  * @param scan A dx2 Scan object.
  * @param gonio A dx2 Goniometer object.
- * @returns A vector of reciprocal space coordinates.
+ * @returns A struct containing reciprocal space coordinates, s1 vectors and pixel coordinates in mm.
  */
 xyz_to_rlp_results xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
                               const Panel &panel,
