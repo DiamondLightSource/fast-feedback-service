@@ -2,13 +2,12 @@
 #define SCORE_CRYSTALS_H
 
 #include <chrono>
-#include <dx2/reflection.hpp>
-#include <chrono>
 #include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
+#include <dx2/reflection.hpp>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <vector>

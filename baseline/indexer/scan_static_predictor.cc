@@ -3,10 +3,10 @@
 #include <Eigen/Dense>
 #include <cassert>
 #include <cmath>
-#include <dx2/reflection.hpp>
 #include <dx2/beam.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/goniometer.hpp>
+#include <dx2/reflection.hpp>
 #include <iostream>
 
 constexpr double two_pi = 2 * M_PI;
