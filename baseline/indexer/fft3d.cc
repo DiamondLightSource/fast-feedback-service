@@ -54,7 +54,7 @@ void map_centroids_to_reciprocal_space_grid(
     const int half_n_points = n_points / 2;
     int count = 0;
 
-    for (int i = 0; i < reciprocal_space_vectors.extent(0); i++) {
+    for (int i = 0; i < reciprocal_space_vectors.extent(0); ++i) {
         const Vector3d v = Eigen::Map<Vector3d>(&reciprocal_space_vectors(i, 0));
         const double v_length = v.norm();
         const double d_spacing = 1 / v_length;

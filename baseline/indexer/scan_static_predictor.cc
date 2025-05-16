@@ -52,7 +52,7 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     auto& s1 = s1_.value();
     auto xyzobs_ = reflections.column<double>("xyzobs_mm");
     const auto& xyzobs_mm = xyzobs_.value();
-    auto entering_ = reflections.column<int>("entering");
+    auto entering_ = reflections.column<ReflectionTable::BoolEnum>("entering");
     const auto& entering = entering_.value();
     auto hkl_ = reflections.column<int>("miller_index");
     const auto& hkl = hkl_.value();
@@ -82,7 +82,7 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     for (int i = 0; i < hkl.extent(0); i++) {
         const Vector3i h{hkl(i, 0), hkl(i, 1), hkl(i, 2)};
         const Vector3d hf{(double)h[0], (double)h[1], (double)h[2]};
-        int entering_i = entering(i, 0);
+        ReflectionTable::BoolEnum entering_i = entering(i, 0);
 
         Vector3d pstar0 = FUB * hf;
         double pstar0_len_sq = pstar0.squaredNorm();
@@ -116,7 +116,7 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
         // check each angle
         Vector3d pstar = S * unit_rotate_around_origin(pstar0, m2, a1);
         Vector3d s1_this = s0_ + pstar;
-        int this_entering = s1_this.dot(s0_m2_plane) < 0. ? 1 : 0;
+        ReflectionTable::BoolEnum this_entering = s1_this.dot(s0_m2_plane) < 0. ? ReflectionTable::BoolEnum::TRUE : ReflectionTable::BoolEnum::FALSE;
         double angle;
         if (this_entering == entering_i) {
             // use this s1 and a1 (mod 2pi)
@@ -127,7 +127,7 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
             double a2 = atan2(sinphi2, cosphi2);
             pstar = S * unit_rotate_around_origin(pstar0, m2, a2);
             s1_this = s0_ + pstar;
-            this_entering = s1_this.dot(s0_m2_plane) < 0. ? 1 : 0;
+            this_entering = s1_this.dot(s0_m2_plane) < 0. ? ReflectionTable::BoolEnum::TRUE : ReflectionTable::BoolEnum::FALSE;
             assert(this_entering == entering_i);
             angle = mod2pi(a2);
         }
@@ -151,7 +151,7 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
         s1(i, 2) = s1_this[2];
         flags(i, 0) = flags(i, 0) | predicted_value;
     }
-    reflections.add_column<double>(
+    reflections.add_column(
       "xyzcal_mm", xyzcal_mm.extent(0), xyzcal_mm.extent(1), xyzcal_mm_data);
 }
 

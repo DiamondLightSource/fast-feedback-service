@@ -51,19 +51,16 @@ TEST(BaselineIndexer, assign_indices_test) {
                                           65.0,
                                           226.0,
                                           0.013};
-    int count;
     mdspan_type<double> rlp(rlp_data.data(), 6, 3);
     mdspan_type<double> xyz(xyzobs_mm_data.data(), 6, 3);
-    std::vector<int> miller_index;
     // Use a tolerance of 0.2 to filter out the last point.
-    std::tie(miller_index, count) = assign_indices_global(A, rlp, xyz, 0.2);
-    mdspan_type<int> miller_index_span(miller_index.data(), 5, 3);
+    assign_indices_results results = assign_indices_global(A, rlp, xyz, 0.2);
     std::vector<Vector3i> expected_miller_indices{
       {22, -4, 5}, {22, -4, 4}, {22, -2, -1}, {22, -4, 4}, {22, -2, -1}};
-    EXPECT_EQ(count, 5);
+    EXPECT_EQ(results.number_indexed, 5);
     for (int i = 0; i < expected_miller_indices.size(); ++i) {
         Vector3i assigned_index = {
-          miller_index_span(i, 0), miller_index_span(i, 1), miller_index_span(i, 2)};
+          results.miller_indices(i, 0), results.miller_indices(i, 1), results.miller_indices(i, 2)};
         EXPECT_EQ(assigned_index, expected_miller_indices[i]);
     }
 }

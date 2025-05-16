@@ -15,6 +15,23 @@ template <typename T>
 using mdspan_type =
   std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 
+struct xyz_to_rlp_results {
+    std::vector<double> rlp_data;
+    std::vector<double> s1_data;
+    std::vector<double> xyzobs_mm_data;
+    mdspan_type<double> rlp;
+    mdspan_type<double> s1;
+    mdspan_type<double> xyzobs_mm;
+
+    xyz_to_rlp_results(int extent) :
+      rlp_data(extent * 3),
+      s1_data(extent * 3),
+      xyzobs_mm_data(extent * 3),
+      rlp(rlp_data.data(), extent, 3),
+      s1(s1_data.data(), extent, 3),
+      xyzobs_mm(xyzobs_mm_data.data(), extent, 3){}
+};
+
 /**
  * @brief Transform detector pixel coordinates into reciprocal space coordinates.
  * @param xyzobs_px A 1D array of detector pixel coordinates from a single panel.
@@ -24,7 +41,7 @@ using mdspan_type =
  * @param gonio A dx2 Goniometer object.
  * @returns A vector of reciprocal space coordinates.
  */
-std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> xyz_to_rlp(
+xyz_to_rlp_results xyz_to_rlp(
   const mdspan_type<double> &xyzobs_px,
   const Panel &panel,
   const MonochromaticBeam &beam,
@@ -36,19 +53,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> xyz_to
     // An equivalent to dials flex_ext.map_centroids_to_reciprocal_space method
 
     constexpr double DEG2RAD = M_PI / 180.0;
-
-    // xyzobs_px is a flattened array, we want to return a vector of Vector3ds,
-    // so the size is divided by 3.
-    std::vector<double> rlp_data(xyzobs_px.size());
-    std::vector<double> s1_data(xyzobs_px.size());
-    std::vector<double> xyzobs_mm_data(xyzobs_px.size());
-    // Create spans for convenience when setting elements into the data arrays.
-    mdspan_type<double> rlp =
-      mdspan_type<double>(rlp_data.data(), xyzobs_px.size() / 3, 3);
-    mdspan_type<double> s1 =
-      mdspan_type<double>(s1_data.data(), xyzobs_px.size() / 3, 3);
-    mdspan_type<double> xyzobs_mm =
-      mdspan_type<double>(xyzobs_mm_data.data(), xyzobs_px.size() / 3, 3);
+    xyz_to_rlp_results results(xyzobs_px.extent(0)); // extent of the underlying data.
 
     // Extract the quantities from the models that are needed for the calculation.
     Vector3d s0 = beam.get_s0();
@@ -63,7 +68,6 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> xyz_to
 
     for (int i = 0; i < xyzobs_px.extent(0); ++i) {
         // first convert detector pixel positions into mm
-        //int vec_idx = 3 * i;
         double x1 = xyzobs_px(i, 0);
         double x2 = xyzobs_px(i, 1);
         double x3 = xyzobs_px(i, 2);
@@ -78,12 +82,12 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> xyz_to
         s1_i.normalize();
         // convert into inverse ansgtroms
         Vector3d s1_this = s1_i / wl;
-        s1(i, 0) = s1_this[0];
-        s1(i, 1) = s1_this[1];
-        s1(i, 2) = s1_this[2];
-        xyzobs_mm(i, 0) = xymm[0];
-        xyzobs_mm(i, 1) = xymm[1];
-        xyzobs_mm(i, 2) = rot_angle;
+        results.s1(i, 0) = s1_this[0];
+        results.s1(i, 1) = s1_this[1];
+        results.s1(i, 2) = s1_this[2];
+        results.xyzobs_mm(i, 0) = xymm[0];
+        results.xyzobs_mm(i, 1) = xymm[1];
+        results.xyzobs_mm(i, 2) = rot_angle;
 
         // now apply the goniometer matrices
         // see https://dials.github.io/documentation/conventions.html for full conventions
@@ -98,12 +102,9 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> xyz_to
                             + (sin * rotation_axis.cross(S));
 
         rlp_this = sample_rotation_inverse * rlp_this;
-        rlp(i, 0) = rlp_this[0];
-        rlp(i, 1) = rlp_this[1];
-        rlp(i, 2) = rlp_this[2];
+        results.rlp(i, 0) = rlp_this[0];
+        results.rlp(i, 1) = rlp_this[1];
+        results.rlp(i, 2) = rlp_this[2];
     }
-    return std::make_tuple(
-      rlp_data,
-      s1_data,
-      xyzobs_mm_data);  // Return the data, not the non-owning span view.
+    return results;  // Return the data and spans.
 }

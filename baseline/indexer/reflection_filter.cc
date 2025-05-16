@@ -229,6 +229,7 @@ ReflectionTable initial_filter(const ReflectionTable& reflections,
     // Filter the table and the miller indices.
     ReflectionTable subrefls = reflections.select(sel);
     std::vector<int> filtered_hkl;
+    filtered_hkl.reserve(sel.size()*3);
     for (int i = 0; i < sel.size(); i++) {
         if (sel[i]) {
             filtered_hkl.push_back(hkl(i, 0));
@@ -236,7 +237,7 @@ ReflectionTable initial_filter(const ReflectionTable& reflections,
             filtered_hkl.push_back(hkl(i, 2));
         }
     }
-    subrefls.add_column<int>("miller_index", filtered_hkl.size() / 3, 3, filtered_hkl);
+    subrefls.add_column("miller_index", filtered_hkl.size() / 3, 3, filtered_hkl);
     auto subflags_ = subrefls.column<std::size_t>("flags");
     auto& subflags = subflags_.value();
     for (int i = 0; i < subflags.extent(0); ++i) {

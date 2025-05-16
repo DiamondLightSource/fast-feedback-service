@@ -67,20 +67,19 @@ void evaluate_crystal(Crystal crystal,
     auto preassign = std::chrono::system_clock::now();
 
     // First assign miller indices to the data using the crystal model.
-    auto rlp = obs.column<double>("rlp");
-    const mdspan_type<double>& rlp_span = rlp.value();
-    auto xyzobs_mm = obs.column<double>("xyzobs_mm");
-    const mdspan_type<double>& xyzobs_mm_span = xyzobs_mm.value();
-    std::tie(miller_indices_data, count) =
-      assign_indices_global(crystal.get_A_matrix(), rlp_span, xyzobs_mm_span);
+    auto rlp_ = obs.column<double>("rlp");
+    const mdspan_type<double>& rlp = rlp_.value();
+    auto xyzobs_mm_ = obs.column<double>("xyzobs_mm");
+    const mdspan_type<double>& xyzobs_mm = xyzobs_mm_.value();
+    assign_indices_results results = assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - preassign;
     logger->debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
 
     // Perform the (potential) non-primivite basis correction.
-    count = correct(miller_indices_data, crystal, rlp_span, xyzobs_mm_span);
-    mdspan_type<int> miller_indices(
-      miller_indices_data.data(), miller_indices_data.size() / 3, 3);
+    count = correct(results.miller_indices_data, crystal, rlp, xyzobs_mm);
+    //mdspan_type<int> miller_indices(
+    //  miller_indices_data.data(), miller_indices_data.size() / 3, 3);
 
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time1 = t3 - t2;
@@ -88,7 +87,7 @@ void evaluate_crystal(Crystal crystal,
 
     // Perform filtering of the data prior to candidate refinement.
     ReflectionTable sel_obs = reflection_filter_preevaluation(
-      obs, miller_indices, gonio, crystal, beam, panel, scan_width, 20);
+      obs, results.miller_indices, gonio, crystal, beam, panel, scan_width, 20);
     auto postfilter = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_timefilter = postfilter - t3;
     logger->debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
@@ -120,7 +119,7 @@ void evaluate_crystal(Crystal crystal,
     sac.crystal = crystal;
     sac.num_indexed = count;
     sac.rmsdxy = xyrmsd;
-    sac.fraction_indexed = (double)count / rlp_span.extent(0);
+    sac.fraction_indexed = (double)count / rlp.extent(0);
     logger->info("Scored candidate crystal {}", n);
     score_and_crystal_mtx.lock();
     results_map[n] = sac;
