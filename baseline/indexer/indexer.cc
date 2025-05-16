@@ -1,10 +1,4 @@
 #include <assert.h>
-#include <dx2/beam.hpp>
-#include <dx2/crystal.hpp>
-#include <dx2/detector.hpp>
-#include <dx2/experiment.hpp>
-#include <dx2/goniometer.hpp>
-#include <dx2/scan.hpp>
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
@@ -14,7 +8,13 @@
 #include <argparse/argparse.hpp>
 #include <chrono>
 #include <cstring>
+#include <dx2/beam.hpp>
+#include <dx2/crystal.hpp>
+#include <dx2/detector.hpp>
+#include <dx2/experiment.hpp>
+#include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
+#include <dx2/scan.hpp>
 #include <fstream>
 #include <mutex>
 #include <nlohmann/json.hpp>

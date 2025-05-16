@@ -1,7 +1,7 @@
-#include <dx2/crystal.hpp>
 #include <gtest/gtest.h>
 
 #include <Eigen/Dense>
+#include <dx2/crystal.hpp>
 #include <gemmi/unitcell.hpp>
 #include <iostream>
 #include <optional>

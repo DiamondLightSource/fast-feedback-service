@@ -1,10 +1,9 @@
+#include <chrono>
 #include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
-
-#include <chrono>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <vector>

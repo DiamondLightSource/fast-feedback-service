@@ -1,6 +1,5 @@
-#include <dx2/crystal.hpp>
-
 #include <Eigen/Dense>
+#include <dx2/crystal.hpp>
 #include <vector>
 
 #include "assign_indices.cc"

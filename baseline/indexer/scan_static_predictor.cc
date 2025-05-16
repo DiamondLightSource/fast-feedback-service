@@ -1,12 +1,11 @@
 #ifndef DIALS_STATIC_PREDICTOR
 #define DIALS_STATIC_PREDICTOR
-#include <dx2/beam.hpp>
-#include <dx2/detector.hpp>
-#include <dx2/goniometer.hpp>
-
 #include <Eigen/Dense>
 #include <cassert>
 #include <cmath>
+#include <dx2/beam.hpp>
+#include <dx2/detector.hpp>
+#include <dx2/goniometer.hpp>
 #include <iostream>
 
 #include "reflection_data.cc"
