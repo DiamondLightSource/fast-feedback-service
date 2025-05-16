@@ -79,8 +79,6 @@ void evaluate_crystal(Crystal crystal,
 
     // Perform the (potential) non-primivite basis correction.
     count = correct(results.miller_indices_data, crystal, rlp, xyzobs_mm);
-    //mdspan_type<int> miller_indices(
-    //  miller_indices_data.data(), miller_indices_data.size() / 3, 3);
 
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time1 = t3 - t2;
@@ -120,7 +118,7 @@ void evaluate_crystal(Crystal crystal,
     sac.crystal = crystal;
     sac.num_indexed = count;
     sac.rmsdxy = xyrmsd;
-    sac.fraction_indexed = (double)count / rlp.extent(0);
+    sac.fraction_indexed = static_cast<double>(count) / rlp.extent(0);
     logger->info("Scored candidate crystal {}", n);
     score_and_crystal_mtx.lock();
     results_map[n] = sac;
