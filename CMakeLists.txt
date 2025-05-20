@@ -66,6 +66,18 @@ project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
+# Make a library for a global logger
+add_library(ffs_common STATIC 
+    ffs_logger.cc
+)
+target_include_directories(ffs_common PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(ffs_common
+    spdlog
+    fmt
+)
+
 enable_testing()
 
 add_subdirectory(h5read)

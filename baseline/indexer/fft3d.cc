@@ -10,7 +10,7 @@
 #include <stack>
 #include <tuple>
 
-#include "common.hpp"
+#include "ffs_logger.hpp"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -87,7 +87,7 @@ void map_centroids_to_reciprocal_space_grid(
         }
         data_in[index] = {T, 0.0};
     }
-    logger->info("Number of centroids used: {}", count);
+    logger.info("Number of centroids used: {}", count);
 }
 
 /**
@@ -145,7 +145,7 @@ std::vector<bool> fft3d(mdspan_type<double> const &reciprocal_space_vectors,
     double fct{1.0f};
     // note, threads can be higher than the number of hardware threads.
     // It is not clear what the best value is for this.
-    logger->info("Performing FFT with nthreads={}", nthreads);
+    logger.info("Performing FFT with nthreads={}", nthreads);
     // Do the FFT.
     c2c(
       shape_in,
@@ -171,12 +171,12 @@ std::vector<bool> fft3d(mdspan_type<double> const &reciprocal_space_vectors,
     std::chrono::duration<double> elapsed_make_arrays = t1 - start;
     std::chrono::duration<double> elapsed_c2c = t3 - t2;
     std::chrono::duration<double> elapsed_square = t4 - t3;
-    logger->debug("Total time for fft3d: {:.5f}s", elapsed_seconds.count());
-    logger->debug("elapsed time for making data arrays: {:.5f}s",
-                  elapsed_make_arrays.count());
-    logger->debug("elapsed time for map_to_recip: {:.5f}s", elapsed_map.count());
-    logger->debug("elapsed time for c2c: {:.5f}s", elapsed_c2c.count());
-    logger->debug("elapsed time for squaring: {:.5f}s", elapsed_square.count());
+    logger.debug("Total time for fft3d: {:.5f}s", elapsed_seconds.count());
+    logger.debug("elapsed time for making data arrays: {:.5f}s",
+                 elapsed_make_arrays.count());
+    logger.debug("elapsed time for map_to_recip: {:.5f}s", elapsed_map.count());
+    logger.debug("elapsed time for c2c: {:.5f}s", elapsed_c2c.count());
+    logger.debug("elapsed time for squaring: {:.5f}s", elapsed_square.count());
 
     return used_in_indexing;
 }

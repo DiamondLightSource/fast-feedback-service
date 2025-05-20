@@ -52,5 +52,6 @@ target_link_libraries(baseline_indexer
     argparse
     nlohmann_json::nlohmann_json
     spdlog::spdlog
+    ffs_common
     ${CMAKE_THREAD_LIBS_INIT}
 )

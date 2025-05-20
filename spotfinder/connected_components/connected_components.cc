@@ -115,7 +115,7 @@ void ConnectedComponents::generate_boxes(const ushort width,
     }
 
     uint num_unfiltered_spots = boxes.size();
-    logger->info("Extracted {} spots", num_unfiltered_spots);
+    logger.info("Extracted {} spots", num_unfiltered_spots);
 
     // Filter boxes based on the minimum spot size
     if (min_spot_size > 0) {
@@ -129,9 +129,9 @@ void ConnectedComponents::generate_boxes(const ushort width,
         // Overwrite boxes with filtered boxes
         boxes = std::move(filtered_boxes);
 
-        logger->info("Removed {} spots with size < {} pixels",
-                     num_unfiltered_spots - boxes.size(),
-                     min_spot_size);
+        logger.info("Removed {} spots with size < {} pixels",
+                    num_unfiltered_spots - boxes.size(),
+                    min_spot_size);
     } else {
         num_strong_pixels_filtered = num_strong_pixels;
     }
@@ -148,7 +148,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
     /*
      * Initialize global containers for the 3D connected components
      */
-    logger->debug("Initializing 3D connected components");
+    logger.debug("Initializing 3D connected components");
     // Graph for the 3D connected components
     boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS> graph_3d;
     // List to store each slice's mapping of linear_index -> global_vertex_id
@@ -160,7 +160,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * Start building the 3D graph. First we copy the precomputed vertices and edges
      * from each slice's graph into the global 3D graph.
      */
-    logger->debug("Building 3D graph");
+    logger.debug("Building 3D graph");
     for (const auto &slice : slices) {
         // Get the slice's graph and vertex map
         const auto &graph = slice->get_graph();
@@ -183,7 +183,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
     /*
      * We then copy the pre-computed edges from each slice's graph to the 3D graph.
      */
-    logger->debug("Copying edges to 3D graph");
+    logger.debug("Copying edges to 3D graph");
     // Iterate over each slice and copy the edges to the 3D graph
     for (int i = 0; i < slices.size(); ++i) {
         // Current slice's 2d graph
@@ -191,7 +191,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
         // Current slice's vertex id -> linear index map
         const auto &vertex_to_index = slices[i]->get_vertex_to_index();
 
-        logger->trace("Copying edges from slice {}", i);
+        logger.trace("Copying edges from slice {}", i);
         // Iterate over the edges in the slice's graph
         for (const auto &edge : boost::make_iterator_range(boost::edges(graph_2d))) {
             // Get the source and target vertices for the edge
@@ -218,7 +218,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * iterating over the local_to_global_vertex_maps and connecting vertices
      * that correspond to the same pixel in adjacent slices.
      */
-    logger->debug("Adding inter-slice connectivity");
+    logger.debug("Adding inter-slice connectivity");
     // Loop through all slices except the last one
     for (size_t i = 0; i < slices.size() - 1; ++i) {
         const auto &current_vertex_map =
@@ -244,7 +244,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * Now that we have constructed the 3D graph, we can perform connected components
      * analysis to find the 3D connected components.
      */
-    logger->debug("Performing 3D connected components analysis");
+    logger.debug("Performing 3D connected components analysis");
     /*
      * Label vector for connected components. This matches vertex ids
      * to connected component labels.
@@ -260,7 +260,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * of labels to vectors of global vertex IDs, and then iterating over each map
      * entry to compute the bounding box and center of mass.
      */
-    logger->debug("Grouping 3D connected components");
+    logger.debug("Grouping 3D connected components");
 
     // Map of labels -> list of global vertices for each label
     std::unordered_map<int, std::vector<size_t>> label_to_vertices;
@@ -323,11 +323,11 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * maximum peak centroid separation. Then return the filtered reflections.
      */
     uint initial_spot_count = reflections_3d.size();
-    logger->info(
+    logger.info(
       fmt::format("Calculated {} spots", fmt::styled(initial_spot_count, fmt_cyan)));
 
     if (min_spot_size > 0) {
-        logger->debug("Filtering reflections by minimum spot size");
+        logger.debug("Filtering reflections by minimum spot size");
         reflections_3d.erase(std::remove_if(reflections_3d.begin(),
                                             reflections_3d.end(),
                                             [min_spot_size](const auto &reflection) {
@@ -337,14 +337,14 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
                              reflections_3d.end());
     }
 
-    logger->info(
+    logger.info(
       fmt::format("Filtered {} spots with size < {} pixels",
                   fmt::styled(initial_spot_count - reflections_3d.size(), fmt_cyan),
                   fmt::styled(min_spot_size, fmt_cyan)));
     uint filtered_spot_count = reflections_3d.size();
 
     if (max_peak_centroid_separation > 0) {
-        logger->debug("Filtering reflections by maximum peak centroid separation");
+        logger.debug("Filtering reflections by maximum peak centroid separation");
         reflections_3d.erase(
           std::remove_if(reflections_3d.begin(),
                          reflections_3d.end(),
@@ -355,7 +355,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
           reflections_3d.end());
     }
 
-    logger->info(
+    logger.info(
       fmt::format("Filtered {} spots with peak-centroid distance > {}",
                   fmt::styled(filtered_spot_count - reflections_3d.size(), fmt_cyan),
                   fmt::styled(max_peak_centroid_separation, fmt_cyan)));

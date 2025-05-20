@@ -31,6 +31,7 @@ target_link_libraries(spotfinder
     spdlog::spdlog
     dx2
     version
+    ffs_common
 )
 
 set_property(TARGET spotfinder PROPERTY CUDA_SEPARABLE_COMPILATION ON)

@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "assign_indices.cc"
-#include "common.hpp"
+#include "ffs_logger.hpp"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -162,7 +162,7 @@ Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold = 0.9) {
         for (int i = 0; i < transform.modularity; ++i) {
             if ((static_cast<double>(cumulative[i]) / hkl.size()) > threshold
                 && i == 0) {
-                logger->debug(
+                logger.debug(
                   "Detected exclusive presence of {}H {}K {}L = {}N, remainder {}",
                   transform.vector[0],
                   transform.vector[1],

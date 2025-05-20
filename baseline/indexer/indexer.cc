@@ -25,7 +25,7 @@
 #include <vector>
 
 #include "combinations.cc"
-#include "common.hpp"
+#include "ffs_logger.hpp"
 #include "fft3d.cc"
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
@@ -86,11 +86,11 @@ int main(int argc, char** argv) {
     parser.parse_args(argc, argv);
 
     if (!parser.is_used("expt")) {
-        logger->error("Must specify experiment list file with --expt\n");
+        logger.error("Must specify experiment list file with --expt\n");
         std::exit(1);
     }
     if (!parser.is_used("refl")) {
-        logger->error(
+        logger.error(
           "Must specify spotfinding results file (in DIALS HDF5 format) with --refl\n");
         std::exit(1);
     }
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
     // let's make this a required argument to help with testing/comparison
     // to DIALS.
     if (!parser.is_used("max-cell")) {
-        logger->error("Must specify --max-cell\n");
+        logger.error("Must specify --max-cell\n");
         std::exit(1);
     }
     std::string imported_expt = parser.get<std::string>("expt");
@@ -114,16 +114,16 @@ int main(int argc, char** argv) {
     try {
         elist_json_obj = json::parse(f);
     } catch (json::parse_error& ex) {
-        logger->error("Unable to read {}; json parse error at byte {}",
-                      imported_expt.c_str(),
-                      ex.byte);
+        logger.error("Unable to read {}; json parse error at byte {}",
+                     imported_expt.c_str(),
+                     ex.byte);
         std::exit(1);
     }
     Experiment<MonochromaticBeam> expt;
     try {
         expt = Experiment<MonochromaticBeam>(elist_json_obj);
     } catch (std::invalid_argument const& ex) {
-        logger->error("Unable to create MonochromaticBeam experiment: {}", ex.what());
+        logger.error("Unable to create MonochromaticBeam experiment: {}", ex.what());
         std::exit(1);
     }
     Scan scan = expt.scan();
@@ -150,7 +150,7 @@ int main(int argc, char** argv) {
     // geometry is accurate). So use the experimental models to transform the spot
     // coordinates on the detector into reciprocal space.
     xyz_to_rlp_results results = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
-    logger->info("Number of reflections: {}", results.rlp.extent(0));
+    logger.info("Number of reflections: {}", results.rlp.extent(0));
 
     // If a resolution limit was not specified, determine from the highest resolution spot.
     double d_min;
@@ -162,7 +162,7 @@ int main(int argc, char** argv) {
             d_values[i] = 1.0 / Eigen::Map<Vector3d>(&results.rlp(i, 0)).norm();
         }
         d_min = *std::min_element(d_values.begin(), d_values.end());
-        logger->info("Setting dmin based on highest resolution spot: {:.5f}", d_min);
+        logger.info("Setting dmin based on highest resolution spot: {:.5f}", d_min);
     }
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
@@ -170,7 +170,7 @@ int main(int argc, char** argv) {
     // intensity fall-off as as function of resolution.
     double b_iso = -4.0 * std::pow(d_min, 2) * log(0.05);
     uint32_t n_points = parser.get<uint32_t>("fft-npoints");
-    logger->info("Setting b_iso = {:.3f}", b_iso);
+    logger.info("Setting b_iso = {:.3f}", b_iso);
 
     // Create an array to store the fft result. This is a 3D grid of points, typically 256^3.
     std::vector<double> real_fft_result(n_points * n_points * n_points);
@@ -212,7 +212,7 @@ int main(int argc, char** argv) {
       fractional_centres_of_mass, grid_points_per_peak, d_min, 3.0, max_cell, n_points);
 
     if (candidate_lattice_vectors.size() < 3) {
-        logger->info(
+        logger.info(
           "Insufficient number of candidate vectors to make a crystal model.");
         std::exit(0);
     }
@@ -301,13 +301,13 @@ int main(int argc, char** argv) {
       results_vector.begin(), results_vector.end(), [](const auto& a, const auto& b) {
           return a.second.score < b.second.score;  // Ascending order by score
       });
-    logger->info("Candidate solutions:");
-    logger->info(
+    logger.info("Candidate solutions:");
+    logger.info(
       "| Unit cell                                 | volume & score | #indexed % & "
       "score | rmsd_xy & score | overall score |");
     for (const auto& result : results_vector) {
         gemmi::UnitCell cell = result.second.crystal.get_unit_cell();
-        logger->info(
+        logger.info(
           "| {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} | {:>8.0f}  {:.2f} "
           "| {:>7.0f}  {:>3.0f}  {:.2f} | {:>6.2f}    {:>5.2f} |        {:>6.2f} |",
           cell.a,
@@ -341,7 +341,7 @@ int main(int argc, char** argv) {
         std::string outfile = "candidate_vectors.json";
         std::ofstream vecs_file(outfile);
         vecs_file << vecs_out.dump(4);
-        logger->info("Saved candidate vectors to {}", outfile);
+        logger.info("Saved candidate vectors to {}", outfile);
 
         size_t offset = std::to_string(results_vector.size() - 1).length();
         json crystals_out;
@@ -353,7 +353,7 @@ int main(int argc, char** argv) {
         std::string candidates_outfile = "candidate_crystals.json";
         std::ofstream candidates_file(candidates_outfile);
         candidates_file << crystals_out.dump(4);
-        logger->info("Saved candidate crystals to {}", candidates_outfile);
+        logger.info("Saved candidate crystals to {}", candidates_outfile);
     }
 
     // Now save an experiment list with the models.
@@ -362,9 +362,9 @@ int main(int argc, char** argv) {
     std::string efile_name = "elist.json";
     std::ofstream efile(efile_name);
     efile << elist_out.dump(4);
-    logger->info("Saved experiment list to {}", efile_name);
+    logger.info("Saved experiment list to {}", efile_name);
 
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;
-    logger->info("Total time for indexer: {:.4f}s", elapsed_time.count());
+    logger.info("Total time for indexer: {:.4f}s", elapsed_time.count());
 }

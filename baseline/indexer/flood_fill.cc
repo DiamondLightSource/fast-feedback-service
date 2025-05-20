@@ -11,7 +11,7 @@
 #include <numeric>
 #include <unordered_map>
 
-#include "common.hpp"
+#include "ffs_logger.hpp"
 
 using Eigen::Vector3d;
 using Eigen::Vector3i;
@@ -54,7 +54,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     }
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - start;
-    logger->debug("Time for first part of flood fill: {:.5f}s", elapsed_time.count());
+    logger.debug("Time for first part of flood fill: {:.5f}s", elapsed_time.count());
 
     // Now do the flood fill.
     // Wrap around the edge in all three dimensions to replicate the DIALS
@@ -133,7 +133,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     }
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time2 = t3 - t2;
-    logger->debug("Time for second part of flood fill: {:.5f}s", elapsed_time2.count());
+    logger.debug("Time for second part of flood fill: {:.5f}s", elapsed_time2.count());
 
     // Now calculate the unweighted centres of mass of each group, in fractional coordinates.
     std::vector<Vector3d> centres_of_mass_frac(n_voids);

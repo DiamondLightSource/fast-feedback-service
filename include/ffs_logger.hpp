@@ -101,3 +101,6 @@ class FFSLogger {
         }
     }
 };
+
+// Global static access to the logger
+inline auto& logger = FFSLogger::getInstance();

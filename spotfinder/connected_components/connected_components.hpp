@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "cuda_common.hpp"
+#include "ffs_logger.hpp"
 #include "h5read.h"
 
 struct Signal {
@@ -47,7 +48,7 @@ class Reflection3D {
             z_max_ = std::max(z_max_, signal.z.value());
         } else {
             std::string msg = "Signal missing z-index";
-            logger->error(msg);
+            logger.error(msg);
             throw std::runtime_error(msg);
         }
         x_min_ = std::min(x_min_, signal.x);
@@ -69,7 +70,7 @@ class Reflection3D {
         }
 
         if (signals_.empty()) {
-            logger->error("No pixels in 3D reflection");
+            logger.error("No pixels in 3D reflection");
             throw std::runtime_error("No pixels in 3D reflection");
         }
 
@@ -84,7 +85,7 @@ class Reflection3D {
         }
 
         if (total_intensity == 0) {
-            logger->error("Total intensity is zero");
+            logger.error("Total intensity is zero");
             throw std::runtime_error("Total intensity is zero");
         }
 
@@ -105,7 +106,7 @@ class Reflection3D {
      */
     float peak_centroid_distance() const {
         if (signals_.empty()) {
-            logger->error("No pixels in 3D reflection");
+            logger.error("No pixels in 3D reflection");
             throw std::runtime_error("No pixels in 3D reflection");
         }
 
@@ -121,7 +122,7 @@ class Reflection3D {
         }
 
         if (!peak_signal) {
-            logger->error("Failed to find peak intensity signal");
+            logger.error("Failed to find peak intensity signal");
             throw std::runtime_error("Failed to find peak intensity signal");
         }
 

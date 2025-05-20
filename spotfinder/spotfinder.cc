@@ -252,7 +252,7 @@ class PipeHandler {
 };
 
 int main(int argc, char **argv) {
-    logger->info("Spotfinder version: {}", FFS_VERSION);
+    logger.info("Spotfinder version: {}", FFS_VERSION);
 
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader
@@ -976,7 +976,7 @@ int main(int argc, char **argv) {
 #pragma region 3D Connected Components
     // After all threads have finished processing slices
     if (rotation_slices) {
-        logger->info("Processing 3D spots");
+        logger.info("Processing 3D spots");
 
         // Step 1: Convert rotation_slices map to a vector
         std::vector<std::unique_ptr<ConnectedComponents>> slices;
@@ -990,7 +990,7 @@ int main(int argc, char **argv) {
           slices, width, height, min_spot_size_3d, max_peak_centroid_separation);
 
         // Step 3: Output the 3D reflections
-        logger->info(
+        logger.info(
           fmt::format("Found {} spots", fmt::styled(reflections_3d.size(), fmt_cyan)));
 
         if (do_writeout) {
@@ -1009,7 +1009,7 @@ int main(int argc, char **argv) {
                               x,
                               y,
                               z);
-                logger->trace(reflection_info);
+                logger.trace(reflection_info);
 
                 // Print all members of the reflection
                 // Print x bounds
@@ -1024,12 +1024,12 @@ int main(int argc, char **argv) {
                 // Print Centre of Mass
                 out << "COM: (" << x << ", " << y << ", " << z << ")\n";
             }
-            logger->flush();  // Flush to ensure all messages printed before continuing
+            logger.flush();  // Flush to ensure all messages printed before continuing
         }
 
         if (save_to_h5) {
             // Step 4: Write the 3D reflections to a `.h5` file using ReflectionTable
-            logger->debug("Writing 3D reflections to HDF5 file");
+            logger.debug("Writing 3D reflections to HDF5 file");
 
             try {
                 std::vector<double> flat_coms;
@@ -1053,15 +1053,15 @@ int main(int argc, char **argv) {
 
                 // Write the table to an HDF5 file
                 table.write("results_ffs.h5", "dials/processing/group_0");
-                logger->info("Succesfully wrote 3D reflections to HDF5 file");
+                logger.info("Succesfully wrote 3D reflections to HDF5 file");
             } catch (const std::exception &e) {
-                logger->error("Error writing data to HDF5 file: {}", e.what());
+                logger.error("Error writing data to HDF5 file: {}", e.what());
             } catch (...) {
-                logger->error("Unknown error writing data to HDF5 file");
+                logger.error("Unknown error writing data to HDF5 file");
             }
         }
 
-        logger->info("3D spot analysis complete");
+        logger.info("3D spot analysis complete");
     }
 #pragma endregion 3D Connected Components
 

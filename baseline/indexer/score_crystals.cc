@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "assign_indices.cc"
+#include "ffs_logger.hpp"
 #include "non_primitive_basis.cc"
 #include "reflection_filter.cc"
 
@@ -75,21 +76,21 @@ void evaluate_crystal(Crystal crystal,
       assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - preassign;
-    logger->debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
+    logger.debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
 
     // Perform the (potential) non-primivite basis correction.
     count = correct(results.miller_indices_data, crystal, rlp, xyzobs_mm);
 
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time1 = t3 - t2;
-    logger->debug("Time for correct: {:.5f}s", elapsed_time1.count());
+    logger.debug("Time for correct: {:.5f}s", elapsed_time1.count());
 
     // Perform filtering of the data prior to candidate refinement.
     ReflectionTable sel_obs = reflection_filter_preevaluation(
       obs, results.miller_indices, gonio, crystal, beam, panel, scan_width, 20);
     auto postfilter = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_timefilter = postfilter - t3;
-    logger->debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
+    logger.debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
 
     // Refinement will go here in future.
 
@@ -119,7 +120,7 @@ void evaluate_crystal(Crystal crystal,
     sac.num_indexed = count;
     sac.rmsdxy = xyrmsd;
     sac.fraction_indexed = static_cast<double>(count) / rlp.extent(0);
-    logger->info("Scored candidate crystal {}", n);
+    logger.info("Scored candidate crystal {}", n);
     score_and_crystal_mtx.lock();
     results_map[n] = sac;
     score_and_crystal_mtx.unlock();
