@@ -1,5 +1,4 @@
-#ifndef FFS_LOGGER_HPP
-#define FFS_LOGGER_HPP
+#pragma once
 
 #include <spdlog/async.h>
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -103,5 +102,3 @@ class FFSLogger {
         }
     }
 };
-
-#endif  // FFS_LOGGER_HPP
