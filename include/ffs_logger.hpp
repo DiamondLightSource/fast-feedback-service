@@ -12,24 +12,24 @@
  * 
  * This class provides a single point of access to the logger instance
  * throughout the application, ensuring that all log messages are
- * written to the same log file and console sink while utilizing
- * asynchronous logging for multi-threaded logging.
+ * written to the same console and optional log file sink while
+ * utilizing asynchronous logging for multi-threaded logging.
  */
 class FFSLogger {
   public:
     // Get the singleton instance of the logger (thread-safe and lazy initialization)
     /**
      * @brief Retrieves the singleton instance of the logger.
-     * 
-     * This method uses lazy initialization to initialize the logger on
-     * the first call and returns the same instance on subsequent calls,
-     * ensuring a single point of access throughout the application.
      *
-     * @return std::shared_ptr<spdlog::logger>& A shared pointer to the logger instance.
+     * Lazily initialises and returns a reference to the shared logger
+     * instance. This ensures a single point of access throughout the
+     * application without requiring manual setup.
      */
-    static std::shared_ptr<spdlog::logger>& getInstance() {
-        static std::shared_ptr<spdlog::logger> instance = createLogger();
-        return instance;
+    static spdlog::logger& getInstance() {
+        if (!logger_) {
+            initialiseLogger();
+        }
+        return *logger_;
     }
 
     /**
@@ -40,22 +40,23 @@ class FFSLogger {
      * @param level The desired logging level (e.g., spdlog::level::info, spdlog::level::debug).
      */
     static void setLevel(spdlog::level::level_enum level) {
-        getInstance()->set_level(level);
+        getInstance().set_level(level);
     }
 
   private:
+    static std::shared_ptr<spdlog::logger> logger_;
+
     // Private constructor to prevent instantiation
     FFSLogger() = default;
 
     /**
      * @brief Creates and configures the logger instance.
-     * 
-     * Initializes the logger with a rotating file sink and a colored console sink,
-     * enabling asynchronous logging.
      *
-     * @return std::shared_ptr<spdlog::logger> The configured logger instance.
+     * Internal helper that sets up the logger instance, including
+     * sinks, formatting, and logging level. Called once on first use of
+     * getInstance().
      */
-    static std::shared_ptr<spdlog::logger> createLogger() {
+    static void initialiseLogger() {
         try {
             // Queue size for async messages
             size_t queue_size = 8192;  // Can adjust based on app requirements
@@ -76,7 +77,7 @@ class FFSLogger {
             // Combine sinks into one asynchronous logger
             // std::vector<spdlog::sink_ptr> sinks{console_sink, file_sink};
             std::vector<spdlog::sink_ptr> sinks{console_sink};
-            auto async_logger = std::make_shared<spdlog::async_logger>(
+            logger_ = std::make_shared<spdlog::async_logger>(
               "FFSLogger",
               sinks.begin(),
               sinks.end(),
@@ -87,15 +88,13 @@ class FFSLogger {
             // Get logging level from environment variable (if set)
             const char* logLevelEnv = std::getenv("LOG_LEVEL");
             if (logLevelEnv) {
-                async_logger->set_level(spdlog::level::from_str(logLevelEnv));
+                logger_->set_level(spdlog::level::from_str(logLevelEnv));
             } else {
-                async_logger->set_level(spdlog::level::info);  // Default log level
+                logger_->set_level(spdlog::level::info);  // Default log level
             }
 
             // Register the logger globally
-            spdlog::register_logger(async_logger);
-
-            return async_logger;
+            spdlog::register_logger(logger_);
         } catch (const spdlog::spdlog_ex& ex) {
             throw std::runtime_error(std::string("Logger initialization failed: ")
                                      + ex.what());
