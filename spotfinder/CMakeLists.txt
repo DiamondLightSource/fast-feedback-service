@@ -25,7 +25,6 @@ target_link_libraries(spotfinder
     LZ4::LZ4
     Bitshuffle::bitshuffle
     CUDA::cudart
-    CUDA::nppif
     Boost::graph
     lodepng
     nlohmann_json::nlohmann_json
