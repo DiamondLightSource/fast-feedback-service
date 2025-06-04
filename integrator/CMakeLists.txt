@@ -14,10 +14,12 @@ target_link_libraries(integrator
     argparse
     standalone
     CUDA::cudart
+    lodepng
     nlohmann_json::nlohmann_json
     spdlog::spdlog
     dx2
     version
+    ffs_common
 )
 
 # Allow CUDA to use multi-file device variables
