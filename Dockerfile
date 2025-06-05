@@ -1,6 +1,6 @@
 LABEL org.opencontainers.image.title="fast-feedback-service" \
       org.opencontainers.image.description="GPU-accelerated fast-feedback X-ray diffraction analysis service" \
-      org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitri Vlachos <dimitrios.vlachos@diamond.ac.uk>" \
+      org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitrios Vlachos <dimitrios.vlachos@diamond.ac.uk>" \
       org.opencontainers.image.source="https://github.com/DiamondLightSource/fast-feedback-service" \
       org.opencontainers.image.licenses="BSD-3-Clause"
 
@@ -57,7 +57,6 @@ RUN mamba install -y -c conda-forge -p /opt/env \
     hdf5 \
     hdf5-external-filter-plugins \
     bitshuffle \
-    spdlog \
     gemmi && \
     mamba clean -afy
 
@@ -74,13 +73,13 @@ ENV CXX=/opt/env/bin/x86_64-conda-linux-gnu-c++
 ENV CUDAHOSTCXX=/opt/env/bin/x86_64-conda-linux-gnu-g++
 
 # Build the C++/CUDA backend
-RUN mkdir -p build && \
-    cd build && \
+RUN mkdir -p docker_build && \
+    cd docker_build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release && \
     make -j$(nproc)
 
 # Set environment variables for the service
-ENV SPOTFINDER=/service/build/spotfinder
+ENV SPOTFINDER=/service/docker_build/spotfinder
 ENV ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
 
 # Start the service
