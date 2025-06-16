@@ -57,6 +57,8 @@ struct CUDAArguments {
   public:
     bool verbose = false;
     std::string file;
+    std::string reflection;
+    std::string experiment;
 
     int device_index = 0;
     std::optional<size_t> image_number;
@@ -195,7 +197,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         return _arguments;
     }
 
-    void add_h5read_arguments() {
+    virtual void add_h5read_arguments() {
         bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != NULL;
 
         auto &group = add_mutually_exclusive_group(!implicit_sample);
@@ -212,7 +214,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         _activated_h5read = true;
     }
 
-  private:
+  protected:
     CUDAArguments _arguments{};
     bool _activated_h5read = false;
 };

@@ -6,6 +6,7 @@
 
 #include <dx2/h5/h5read_processed.hpp>
 #include <dx2/reflection.hpp>
+#include <experimental/mdspan>
 #include <iostream>
 #include <string>
 
@@ -14,45 +15,88 @@
 #include "ffs_logger.hpp"
 #include "version.hpp"
 
-auto create_argument_parser(const std::string_view &version) -> CUDAArgumentParser {
-    auto parser = CUDAArgumentParser(std::string{version});
-    parser.add_h5read_arguments();
-    parser.add_argument("-t", "--timeout")
-      .help("Amount of time (in seconds) to wait for new images before failing.")
-      .metavar("S")
-      .default_value<float>(30.0f)
-      .scan<'f', float>();
+#pragma region Argument Parsing
+class IntegratorArgumentParser : public CUDAArgumentParser {
+  public:
+    IntegratorArgumentParser(std::string version) : CUDAArgumentParser(version) {
+        add_h5read_arguments();      // Override to use refl + expt
+        add_integrator_arguments();  // Add integrator-specific args
+    }
 
-    return parser;
-}
+    void add_h5read_arguments() override {
+        add_argument("reflections")
+          .metavar("strong.refl")
+          .help("Input reflection table")
+          .action([&](const std::string& value) { _arguments.reflection = value; });
+
+        add_argument("experiment")
+          .metavar("experiments.expt")
+          .help("Input experiment list")
+          .action([&](const std::string& value) { _arguments.experiment = value; });
+
+        _activated_h5read = true;
+    }
+
+  private:
+    void add_integrator_arguments() {
+        add_argument("--timeout")
+          .help("Amount of time (in seconds) to wait for new images before failing.")
+          .metavar("S")
+          .default_value<float>(30.0f)
+          .scan<'f', float>();
+
+        add_argument("--sigma_m")
+          .help("Sigma_m: Standard deviation of the rotation axis in reciprocal space.")
+          .metavar("σm")
+          .scan<'f', float>();
+
+        add_argument("--sigma_b")
+          .help(
+            "Sigma_b: Standard deviation of the beam direction in reciprocal space.")
+          .metavar("σb")
+          .scan<'f', float>();
+    }
+};
+#pragma endregion Argument Parsing
 
 #pragma region Application Entry
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     logger.info("Version: {}", FFS_VERSION);
 
     // Parse arguments
-    auto parser = create_argument_parser(FFS_VERSION);
+    auto parser = IntegratorArgumentParser(FFS_VERSION);
     auto args = parser.parse_args(argc, argv);
     float wait_timeout = parser.get<float>("timeout");
+    float sigma_m = parser.get<float>("sigma_m");
+    float sigma_b = parser.get<float>("sigma_b");
 
-    if (!std::filesystem::exists(args.file)) {
-        logger.error("File not found: {}", args.file);
+    // Guard against missing files
+    if (!std::filesystem::exists(args.reflection)) {
+        logger.error("Reflection file not found: {}", args.reflection);
         return 1;
     }
-    // wait_for_ready_for_read(
-    //     args.file,
-    //     [](const std::string &s) { return std::filesystem::exists(s); },
-    //     wait_timeout
-    // );
-    logger.info("Loading data from file: {}", args.file);
-    ReflectionTable reflections(args.file);
+    if (!std::filesystem::exists(args.experiment)) {
+        logger.error("Experiment file not found: {}", args.experiment);
+        return 1;
+    }
+
+    logger.info("Loading data from file: {}", args.reflection);
+    ReflectionTable reflections(args.reflection);
 
     auto column_names = reflections.get_column_names();
     std::string column_names_str;
-    for (const auto &name : column_names) {
+    for (const auto& name : column_names) {
         column_names_str += "\n\t- " + name;
     }
     logger.info("Column names: {}", column_names_str);
+
+    auto s1_vectors = reflections.column<double>("s1");
+    if (!s1_vectors) {
+        logger.error("Column 's1' not found in reflection data.");
+        return 1;
+    }
+
+    // Load experiment model data?
 
     return 0;
 }
