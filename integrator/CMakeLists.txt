@@ -20,6 +20,7 @@ target_link_libraries(integrator
     dx2
     version
     ffs_common
+    cuda_parser
 )
 
 # Allow CUDA to use multi-file device variables

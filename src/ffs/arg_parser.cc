@@ -54,21 +54,7 @@ FFSArgumentParser::FFSArgumentParser(std::string version)
 }
 
 void FFSArgumentParser::add_h5read_arguments() {
-    // Check if implicit sample is enable via environment variable
-    bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != nullptr;
-    // Create a mutually exclusive group for sample vs file input
-    auto &group = add_mutually_exclusive_group(!implicit_sample);
-
-    group.add_argument("--sample")
-      .help("Use generated test data (H5READ_IMPLICIT_SAMPLE)")
-      .implicit_value(true);
-
-    group.add_argument("file")
-      .metavar("FILE.nxs")
-      .help("Path to Nexus file")
-      .action([&](const std::string &val) { _arguments.file = val; });
-
-    _activated_h5read = true;
+    // Derived classes can override this method to add HDF5-specific arguments
 }
 
 auto FFSArgumentParser::parse_args(int argc, char **argv) -> FFSArguments {

@@ -31,7 +31,6 @@
 struct FFSArguments {
     bool verbose = false;                ///< Enable verbose logging output
     std::optional<size_t> image_number;  ///< Optional specific image number to process
-    std::string file;                    ///< Input file path for processing
 };
 
 /**
