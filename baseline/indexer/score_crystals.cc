@@ -16,8 +16,43 @@
 #include "ffs_logger.hpp"
 #include "non_primitive_basis.cc"
 #include "reflection_filter.cc"
+#include "detector_parameterisation.h"
+#include "gradients_calculator.h"
+
+#include <unsupported/Eigen/NonLinearOptimization>
+#include <unsupported/Eigen/NumericalDiff>
 
 std::mutex score_and_crystal_mtx;
+
+// Implement y = (x-5)^2
+struct MyFunctor
+{
+    typedef float Scalar;
+
+    typedef Eigen::VectorXf InputType;
+    typedef Eigen::VectorXf ValueType;
+    typedef Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> JacobianType;
+
+    enum {
+        InputsAtCompileTime = Eigen::Dynamic,
+        ValuesAtCompileTime = Eigen::Dynamic
+    };
+
+    int operator()(const Eigen::VectorXf &x, Eigen::VectorXf &fvec) const
+    {
+        // We provide f(x) = x-5 because the algorithm will square this value internally
+        fvec(0) = x(0) - 5.0;
+        return 0;
+    }
+
+    int df(const Eigen::VectorXf &x, Eigen::MatrixXf &fjac) const {
+      fjac(0,0) = 1;
+      return 0;
+    }
+
+    int inputs() const { return 1; }// inputs is the dimension of x.
+    int values() const { return 1; } // "values" is the number of f_i and
+};
 
 // A struct to score a candidate crystal model.
 struct score_and_crystal {
@@ -93,6 +128,30 @@ void evaluate_crystal(Crystal crystal,
     logger.debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
 
     // Refinement will go here in future.
+    // First make CrystalOrientationParameterisation, CrystalUnitCellParameterisation, BeamParameterisation,
+    // DetectorParameterisationSinglePanel,
+    // Then make SimplePredictionParam
+    // Then set the crystal U, B in the expt object.
+    // gradients = pred.get_gradients(obs)
+    
+    // Encapsulate those in a simple target, with a parameter vector.
+    // That can calc resids and gradients which are input to a least-squares routine - use Eigen (lev mar)?
+    // As part of residuals, it updates the parameterisation objects, updates the experiment objects
+    // and runs the simple predictor on the reflection data.
+
+    Eigen::VectorXf x(1);
+    x(0) = 2;
+    MyFunctor myFunctor;
+    Eigen::LevenbergMarquardt<MyFunctor, float> levenbergMarquardt(myFunctor);
+
+    levenbergMarquardt.parameters.ftol = 1e-6;
+    levenbergMarquardt.parameters.xtol = 1e-6;
+    levenbergMarquardt.parameters.maxfev = 10; // Max iterations
+
+    Eigen::VectorXf xmin = x; // initialize
+    levenbergMarquardt.minimize(xmin);
+
+    logger.info("x that minimizes the function: {:.5f}", xmin(0));
 
     // Calculate rmsds
     double xsum = 0;
