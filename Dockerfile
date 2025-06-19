@@ -5,7 +5,7 @@ LABEL org.opencontainers.image.title="fast-feedback-service" \
       org.opencontainers.image.licenses="BSD-3-Clause"
 
 # Official NVIDIA CUDA image as the base image
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.6.3-devel-ubuntu22.04
 
 # Remove need for interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
