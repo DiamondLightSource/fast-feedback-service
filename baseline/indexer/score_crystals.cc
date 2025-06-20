@@ -11,22 +11,29 @@
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <vector>
-
+#include <algorithm>
 #include "assign_indices.cc"
 #include "ffs_logger.hpp"
 #include "non_primitive_basis.cc"
 #include "reflection_filter.cc"
-#include "detector_parameterisation.h"
-#include "gradients_calculator.h"
+#include "target.h"
 
 #include <unsupported/Eigen/NonLinearOptimization>
 #include <unsupported/Eigen/NumericalDiff>
 
 std::mutex score_and_crystal_mtx;
 
+// Define target function
+// Needs to get the model state, use it to update detector model
+// then call the simple_predictor and calculate residuals
+// also calculate gradients and assign into a jacobian matrix.
+
 // Implement y = (x-5)^2
 struct MyFunctor
 {
+    // Take target as input and use to calculate parameters.
+    // When x is updated, will first need to get the target to update the model
+    // and calculate the residuals and gradients as appropriate.
     typedef float Scalar;
 
     typedef Eigen::VectorXf InputType;
@@ -40,12 +47,28 @@ struct MyFunctor
 
     int operator()(const Eigen::VectorXf &x, Eigen::VectorXf &fvec) const
     {
+        // x has dimensions of the number of parameters (i.e. nx1)
+        // fvec has dimensions of the number of observations i.e. mx1)
+        // i.e. fvec is what we would call the residuals vector.
         // We provide f(x) = x-5 because the algorithm will square this value internally
+
+        // target.residuals(x) - will know how to set params values, repredict, then
+        // calculate xyz residuals
         fvec(0) = x(0) - 5.0;
         return 0;
     }
 
     int df(const Eigen::VectorXf &x, Eigen::MatrixXf &fjac) const {
+      // x has dimensions of the number of parameters (i.e. nx1)
+      // fjac has dimensions m x n i.e. the gradients vector with respect to
+      // parameter i will be set in the column fjac(i,:).
+
+      // target.jacobian(x) - will set up the gradients calculator with the current
+      // state and call the get_gradients method.
+      /*std::vector<std::vector<double>> gradients = target.gradients();
+      for (int i=0;i<gradients.size();++i){
+        fjac.col(i) = Eigen::Map<Eigen::VectorXf>(gradients[i].data(), gradients[i].size());
+      }*/
       fjac(0,0) = 1;
       return 0;
     }
@@ -139,6 +162,13 @@ void evaluate_crystal(Crystal crystal,
     // As part of residuals, it updates the parameterisation objects, updates the experiment objects
     // and runs the simple predictor on the reflection data.
 
+    Target target(crystal, gonio, beam, panel, sel_obs);
+    std::vector<double> params = {5,1,5,1,1,1}; 
+    std::vector<double> resids = target.residuals(params);
+    std::cout << std::accumulate(resids.begin(), resids.end(), 0.0, [](double s, double x){return s + x*x;}) << std::endl;
+    std::vector<std::vector<double>> gradients = target.gradients();
+    std::cout << gradients[0][0] << std::endl;
+    
     Eigen::VectorXf x(1);
     x(0) = 2;
     MyFunctor myFunctor;
@@ -157,8 +187,10 @@ void evaluate_crystal(Crystal crystal,
     double xsum = 0;
     double ysum = 0;
     double zsum = 0;
+    std::cout << "here1" << std::endl;
     auto flags_ = sel_obs.column<std::size_t>("flags");
     auto& flags = flags_.value();
+    std::cout << "here2" << std::endl;
     auto xyzobs_ = sel_obs.column<double>("xyzobs_mm");
     const auto& xyzobs_mm_sel = xyzobs_.value();
     auto xyzcal_ = sel_obs.column<double>("xyzcal_mm");

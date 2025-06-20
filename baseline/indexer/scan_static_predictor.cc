@@ -58,7 +58,18 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     const auto& hkl = hkl_.value();
 
     std::vector<double> xyzcal_mm_data(xyzobs_mm.size(), 0.0);
-    mdspan_type<double> xyzcal_mm(xyzcal_mm_data.data(), xyzcal_mm_data.size() / 3, 3);
+    mdspan_type<double> xyzcal_mm;
+    //mdspan_type<double> xyzcal_mm(xyzcal_mm_data.data(), xyzcal_mm_data.size() / 3, 3);
+    auto xyzcal_ = reflections.column<double>("xyzcal_mm");
+    if (xyzcal_.has_value()){
+        xyzcal_mm = xyzcal_.value();
+    }
+    else {
+        reflections.add_column(
+            "xyzcal_mm", xyzobs_mm.extent(0), 3, xyzcal_mm_data);
+        auto xyzcal_ = reflections.column<double>("xyzcal_mm");
+        xyzcal_mm = xyzcal_.value();
+    }
 
     // these setup bits are the same for all refls.
     Vector3d s0 = beam.get_s0();
@@ -157,8 +168,15 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
         s1(i, 2) = s1_this[2];
         flags(i, 0) = flags(i, 0) | predicted_value;
     }
-    reflections.add_column(
-      "xyzcal_mm", xyzcal_mm.extent(0), xyzcal_mm.extent(1), xyzcal_mm_data);
+    /*auto xyzcal_ = reflections.column<double>("xyzcal_mm");
+    if (xyzcal_.has_value()){
+        auto& xyzcal_mm_intable = xyzcal_.value();
+        xyzcal_mm_intable = xyzcal_mm;
+    }
+    else {
+        reflections.add_column(
+            "xyzcal_mm", xyzcal_mm.extent(0), xyzcal_mm.extent(1), xyzcal_mm_data);
+    }*/
 }
 
 #endif  // DIALS_STATIC_PREDICTOR

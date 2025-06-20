@@ -58,16 +58,16 @@ public:
     bool fix_tau1,
     bool fix_tau2,
     bool fix_tau3);
-  std::vector<double> get_params();
+  std::vector<double> get_params() const;
   void set_params(std::vector<double> p);
-  Matrix3d get_state();
-  std::vector<Matrix3d> get_dS_dp();
-  bool dist_fixed();
-  bool shift1_fixed();
-  bool shift2_fixed();
-  bool tau1_fixed();
-  bool tau2_fixed();
-  bool tau3_fixed();
+  Matrix3d get_state() const;
+  std::vector<Matrix3d> get_dS_dp() const;
+  bool dist_fixed() const;
+  bool shift1_fixed() const;
+  bool shift2_fixed() const;
+  bool tau1_fixed() const;
+  bool tau2_fixed() const;
+  bool tau3_fixed() const;
 
 private:
   std::vector<double> params{6, 0.0}; //
@@ -205,12 +205,12 @@ void SimpleDetectorParameterisation::compose(){
 
 SimpleDetectorParameterisation::SimpleDetectorParameterisation(
     const Panel& p,
-    bool fix_dist=true,
-    bool fix_shift1=true,
-    bool fix_shift2=true,
-    bool fix_tau1=true,
-    bool fix_tau2=true,
-    bool fix_tau3=true): 
+    bool fix_dist=false,
+    bool fix_shift1=false,
+    bool fix_shift2=false,
+    bool fix_tau1=false,
+    bool fix_tau2=false,
+    bool fix_tau3=false): 
         _fix_dist{fix_dist}, _fix_shift1{fix_shift1}, _fix_shift2{fix_shift2},
         _fix_tau1{fix_tau1}, _fix_tau2{fix_tau2}, _fix_tau3{fix_tau3}{
     //const dxtbx::model::Panel& p = Detector[0];
@@ -232,7 +232,7 @@ SimpleDetectorParameterisation::SimpleDetectorParameterisation(
     compose();
 }
 
-Matrix3d SimpleDetectorParameterisation::get_state(){
+Matrix3d SimpleDetectorParameterisation::get_state() const{
     Matrix3d m{
         {current_d1[0], current_d2[0], current_origin[0]},
         {current_d1[1], current_d2[1], current_origin[1]},
@@ -241,33 +241,33 @@ Matrix3d SimpleDetectorParameterisation::get_state(){
     return m;
 }
 
-std::vector<double> SimpleDetectorParameterisation::get_params() {
+std::vector<double> SimpleDetectorParameterisation::get_params() const {
   return params;
 }
 void SimpleDetectorParameterisation::set_params(std::vector<double> p) {
   params = p;
   compose();
 }
-std::vector<Matrix3d> SimpleDetectorParameterisation::get_dS_dp() {
+std::vector<Matrix3d> SimpleDetectorParameterisation::get_dS_dp() const  {
   return dS_dp;
 }
 
-bool SimpleDetectorParameterisation::dist_fixed(){
+bool SimpleDetectorParameterisation::dist_fixed() const {
     return _fix_dist;
 }
-bool SimpleDetectorParameterisation::shift1_fixed(){
+bool SimpleDetectorParameterisation::shift1_fixed() const {
     return _fix_shift1;
 }
-bool SimpleDetectorParameterisation::shift2_fixed(){
+bool SimpleDetectorParameterisation::shift2_fixed() const {
     return _fix_shift2;
 }
-bool SimpleDetectorParameterisation::tau1_fixed(){
+bool SimpleDetectorParameterisation::tau1_fixed() const {
     return _fix_tau1;
 }
-bool SimpleDetectorParameterisation::tau2_fixed(){
+bool SimpleDetectorParameterisation::tau2_fixed() const {
     return _fix_tau2;
 }
-bool SimpleDetectorParameterisation::tau3_fixed(){
+bool SimpleDetectorParameterisation::tau3_fixed() const {
     return _fix_tau3;
 }
 

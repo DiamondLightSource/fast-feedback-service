@@ -1,8 +1,9 @@
+#ifndef GRADIENTS_CALCULATOR_H
+#define GRADIENTS_CALCULATOR_H
 
 #include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
-#include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
 #include "detector_parameterisation.h"
 #include <dx2/reflection.hpp>
@@ -15,48 +16,60 @@ using Eigen::Vector3i;
 class GradientsCalculator {
 public:
     GradientsCalculator(
-        Experiment<MonochromaticBeam> &experiment,
+        Crystal &crystal,
+        Goniometer &goniometer,
+        MonochromaticBeam& beam,
+        Panel& panel,
         //SimpleUParameterisation &uparam,
         //SimpleBParameterisation &bparam,
         //SimpleBeamParameterisation &beamparam,
-        SimpleDetectorParameterisation &Dparam);
-    std::vector<std::vector<double>> get_gradients(ReflectionTable &obs);
+        SimpleDetectorParameterisation &Dparam) ;
+    std::vector<std::vector<double>> get_gradients(const ReflectionTable &obs) const;
 
 private:
-  Experiment<MonochromaticBeam> experiment;
+  //Experiment<MonochromaticBeam> experiment;
   //SimpleUParameterisation uparam;
   //SimpleBParameterisation bparam;
   //SimpleBeamParameterisation beamparam;
+  Crystal crystal;
+  Goniometer goniometer;
+  MonochromaticBeam beam;
+  Panel panel;
   SimpleDetectorParameterisation Dparam;
 };
 
-GradientsCalculator::GradientsCalculator(Experiment<MonochromaticBeam> &experiment,
+GradientsCalculator::GradientsCalculator(
+    Crystal &crystal,
+    Goniometer &goniometer,
+    MonochromaticBeam& beam,
+    Panel& panel,
     SimpleDetectorParameterisation &Dparam) :
-experiment(experiment), Dparam(Dparam){};
+crystal(crystal), goniometer(goniometer), beam(beam), panel(panel), Dparam(Dparam) {};
 
-std::vector<std::vector<double>> GradientsCalculator::get_gradients(ReflectionTable &obs){
+std::vector<std::vector<double>> GradientsCalculator::get_gradients(const ReflectionTable &obs) const {
     auto s1_ = obs.column<double>("s1");
     const auto& s1 = s1_.value();
     int n_ref = s1.extent(0);
     // assume one panel detector for now
     // Some templating to handle multi-panel/single panel detectors? will need a function to pass in a panel array
     // and return D array.
-    std::vector<Matrix3d> D(n_ref, Dparam.get_state().inverse());
+    Matrix3d state = Dparam.get_state();
+    std::vector<Matrix3d> D(n_ref, state.inverse());
 
     /*Vector3d s0 = beamparam.get_state();
     Matrix3d B = bparam.get_state();
     Matrix3d U = uparam.get_state();*/
-    Vector3d s0 = experiment.beam().get_s0();
-    Matrix3d B = experiment.crystal().get_B_matrix();
-    Matrix3d U = experiment.crystal().get_U_matrix();
+    Vector3d s0 = beam.get_s0();
+    Matrix3d B = crystal.get_B_matrix();
+    Matrix3d U = crystal.get_U_matrix();
 
 
-    Matrix3d S = experiment.goniometer().get_setting_rotation();
-    Vector3d axis = experiment.goniometer().get_rotation_axis();
-    Matrix3d F = experiment.goniometer().get_sample_rotation();
+    Matrix3d S = goniometer.get_setting_rotation();
+    Vector3d axis = goniometer.get_rotation_axis();
+    Matrix3d F = goniometer.get_sample_rotation();
     Matrix3d UB = U * B;
     
-    auto xyz_ = obs.column<double>("xyzcal.mm");
+    auto xyz_ = obs.column<double>("xyzcal_mm");
     const auto& xyz = xyz_.value();
     auto hkl_ = obs.column<int>("miller_index");
     const auto& hkl = hkl_.value();
@@ -165,3 +178,5 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(ReflectionTa
 
     return gradients;
 }
+
+#endif //GRADIENTS_CALCULATOR_H
