@@ -18,6 +18,7 @@ target_link_libraries(integrator
     nlohmann_json::nlohmann_json
     spdlog::spdlog
     dx2
+    Eigen3::Eigen
     version
     ffs_common
     cuda_parser
