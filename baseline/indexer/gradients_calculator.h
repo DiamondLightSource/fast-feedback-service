@@ -19,11 +19,10 @@ public:
         Crystal &crystal,
         Goniometer &goniometer,
         MonochromaticBeam& beam,
-        Panel& panel,
         //SimpleUParameterisation &uparam,
         //SimpleBParameterisation &bparam,
         //SimpleBeamParameterisation &beamparam,
-        SimpleDetectorParameterisation &Dparam) ;
+        SimpleDetectorParameterisation& Dparam) ;
     std::vector<std::vector<double>> get_gradients(const ReflectionTable &obs) const;
 
 private:
@@ -34,17 +33,15 @@ private:
   Crystal crystal;
   Goniometer goniometer;
   MonochromaticBeam beam;
-  Panel panel;
-  SimpleDetectorParameterisation Dparam;
+  SimpleDetectorParameterisation& Dparam;
 };
 
 GradientsCalculator::GradientsCalculator(
     Crystal &crystal,
     Goniometer &goniometer,
     MonochromaticBeam& beam,
-    Panel& panel,
-    SimpleDetectorParameterisation &Dparam) :
-crystal(crystal), goniometer(goniometer), beam(beam), panel(panel), Dparam(Dparam) {};
+    SimpleDetectorParameterisation& Dparam) :
+crystal(crystal), goniometer(goniometer), beam(beam), Dparam(Dparam) {};
 
 std::vector<std::vector<double>> GradientsCalculator::get_gradients(const ReflectionTable &obs) const {
     auto s1_ = obs.column<double>("s1");

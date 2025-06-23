@@ -70,7 +70,7 @@ public:
   bool tau3_fixed() const;
 
 private:
-  std::vector<double> params{6, 0.0}; //
+  std::vector<double> params_ = {0.0,0.0,0.0,0.0,0.0,0.0}; //
   void compose();
   std::vector<Matrix3d> dS_dp{
     6,
@@ -92,9 +92,9 @@ private:
 };
 
 void SimpleDetectorParameterisation::compose(){
-    double t1r = params[3] / 1000.0;
-    double t2r = params[4] / 1000.0;
-    double t3r = params[5] / 1000.0;
+    double t1r = params_[3] / 1000.0;
+    double t2r = params_[4] / 1000.0;
+    double t3r = params_[5] / 1000.0;
     Matrix3d Tau1 = axis_and_angle_as_rot(initial_dn, t1r);
     Matrix3d dTau1_dtau1 = dR_from_axis_and_angle(initial_dn, t1r);
     Matrix3d Tau2 = axis_and_angle_as_rot(initial_d1, t2r);
@@ -103,10 +103,10 @@ void SimpleDetectorParameterisation::compose(){
     Matrix3d dTau3_dtau3 = dR_from_axis_and_angle(initial_d2, t3r);
     Matrix3d Tau32 = Tau3 * Tau2;
     Matrix3d Tau321 = Tau32 * Tau1;
-    Vector3d P0 = params[0] * initial_dn;
+    Vector3d P0 = params_[0] * initial_dn;
     Vector3d Px = P0 + initial_d1;
     Vector3d Py = P0 + initial_d2;
-    Vector3d dsv = P0 + (params[1] * initial_d1) + (params[2] * initial_d2);
+    Vector3d dsv = P0 + (params_[1] * initial_d1) + (params_[2] * initial_d2);
     Vector3d dorg = (Tau321 * dsv) - (Tau32 * P0) + P0;
     Vector3d d1 = (Tau321 * (Px-P0));
     d1.normalize();
@@ -225,10 +225,13 @@ SimpleDetectorParameterisation::SimpleDetectorParameterisation(
     double panel_lim_y = p.get_image_size_mm()[1];
     initial_offset = {-0.5 * panel_lim_x, -0.5 * panel_lim_y, 0.0};
     Vector3d dorg = so - (initial_offset[0]*d1) - (initial_offset[1]*d2);
-    params[0] = p.get_directed_distance();
-    Vector3d shift = dorg - dn*params[0];
-    params[1] = shift.dot(d1);
-    params[2] = shift.dot(d2);
+    params_[0] = p.get_directed_distance();
+    Vector3d shift = dorg - dn*params_[0];
+    params_[1] = shift.dot(d1);
+    params_[2] = shift.dot(d2);
+    params_[3] = 0.0;
+    params_[4] = 0.0;
+    params_[5] = 0.0;
     compose();
 }
 
@@ -242,10 +245,10 @@ Matrix3d SimpleDetectorParameterisation::get_state() const{
 }
 
 std::vector<double> SimpleDetectorParameterisation::get_params() const {
-  return params;
+  return params_;
 }
 void SimpleDetectorParameterisation::set_params(std::vector<double> p) {
-  params = p;
+  params_ = p;
   compose();
 }
 std::vector<Matrix3d> SimpleDetectorParameterisation::get_dS_dp() const  {

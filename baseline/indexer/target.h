@@ -20,39 +20,61 @@ public:
         Crystal &crystal,
         Goniometer &goniometer,
         MonochromaticBeam& beam,
-        Panel& panel,
+        Panel panel,
         ReflectionTable& obs);
     std::vector<std::vector<double>> gradients() const;
     std::vector<double> residuals(std::vector<double> x);
+    int nref() const;
+    int nparams() const;
+    SimpleDetectorParameterisation detector_parameterisation() const;
 
 private:
     Crystal crystal;
     Goniometer goniometer;
     MonochromaticBeam beam;
-    Panel panel;
+    Panel panel_;
     ReflectionTable& obs;
     SimpleDetectorParameterisation Dparam;
     GradientsCalculator calculator;
+    int n_ref;
+    int n_params;
 };
 
 Target::Target(Crystal &crystal,
     Goniometer &goniometer,
     MonochromaticBeam& beam,
-    Panel& panel, ReflectionTable& obs):
-crystal(crystal), goniometer(goniometer), beam(beam), panel(panel),
-obs(obs), Dparam(SimpleDetectorParameterisation(panel)), calculator(
-    crystal, goniometer, beam, panel, Dparam){};
+    Panel panel, ReflectionTable& obs):
+crystal(crystal), goniometer(goniometer), beam(beam), panel_(panel),
+obs(obs), Dparam(panel_), calculator(
+    crystal, goniometer, beam, Dparam){
+        auto s1_ = obs.column<double>("s1");
+        const auto& s1 = s1_.value();
+        n_ref = s1.extent(0);
+        n_params = Dparam.get_params().size();
+    };
+
+int Target::nref() const {
+    return n_ref;
+}
+
+int Target::nparams() const {
+    return n_params;
+}
+
+SimpleDetectorParameterisation Target::detector_parameterisation() const {
+    return Dparam;
+}
 
 std::vector<double> Target::residuals(std::vector<double> x) {
     // Ok in future will need to split and set in the full set of parameterisations.
     Dparam.set_params(x);
     Matrix3d d = Dparam.get_state();
-    panel.update(d); //check maths here.
+    panel_.update(d); //check maths here.
     simple_reflection_predictor(
         beam,
         goniometer,
         crystal.get_A_matrix(),
-        panel,
+        panel_,
         obs
     );
     auto xyzobs_ = obs.column<double>("xyzobs_mm");
@@ -70,7 +92,7 @@ std::vector<double> Target::residuals(std::vector<double> x) {
     for (int i=(2*n), k=0; i<(3*n); ++i, ++k){
         residuals[i] = xyzcal_mm(k,2) - xyzobs_mm(k,2);
     }
-    calculator = GradientsCalculator(crystal, goniometer, beam, panel, Dparam); // needed?
+    //calculator = GradientsCalculator(crystal, goniometer, beam, panel, Dparam); // needed?
     return residuals;
 }
 
