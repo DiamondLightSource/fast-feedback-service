@@ -4,10 +4,15 @@
 
 #include "integrator.cuh"
 
+#include <Eigen/Dense>
+#include <dx2/beam.hpp>
+#include <dx2/experiment.hpp>
+#include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
 #include <dx2/reflection.hpp>
 #include <experimental/mdspan>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <string>
 
 #include "common.hpp"
@@ -15,6 +20,77 @@
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "version.hpp"
+
+#pragma region Algorithms
+
+/**
+ * @brief Transform a pixel from reciprocal space into the local Kabsch
+ * coordinate frame.
+ *
+ * Given a predicted reflection centre and a pixel's position in
+ * reciprocal space, this function calculates the local Kabsch
+ * coordinates (ε₁, ε₂, ε₃), which represent displacements along a
+ * non-orthonormal basis defined by the scattering geometry.
+ *
+ * This is used to determine whether a pixel falls within the profile of
+ * a reflection in Kabsch space, which allows summation or profile
+ * integration to proceed in a geometry-invariant coordinate frame.
+ *
+ * @param s0 Incident beam vector (s₀), units of 1/Å
+ * @param s1_c Predicted diffracted vector at the reflection centre
+ * (s₁ᶜ), units of 1/Å
+ * @param phi_c Rotation angle at the reflection centre (φᶜ), in radians
+ * @param s_pixel Diffracted vector at the current pixel (S′), units of
+ * 1/Å
+ * @param phi_pixel Rotation angle at the pixel (φ′), in radians
+ * @param rot_axis Unit goniometer rotation axis vector (m₂)
+ * @param s1_len_out Optional output for magnitude of s₁ᶜ (|s₁|)
+ * @return Eigen::Vector3d The local coordinates (ε₁, ε₂, ε₃) in Kabsch
+ * space
+ */
+Eigen::Vector3d pixel_to_kabsch(const Eigen::Vector3d& s0,
+                                const Eigen::Vector3d& s1_c,
+                                double phi_c,
+                                const Eigen::Vector3d& s_pixel,
+                                double phi_pixel,
+                                const Eigen::Vector3d& rot_axis,
+                                double& s1_len_out) {
+    // Define the local Kabsch basis vectors:
+    // e1 is perpendicular to the scattering plane
+    Eigen::Vector3d e1 = s1_c.cross(s0).normalized();
+
+    // e2 lies within the scattering plane, orthogonal to e1
+    Eigen::Vector3d e2 = s1_c.cross(e1).normalized();
+
+    // e3 bisects the angle between s0 and s1
+    Eigen::Vector3d e3 = (s1_c + s0).normalized();
+
+    // Compute the length of the predicted diffracted vector (|s₁|)
+    double s1_len = s1_c.norm();
+    s1_len_out = s1_len;
+
+    // Rotation offset between the pixel and reflection centre
+    double dphi = phi_pixel - phi_c;
+
+    // Compute the predicted diffracted vector at φ′
+    Eigen::Vector3d s1_phi_prime = s1_c + e3 * dphi;
+
+    // Difference vector between pixel's s′ and the φ′-adjusted centroid
+    Eigen::Vector3d deltaS = s_pixel - s1_phi_prime;
+
+    // ε₁: displacement along e1, normalised by |s₁|
+    double eps1 = e1.dot(deltaS) / s1_len;
+
+    // ε₂: displacement along e2, with correction for non-orthogonality to e3
+    double eps2 = e2.dot(deltaS) / s1_len - (e2.dot(e3) * dphi) / s1_len;
+
+    // ε₃: displacement along rotation axis, scaled by ζ = m₂ · e₁
+    double zeta = rot_axis.dot(e1);
+    double eps3 = zeta * dphi;
+
+    return {eps1, eps2, eps3};
+}
+#pragma endregion Algorithms
 
 #pragma region Argument Parsing
 class IntegratorArgumentParser : public CUDAArgumentParser {
@@ -96,9 +172,9 @@ int main(int argc, char** argv) {
     logger.info("Loading data from file: {}", reflection_file);
     ReflectionTable reflections(reflection_file);
 
-    auto column_names = reflections.get_column_names();
+    // Display column names
     std::string column_names_str;
-    for (const auto& name : column_names) {
+    for (const auto& name : reflections.get_column_names()) {
         column_names_str += "\n\t- " + name;
     }
     logger.info("Column names: {}", column_names_str);
@@ -109,7 +185,100 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Load experiment model data?
+    // Load phi positions (used later for φ′ - φ)
+    auto phi_column = reflections.column<double>("xyzcal.mm");
+    if (!phi_column) {
+        logger.error("Column 'xyzcal.mm' not found for phi positions.");
+        return 1;
+    }
+
+    // Print first 10 s1 vectors for debugging
+    logger.trace("First 10 s1 vectors:");
+    for (size_t i = 0; i < std::min<size_t>(s1_vectors->extent(0), 10); ++i) {
+        logger.trace(fmt::format("s1[{}]:\n\t({}, {}, {})",
+                                 i,
+                                 (*s1_vectors)(i, 0),
+                                 (*s1_vectors)(i, 1),
+                                 (*s1_vectors)(i, 2)));
+    }
+
+    // Parse experiment list from JSON
+    std::ifstream f(experiment_file);
+    json elist_json_obj;
+    try {
+        elist_json_obj = json::parse(f);
+    } catch (json::parse_error& ex) {
+        logger.error("Failed to parse experiment file '{}': byte {}, {}",
+                     experiment_file,
+                     ex.byte,
+                     ex.what());
+        return 1;
+    }
+
+    // Construct Experiment object and extract beam
+    Experiment<MonochromaticBeam> expt;
+    try {
+        expt = Experiment<MonochromaticBeam>(elist_json_obj);
+    } catch (const std::invalid_argument& ex) {
+        logger.error(
+          "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
+        return 1;
+    }
+    MonochromaticBeam beam = expt.beam();
+    Goniometer gonio = expt.goniometer();
+
+    Eigen::Vector3d s0 = beam.get_s0();
+    Eigen::Vector3d rotation_axis = gonio.get_rotation_axis();
+
+    std::vector<double> eps_centre;  // flat [ε1,ε2,ε3, …] output
+    eps_centre.reserve(s1_vectors->extent(0) * 3);
+
+    for (std::size_t i = 0; i < s1_vectors->extent(0); ++i) {
+        // centroid values
+        Eigen::Vector3d s1_centroid(
+          (*s1_vectors)(i, 0), (*s1_vectors)(i, 1), (*s1_vectors)(i, 2));
+
+        double phi_centroid =
+          (*phi_column)(i, 2);  // xyzcal.mm third component is φᶜ (rad)
+
+        /* The centroid maps to ε = (0,0,0).  We nevertheless call the helper once
+        so that it returns the per-reflection |s1| value for later bookkeeping. */
+        double s1_len = 0.0;  // will be filled by pixel_to_kabsch
+        Eigen::Vector3d eps = pixel_to_kabsch(s0,
+                                              s1_centroid,
+                                              phi_centroid,
+                                              s1_centroid,
+                                              phi_centroid,
+                                              rotation_axis,
+                                              s1_len);
+
+        eps_centre.insert(eps_centre.end(), {eps.x(), eps.y(), eps.z()});
+    }
+
+    reflections.add_column(
+      "eps_centre", std::vector<size_t>{s1_vectors->extent(0), 3}, eps_centre);
+
+    logger.trace("Centroid ε-vectors (should be ~0):");
+    for (std::size_t i = 0; i < std::min<std::size_t>(5, eps_centre.size() / 3); ++i) {
+        logger.trace("  refl {:>3}  (ε1,ε2,ε3) = ({:+.4e},{:+.4e},{:+.4e})",
+                     i,
+                     eps_centre[i * 3 + 0],
+                     eps_centre[i * 3 + 1],
+                     eps_centre[i * 3 + 2]);
+    }
+
+    // Display debug output
+    logger.trace("First 5 Kabsch coordinates:");
+    for (size_t i = 0; i < std::min<size_t>(eps_centre.size() / 3, 5); ++i) {
+        logger.trace("kabsch[{}]: ({:.5f}, {:.5f}, {:.5f})",
+                     i,
+                     eps_centre[i * 3 + 0],
+                     eps_centre[i * 3 + 1],
+                     eps_centre[i * 3 + 2]);
+    }
+
+    // Add as a column to the reflection table
+    reflections.write("output_reflections.h5");
 
     return 0;
 }

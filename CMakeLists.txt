@@ -48,6 +48,22 @@ FetchContent_Declare(
     FIND_PACKAGE_ARGS
 )
 FetchContent_MakeAvailable(spdlog)
+FetchContent_Declare(
+    Eigen3
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG 3.4.0
+    EXCLUDE_FROM_ALL
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(Eigen3)
+FetchContent_Declare(
+    mdspan
+    GIT_REPOSITORY https://github.com/kokkos/mdspan
+    GIT_TAG mdspan-0.6.0
+    EXCLUDE_FROM_ALL
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(mdspan)
 
 # Handle inclusion of dx2 dependency using git submodule
 set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
