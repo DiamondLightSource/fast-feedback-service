@@ -29,10 +29,9 @@ std::mutex score_and_crystal_mtx;
 // then call the simple_predictor and calculate residuals
 // also calculate gradients and assign into a jacobian matrix.
 
-
 struct RefineFunctor
 {
-  Target target;
+  Target& target;
   typedef float Scalar;
 
   typedef Eigen::VectorXd InputType;
@@ -49,8 +48,6 @@ struct RefineFunctor
       // x has dimensions of the number of parameters (i.e. nx1)
       // fvec has dimensions of the number of observations i.e. mx1)
       // i.e. fvec is what we would call the residuals vector.
-      // We provide f(x) = x-5 because the algorithm will square this value internally
-
       // target.residuals(x) - will know how to set params values, repredict, then
       // calculate xyz residuals
       std::vector<double> x_vector(6);
@@ -58,19 +55,10 @@ struct RefineFunctor
         x_vector[i] = x(i);
       }
       std::vector<double> resids = target.residuals(x_vector);
-      double xsum = 0;
-      double ysum = 0;
-      int n = target.nref();
-      for (int i = 0, j=n; i < n; i++, j++) {
-          xsum += std::pow(resids[i], 2);
-          ysum += std::pow(resids[j], 2);
-      }
-      double rmsdx = std::sqrt(xsum / n);
-      double rmsdy = std::sqrt(ysum / n);
-      double xyrmsd = std::sqrt(rmsdx * rmsdx + rmsdy * rmsdy);
+      std::vector<double> rmsds = target.rmsds();
+      double xyrmsd = std::sqrt(std::pow(rmsds[0], 2) + std::pow(rmsds[1],2));
       logger.info("RMSDXY {:.5f} ", xyrmsd);
       fvec = Eigen::Map<const Eigen::VectorXd>(resids.data(), resids.size());
-      //fvec(0) = x(0) - 5.0;
       return 0;
   }
 
@@ -78,13 +66,6 @@ struct RefineFunctor
     // x has dimensions of the number of parameters (i.e. nx1)
     // fjac has dimensions m x n i.e. the gradients vector with respect to
     // parameter i will be set in the column fjac(i,:).
-
-    // target.jacobian(x) - will set up the gradients calculator with the current
-    // state and call the get_gradients method.
-    /*std::vector<std::vector<double>> gradients = target.gradients();
-    for (int i=0;i<gradients.size();++i){
-      fjac.col(i) = Eigen::Map<Eigen::VectorXd>(gradients[i].data(), gradients[i].size());
-    }*/
     std::vector<std::vector<double>> gradients = target.gradients();
     for (int i=0;i<gradients.size();++i){
       fjac.col(i) = Eigen::Map<const Eigen::VectorXd>(gradients[i].data(), gradients[i].size());
@@ -96,54 +77,6 @@ struct RefineFunctor
   int values() const { return 3 * target.nref(); } // "values" is the number of f_i and
 };
 
-// Implement y = (x-5)^2
-struct MyFunctor
-{
-    // Take target as input and use to calculate parameters.
-    // When x is updated, will first need to get the target to update the model
-    // and calculate the residuals and gradients as appropriate.
-    typedef float Scalar;
-
-    typedef Eigen::VectorXf InputType;
-    typedef Eigen::VectorXf ValueType;
-    typedef Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> JacobianType;
-
-    enum {
-        InputsAtCompileTime = Eigen::Dynamic,
-        ValuesAtCompileTime = Eigen::Dynamic
-    };
-
-    int operator()(const Eigen::VectorXf &x, Eigen::VectorXf &fvec) const
-    {
-        // x has dimensions of the number of parameters (i.e. nx1)
-        // fvec has dimensions of the number of observations i.e. mx1)
-        // i.e. fvec is what we would call the residuals vector.
-        // We provide f(x) = x-5 because the algorithm will square this value internally
-
-        // target.residuals(x) - will know how to set params values, repredict, then
-        // calculate xyz residuals
-        fvec(0) = x(0) - 5.0;
-        return 0;
-    }
-
-    int df(const Eigen::VectorXf &x, Eigen::MatrixXf &fjac) const {
-      // x has dimensions of the number of parameters (i.e. nx1)
-      // fjac has dimensions m x n i.e. the gradients vector with respect to
-      // parameter i will be set in the column fjac(i,:).
-
-      // target.jacobian(x) - will set up the gradients calculator with the current
-      // state and call the get_gradients method.
-      /*std::vector<std::vector<double>> gradients = target.gradients();
-      for (int i=0;i<gradients.size();++i){
-        fjac.col(i) = Eigen::Map<Eigen::VectorXf>(gradients[i].data(), gradients[i].size());
-      }*/
-      fjac(0,0) = 1;
-      return 0;
-    }
-
-    int inputs() const { return 1; }// inputs is the dimension of x.
-    int values() const { return 1; } // "values" is the number of f_i and
-};
 
 // A struct to score a candidate crystal model.
 struct score_and_crystal {
@@ -240,15 +173,10 @@ void evaluate_crystal(Crystal crystal,
     x(3) = params[3];
     x(4) = params[4];
     x(5) = params[5];
-    logger.info("Initial x1: {:.5f}", x(0));
-    logger.info("Initial x2: {:.5f}", x(1));
-    logger.info("Initial x3: {:.5f}", x(2));
-    logger.info("Initial x4: {:.5f}", x(3));
-    logger.info("Initial x5: {:.5f}", x(4));
-    logger.info("Initial x6: {:.5f}", x(5));
-    //x(0) = 2;
-    RefineFunctor myFunctor(target);
-    Eigen::LevenbergMarquardt<RefineFunctor, double> levenbergMarquardt(myFunctor);
+    logger.info("Initial params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}", x(0), x(1), x(2), x(3), x(4), x(5));
+
+    RefineFunctor minimiser(target);
+    Eigen::LevenbergMarquardt<RefineFunctor, double> levenbergMarquardt(minimiser);
 
     levenbergMarquardt.parameters.ftol = 1e-6;
     levenbergMarquardt.parameters.xtol = 1e-6;
@@ -256,33 +184,10 @@ void evaluate_crystal(Crystal crystal,
 
     Eigen::VectorXd xmin = x; // initialize
     levenbergMarquardt.minimize(xmin);
+    logger.info("Minimsed params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}", xmin(0), xmin(1), xmin(2), xmin(3), xmin(4), xmin(5));
 
-    logger.info("x1 that minimizes the function: {:.5f}", xmin(0));
-    logger.info("x2 that minimizes the function: {:.5f}", xmin(1));
-    logger.info("x3 that minimizes the function: {:.5f}", xmin(2));
-    logger.info("x4 that minimizes the function: {:.5f}", xmin(3));
-    logger.info("x5 that minimizes the function: {:.5f}", xmin(4));
-    logger.info("x6 that minimizes the function: {:.5f}", xmin(5));
-
-    // Calculate rmsds
-    double xsum = 0;
-    double ysum = 0;
-    double zsum = 0;
-    auto flags_ = sel_obs.column<std::size_t>("flags");
-    auto& flags = flags_.value();
-    auto xyzobs_ = sel_obs.column<double>("xyzobs_mm");
-    const auto& xyzobs_mm_sel = xyzobs_.value();
-    auto xyzcal_ = sel_obs.column<double>("xyzcal_mm");
-    const auto& xyzcal_mm_sel = xyzcal_.value();
-    for (int i = 0; i < flags.size(); i++) {
-        xsum += std::pow(xyzobs_mm_sel(i, 0) - xyzcal_mm_sel(i, 0), 2);
-        ysum += std::pow(xyzobs_mm_sel(i, 1) - xyzcal_mm_sel(i, 1), 2);
-        zsum += std::pow(xyzobs_mm_sel(i, 2) - xyzcal_mm_sel(i, 2), 2);
-    }
-    double rmsdx = std::sqrt(xsum / xyzobs_mm_sel.extent(0));
-    double rmsdy = std::sqrt(ysum / xyzobs_mm_sel.extent(0));
-    double rmsdz = std::sqrt(zsum / xyzobs_mm_sel.extent(0));
-    double xyrmsd = std::sqrt(rmsdx * rmsdx + rmsdy * rmsdy);
+    std::vector<double> rmsds = target.rmsds();
+    double xyrmsd = std::sqrt(std::pow(rmsds[0], 2) + std::pow(rmsds[1],2));
 
     // Write some data to the results map
     score_and_crystal sac;

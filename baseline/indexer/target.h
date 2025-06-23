@@ -8,6 +8,7 @@
 #include <dx2/reflection.hpp>
 #include "scan_static_predictor.cc"
 #include "gradients_calculator.h"
+#include <cmath>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -27,6 +28,7 @@ public:
     int nref() const;
     int nparams() const;
     SimpleDetectorParameterisation detector_parameterisation() const;
+    std::vector<double> rmsds() const;
 
 private:
     Crystal crystal;
@@ -38,6 +40,7 @@ private:
     GradientsCalculator calculator;
     int n_ref;
     int n_params;
+    std::vector<double> rmsds_ = {0.0,0.0,0.0};
 };
 
 Target::Target(Crystal &crystal,
@@ -59,6 +62,10 @@ int Target::nref() const {
 
 int Target::nparams() const {
     return n_params;
+}
+
+std::vector<double> Target::rmsds() const {
+    return rmsds_;
 }
 
 SimpleDetectorParameterisation Target::detector_parameterisation() const {
@@ -83,15 +90,24 @@ std::vector<double> Target::residuals(std::vector<double> x) {
     const auto& xyzcal_mm = xyzcal_.value();
     std::vector<double> residuals(xyzobs_mm.size());// residuals vector is all dx then dy then dz
     int n = xyzobs_mm.extent(0);
+    double xsum = 0;
+    double ysum = 0;
+    double zsum = 0;
     for (int i=0; i<n; ++i){
         residuals[i] = xyzcal_mm(i,0) - xyzobs_mm(i,0);
+        xsum += std::pow(residuals[i], 2);
     }
     for (int i=n, k=0; i<(2*n); ++i, ++k){
         residuals[i] = xyzcal_mm(k,1) - xyzobs_mm(k,1);
+        ysum += std::pow(residuals[i], 2);
     }
     for (int i=(2*n), k=0; i<(3*n); ++i, ++k){
         residuals[i] = xyzcal_mm(k,2) - xyzobs_mm(k,2);
+        zsum += std::pow(residuals[i], 2);
     }
+    rmsds_[0] = std::sqrt(xsum / n);
+    rmsds_[1] = std::sqrt(ysum / n);
+    rmsds_[2] = std::sqrt(zsum / n);
     //calculator = GradientsCalculator(crystal, goniometer, beam, panel, Dparam); // needed?
     return residuals;
 }
