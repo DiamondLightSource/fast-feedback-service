@@ -4,16 +4,51 @@
 
 #include "integrator.cuh"
 
+#include <Eigen/Dense>
+#include <dx2/beam.hpp>
+#include <dx2/experiment.hpp>
+#include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
 #include <dx2/reflection.hpp>
 #include <experimental/mdspan>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <string>
 
 #include "common.hpp"
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "version.hpp"
+
+std::vector<double> compute_kabsch_coordinates(
+  const std::experimental::mdspan<const double, std::experimental::dextents<size_t, 2>>&
+    s1,
+  const Eigen::Vector3d& s0,
+  const Eigen::Vector3d& rotation_axis,
+  double sigma_m,
+  double sigma_b) {
+    size_t n = s1.extent(0);
+    std::vector<double> kabsch_coords(n * 3);
+
+    Eigen::Vector3d m = rotation_axis.normalized();
+    Eigen::Vector3d b = s0.normalized();
+    Eigen::Vector3d q = m.cross(b).normalized();  // orthogonal direction
+
+    for (size_t i = 0; i < n; ++i) {
+        Eigen::Vector3d s1_i(s1(i, 0), s1(i, 1), s1(i, 2));
+        Eigen::Vector3d ds = s1_i - s0;
+
+        double q_component = q.dot(ds) / sigma_b;
+        double b_component = b.dot(ds) / sigma_b;
+        double m_component = m.dot(ds) / sigma_m;
+
+        kabsch_coords[i * 3 + 0] = q_component;
+        kabsch_coords[i * 3 + 1] = b_component;
+        kabsch_coords[i * 3 + 2] = m_component;
+    }
+
+    return kabsch_coords;
+}
 
 #pragma region Argument Parsing
 class IntegratorArgumentParser : public CUDAArgumentParser {
@@ -96,7 +131,59 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Load experiment model data?
+    // Print first 10 s1 vectors for debugging
+    logger.trace("First 10 s1 vectors:");
+    for (size_t i = 0; i < std::min<size_t>(s1_vectors->extent(0), 10); ++i) {
+        logger.trace(fmt::format("s1[{}]:\n({}, {}, {})",
+                                 i,
+                                 (*s1_vectors)(i, 0),
+                                 (*s1_vectors)(i, 1),
+                                 (*s1_vectors)(i, 2)));
+    }
+
+    // Parse experiment list from JSON
+    std::ifstream f(args.experiment);
+    json elist_json_obj;
+    try {
+        elist_json_obj = json::parse(f);
+    } catch (json::parse_error& ex) {
+        logger.error("Failed to parse experiment file '{}': byte {}, {}",
+                     args.experiment,
+                     ex.byte,
+                     ex.what());
+        return 1;
+    }
+
+    // Construct Experiment object and extract beam
+    Experiment<MonochromaticBeam> expt;
+    try {
+        expt = Experiment<MonochromaticBeam>(elist_json_obj);
+    } catch (const std::invalid_argument& ex) {
+        logger.error(
+          "Failed to construct Experiment from '{}': {}", args.experiment, ex.what());
+        return 1;
+    }
+    MonochromaticBeam beam = expt.beam();
+    Goniometer gonio = expt.goniometer();
+
+    Eigen::Vector3d s0 = beam.get_s0();
+    Eigen::Vector3d rotation_axis = gonio.get_rotation_axis();
+
+    // Compute Kabsch coordinates
+    auto kabsch_coords =
+      compute_kabsch_coordinates(*s1_vectors, s0, rotation_axis, sigma_m, sigma_b);
+
+    // Debug: Print first few Kabsch vectors
+    logger.trace("First 5 Kabsch coordinates:");
+    for (size_t i = 0; i < std::min<size_t>(kabsch_coords.size() / 3, 5); ++i) {
+        logger.trace(fmt::format("kabsch[{}]: ({:.5f}, {:.5f}, {:.5f})",
+                                 i,
+                                 kabsch_coords[i * 3 + 0],
+                                 kabsch_coords[i * 3 + 1],
+                                 kabsch_coords[i * 3 + 2]));
+    }
+
+    // reflections.add_column("kabsch", kabsch_coords.size() / 3, 3, kabsch_coords.data());
 
     return 0;
 }
