@@ -1,11 +1,12 @@
 #ifndef GRADIENTS_CALCULATOR_H
 #define GRADIENTS_CALCULATOR_H
 
-#include <dx2/beam.hpp>
+//#include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
-#include <dx2/detector.hpp>
+//#include <dx2/detector.hpp>
 #include <dx2/goniometer.hpp>
 #include "detector_parameterisation.h"
+#include "beam_parameterisation.h"
 #include <dx2/reflection.hpp>
 #include "scan_static_predictor.cc"
 
@@ -18,10 +19,10 @@ public:
     GradientsCalculator(
         Crystal &crystal,
         Goniometer &goniometer,
-        MonochromaticBeam& beam,
+        //MonochromaticBeam& beam,
         //SimpleUParameterisation &uparam,
         //SimpleBParameterisation &bparam,
-        //SimpleBeamParameterisation &beamparam,
+        SimpleBeamParameterisation& beamparam,
         SimpleDetectorParameterisation& Dparam) ;
     std::vector<std::vector<double>> get_gradients(const ReflectionTable &obs) const;
 
@@ -32,16 +33,18 @@ private:
   //SimpleBeamParameterisation beamparam;
   Crystal crystal;
   Goniometer goniometer;
-  MonochromaticBeam beam;
+  //MonochromaticBeam beam;
+  SimpleBeamParameterisation beamparam;
   SimpleDetectorParameterisation& Dparam;
 };
 
 GradientsCalculator::GradientsCalculator(
     Crystal &crystal,
     Goniometer &goniometer,
-    MonochromaticBeam& beam,
+    //MonochromaticBeam& beam,
+    SimpleBeamParameterisation& beamparam,
     SimpleDetectorParameterisation& Dparam) :
-crystal(crystal), goniometer(goniometer), beam(beam), Dparam(Dparam) {};
+crystal(crystal), goniometer(goniometer), beamparam(beamparam), Dparam(Dparam) {};
 
 std::vector<std::vector<double>> GradientsCalculator::get_gradients(const ReflectionTable &obs) const {
     auto s1_ = obs.column<double>("s1");
@@ -56,7 +59,7 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(const Reflec
     /*Vector3d s0 = beamparam.get_state();
     Matrix3d B = bparam.get_state();
     Matrix3d U = uparam.get_state();*/
-    Vector3d s0 = beam.get_s0();
+    Vector3d s0 = beamparam.get_state();
     Matrix3d B = crystal.get_B_matrix();
     Matrix3d U = crystal.get_U_matrix();
 
@@ -100,11 +103,11 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(const Reflec
     std::vector<std::vector<double>> gradients;
     //std::vector<Matrix3d> ds_dp = uparam.get_dS_dp();
     //std::vector<Matrix3d> db_dp = bparam.get_dS_dp();
-    //std::vector<Vector3d> dbeam_dp = beamparam.get_dS_dp();
+    std::vector<Vector3d> dbeam_dp = beamparam.get_dS_dp();
     std::vector<Matrix3d> dD_dp = Dparam.get_dS_dp();
 
     //beam derivatives
-    /*std::vector<bool> free;
+    std::vector<bool> free;
     free.push_back(!beamparam.in_spindle_plane_fixed());
     free.push_back(!beamparam.out_spindle_plane_fixed());
     free.push_back(!beamparam.wavelength_fixed());
@@ -114,7 +117,7 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(const Reflec
         Vector3d dbeam_dp_j = dbeam_dp[j];
         if (free[j]){
             for (int k=0;k<n_ref;k++){
-                double dphi = -1.0 * dbeam_dp_j * r[k] / e_r_s0[k];
+                double dphi = -1.0 * dbeam_dp_j.dot(r[k]) / e_r_s0[k];
                 Vector3d dpv = D[k] * ((e_X_r[k] * dphi) + dbeam_dp_j);
                 double w_inv_this = w_inv[k];
                 gradient[k] = w_inv_this * (dpv[0] - dpv[2] * uw_inv[k]);
@@ -122,9 +125,9 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(const Reflec
                 gradient[k+(2*n_ref)] = dphi;
             }
         }
-        gradients.append(gradient);
+        gradients.push_back(gradient);
     }
-
+    /*
     for (int j=0;j<ds_dp.size();j++){
         // each gradient is dx/dp, dy/dp, dz/dp
         std::vector<double> gradient(n_ref*3);

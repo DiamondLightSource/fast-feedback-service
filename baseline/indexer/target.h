@@ -5,6 +5,7 @@
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
 #include "detector_parameterisation.h"
+#include "beam_parameterisation.h"
 #include <dx2/reflection.hpp>
 #include "scan_static_predictor.cc"
 #include "gradients_calculator.h"
@@ -28,6 +29,7 @@ public:
     int nref() const;
     int nparams() const;
     SimpleDetectorParameterisation detector_parameterisation() const;
+    SimpleBeamParameterisation beam_parameterisation() const;
     std::vector<double> rmsds() const;
 
 private:
@@ -37,6 +39,7 @@ private:
     Panel panel_;
     ReflectionTable& obs;
     SimpleDetectorParameterisation Dparam;
+    SimpleBeamParameterisation Beamparam;
     GradientsCalculator calculator;
     int n_ref;
     int n_params;
@@ -48,12 +51,12 @@ Target::Target(Crystal &crystal,
     MonochromaticBeam& beam,
     Panel panel, ReflectionTable& obs):
 crystal(crystal), goniometer(goniometer), beam(beam), panel_(panel),
-obs(obs), Dparam(panel_), calculator(
-    crystal, goniometer, beam, Dparam){
+obs(obs), Dparam(panel_), Beamparam(beam, goniometer), calculator(
+    crystal, goniometer, Beamparam, Dparam){
         auto s1_ = obs.column<double>("s1");
         const auto& s1 = s1_.value();
         n_ref = s1.extent(0);
-        n_params = Dparam.get_params().size();
+        n_params = Dparam.get_params().size() + Beamparam.get_params().size();
     };
 
 int Target::nref() const {
@@ -72,11 +75,20 @@ SimpleDetectorParameterisation Target::detector_parameterisation() const {
     return Dparam;
 }
 
+SimpleBeamParameterisation Target::beam_parameterisation() const {
+    return Beamparam;
+}
+
 std::vector<double> Target::residuals(std::vector<double> x) {
     // Ok in future will need to split and set in the full set of parameterisations.
-    Dparam.set_params(x);
+    std::vector<double> beam_params = {x[0], x[1], x[2]}; 
+    std::vector<double> detector_params = {x[3], x[4], x[5], x[6], x[7], x[8]}; 
+    Beamparam.set_params(beam_params);
+    Dparam.set_params(detector_params);
     Matrix3d d = Dparam.get_state();
     panel_.update(d); //check maths here.
+    Vector3d s0 = Beamparam.get_state();
+    beam.set_s0(s0);
     simple_reflection_predictor(
         beam,
         goniometer,
