@@ -6,6 +6,7 @@
 #include <dx2/goniometer.hpp>
 #include "detector_parameterisation.h"
 #include "beam_parameterisation.h"
+#include "U_parameterisation.h"
 #include <dx2/reflection.hpp>
 #include "scan_static_predictor.cc"
 #include "gradients_calculator.h"
@@ -28,6 +29,7 @@ public:
     std::vector<double> residuals(std::vector<double> x);
     int nref() const;
     int nparams() const;
+    SimpleUParameterisation U_parameterisation() const;
     SimpleDetectorParameterisation detector_parameterisation() const;
     SimpleBeamParameterisation beam_parameterisation() const;
     std::vector<double> rmsds() const;
@@ -38,6 +40,7 @@ private:
     MonochromaticBeam beam;
     Panel panel_;
     ReflectionTable& obs;
+    SimpleUParameterisation Uparam;
     SimpleDetectorParameterisation Dparam;
     SimpleBeamParameterisation Beamparam;
     GradientsCalculator calculator;
@@ -50,13 +53,13 @@ Target::Target(Crystal &crystal,
     Goniometer &goniometer,
     MonochromaticBeam& beam,
     Panel panel, ReflectionTable& obs):
-crystal(crystal), goniometer(goniometer), beam(beam), panel_(panel),
-obs(obs), Dparam(panel_), Beamparam(beam, goniometer), calculator(
-    crystal, goniometer, Beamparam, Dparam){
+crystal(crystal), goniometer(goniometer), beam(beam), panel_(panel), obs(obs),
+Uparam(crystal), Dparam(panel_), Beamparam(beam, goniometer), calculator(
+    Uparam, crystal, goniometer, Beamparam, Dparam){
         auto s1_ = obs.column<double>("s1");
         const auto& s1 = s1_.value();
         n_ref = s1.extent(0);
-        n_params = Dparam.get_params().size() + Beamparam.get_params().size();
+        n_params = Beamparam.get_params().size() + Uparam.get_params().size() + Dparam.get_params().size();
     };
 
 int Target::nref() const {
@@ -71,6 +74,10 @@ std::vector<double> Target::rmsds() const {
     return rmsds_;
 }
 
+SimpleUParameterisation Target::U_parameterisation() const {
+    return Uparam;
+}
+
 SimpleDetectorParameterisation Target::detector_parameterisation() const {
     return Dparam;
 }
@@ -82,17 +89,20 @@ SimpleBeamParameterisation Target::beam_parameterisation() const {
 std::vector<double> Target::residuals(std::vector<double> x) {
     // Ok in future will need to split and set in the full set of parameterisations.
     std::vector<double> beam_params = {x[0], x[1], x[2]}; 
-    std::vector<double> detector_params = {x[3], x[4], x[5], x[6], x[7], x[8]}; 
+    std::vector<double> U_params = {x[3], x[4], x[5]}; 
+    std::vector<double> detector_params = {x[6], x[7], x[8], x[9], x[10], x[11]}; 
     Beamparam.set_params(beam_params);
+    Uparam.set_params(U_params);
     Dparam.set_params(detector_params);
     Matrix3d d = Dparam.get_state();
     panel_.update(d); //check maths here.
     Vector3d s0 = Beamparam.get_state();
     beam.set_s0(s0);
+    Matrix3d A = Uparam.get_state() * crystal.get_B_matrix();
     simple_reflection_predictor(
         beam,
         goniometer,
-        crystal.get_A_matrix(),
+        A,
         panel_,
         obs
     );

@@ -18,6 +18,7 @@
 #include "reflection_filter.cc"
 #include "target.h"
 #include "detector_parameterisation.h"
+#include "U_parameterisation.h"
 
 #include <unsupported/Eigen/NonLinearOptimization>
 #include <unsupported/Eigen/NumericalDiff>
@@ -164,23 +165,30 @@ void evaluate_crystal(Crystal crystal,
     // and runs the simple predictor on the reflection data.
     
     Target target(crystal, gonio, beam, panel, sel_obs);
-    Eigen::VectorXd x(9);
+    Eigen::VectorXd x(target.nparams());
     SimpleBeamParameterisation beam_param = target.beam_parameterisation();
     std::vector<double> beamparams = beam_param.get_params();
+    SimpleUParameterisation u_param = target.U_parameterisation();
+    std::vector<double> uparams = u_param.get_params();
     SimpleDetectorParameterisation d_param = target.detector_parameterisation();
     std::vector<double> dparams = d_param.get_params();
     x(0) = beamparams[0];
     x(1) = beamparams[1];
     x(2) = beamparams[2];
-    x(3) = dparams[0];
-    x(4) = dparams[1];
-    x(5) = dparams[2];
-    x(6) = dparams[3];
-    x(7) = dparams[4];
-    x(8) = dparams[5];
+    x(3) = uparams[0];
+    x(4) = uparams[1];
+    x(5) = uparams[2];
+    x(6) = dparams[0];
+    x(7) = dparams[1];
+    x(8) = dparams[2];
+    x(9) = dparams[3];
+    x(10) = dparams[4];
+    x(11) = dparams[5];
     logger.info("Initial beam params: {:.4f}, {:.4f}, {:.4f}", x(0), x(1), x(2));
+    logger.info("Initial orientation params: {:.4f}, {:.4f}, {:.4f}", x(3), x(4), x(5));
 
-    logger.info("Initial detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}", x(3), x(4), x(5), x(6), x(7), x(8));
+    logger.info("Initial detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
+      x(6), x(7), x(8), x(9), x(10), x(11));
 
     RefineFunctor minimiser(target);
     Eigen::LevenbergMarquardt<RefineFunctor, double> levenbergMarquardt(minimiser);
@@ -192,8 +200,10 @@ void evaluate_crystal(Crystal crystal,
     Eigen::VectorXd xmin = x; // initialize
     levenbergMarquardt.minimize(xmin);
     logger.info("Minimsed beam params: {:.4f}, {:.4f}, {:.4f}", xmin(0), xmin(1), xmin(2));
+    logger.info("Minimsed U params: {:.4f}, {:.4f}, {:.4f}", xmin(3), xmin(4), xmin(5));
 
-    logger.info("Minimsed detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}", xmin(3), xmin(4), xmin(5), xmin(6), xmin(7), xmin(8));
+    logger.info("Minimsed detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
+        xmin(6), xmin(7), xmin(8), xmin(9), xmin(10), xmin(11));
 
     std::vector<double> rmsds = target.rmsds();
     double xyrmsd = std::sqrt(std::pow(rmsds[0], 2) + std::pow(rmsds[1],2));
