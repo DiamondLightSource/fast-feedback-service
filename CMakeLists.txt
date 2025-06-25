@@ -68,7 +68,8 @@ add_library(version STATIC version.cc)
 
 # Make a library for a global logger
 add_library(ffs_common STATIC 
-    ffs_logger.cc
+    src/ffs/ffs_logger.cc
+    
 )
 target_include_directories(ffs_common PUBLIC
     ${CMAKE_SOURCE_DIR}/include
