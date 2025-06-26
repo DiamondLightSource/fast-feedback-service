@@ -19,6 +19,7 @@
 #include "target.h"
 #include "detector_parameterisation.h"
 #include "U_parameterisation.h"
+#include "B_parameterisation.h"
 
 #include <unsupported/Eigen/NonLinearOptimization>
 #include <unsupported/Eigen/NumericalDiff>
@@ -53,12 +54,13 @@ struct RefineFunctor
       // calculate xyz residuals
       std::vector<double> x_vector(target.nparams());
       for (int i=0;i<target.nparams();++i){
+        //logger.info("x{}: {:.5f}", i, x(i));
         x_vector[i] = x(i);
       }
       std::vector<double> resids = target.residuals(x_vector);
       std::vector<double> rmsds = target.rmsds();
       double xyrmsd = std::sqrt(std::pow(rmsds[0], 2) + std::pow(rmsds[1],2));
-      logger.info("RMSDXY {:.5f} ", xyrmsd);
+      //logger.info("RMSDXY {:.5f} ", xyrmsd);
       fvec = Eigen::Map<const Eigen::VectorXd>(resids.data(), resids.size());
       return 0;
   }
@@ -170,25 +172,38 @@ void evaluate_crystal(Crystal crystal,
     std::vector<double> beamparams = beam_param.get_params();
     SimpleUParameterisation u_param = target.U_parameterisation();
     std::vector<double> uparams = u_param.get_params();
+    SimpleBParameterisation B_param = target.B_parameterisation();
+    std::vector<double> Bparams = B_param.get_params();
     SimpleDetectorParameterisation d_param = target.detector_parameterisation();
     std::vector<double> dparams = d_param.get_params();
     x(0) = beamparams[0];
     x(1) = beamparams[1];
     x(2) = beamparams[2];
+
     x(3) = uparams[0];
     x(4) = uparams[1];
     x(5) = uparams[2];
-    x(6) = dparams[0];
-    x(7) = dparams[1];
-    x(8) = dparams[2];
-    x(9) = dparams[3];
-    x(10) = dparams[4];
-    x(11) = dparams[5];
-    logger.info("Initial beam params: {:.4f}, {:.4f}, {:.4f}", x(0), x(1), x(2));
+
+    x(6) = Bparams[0];
+    x(7) = Bparams[1];
+    x(8) = Bparams[2];
+    x(9) = Bparams[3];
+    x(10) = Bparams[4];
+    x(11) = Bparams[5];
+
+    x(12) = dparams[0];
+    x(13) = dparams[1];
+    x(14) = dparams[2];
+    x(15) = dparams[3];
+    x(16) = dparams[4];
+    x(17) = dparams[5];
+    /*logger.info("Initial beam params: {:.4f}, {:.4f}, {:.4f}", x(0), x(1), x(2));
     logger.info("Initial orientation params: {:.4f}, {:.4f}, {:.4f}", x(3), x(4), x(5));
 
-    logger.info("Initial detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
+    logger.info("Initial cell params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
       x(6), x(7), x(8), x(9), x(10), x(11));
+    logger.info("Initial detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
+      x(12), x(13), x(14), x(15), x(16), x(17));*/
 
     RefineFunctor minimiser(target);
     Eigen::LevenbergMarquardt<RefineFunctor, double> levenbergMarquardt(minimiser);
@@ -199,11 +214,13 @@ void evaluate_crystal(Crystal crystal,
 
     Eigen::VectorXd xmin = x; // initialize
     levenbergMarquardt.minimize(xmin);
-    logger.info("Minimsed beam params: {:.4f}, {:.4f}, {:.4f}", xmin(0), xmin(1), xmin(2));
+    /*logger.info("Minimsed beam params: {:.4f}, {:.4f}, {:.4f}", xmin(0), xmin(1), xmin(2));
     logger.info("Minimsed U params: {:.4f}, {:.4f}, {:.4f}", xmin(3), xmin(4), xmin(5));
 
-    logger.info("Minimsed detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
+    logger.info("Minimsed cell params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
         xmin(6), xmin(7), xmin(8), xmin(9), xmin(10), xmin(11));
+    logger.info("Minimsed detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
+        xmin(12), xmin(13), xmin(14), xmin(15), xmin(16), xmin(17));*/
 
     std::vector<double> rmsds = target.rmsds();
     double xyrmsd = std::sqrt(std::pow(rmsds[0], 2) + std::pow(rmsds[1],2));
