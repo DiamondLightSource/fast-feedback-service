@@ -75,6 +75,8 @@ struct RefineFunctor
 struct score_and_crystal {
     double score;
     Crystal crystal;
+    MonochromaticBeam beam;
+    Panel panel;
     double num_indexed;
     double rmsdxy;
     double fraction_indexed;
@@ -220,6 +222,8 @@ void evaluate_crystal(Crystal crystal,
     // Write some data to the results map
     score_and_crystal sac;
     sac.crystal = crystal;
+    sac.beam = beam;
+    sac.panel = panel;
     sac.num_indexed = count;
     sac.rmsdxy = xyrmsd;
     sac.fraction_indexed = static_cast<double>(count) / rlp.extent(0);

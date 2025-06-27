@@ -32,6 +32,7 @@
 #include "peaks_to_rlvs.cc"
 #include "score_crystals.cc"
 #include "xyz_to_rlp.cc"
+#include "assign_indices.cc"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -326,6 +327,8 @@ int main(int argc, char** argv) {
           result.second.score);
     }
     Crystal best_xtal = results_vector[0].second.crystal;
+    MonochromaticBeam best_beam = results_vector[0].second.beam;
+    Panel best_panel = results_vector[0].second.panel;
 
     bool test = parser.get<bool>("test");
     if (test) {
@@ -356,13 +359,46 @@ int main(int argc, char** argv) {
         logger.info("Saved candidate crystals to {}", candidates_outfile);
     }
 
-    // Now save an experiment list with the models.
+    // Now update the experiment list models and save.
     expt.set_crystal(best_xtal);
+    expt.beam().set_s0(best_beam.get_s0());
+    expt.detector().update(best_panel.get_d_matrix());
     json elist_out = expt.to_json();
     std::string efile_name = "elist.json";
     std::ofstream efile(efile_name);
     efile << elist_out.dump(4);
     logger.info("Saved experiment list to {}", efile_name);
+
+    // Now save a table.
+    std::vector<uint64_t> ids = {0};
+    std::vector<std::string> labels = {"test"};
+    ReflectionTable final_reflections(ids, labels);
+    xyz_to_rlp_results final_results = xyz_to_rlp(xyzobs_px, detector.panels()[0], expt.beam(), scan, gonio);
+    final_reflections.add_column(std::string("flags"), flags);
+    final_reflections.add_column(
+      std::string("xyzobs_mm"), final_results.xyzobs_mm.extent(0), 3, final_results.xyzobs_mm_data);
+    final_reflections.add_column(std::string("s1"), final_results.s1.extent(0), 3, final_results.s1_data);
+    final_reflections.add_column(
+      std::string("rlp"), final_results.rlp.extent(0), 3, final_results.rlp_data);
+
+    
+    /*auto rlp_ = reflections.column<double>("rlp");
+    const mdspan_type<double>& rlp = rlp_.value();
+    auto xyzobs_mm_ = reflections.column<double>("xyzobs_mm");
+    const mdspan_type<double>& xyzobs_mm = xyzobs_mm_.value();*/
+    assign_indices_results assign_results =
+      assign_indices_global(expt.crystal().get_A_matrix(), final_results.rlp, final_results.xyzobs_mm);
+    final_reflections.add_column(
+      std::string("miller_index"),
+      assign_results.miller_indices.extent(0),
+      assign_results.miller_indices.extent(1),
+      assign_results.miller_indices_data
+    );
+    std::vector<int> id_column(final_results.rlp.extent(0), 0);
+    final_reflections.add_column("id", final_results.rlp.extent(0), 1, id_column);
+    std::string output_filename = "indexed.refl";
+    final_reflections.write(output_filename);
+    logger.info("Saved reflection table to {}", output_filename);
 
     auto t2 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time = t2 - t1;

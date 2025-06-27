@@ -25,7 +25,7 @@ public:
         Crystal &crystal,
         Goniometer &goniometer,
         MonochromaticBeam& beam,
-        Panel panel,
+        Panel& panel,
         ReflectionTable& obs);
     std::vector<std::vector<double>> gradients() const;
     std::vector<double> residuals(std::vector<double> x);
@@ -41,7 +41,7 @@ private:
     Crystal crystal;
     Goniometer goniometer;
     MonochromaticBeam beam;
-    Panel panel_;
+    Panel& panel_;
     ReflectionTable& obs;
     SimpleBParameterisation Bparam;
     SimpleUParameterisation Uparam;
@@ -56,7 +56,7 @@ private:
 Target::Target(Crystal &crystal,
     Goniometer &goniometer,
     MonochromaticBeam& beam,
-    Panel panel, ReflectionTable& obs):
+    Panel& panel, ReflectionTable& obs):
 crystal(crystal), goniometer(goniometer), beam(beam), panel_(panel), obs(obs),
 Bparam(crystal), Uparam(crystal), Dparam(panel_), Beamparam(beam, goniometer), calculator(
     Uparam, Bparam, goniometer, Beamparam, Dparam){
