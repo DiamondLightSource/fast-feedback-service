@@ -34,16 +34,6 @@ std::mutex score_and_crystal_mtx;
 struct RefineFunctor
 {
   Target& target;
-  typedef float Scalar;
-
-  typedef Eigen::VectorXd InputType;
-  typedef Eigen::VectorXd ValueType;
-  typedef Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> JacobianType;
-
-  enum {
-      InputsAtCompileTime = Eigen::Dynamic,
-      ValuesAtCompileTime = Eigen::Dynamic
-  };
 
   int operator()(const Eigen::VectorXd &x, Eigen::VectorXd &fvec)
   {
@@ -224,7 +214,9 @@ void evaluate_crystal(Crystal crystal,
 
     std::vector<double> rmsds = target.rmsds();
     double xyrmsd = std::sqrt(std::pow(rmsds[0], 2) + std::pow(rmsds[1],2));
-
+    crystal.set_A_matrix(
+      target.U_parameterisation().get_state() *
+      target.B_parameterisation().get_state());
     // Write some data to the results map
     score_and_crystal sac;
     sac.crystal = crystal;
