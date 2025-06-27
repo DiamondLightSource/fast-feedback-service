@@ -364,7 +364,7 @@ int main(int argc, char** argv) {
     expt.beam().set_s0(best_beam.get_s0());
     expt.detector().update(best_panel.get_d_matrix());
     json elist_out = expt.to_json();
-    std::string efile_name = "elist.json";
+    std::string efile_name = "indexed.expt";
     std::ofstream efile(efile_name);
     efile << elist_out.dump(4);
     logger.info("Saved experiment list to {}", efile_name);
