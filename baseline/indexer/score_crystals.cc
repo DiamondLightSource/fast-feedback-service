@@ -16,60 +16,9 @@
 #include "ffs_logger.hpp"
 #include "non_primitive_basis.cc"
 #include "reflection_filter.cc"
-#include "target.cc"
-#include "detector_parameterisation.cc"
-#include "U_parameterisation.cc"
-#include "B_parameterisation.cc"
-
-#include <unsupported/Eigen/NonLinearOptimization>
-#include <unsupported/Eigen/NumericalDiff>
+#include "refine_candidate.cc"
 
 std::mutex score_and_crystal_mtx;
-
-// Define target function
-// Needs to get the model state, use it to update detector model
-// then call the simple_predictor and calculate residuals
-// also calculate gradients and assign into a jacobian matrix.
-
-struct RefineFunctor
-{
-  Target& target;
-
-  int operator()(const Eigen::VectorXd &x, Eigen::VectorXd &fvec)
-  {
-      // x has dimensions of the number of parameters (i.e. nx1)
-      // fvec has dimensions of the number of observations i.e. mx1)
-      // i.e. fvec is what we would call the residuals vector.
-      // target.residuals(x) - will know how to set params values, repredict, then
-      // calculate xyz residuals
-      std::vector<double> x_vector(target.nparams());
-      for (int i=0;i<target.nparams();++i){
-        //logger.info("x{}: {:.5f}", i, x(i));
-        x_vector[i] = x(i);
-      }
-      std::vector<double> resids = target.residuals(x_vector);
-      std::vector<double> rmsds = target.rmsds();
-      double xyrmsd = std::sqrt(std::pow(rmsds[0], 2) + std::pow(rmsds[1],2));
-      //logger.info("RMSDXY {:.5f} ", xyrmsd);
-      fvec = Eigen::Map<const Eigen::VectorXd>(resids.data(), resids.size());
-      return 0;
-  }
-
-  int df(const Eigen::VectorXd &x, Eigen::MatrixXd &fjac) const {
-    // x has dimensions of the number of parameters (i.e. nx1)
-    // fjac has dimensions m x n i.e. the gradients vector with respect to
-    // parameter i will be set in the column fjac(i,:).
-    std::vector<std::vector<double>> gradients = target.gradients();
-    for (int i=0;i<gradients.size();++i){
-      fjac.col(i) = Eigen::Map<const Eigen::VectorXd>(gradients[i].data(), gradients[i].size());
-    }
-    return 0;
-  }
-
-  int inputs() const { return target.nparams(); }// inputs is the dimension of x.
-  int values() const { return 3 * target.nref(); } // "values" is the number of f_i and
-};
-
 
 // A struct to score a candidate crystal model.
 struct score_and_crystal {
@@ -146,79 +95,11 @@ void evaluate_crystal(Crystal crystal,
     std::chrono::duration<double> elapsed_timefilter = postfilter - t3;
     logger.debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
 
-    // Refinement will go here in future.
-    // First make CrystalOrientationParameterisation, CrystalUnitCellParameterisation, BeamParameterisation,
-    // DetectorParameterisationSinglePanel,
-    // Then make SimplePredictionParam
-    // Then set the crystal U, B in the expt object.
-    // gradients = pred.get_gradients(obs)
+    auto t4 = std::chrono::system_clock::now();
+    double xyrmsd = refine_indexing_candidate(crystal, gonio, beam, panel, sel_obs);
+    std::chrono::duration<double> elapsed_time_refine = std::chrono::system_clock::now() - t4;
+    logger.debug("Time for candidate refinement: {:.5f}s", elapsed_time_refine.count());
     
-    // Encapsulate those in a simple target, with a parameter vector.
-    // That can calc resids and gradients which are input to a least-squares routine - use Eigen (lev mar)?
-    // As part of residuals, it updates the parameterisation objects, updates the experiment objects
-    // and runs the simple predictor on the reflection data.
-    
-    Target target(crystal, gonio, beam, panel, sel_obs);
-    Eigen::VectorXd x(target.nparams());
-    SimpleBeamParameterisation beam_param = target.beam_parameterisation();
-    std::vector<double> beamparams = beam_param.get_params();
-    SimpleUParameterisation u_param = target.U_parameterisation();
-    std::vector<double> uparams = u_param.get_params();
-    SimpleBParameterisation B_param = target.B_parameterisation();
-    std::vector<double> Bparams = B_param.get_params();
-    SimpleDetectorParameterisation d_param = target.detector_parameterisation();
-    std::vector<double> dparams = d_param.get_params();
-    x(0) = beamparams[0];
-    x(1) = beamparams[1];
-    x(2) = beamparams[2];
-
-    x(3) = uparams[0];
-    x(4) = uparams[1];
-    x(5) = uparams[2];
-
-    x(6) = Bparams[0];
-    x(7) = Bparams[1];
-    x(8) = Bparams[2];
-    x(9) = Bparams[3];
-    x(10) = Bparams[4];
-    x(11) = Bparams[5];
-
-    x(12) = dparams[0];
-    x(13) = dparams[1];
-    x(14) = dparams[2];
-    x(15) = dparams[3];
-    x(16) = dparams[4];
-    x(17) = dparams[5];
-    /*logger.info("Initial beam params: {:.4f}, {:.4f}, {:.4f}", x(0), x(1), x(2));
-    logger.info("Initial orientation params: {:.4f}, {:.4f}, {:.4f}", x(3), x(4), x(5));
-
-    logger.info("Initial cell params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
-      x(6), x(7), x(8), x(9), x(10), x(11));
-    logger.info("Initial detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
-      x(12), x(13), x(14), x(15), x(16), x(17));*/
-
-    RefineFunctor minimiser(target);
-    Eigen::LevenbergMarquardt<RefineFunctor, double> levenbergMarquardt(minimiser);
-
-    levenbergMarquardt.parameters.ftol = 1e-6;
-    levenbergMarquardt.parameters.xtol = 1e-6;
-    levenbergMarquardt.parameters.maxfev = 10; // Max iterations
-
-    Eigen::VectorXd xmin = x; // initialize
-    levenbergMarquardt.minimize(xmin);
-    /*logger.info("Minimsed beam params: {:.4f}, {:.4f}, {:.4f}", xmin(0), xmin(1), xmin(2));
-    logger.info("Minimsed U params: {:.4f}, {:.4f}, {:.4f}", xmin(3), xmin(4), xmin(5));
-
-    logger.info("Minimsed cell params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
-        xmin(6), xmin(7), xmin(8), xmin(9), xmin(10), xmin(11));
-    logger.info("Minimsed detector params: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}",
-        xmin(12), xmin(13), xmin(14), xmin(15), xmin(16), xmin(17));*/
-
-    std::vector<double> rmsds = target.rmsds();
-    double xyrmsd = std::sqrt(std::pow(rmsds[0], 2) + std::pow(rmsds[1],2));
-    crystal.set_A_matrix(
-      target.U_parameterisation().get_state() *
-      target.B_parameterisation().get_state());
     // Write some data to the results map
     score_and_crystal sac;
     sac.crystal = crystal;

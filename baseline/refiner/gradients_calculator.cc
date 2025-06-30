@@ -22,7 +22,7 @@ public:
         SimpleUParameterisation &uparam,
         SimpleBParameterisation &bparam,
         //Crystal &crystal,
-        Goniometer &goniometer,
+        const Goniometer &goniometer,
         //MonochromaticBeam& beam,
         //SimpleBParameterisation &bparam,
         SimpleBeamParameterisation& beamparam,
@@ -46,7 +46,7 @@ GradientsCalculator::GradientsCalculator(
     SimpleUParameterisation& uparam,
     SimpleBParameterisation& bparam,
     //Crystal &crystal,
-    Goniometer &goniometer,
+    const Goniometer &goniometer,
     //MonochromaticBeam& beam,
     SimpleBeamParameterisation& beamparam,
     SimpleDetectorParameterisation& Dparam) :

@@ -23,7 +23,7 @@ class Target {
 public:
     Target(
         Crystal &crystal,
-        Goniometer &goniometer,
+        const Goniometer &goniometer,
         MonochromaticBeam& beam,
         Panel& panel,
         ReflectionTable& obs);
@@ -54,7 +54,7 @@ private:
 };
 
 Target::Target(Crystal &crystal,
-    Goniometer &goniometer,
+    const Goniometer &goniometer,
     MonochromaticBeam& beam,
     Panel& panel, ReflectionTable& obs):
 crystal(crystal), goniometer(goniometer), beam(beam), panel_(panel), obs(obs),
