@@ -7,7 +7,6 @@
 #include <dx2/detector.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/reflection.hpp>
-#include <iostream>
 
 constexpr double two_pi = 2 * M_PI;
 
@@ -168,15 +167,6 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
         s1(i, 2) = s1_this[2];
         flags(i, 0) = flags(i, 0) | predicted_value;
     }
-    /*auto xyzcal_ = reflections.column<double>("xyzcal_mm");
-    if (xyzcal_.has_value()){
-        auto& xyzcal_mm_intable = xyzcal_.value();
-        xyzcal_mm_intable = xyzcal_mm;
-    }
-    else {
-        reflections.add_column(
-            "xyzcal_mm", xyzcal_mm.extent(0), xyzcal_mm.extent(1), xyzcal_mm_data);
-    }*/
 }
 
 #endif  // DIALS_STATIC_PREDICTOR

@@ -1,6 +1,5 @@
 #ifndef REFINEMENT_UTLS
 #define REFINEMENT_UTLS
-#include <dx2/detector.hpp>
 #include <Eigen/Dense>
 #include <cmath>
 

@@ -2,7 +2,7 @@
 #define DIALS_RESEARCH_DPARAM
 #include <dx2/detector.hpp>
 #include <Eigen/Dense>
-#include "refinement_utils.h"
+#include "refinement_utils.cc"
 #include <cmath>
 
 using Eigen::Matrix3d;

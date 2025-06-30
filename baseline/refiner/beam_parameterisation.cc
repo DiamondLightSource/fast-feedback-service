@@ -2,7 +2,7 @@
 #define DIALS_RESEARCH_BEAMPARAM
 #include <dx2/beam.hpp>
 #include <dx2/goniometer.hpp>
-#include "refinement_utils.h"
+#include "refinement_utils.cc"
 #include <Eigen/Dense>
 
 using Eigen::Matrix3d;

@@ -5,10 +5,10 @@
 #include <dx2/crystal.hpp>
 //#include <dx2/detector.hpp>
 #include <dx2/goniometer.hpp>
-#include "detector_parameterisation.h"
-#include "beam_parameterisation.h"
-#include "U_parameterisation.h"
-#include "B_parameterisation.h"
+#include "detector_parameterisation.cc"
+#include "beam_parameterisation.cc"
+#include "U_parameterisation.cc"
+#include "B_parameterisation.cc"
 #include <dx2/reflection.hpp>
 #include "scan_static_predictor.cc"
 

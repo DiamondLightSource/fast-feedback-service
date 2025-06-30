@@ -16,10 +16,10 @@
 #include "ffs_logger.hpp"
 #include "non_primitive_basis.cc"
 #include "reflection_filter.cc"
-#include "target.h"
-#include "detector_parameterisation.h"
-#include "U_parameterisation.h"
-#include "B_parameterisation.h"
+#include "target.cc"
+#include "detector_parameterisation.cc"
+#include "U_parameterisation.cc"
+#include "B_parameterisation.cc"
 
 #include <unsupported/Eigen/NonLinearOptimization>
 #include <unsupported/Eigen/NumericalDiff>
