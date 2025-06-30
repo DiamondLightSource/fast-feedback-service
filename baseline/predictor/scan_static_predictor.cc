@@ -49,7 +49,7 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     auto& flags = flags_.value();
     auto s1_ = reflections.column<double>("s1");
     auto& s1 = s1_.value();
-    auto xyzobs_ = reflections.column<double>("xyzobs_mm");
+    auto xyzobs_ = reflections.column<double>("xyzobs.mm.value");
     const auto& xyzobs_mm = xyzobs_.value();
     auto entering_ = reflections.column<ReflectionTable::BoolEnum>("entering");
     const auto& entering = entering_.value();
@@ -59,14 +59,14 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     std::vector<double> xyzcal_mm_data(xyzobs_mm.size(), 0.0);
     mdspan_type<double> xyzcal_mm;
     //mdspan_type<double> xyzcal_mm(xyzcal_mm_data.data(), xyzcal_mm_data.size() / 3, 3);
-    auto xyzcal_ = reflections.column<double>("xyzcal_mm");
+    auto xyzcal_ = reflections.column<double>("xyzcal.mm.value");
     if (xyzcal_.has_value()){
         xyzcal_mm = xyzcal_.value();
     }
     else {
         reflections.add_column(
-            "xyzcal_mm", xyzobs_mm.extent(0), 3, xyzcal_mm_data);
-        auto xyzcal_ = reflections.column<double>("xyzcal_mm");
+            "xyzcal.mm.value", xyzobs_mm.extent(0), 3, xyzcal_mm_data);
+        auto xyzcal_ = reflections.column<double>("xyzcal.mm.value");
         xyzcal_mm = xyzcal_.value();
     }
 

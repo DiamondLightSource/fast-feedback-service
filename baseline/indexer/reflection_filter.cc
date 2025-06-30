@@ -130,9 +130,9 @@ ReflectionTable outlier_filter(ReflectionTable& reflections) {
     // First make sure the reflections have the predicted flag.
     auto flags_ = reflections.column<std::size_t>("flags");
     auto& flags = flags_.value();
-    auto xyzobs_ = reflections.column<double>("xyzobs_mm");
+    auto xyzobs_ = reflections.column<double>("xyzobs.mm.value");
     const auto& xyzobs_mm = xyzobs_.value();
-    auto xyzcal_ = reflections.column<double>("xyzcal_mm");
+    auto xyzcal_ = reflections.column<double>("xyzcal.mm.value");
     const auto& xyzcal_mm = xyzcal_.value();
 
     std::vector<double> x_resid(flags.size(), 0.0);
@@ -205,7 +205,7 @@ ReflectionTable initial_filter(const ReflectionTable& reflections,
     const auto& flags = flags_.value();
     auto s1_ = reflections.column<double>("s1");
     const auto& s1 = s1_.value();
-    auto xyzobs_ = reflections.column<double>("xyzobs_mm");
+    auto xyzobs_ = reflections.column<double>("xyzobs.mm.value");
     const auto& xyzobs = xyzobs_.value();
     Vector3d axis = gonio.get_rotation_axis();
     Vector3d s0 = beam.get_s0();

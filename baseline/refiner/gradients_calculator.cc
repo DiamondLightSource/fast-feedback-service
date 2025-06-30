@@ -76,7 +76,7 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(const Reflec
     Matrix3d F = goniometer.get_sample_rotation();
     Matrix3d UB = U * B;
     
-    auto xyz_ = obs.column<double>("xyzcal_mm");
+    auto xyz_ = obs.column<double>("xyzcal.mm.value");
     const auto& xyz = xyz_.value();
     auto hkl_ = obs.column<int>("miller_index");
     const auto& hkl = hkl_.value();

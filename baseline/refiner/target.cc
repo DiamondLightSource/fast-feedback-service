@@ -116,9 +116,9 @@ std::vector<double> Target::residuals(std::vector<double> x) {
         panel_,
         obs
     );
-    auto xyzobs_ = obs.column<double>("xyzobs_mm");
+    auto xyzobs_ = obs.column<double>("xyzobs.mm.value");
     const auto& xyzobs_mm = xyzobs_.value();
-    auto xyzcal_ = obs.column<double>("xyzcal_mm");
+    auto xyzcal_ = obs.column<double>("xyzcal.mm.value");
     const auto& xyzcal_mm = xyzcal_.value();
     std::vector<double> residuals(xyzobs_mm.size());// residuals vector is all dx then dy then dz
     int n = xyzobs_mm.extent(0);
