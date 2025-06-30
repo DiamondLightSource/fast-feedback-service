@@ -95,7 +95,6 @@ BeamParameterisation Target::beam_parameterisation() const {
 }
 
 std::vector<double> Target::residuals(std::vector<double> x) {
-    // Ok in future will need to split and set in the full set of parameterisations.
     std::vector<double> beam_params = {x[0], x[1], x[2]}; 
     std::vector<double> U_params = {x[3], x[4], x[5]}; 
     std::vector<double> B_params = {x[6], x[7], x[8], x[9], x[10], x[11]}; 
@@ -105,7 +104,7 @@ std::vector<double> Target::residuals(std::vector<double> x) {
     cellparam.set_params(B_params);
     detectorparam.set_params(detector_params);
     Matrix3d d = detectorparam.get_state();
-    panel_.update(d); //check maths here.
+    panel_.update(d);
     Vector3d s0 = beamparam.get_state();
     beam.set_s0(s0);
     Matrix3d B = cellparam.get_state();
@@ -141,7 +140,6 @@ std::vector<double> Target::residuals(std::vector<double> x) {
     rmsds_[0] = std::sqrt(xsum / n);
     rmsds_[1] = std::sqrt(ysum / n);
     rmsds_[2] = std::sqrt(zsum / n);
-    //calculator = GradientsCalculator(crystal, goniometer, beam, panel, detectorparam); // needed?
     return residuals;
 }
 

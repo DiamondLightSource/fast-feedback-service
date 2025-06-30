@@ -371,7 +371,7 @@ int main(int argc, char** argv) {
 
     // Now save an indexed reflection table.
     std::vector<uint64_t> ids = {0};
-    std::vector<std::string> labels = {"test"};
+    std::vector<std::string> labels = {expt.identifier()};
     ReflectionTable final_reflections(ids, labels);
     // Recalculate the rlp and s1 vectors based on the updated models.
     xyz_to_rlp_results final_results = xyz_to_rlp(xyzobs_px, detector.panels()[0], expt.beam(), scan, gonio);
