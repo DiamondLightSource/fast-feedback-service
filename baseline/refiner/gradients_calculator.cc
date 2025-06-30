@@ -7,8 +7,8 @@
 #include <dx2/goniometer.hpp>
 #include "detector_parameterisation.cc"
 #include "beam_parameterisation.cc"
-#include "U_parameterisation.cc"
-#include "B_parameterisation.cc"
+#include "orientation_parameterisation.cc"
+#include "cell_parameterisation.cc"
 #include <dx2/reflection.hpp>
 #include "scan_static_predictor.cc"
 
@@ -19,37 +19,37 @@ using Eigen::Vector3i;
 class GradientsCalculator {
 public:
     GradientsCalculator(
-        SimpleUParameterisation &uparam,
-        SimpleBParameterisation &bparam,
+        OrientationParameterisation &uparam,
+        CellParameterisation &bparam,
         //Crystal &crystal,
         const Goniometer &goniometer,
         //MonochromaticBeam& beam,
-        //SimpleBParameterisation &bparam,
-        SimpleBeamParameterisation& beamparam,
-        SimpleDetectorParameterisation& Dparam) ;
+        //BParameterisation &bparam,
+        BeamParameterisation& beamparam,
+        DetectorParameterisation& Dparam) ;
     std::vector<std::vector<double>> get_gradients(const ReflectionTable &obs) const;
 
 private:
   //Experiment<MonochromaticBeam> experiment;
-  SimpleUParameterisation uparam;
-  SimpleBParameterisation bparam;
-  //SimpleBParameterisation bparam;
-  //SimpleBeamParameterisation beamparam;
+  OrientationParameterisation uparam;
+  CellParameterisation bparam;
+  //BParameterisation bparam;
+  //BeamParameterisation beamparam;
   //Crystal crystal;
   Goniometer goniometer;
   //MonochromaticBeam beam;
-  SimpleBeamParameterisation beamparam;
-  SimpleDetectorParameterisation& Dparam;
+  BeamParameterisation beamparam;
+  DetectorParameterisation& Dparam;
 };
 
 GradientsCalculator::GradientsCalculator(
-    SimpleUParameterisation& uparam,
-    SimpleBParameterisation& bparam,
+    OrientationParameterisation& uparam,
+    CellParameterisation& bparam,
     //Crystal &crystal,
     const Goniometer &goniometer,
     //MonochromaticBeam& beam,
-    SimpleBeamParameterisation& beamparam,
-    SimpleDetectorParameterisation& Dparam) :
+    BeamParameterisation& beamparam,
+    DetectorParameterisation& Dparam) :
 uparam(uparam), bparam(bparam), goniometer(goniometer), beamparam(beamparam), Dparam(Dparam) {};
 
 std::vector<std::vector<double>> GradientsCalculator::get_gradients(const ReflectionTable &obs) const {

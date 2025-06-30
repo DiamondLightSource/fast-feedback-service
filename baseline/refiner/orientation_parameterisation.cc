@@ -66,9 +66,9 @@ class CrystalOrientationCompose {
     Matrix3d dU_dphi3_;
   };
 
-class SimpleUParameterisation {
+class OrientationParameterisation {
 public:
-  SimpleUParameterisation(const Crystal& crystal);
+  OrientationParameterisation(const Crystal& crystal);
   std::vector<double> get_params() const;
   void set_params(std::vector<double> p);
   Matrix3d get_state() const;
@@ -85,7 +85,7 @@ private:
     Matrix3d{{1.0, 0, 0}, {0, 1.0, 0}, {0, 0, 1.0}}};
 };
 
-void SimpleUParameterisation::compose() {
+void OrientationParameterisation::compose() {
   CrystalOrientationCompose coc(
     istate, params[0], axes[0], params[1], axes[1], params[2], axes[2]);
   U_ = coc.U();
@@ -94,25 +94,25 @@ void SimpleUParameterisation::compose() {
   dS_dp[2] = coc.dU_dphi3();
 }
 
-SimpleUParameterisation::SimpleUParameterisation(const Crystal& crystal) {
+OrientationParameterisation::OrientationParameterisation(const Crystal& crystal) {
   istate = crystal.get_U_matrix();
   axes[1] = Vector3d(0.0, 1.0, 0.0);
   axes[2] = Vector3d(0.0, 0.0, 1.0);
   compose();
 }
 
-std::vector<double> SimpleUParameterisation::get_params() const {
+std::vector<double> OrientationParameterisation::get_params() const {
   return params;
 }
-Matrix3d SimpleUParameterisation::get_state() const {
+Matrix3d OrientationParameterisation::get_state() const {
   return U_;
 }
-void SimpleUParameterisation::set_params(std::vector<double> p) {
+void OrientationParameterisation::set_params(std::vector<double> p) {
   assert(p.size() == 3);
   params = p;
   compose();
 }
-std::vector<Matrix3d> SimpleUParameterisation::get_dS_dp() const {
+std::vector<Matrix3d> OrientationParameterisation::get_dS_dp() const {
   return dS_dp;
 }
 

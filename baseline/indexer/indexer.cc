@@ -369,10 +369,11 @@ int main(int argc, char** argv) {
     efile << elist_out.dump(4);
     logger.info("Saved experiment list to {}", efile_name);
 
-    // Now save a table.
+    // Now save an indexed reflection table.
     std::vector<uint64_t> ids = {0};
     std::vector<std::string> labels = {"test"};
     ReflectionTable final_reflections(ids, labels);
+    // Recalculate the rlp and s1 vectors based on the updated models.
     xyz_to_rlp_results final_results = xyz_to_rlp(xyzobs_px, detector.panels()[0], expt.beam(), scan, gonio);
     final_reflections.add_column(std::string("flags"), flags);
     final_reflections.add_column(
@@ -381,11 +382,7 @@ int main(int argc, char** argv) {
     final_reflections.add_column(
       std::string("rlp"), final_results.rlp.extent(0), 3, final_results.rlp_data);
 
-    
-    /*auto rlp_ = reflections.column<double>("rlp");
-    const mdspan_type<double>& rlp = rlp_.value();
-    auto xyzobs_mm_ = reflections.column<double>("xyzobs_mm");
-    const mdspan_type<double>& xyzobs_mm = xyzobs_mm_.value();*/
+    // Index the data with the refined models.
     assign_indices_results assign_results =
       assign_indices_global(expt.crystal().get_A_matrix(), final_results.rlp, final_results.xyzobs_mm);
     final_reflections.add_column(
@@ -394,6 +391,7 @@ int main(int argc, char** argv) {
       assign_results.miller_indices.extent(1),
       assign_results.miller_indices_data
     );
+    // Generate an id column.
     std::vector<int> id_column(final_results.rlp.extent(0), 0);
     final_reflections.add_column("id", final_results.rlp.extent(0), 1, id_column);
     std::string output_filename = "indexed.refl";

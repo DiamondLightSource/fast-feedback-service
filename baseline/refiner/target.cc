@@ -6,8 +6,8 @@
 #include <dx2/goniometer.hpp>
 #include "detector_parameterisation.cc"
 #include "beam_parameterisation.cc"
-#include "U_parameterisation.cc"
-#include "B_parameterisation.cc"
+#include "orientation_parameterisation.cc"
+#include "cell_parameterisation.cc"
 #include <dx2/reflection.hpp>
 #include "scan_static_predictor.cc"
 #include "gradients_calculator.cc"
@@ -31,10 +31,10 @@ public:
     std::vector<double> residuals(std::vector<double> x);
     int nref() const;
     int nparams() const;
-    SimpleBParameterisation B_parameterisation() const;
-    SimpleUParameterisation U_parameterisation() const;
-    SimpleDetectorParameterisation detector_parameterisation() const;
-    SimpleBeamParameterisation beam_parameterisation() const;
+    CellParameterisation cell_parameterisation() const;
+    OrientationParameterisation orientation_parameterisation() const;
+    DetectorParameterisation detector_parameterisation() const;
+    BeamParameterisation beam_parameterisation() const;
     std::vector<double> rmsds() const;
 
 private:
@@ -43,10 +43,10 @@ private:
     MonochromaticBeam beam;
     Panel& panel_;
     ReflectionTable& obs;
-    SimpleBParameterisation Bparam;
-    SimpleUParameterisation Uparam;
-    SimpleDetectorParameterisation Dparam;
-    SimpleBeamParameterisation Beamparam;
+    CellParameterisation cellparam;
+    OrientationParameterisation orientationparam;
+    DetectorParameterisation detectorparam;
+    BeamParameterisation beamparam;
     GradientsCalculator calculator;
     int n_ref;
     int n_params;
@@ -58,12 +58,12 @@ Target::Target(Crystal &crystal,
     MonochromaticBeam& beam,
     Panel& panel, ReflectionTable& obs):
 crystal(crystal), goniometer(goniometer), beam(beam), panel_(panel), obs(obs),
-Bparam(crystal), Uparam(crystal), Dparam(panel_), Beamparam(beam, goniometer), calculator(
-    Uparam, Bparam, goniometer, Beamparam, Dparam){
+cellparam(crystal), orientationparam(crystal), detectorparam(panel_), beamparam(beam, goniometer), calculator(
+    orientationparam, cellparam, goniometer, beamparam, detectorparam){
         auto s1_ = obs.column<double>("s1");
         const auto& s1 = s1_.value();
         n_ref = s1.extent(0);
-        n_params = Beamparam.get_params().size() + Uparam.get_params().size() + Bparam.get_params().size() + Dparam.get_params().size();
+        n_params = beamparam.get_params().size() + orientationparam.get_params().size() + cellparam.get_params().size() + detectorparam.get_params().size();
     };
 
 int Target::nref() const {
@@ -78,20 +78,20 @@ std::vector<double> Target::rmsds() const {
     return rmsds_;
 }
 
-SimpleBParameterisation Target::B_parameterisation() const {
-    return Bparam;
+CellParameterisation Target::cell_parameterisation() const {
+    return cellparam;
 }
 
-SimpleUParameterisation Target::U_parameterisation() const {
-    return Uparam;
+OrientationParameterisation Target::orientation_parameterisation() const {
+    return orientationparam;
 }
 
-SimpleDetectorParameterisation Target::detector_parameterisation() const {
-    return Dparam;
+DetectorParameterisation Target::detector_parameterisation() const {
+    return detectorparam;
 }
 
-SimpleBeamParameterisation Target::beam_parameterisation() const {
-    return Beamparam;
+BeamParameterisation Target::beam_parameterisation() const {
+    return beamparam;
 }
 
 std::vector<double> Target::residuals(std::vector<double> x) {
@@ -100,16 +100,16 @@ std::vector<double> Target::residuals(std::vector<double> x) {
     std::vector<double> U_params = {x[3], x[4], x[5]}; 
     std::vector<double> B_params = {x[6], x[7], x[8], x[9], x[10], x[11]}; 
     std::vector<double> detector_params = {x[12], x[13], x[14], x[15], x[16], x[17]}; 
-    Beamparam.set_params(beam_params);
-    Uparam.set_params(U_params);
-    Bparam.set_params(B_params);
-    Dparam.set_params(detector_params);
-    Matrix3d d = Dparam.get_state();
+    beamparam.set_params(beam_params);
+    orientationparam.set_params(U_params);
+    cellparam.set_params(B_params);
+    detectorparam.set_params(detector_params);
+    Matrix3d d = detectorparam.get_state();
     panel_.update(d); //check maths here.
-    Vector3d s0 = Beamparam.get_state();
+    Vector3d s0 = beamparam.get_state();
     beam.set_s0(s0);
-    Matrix3d B = Bparam.get_state();
-    Matrix3d A = Uparam.get_state() * B;//crystal.get_B_matrix();
+    Matrix3d B = cellparam.get_state();
+    Matrix3d A = orientationparam.get_state() * B;
     simple_reflection_predictor(
         beam,
         goniometer,
@@ -141,7 +141,7 @@ std::vector<double> Target::residuals(std::vector<double> x) {
     rmsds_[0] = std::sqrt(xsum / n);
     rmsds_[1] = std::sqrt(ysum / n);
     rmsds_[2] = std::sqrt(zsum / n);
-    //calculator = GradientsCalculator(crystal, goniometer, beam, panel, Dparam); // needed?
+    //calculator = GradientsCalculator(crystal, goniometer, beam, panel, detectorparam); // needed?
     return residuals;
 }
 

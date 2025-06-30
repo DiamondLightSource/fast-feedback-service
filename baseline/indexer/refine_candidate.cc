@@ -9,8 +9,8 @@
 
 #include "target.cc"
 #include "detector_parameterisation.cc"
-#include "U_parameterisation.cc"
-#include "B_parameterisation.cc"
+#include "cell_parameterisation.cc"
+#include "orientation_parameterisation.cc"
 
 #include <unsupported/Eigen/NonLinearOptimization>
 #include <unsupported/Eigen/NumericalDiff>
@@ -55,18 +55,18 @@ double refine_indexing_candidate(
 ){
     Target target(crystal, gonio, beam, panel, sel_obs);
     Eigen::VectorXd x(target.nparams());
-    SimpleBeamParameterisation beam_param = target.beam_parameterisation();
+    BeamParameterisation beam_param = target.beam_parameterisation();
     std::vector<double> beamparams = beam_param.get_params();
-    SimpleUParameterisation u_param = target.U_parameterisation();
+    OrientationParameterisation u_param = target.orientation_parameterisation();
     std::vector<double> uparams = u_param.get_params();
-    SimpleBParameterisation B_param = target.B_parameterisation();
-    std::vector<double> Bparams = B_param.get_params();
-    SimpleDetectorParameterisation d_param = target.detector_parameterisation();
+    CellParameterisation cell_param = target.cell_parameterisation();
+    std::vector<double> cellparams = cell_param.get_params();
+    DetectorParameterisation d_param = target.detector_parameterisation();
     std::vector<double> dparams = d_param.get_params();
 
     std::copy(beamparams.begin(), beamparams.end(), x.data());
     std::copy(uparams.begin(), uparams.end(), x.data()+3);
-    std::copy(Bparams.begin(), Bparams.end(), x.data()+6);
+    std::copy(cellparams.begin(), cellparams.end(), x.data()+6);
     std::copy(dparams.begin(), dparams.end(), x.data()+12);
 
     RefineFunctor minimiser(target);
@@ -84,8 +84,8 @@ double refine_indexing_candidate(
     // Update the crystal model. The beam and detector models have already been
     // updated during the refinement
     crystal.set_A_matrix(
-      target.U_parameterisation().get_state() *
-      target.B_parameterisation().get_state()); 
+      target.orientation_parameterisation().get_state() *
+      target.cell_parameterisation().get_state()); 
     return xyrmsd;
 }
 

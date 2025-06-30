@@ -11,7 +11,6 @@
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <vector>
-#include <algorithm>
 #include "assign_indices.cc"
 #include "ffs_logger.hpp"
 #include "non_primitive_basis.cc"

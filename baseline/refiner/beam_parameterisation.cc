@@ -9,9 +9,9 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 
-class SimpleBeamParameterisation {
+class BeamParameterisation {
 public:
-  SimpleBeamParameterisation(
+  BeamParameterisation(
     const MonochromaticBeam& beam, const Goniometer& goniometer,
     bool fix_in_spindle_plane, bool fix_out_spindle_plane, bool fix_wavelength);
   std::vector<double> get_params() const;
@@ -39,7 +39,7 @@ private:
   bool _fix_wavelength{true};
 };
 
-void SimpleBeamParameterisation::compose(){
+void BeamParameterisation::compose(){
     double mu1rad = params_[0] / 1000.0;
     double mu2rad = params_[1] / 1000.0;
     Matrix3d Mu1 = axis_and_angle_as_rot(s0_plane_dir1, mu1rad);
@@ -70,7 +70,7 @@ void SimpleBeamParameterisation::compose(){
     dS_dp[2] = s0_new_dir;
 }
 
-SimpleBeamParameterisation::SimpleBeamParameterisation(
+BeamParameterisation::BeamParameterisation(
     const MonochromaticBeam& beam,
     const Goniometer& goniometer,
     bool fix_in_spindle_plane=true,
@@ -91,26 +91,26 @@ SimpleBeamParameterisation::SimpleBeamParameterisation(
     compose();
 }
 
-Vector3d SimpleBeamParameterisation::get_state() const {
+Vector3d BeamParameterisation::get_state() const {
   return s0;
 }
-std::vector<double> SimpleBeamParameterisation::get_params() const {
+std::vector<double> BeamParameterisation::get_params() const {
   return params_;
 }
-void SimpleBeamParameterisation::set_params(std::vector<double> p) {
+void BeamParameterisation::set_params(std::vector<double> p) {
   params_ = p;
   compose();
 }
-std::vector<Vector3d> SimpleBeamParameterisation::get_dS_dp() const {
+std::vector<Vector3d> BeamParameterisation::get_dS_dp() const {
   return dS_dp;
 }
-bool SimpleBeamParameterisation::in_spindle_plane_fixed() const {
+bool BeamParameterisation::in_spindle_plane_fixed() const {
   return _fix_in_spindle_plane;
 }
-bool SimpleBeamParameterisation::out_spindle_plane_fixed() const{
+bool BeamParameterisation::out_spindle_plane_fixed() const{
   return _fix_out_spindle_plane;
 }
-bool SimpleBeamParameterisation::wavelength_fixed() const{
+bool BeamParameterisation::wavelength_fixed() const{
   return _fix_wavelength;
 }
 

@@ -1,27 +1,14 @@
-#ifndef DIALS_RESEARCH_BPARAM
-#define DIALS_RESEARCH_BPARAM
+#ifndef REFINE_BPARAM
+#define REFINE_BPARAM
 
 #include <gemmi/math.hpp> // for symmetric 3x3 matrix SMat33
 #include <dx2/crystal.hpp>
 #include <Eigen/Dense>
-#include <gemmi/symmetry.hpp>
-#include <gemmi/cellred.hpp>
-#include <gemmi/scaling.hpp> // for constraints
-#include <iostream>
 #include <math.h>
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 
-// Define a crystal orientation class - based on cctbx/crystal_orientation.h
-/*class crystal_orientation {
-public:
-  crystal_orientation(Matrix3d const& B){Astar=B}; // reciprocal=True
 
-  // Astar  = 
-  Matrix3d reciprocal_matrix() const {return Astar};
-private:
-  Matrix3d Astar;
-}*/
 double acos_deg(double x) { return 180.0 * std::acos(x) / M_PI; }
 
 gemmi::UnitCell uc_params_from_metrical_matrix(gemmi::SMat33<double> G){
@@ -34,8 +21,10 @@ gemmi::UnitCell uc_params_from_metrical_matrix(gemmi::SMat33<double> G){
   return gemmi::UnitCell(p0,p1,p2,p3,p4,p5);
 }
 
-// Define the AG converter
-struct AG {// convert orientation matrix A to metrical matrix g & reverse
+// Define the BG converter
+struct BG {
+  // convert orientation matrix B (called A internally here) to metrical
+  // matrix g & reverse
   /*The general orientation matrix A is re-expressed in terms of the
     upper-triangular fractionalization matrix F by means of the following
     transformation:
@@ -49,10 +38,6 @@ struct AG {// convert orientation matrix A to metrical matrix g & reverse
   void forward(Matrix3d const& ori){
     orientation = ori;
     Matrix3d A(ori); // i.e. B matrix (unhelpfully called A here)
-    /*std::cout << "A" << std::endl;
-    std::cout << A(0,0) << " "<< A(0,1) << " "<< A(0,2) << " ";
-    std::cout << A(1,0) << " "<< A(1,1) << " "<< A(1,2) << " ";
-    std::cout << A(2,0) << " "<< A(2,1) << " "<< A(2,2) << std::endl;*/
     phi = std::atan2(A(0,2),-A(2,2));
     B = Matrix3d({
       {std::cos(phi),0.,std::sin(phi)},
@@ -77,9 +62,6 @@ struct AG {// convert orientation matrix A to metrical matrix g & reverse
     F = (D * CBA).transpose();
     Matrix3d G9 (A.transpose()*A); //3x3 form of metrical matrix
     G = {G9(0,0),G9(1,1),G9(2,2),G9(0,1),G9(0,2),G9(1,2)};
-    /*std::cout << "G9" << std::endl;
-    std::cout << G9(0,0) << " "<< G9(1,1) << " "<< G9(2,2) << " ";
-    std::cout << G9(0,1) << " "<< G9(0,2) << " "<< G9(1,2) << std::endl;*/
   }
   void validate_and_setG(gemmi::SMat33<double> const& g){
     // skip validation
@@ -88,26 +70,12 @@ struct AG {// convert orientation matrix A to metrical matrix g & reverse
   Matrix3d back() const {
     gemmi::UnitCell cell = uc_params_from_metrical_matrix(G);
     cell = cell.reciprocal();
-    /*std::cout << "CELL: "; 
-    std::cout << cell.a << " "<< cell.b << " "<< cell.c << " ";
-    std::cout << cell.alpha << " "<< cell.beta << " "<< cell.gamma << std::endl;*/
     gemmi::Mat33 F = cell.frac.mat;
-    //gemmi::UnitCell cell = 
     Matrix3d Fback;
     Fback << F.a[0][0], 0.0, 0.0,
       F.a[0][1], F.a[1][1], 0.0,
       F.a[0][2], F.a[1][2], F.a[2][2];
     Matrix3d prefact = B.inverse() * C.inverse() * D.inverse();
-    /*std::cout << "Fback" << std::endl;
-    std::cout << Fback(0,0) << " "<< Fback(0,1) << " "<< Fback(0,2) << " ";
-    std::cout << Fback(1,0) << " "<< Fback(1,1) << " "<< Fback(1,2) << " ";
-    std::cout << Fback(2,0) << " "<< Fback(2,1) << " "<< Fback(2,2) << std::endl;
-
-    std::cout << "prefact" << std::endl;
-    std::cout << prefact(0,0) << " "<< prefact(0,1) << " "<< prefact(0,2) << " ";
-    std::cout << prefact(1,0) << " "<< prefact(1,1) << " "<< prefact(1,2) << " ";
-    std::cout << prefact(2,0) << " "<< prefact(2,1) << " "<< prefact(2,2) << std::endl;*/
-    
     return (prefact * Fback);
   }
   Matrix3d back_as_orientation() const {
@@ -115,34 +83,9 @@ struct AG {// convert orientation matrix A to metrical matrix g & reverse
   }
 };
 
-// We're just working in P1 for now, so skip constraints
-/*class Constraints {
-public:
-  Constraints(cctbx::sgtbx::space_group space_group){//note working in reciprocal space
-    space_group_(space_group);
-  }
-  std::array<double, 6> independent_params(gemmi::SMat33<double> G){
-    std::array<double, 6> params{{G.u11, G.u22, G.u33, G.u12, G.u13, G.u23}};
-    return params;
-  }
-  SMat33<double> all_params(std::array<double, 6> independent){
-    return gemmi::SMat33<double>{independent[0], independent[1], independent[2], independent[3], independent[4], independent[5]};
-  }
-  int n_independent_params(){return 6;}
-  std::array<double, 6> independent_gradients(gemmi::SMat33<double> all_grads){
-    std::array<double, 6> grads = {
-        all_grads.u11, all_grads.u22, all_grads.u33, all_grads.u12, all_grads.u13,all_grads.u23};
-    return grads;
-  }
-private:
-  cctbx::sgtbx::space_group space_group_;
-}*/
 
-std::vector<Matrix3d> calc_dB_dg(AG Bconverter){
-    // note we don't need the first three elements from the equivalent in g_gradients.py
-    /*def get_all_da(self):
-    # Aij : 9 elements of the reciprocal A* matrix [Rsymop paper, eqn(3)]
-    # df_Aij: 9 gradients of the functional with respect to Aij elements
+std::vector<Matrix3d> calc_dB_dg(BG Bconverter){
+    /* note we don't need the first three elements from the equivalent in g_gradients.py
 
     # G=(g0,g1,g2,g3,g4,g5) 6 elements of the symmetrized metrical matrix,
     #   with current increments already applied ==(a*.a*,b*.b*,c*.c*,a*.b*,a*.c*,b*.c*)*/
@@ -268,26 +211,13 @@ std::vector<Matrix3d> calc_dB_dg(AG Bconverter){
     return gradients;
 }
 
-std::vector<Matrix3d> dB_dp(AG Bconverter){
+std::vector<Matrix3d> dB_dp(BG Bconverter){
+    // If we had symmetry constraints, thes would be applied out here.
     return calc_dB_dg(Bconverter);
-    /*int n_p = constraints_.n_independent_params();
-    std::vector<Matrix3d> dB_dg_ = calc_dB_dg(Bconverter);
-    if (n_p = 6){
-        return dB_dg_;
-    }
-    std::vector<Matrix3d> dB_dp_(n_p);
-    for (int i=0;i<9;i++){
-        gemmi::SMat33<double> all_gradients = {
-            dB_dg_[0][i],dB_dg_[1][i],dB_dg_[2][i],dB_dg_[3][i],dB_dg_[4][i],dB_dg_[5][i]
-        };
-        std::array<double, 6> g_indep = constraints_.independent_gradients(all_gradients);
-        for (int j=0;j<n_p;j++){
-            dB_dp_[j][i] = g_indep[j];
-        }
-    }
-    return dB_dp_;*/
 }
 
+// A class to manage the translation from B to G and back,
+// plus any symmetry constraints (we are sticking to P1 here though.)
 class SymmetrizeReduceEnlarge {
 public:
   SymmetrizeReduceEnlarge();
@@ -298,17 +228,13 @@ public:
 
 private:
   Matrix3d orientation_{};
-  AG Bconverter{};
+  BG Bconverter{};
 };
 
 SymmetrizeReduceEnlarge::SymmetrizeReduceEnlarge(){}
 
 void SymmetrizeReduceEnlarge::set_orientation(Matrix3d B) {
   orientation_ = B;
-  /*std::cout << "Initial orientation" << std::endl;
-  std::cout << orientation_(0,0) << " "<< orientation_(0,1) << " "<< orientation_(0,2) << " ";
-  std::cout << orientation_(1,0) << " "<< orientation_(1,1) << " "<< orientation_(1,2) << " ";
-  std::cout << orientation_(2,0) << " "<< orientation_(2,1) << " "<< orientation_(2,2) << std::endl;*/
 }
 
 std::vector<double> SymmetrizeReduceEnlarge::forward_independent_parameters() {
@@ -329,9 +255,10 @@ std::vector<Matrix3d> SymmetrizeReduceEnlarge::forward_gradients() {
   return dB_dp(Bconverter);
 }
 
-class SimpleBParameterisation {
+
+class CellParameterisation {
 public:
-  SimpleBParameterisation(const Crystal& crystal);
+  CellParameterisation(const Crystal& crystal);
   std::vector<double> get_params() const;
   void set_params(std::vector<double>);
   Matrix3d get_state() const;
@@ -345,15 +272,14 @@ private:
   SymmetrizeReduceEnlarge SRE;
 };
 
-void SimpleBParameterisation::compose() {
+void CellParameterisation::compose() {
   std::vector<double> vals(params_.size());
   for (int i = 0; i < params_.size(); ++i) {
     vals[i] = 1E-5 * params_[i];
   }
   SRE.set_orientation(B_);
   SRE.forward_independent_parameters();
-  B_ = SRE.backward_orientation(vals); //FIXME before this was calculating the inverse?
-  //B_ = B_.inverse();
+  B_ = SRE.backward_orientation(vals);
   dS_dp = SRE.forward_gradients();
   for (int i = 0; i < dS_dp.size(); ++i) {
     for (int j = 0; j < 3; ++j) {
@@ -364,12 +290,8 @@ void SimpleBParameterisation::compose() {
   }
 }
 
-SimpleBParameterisation::SimpleBParameterisation(const Crystal& crystal)
+CellParameterisation::CellParameterisation(const Crystal& crystal)
     : B_(crystal.get_B_matrix()), SRE() {
-  /*std::cout << "Initial B" << std::endl;
-  std::cout << B_(0,0) << " "<< B_(0,1) << " "<< B_(0,2) << " ";
-  std::cout << B_(1,0) << " "<< B_(1,1) << " "<< B_(1,2) << " ";
-  std::cout << B_(2,0) << " "<< B_(2,1) << " "<< B_(2,2) << std::endl;*/
   SRE.set_orientation(B_);
   std::vector<double> X = SRE.forward_independent_parameters();
   params_ = std::vector<double>(X.size());
@@ -379,18 +301,18 @@ SimpleBParameterisation::SimpleBParameterisation(const Crystal& crystal)
   compose();
 }
 
-std::vector<double> SimpleBParameterisation::get_params() const {
+std::vector<double> CellParameterisation::get_params() const {
   return params_;
 }
-Matrix3d SimpleBParameterisation::get_state() const {
+Matrix3d CellParameterisation::get_state() const {
   return B_;
 }
-void SimpleBParameterisation::set_params(std::vector<double> p) {
+void CellParameterisation::set_params(std::vector<double> p) {
   params_ = p;
   compose();
 }
-std::vector<Matrix3d> SimpleBParameterisation::get_dS_dp() const {
+std::vector<Matrix3d> CellParameterisation::get_dS_dp() const {
   return dS_dp;
 }
 
-#endif  // DIALS_RESEARCH_BPARAM
+#endif  // REFINE_BPARAM

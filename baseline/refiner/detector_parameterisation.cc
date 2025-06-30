@@ -9,9 +9,9 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 
-class SimpleDetectorParameterisation {
+class DetectorParameterisation {
 public:
-  SimpleDetectorParameterisation(
+  DetectorParameterisation(
     const Panel &panel,
     bool fix_dist,
     bool fix_shift1,
@@ -52,7 +52,7 @@ private:
   bool _fix_tau3{true};
 };
 
-void SimpleDetectorParameterisation::compose(){
+void DetectorParameterisation::compose(){
     double t1r = params_[3] / 1000.0;
     double t2r = params_[4] / 1000.0;
     double t3r = params_[5] / 1000.0;
@@ -164,7 +164,7 @@ void SimpleDetectorParameterisation::compose(){
     }.transpose();
 }
 
-SimpleDetectorParameterisation::SimpleDetectorParameterisation(
+DetectorParameterisation::DetectorParameterisation(
     const Panel& p,
     bool fix_dist=false,
     bool fix_shift1=false,
@@ -196,7 +196,7 @@ SimpleDetectorParameterisation::SimpleDetectorParameterisation(
     compose();
 }
 
-Matrix3d SimpleDetectorParameterisation::get_state() const{
+Matrix3d DetectorParameterisation::get_state() const{
     Matrix3d m{
         {current_d1[0], current_d2[0], current_origin[0]},
         {current_d1[1], current_d2[1], current_origin[1]},
@@ -205,33 +205,33 @@ Matrix3d SimpleDetectorParameterisation::get_state() const{
     return m;
 }
 
-std::vector<double> SimpleDetectorParameterisation::get_params() const {
+std::vector<double> DetectorParameterisation::get_params() const {
   return params_;
 }
-void SimpleDetectorParameterisation::set_params(std::vector<double> p) {
+void DetectorParameterisation::set_params(std::vector<double> p) {
   params_ = p;
   compose();
 }
-std::vector<Matrix3d> SimpleDetectorParameterisation::get_dS_dp() const  {
+std::vector<Matrix3d> DetectorParameterisation::get_dS_dp() const  {
   return dS_dp;
 }
 
-bool SimpleDetectorParameterisation::dist_fixed() const {
+bool DetectorParameterisation::dist_fixed() const {
     return _fix_dist;
 }
-bool SimpleDetectorParameterisation::shift1_fixed() const {
+bool DetectorParameterisation::shift1_fixed() const {
     return _fix_shift1;
 }
-bool SimpleDetectorParameterisation::shift2_fixed() const {
+bool DetectorParameterisation::shift2_fixed() const {
     return _fix_shift2;
 }
-bool SimpleDetectorParameterisation::tau1_fixed() const {
+bool DetectorParameterisation::tau1_fixed() const {
     return _fix_tau1;
 }
-bool SimpleDetectorParameterisation::tau2_fixed() const {
+bool DetectorParameterisation::tau2_fixed() const {
     return _fix_tau2;
 }
-bool SimpleDetectorParameterisation::tau3_fixed() const {
+bool DetectorParameterisation::tau3_fixed() const {
     return _fix_tau3;
 }
 
