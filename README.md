@@ -18,7 +18,7 @@ In order to create a development environment and compile the service, you need t
 
 For example, you can create a conda/mamba environment with the following command:
 ```bash
-mamba create -c conda-forge -p ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog gemmi
+mamba create -c conda-forge -p ./ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog gemmi
 ```
 
 ### Initialising submodules
