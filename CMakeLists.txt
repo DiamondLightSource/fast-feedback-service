@@ -27,11 +27,13 @@ FetchContent_Declare(
     GIT_TAG        11.0.2
     FIND_PACKAGE_ARGS
 )
+set(FMT_INSTALL OFF)
 FetchContent_MakeAvailable(fmt)
 FetchContent_Declare(
     nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG        v3.11.3
+    EXCLUDE_FROM_ALL
     FIND_PACKAGE_ARGS
 )
 FetchContent_MakeAvailable(nlohmann_json)
@@ -39,6 +41,7 @@ FetchContent_Declare(
     argparse
     GIT_REPOSITORY  https://github.com/ndevenish/argparse
     GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
+    EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(argparse)
 FetchContent_Declare(
