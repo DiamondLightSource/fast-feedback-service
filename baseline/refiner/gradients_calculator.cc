@@ -1,9 +1,4 @@
-#ifndef GRADIENTS_CALCULATOR_H
-#define GRADIENTS_CALCULATOR_H
-
-//#include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
-//#include <dx2/detector.hpp>
 #include <dx2/goniometer.hpp>
 #include "detector_parameterisation.cc"
 #include "beam_parameterisation.cc"
@@ -21,23 +16,15 @@ public:
     GradientsCalculator(
         OrientationParameterisation &uparam,
         CellParameterisation &bparam,
-        //Crystal &crystal,
         const Goniometer &goniometer,
-        //MonochromaticBeam& beam,
-        //BParameterisation &bparam,
         BeamParameterisation& beamparam,
         DetectorParameterisation& Dparam) ;
     std::vector<std::vector<double>> get_gradients(const ReflectionTable &obs) const;
 
 private:
-  //Experiment<MonochromaticBeam> experiment;
   OrientationParameterisation uparam;
   CellParameterisation bparam;
-  //BParameterisation bparam;
-  //BeamParameterisation beamparam;
-  //Crystal crystal;
   Goniometer goniometer;
-  //MonochromaticBeam beam;
   BeamParameterisation beamparam;
   DetectorParameterisation& Dparam;
 };
@@ -45,9 +32,7 @@ private:
 GradientsCalculator::GradientsCalculator(
     OrientationParameterisation& uparam,
     CellParameterisation& bparam,
-    //Crystal &crystal,
     const Goniometer &goniometer,
-    //MonochromaticBeam& beam,
     BeamParameterisation& beamparam,
     DetectorParameterisation& Dparam) :
 uparam(uparam), bparam(bparam), goniometer(goniometer), beamparam(beamparam), Dparam(Dparam) {};
@@ -61,15 +46,9 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(const Reflec
     // and return D array.
     Matrix3d state = Dparam.get_state();
     std::vector<Matrix3d> D(n_ref, state.inverse());
-
-    /*Vector3d s0 = beamparam.get_state();
-    Matrix3d B = bparam.get_state();
-    Matrix3d U = uparam.get_state();*/
     Vector3d s0 = beamparam.get_state();
-    // Matrix3d B = crystal.get_B_matrix();
     Matrix3d B = bparam.get_state();
     Matrix3d U = uparam.get_state();
-
 
     Matrix3d S = goniometer.get_setting_rotation();
     Vector3d axis = goniometer.get_rotation_axis();
@@ -196,5 +175,3 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(const Reflec
 
     return gradients;
 }
-
-#endif //GRADIENTS_CALCULATOR_H

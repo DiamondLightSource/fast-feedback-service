@@ -1,5 +1,3 @@
-#ifndef REFINE_CANDIDATE_H
-#define REFINE_CANDIDATE_H
 #include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
@@ -88,5 +86,3 @@ double refine_indexing_candidate(
       target.cell_parameterisation().get_state()); 
     return xyrmsd;
 }
-
-#endif

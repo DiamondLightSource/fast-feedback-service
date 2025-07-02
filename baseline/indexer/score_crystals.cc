@@ -1,6 +1,3 @@
-#ifndef SCORE_CRYSTALS_H
-#define SCORE_CRYSTALS_H
-
 #include <chrono>
 #include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
@@ -152,5 +149,3 @@ void score_solutions(std::map<int, score_and_crystal>& results_map) {
           rmsd_scores[i] + fraction_indexed_scores[i] + volume_scores[i];
     }
 }
-
-#endif
