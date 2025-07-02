@@ -14,6 +14,9 @@ fi
 if test -f "candidate_crystals.json"; then
     rm candidate_crystals.json
 fi
+if test -f "indexed.refl"; then
+    rm indexed.refl
+fi
 
 # This dataset in the c2sum beta lactamase dataset (https://zenodo.org/records/1014387)
 # It is useful for testing that the non-primitive-basis correction is applied in indexing.
