@@ -1,5 +1,4 @@
-#ifndef DIALS_RESEARCH_DPARAM
-#define DIALS_RESEARCH_DPARAM
+#pragma once
 #include <dx2/detector.hpp>
 #include <Eigen/Dense>
 #include "refinement_utils.cc"
@@ -234,5 +233,3 @@ bool DetectorParameterisation::tau2_fixed() const {
 bool DetectorParameterisation::tau3_fixed() const {
     return _fix_tau3;
 }
-
-#endif  // DIALS_RESEARCH_DPARAM

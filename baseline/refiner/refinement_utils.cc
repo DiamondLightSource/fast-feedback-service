@@ -1,5 +1,4 @@
-#ifndef REFINEMENT_UTLS
-#define REFINEMENT_UTLS
+#pragma once
 #include <Eigen/Dense>
 #include <cmath>
 
@@ -45,5 +44,3 @@ Matrix3d axis_and_angle_as_rot(Vector3d axis, double angle){
         {2*(q1*q3-q0*q2),   2*(q2*q3+q0*q1),   2*(q0*q0+q3*q3)-1}};
     return m;
 }
-
-#endif  // REFINEMENT_UTILS

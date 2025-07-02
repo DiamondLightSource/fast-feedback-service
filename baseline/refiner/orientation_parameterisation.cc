@@ -1,5 +1,4 @@
-#ifndef DIALS_RESEARCH_UPARAM
-#define DIALS_RESEARCH_UPARAM
+#pragma once
 #include <dx2/crystal.hpp>
 #include <dx2/goniometer.hpp>
 #include "refinement_utils.cc"
@@ -115,5 +114,3 @@ void OrientationParameterisation::set_params(std::vector<double> p) {
 std::vector<Matrix3d> OrientationParameterisation::get_dS_dp() const {
   return dS_dp;
 }
-
-#endif  // DIALS_RESEARCH_UPARAM

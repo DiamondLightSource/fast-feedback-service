@@ -1,6 +1,4 @@
-#ifndef REFINE_BPARAM
-#define REFINE_BPARAM
-
+#pragma once
 #include <gemmi/math.hpp> // for symmetric 3x3 matrix SMat33
 #include <dx2/crystal.hpp>
 #include <Eigen/Dense>
@@ -314,5 +312,3 @@ void CellParameterisation::set_params(std::vector<double> p) {
 std::vector<Matrix3d> CellParameterisation::get_dS_dp() const {
   return dS_dp;
 }
-
-#endif  // REFINE_BPARAM

@@ -1,5 +1,4 @@
-#ifndef DIALS_RESEARCH_BEAMPARAM
-#define DIALS_RESEARCH_BEAMPARAM
+#pragma once
 #include <dx2/beam.hpp>
 #include <dx2/goniometer.hpp>
 #include "refinement_utils.cc"
@@ -113,5 +112,3 @@ bool BeamParameterisation::out_spindle_plane_fixed() const{
 bool BeamParameterisation::wavelength_fixed() const{
   return _fix_wavelength;
 }
-
-#endif  // DIALS_RESEARCH_BEAMPARAM
