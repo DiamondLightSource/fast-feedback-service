@@ -4,34 +4,25 @@ LABEL org.opencontainers.image.title="fast-feedback-service" \
       org.opencontainers.image.source="https://github.com/DiamondLightSource/fast-feedback-service" \
       org.opencontainers.image.licenses="BSD-3-Clause"
 
-# Official NVIDIA CUDA image as the base image
-FROM nvcr.io/nvidia/cuda:12.6.3-devel-ubuntu22.04 AS build
+ARG CUDA_VERSION=12.6.3
+
+FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS build
 
 # Explicitly set CUDA environment variables
-ENV CUDA_HOME=/usr/local/cuda
-ENV PATH=${CUDA_HOME}/bin:/opt/bin:${PATH}
-ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
-
-# Set working directory
-WORKDIR /service
-
+#ENV CUDA_HOME=/usr/local/cuda
+#ENV PATH=${CUDA_HOME}/bin:/opt/bin:${PATH}
+#ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 # Install dependencies
 RUN DEBIAN_FRONTEND=noninteractive \
     apt-get update && \
     apt-get install -y --no-install-recommends git ca-certificates curl
-# Clear apt cache
 
-RUN cd /opt && curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
+# Install micromamba. Prefer install script so we don't have to determine platform here
+RUN curl -sL micro.mamba.pm/install.sh | BIN_FOLDER=/opt/bin INIT_YES=no bash
 
-# Create base environment (Python + runtime)
-# RUN micromamba create -y -c conda-forge -p /opt/env \
-#     python=3.11 \
-#     pip \
-#     zocalo \
-#     workflows \
-#     pydantic \
-#     rich && \
-#     mamba clean -afy
+# Setup paths we use
+ENV PATH=/opt/env/bin:/opt/bin:$PATH
+
 
 # Create build environment (compilers + C++ deps)
 RUN micromamba create -y -c conda-forge -p /opt/env \
@@ -46,9 +37,6 @@ RUN micromamba create -y -c conda-forge -p /opt/env \
     bitshuffle \
     ninja \
     gemmi
-
-# Add conda environment to PATH
-ENV PATH=/opt/env/bin:$PATH
 
 # Copy source
 COPY . /opt/ffs_src
@@ -73,10 +61,7 @@ RUN micromamba create -y -c conda-forge -p /opt/ffs \
 RUN cmake --install .
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
 
-# FROM nvcr.io/nvidia/cuda:12.6.3-devel-ubuntu22.04
-
-
-FROM nvcr.io/nvidia/cuda:12.6.3-runtime-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04
 COPY --from=build /opt/ffs /opt/ffs
 
 # Set environment variables for the service
