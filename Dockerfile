@@ -5,7 +5,7 @@ LABEL org.opencontainers.image.title="fast-feedback-service" \
       org.opencontainers.image.licenses="BSD-3-Clause"
 
 # Official NVIDIA CUDA image as the base image
-FROM nvcr.io/nvidia/cuda:12.6.3-devel-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:12.6.3-devel-ubuntu22.04 AS build
 
 # Explicitly set CUDA environment variables
 ENV CUDA_HOME=/usr/local/cuda
@@ -49,24 +49,39 @@ RUN micromamba create -y -c conda-forge -p /opt/env \
 
 # Add conda environment to PATH
 ENV PATH=/opt/env/bin:$PATH
-# ENV CONDA_PREFIX=/opt/env
 
 # Copy source
-COPY . /opt/ffs
-
-# Set environment variables for the build
-# ENV CC=/opt/env/bin/x86_64-conda-linux-gnu-cc
-# ENV CXX=/opt/env/bin/x86_64-conda-linux-gnu-c++
-# ENV CUDAHOSTCXX=/opt/env/bin/x86_64-conda-linux-gnu-g++
+COPY . /opt/ffs_src
 
 # Build the C++/CUDA backend
 WORKDIR /opt/build
-RUN cmake /opt/ffs -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt
-RUN cmake --build /opt/build
+RUN cmake /opt/ffs_src -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs
+RUN cmake --build .
 
-# # Set environment variables for the service
+# Create a python environment to install into
+RUN micromamba create -y -c conda-forge -p /opt/ffs \
+    python \
+    pip \
+    hdf5 \
+    hdf5-external-filter-plugins \
+    gemmi \
+    zocalo \
+    workflows \
+    pydantic \
+    rich
+
+RUN cmake --install .
+RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
+
+# FROM nvcr.io/nvidia/cuda:12.6.3-devel-ubuntu22.04
+
+
+FROM nvcr.io/nvidia/cuda:12.6.3-runtime-ubuntu22.04
+COPY --from=build /opt/ffs /opt/ffs
+
+# Set environment variables for the service
 # ENV SPOTFINDER=/service/docker_build/spotfinder
 # ENV ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
 
 # # Start the service
-# CMD ["zocalo.service", "-s", "GPUPerImageAnalysis"]
+CMD ["/opt/ffs/bin/zocalo.service", "-s", "GPUPerImageAnalysis"]
