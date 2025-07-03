@@ -17,7 +17,12 @@ add_executable(test_orientation_parameterisation test_orientation_parameterisati
 target_include_directories(test_orientation_parameterisation PRIVATE "${PROJECT_SOURCE_DIR}")
 target_link_libraries(test_orientation_parameterisation GTest::gtest_main Eigen3::Eigen nlohmann_json::nlohmann_json gemmi::gemmi_cpp)
 
+add_executable(test_cell_parameterisation test_cell_parameterisation.cc)
+target_include_directories(test_cell_parameterisation PRIVATE "${PROJECT_SOURCE_DIR}")
+target_link_libraries(test_cell_parameterisation GTest::gtest_main Eigen3::Eigen nlohmann_json::nlohmann_json gemmi::gemmi_cpp)
+
 gtest_discover_tests(test_gradients_calculator PROPERTIES LABELS baseline-indexer-tests)
 gtest_discover_tests(test_detector_parameterisation PROPERTIES LABELS baseline-indexer-tests)
 gtest_discover_tests(test_beam_parameterisation PROPERTIES LABELS baseline-indexer-tests)
 gtest_discover_tests(test_orientation_parameterisation PROPERTIES LABELS baseline-indexer-tests)
+gtest_discover_tests(test_cell_parameterisation PROPERTIES LABELS baseline-indexer-tests)

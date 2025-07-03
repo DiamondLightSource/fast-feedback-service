@@ -4,14 +4,14 @@
 #include <vector>
 #include <dx2/crystal.hpp>
 #include "orientation_parameterisation.cc"
-//#include "gemmi/symmetry.hpp"
-//#include "gemmi/unitcell.hpp"
+#include "gemmi/symmetry.hpp"
+#include "gemmi/unitcell.hpp"
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
 
 
-TEST(BaselineIndexer, beam_parameterisation) {
+TEST(BaselineIndexer, orientation_parameterisation) {
     Vector3d a = {-0.19,2.78,6.05};
     Vector3d b = {0.09,-15.44,8.78};
     Vector3d c = {26.77,0.45,2.39};
