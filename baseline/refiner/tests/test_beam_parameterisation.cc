@@ -19,7 +19,7 @@ TEST(BaselineIndexer, beam_parameterisation) {
     json goniometer_json = elist_json_obj["goniometer"][0];
     MonochromaticBeam beam(beam_json);
     Goniometer goniometer(goniometer_json);
-    BeamParameterisation beam_param = BeamParameterisation(beam, goniometer);
+    BeamParameterisation beam_param(beam, goniometer);
     // Check the initial params are as expected.
     std::vector<double> p = beam_param.get_params();
     std::vector<double> expected_p = {0.0, 0.0, 0.8065491793362101};
@@ -56,7 +56,7 @@ TEST(BaselineIndexer, beam_parameterisation) {
     for (int i=0;i<3;++i){
         EXPECT_DOUBLE_EQ(derivatives[2][i], expected_deriv_2[i]);
     }
-    
+    // Check the state
     Vector3d state = beam_param.get_state();
     Vector3d expected_state({
         0.0017999979000009152,

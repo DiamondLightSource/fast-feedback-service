@@ -87,6 +87,7 @@ TEST(BaselineIndexer, detector_parameterisation) {
             EXPECT_DOUBLE_EQ(derivatives[5](i,j), expected_deriv_5(i,j));
         }
     }
+    // Check the state
     Matrix3d state = detector_param.get_state();
     Matrix3d expected_state({
         {0.9978412784317169, -0.05844057217915775, -205.85472658632028},
