@@ -77,9 +77,7 @@ void DetectorParameterisation::compose(){
     current_d1 = d1;
     current_d2 = d2;
 
-    //Vector3d d2 = dn.cross(d1);
     Vector3d o = dorg + initial_offset[0] * d1 + initial_offset[1] * d2;
-    //new_state = {"d1": d1, "d2": d2, "origin": o}
     current_origin = o;
 
     // derivative of dorg wrt dist
