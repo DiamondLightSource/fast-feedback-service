@@ -22,7 +22,7 @@ from workflows.services.common_service import CommonService
 logger = logging.getLogger(__name__)
 logger.level = logging.DEBUG
 
-DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
+DEFAULT_QUEUE_NAME = os.getenv("FFS_QUEUE", "per_image_analysis.gpu")
 
 
 class PiaRequest(BaseModel):
