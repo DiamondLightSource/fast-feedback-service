@@ -95,26 +95,19 @@ void DetectorParameterisation::compose(){
     Vector3d ddorg_dtau3 = dTau321_dtau3 * dsv - dTau32_dtau3 * P0;
 
     // Now derivatives of the direction d1, where d1 = (Tau321 * (Px - P0)).normalize()
-    //Vector3d dd1_ddist{0.0, 0.0, 0.0};
-    //Vector3d dd1_dshift1{0.0, 0.0, 0.0};
-    //Vector3d dd1_dshift2{0.0, 0.0, 0.0};
     Vector3d dd1_dtau1 = dTau321_dtau1 * (Px - P0);
     Vector3d dd1_dtau2 = dTau321_dtau2 * (Px - P0);
     Vector3d dd1_dtau3 = dTau321_dtau3 * (Px - P0);
 
     // Derivatives of the direction d2, where d2 = (Tau321 * (Py - P0)).normalize()
-    //Vector3d dd2_ddist{0.0, 0.0, 0.0};
-    //Vector3d dd2_dshift1{0.0, 0.0, 0.0};
-    //Vector3d dd2_dshift2{0.0, 0.0, 0.0};
     Vector3d dd2_dtau1 = dTau321_dtau1 * (Py - P0);
     Vector3d dd2_dtau2 = dTau321_dtau2 * (Py - P0);
     Vector3d dd2_dtau3 = dTau321_dtau3 * (Py - P0);
 
     // Derivatives of the direction dn, where dn = d1.cross(d2).normalize()
-    // These derivatives are not used
-    Vector3d do_ddist = ddorg_ddist;// + initial_offset[0] * dd1_ddist + initial_offset[1] * dd2_ddist;
-    Vector3d do_dshift1 = ddorg_dshift1;// + initial_offset[0] * dd1_dshift1 + initial_offset[1] * dd2_dshift1;
-    Vector3d do_dshift2 = ddorg_dshift2;// + initial_offset[0] * dd1_dshift2 + initial_offset[1] * dd2_dshift2;
+    Vector3d do_ddist = ddorg_ddist;
+    Vector3d do_dshift1 = ddorg_dshift1;
+    Vector3d do_dshift2 = ddorg_dshift2;
     Vector3d do_dtau1 = ddorg_dtau1 + initial_offset[0] * dd1_dtau1 + initial_offset[1] * dd2_dtau1;
     Vector3d do_dtau2 = ddorg_dtau2 + initial_offset[0] * dd1_dtau2 + initial_offset[1] * dd2_dtau2;
     Vector3d do_dtau3 = ddorg_dtau3 + initial_offset[0] * dd1_dtau3 + initial_offset[1] * dd2_dtau3;
@@ -129,18 +122,18 @@ void DetectorParameterisation::compose(){
     dd2_dtau3 /= 1000.0;
 
     dS_dp[0] = Matrix3d{
-        {0.0,0.0,0.0},//dd1_ddist[0], dd1_ddist[1], dd1_ddist[2],
-        {0.0,0.0,0.0},//dd2_ddist[0], dd2_ddist[1], dd2_ddist[2],
+        {0.0,0.0,0.0},
+        {0.0,0.0,0.0},
         {do_ddist[0], do_ddist[1], do_ddist[2]}
     }.transpose();
     dS_dp[1] = Matrix3d{
-        {0.0,0.0,0.0},//dd1_dshift1[0], dd1_dshift1[1], dd1_dshift1[2],
-        {0.0,0.0,0.0},//dd2_dshift1[0], dd2_dshift1[1], dd2_dshift1[2],
+        {0.0,0.0,0.0},
+        {0.0,0.0,0.0},
         {do_dshift1[0], do_dshift1[1], do_dshift1[2]}
     }.transpose();
     dS_dp[2] = Matrix3d{
-        {0.0,0.0,0.0},//dd1_dshift2[0], dd1_dshift2[1], dd1_dshift2[2],
-        {0.0,0.0,0.0},//dd2_dshift2[0], dd2_dshift2[1], dd2_dshift2[2],
+        {0.0,0.0,0.0},
+        {0.0,0.0,0.0},
         {do_dshift2[0], do_dshift2[1], do_dshift2[2]}
     }.transpose();
 
@@ -171,7 +164,6 @@ DetectorParameterisation::DetectorParameterisation(
     bool fix_tau3=false): 
         _fix_dist{fix_dist}, _fix_shift1{fix_shift1}, _fix_shift2{fix_shift2},
         _fix_tau1{fix_tau1}, _fix_tau2{fix_tau2}, _fix_tau3{fix_tau3}{
-    //const dxtbx::model::Panel& p = Detector[0];
     Vector3d so = p.get_origin();
     Vector3d d1 = p.get_fast_axis();
     Vector3d d2 = p.get_slow_axis();
