@@ -59,14 +59,14 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
     std::vector<double> xyzcal_mm_data(xyzobs_mm.size(), 0.0);
     mdspan_type<double> xyzcal_mm;
     //mdspan_type<double> xyzcal_mm(xyzcal_mm_data.data(), xyzcal_mm_data.size() / 3, 3);
-    auto xyzcal_ = reflections.column<double>("xyzcal.mm.value");
+    auto xyzcal_ = reflections.column<double>("xyzcal.mm");
     if (xyzcal_.has_value()){
         xyzcal_mm = xyzcal_.value();
     }
     else {
         reflections.add_column(
-            "xyzcal.mm.value", xyzobs_mm.extent(0), 3, xyzcal_mm_data);
-        auto xyzcal_ = reflections.column<double>("xyzcal.mm.value");
+            "xyzcal.mm", xyzobs_mm.extent(0), 3, xyzcal_mm_data);
+        auto xyzcal_ = reflections.column<double>("xyzcal.mm");
         xyzcal_mm = xyzcal_.value();
     }
 

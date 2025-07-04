@@ -132,7 +132,7 @@ ReflectionTable outlier_filter(ReflectionTable& reflections) {
     auto& flags = flags_.value();
     auto xyzobs_ = reflections.column<double>("xyzobs.mm.value");
     const auto& xyzobs_mm = xyzobs_.value();
-    auto xyzcal_ = reflections.column<double>("xyzcal.mm.value");
+    auto xyzcal_ = reflections.column<double>("xyzcal.mm");
     const auto& xyzcal_mm = xyzcal_.value();
 
     std::vector<double> x_resid(flags.size(), 0.0);
