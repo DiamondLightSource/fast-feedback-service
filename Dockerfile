@@ -17,37 +17,25 @@ RUN DEBIAN_FRONTEND=noninteractive \
     apt-get update && \
     apt-get install -y --no-install-recommends git ca-certificates curl
 
-# Install micromamba. Prefer install script so we don't have to determine platform here
+# Install micromamba. Prefer install script so we don't have to determine platform here
 RUN curl -sL micro.mamba.pm/install.sh | BIN_FOLDER=/opt/bin INIT_YES=no bash
 
 # Setup paths we use
-ENV PATH=/opt/env/bin:/opt/bin:$PATH
+ENV PATH=/opt/ffs/bin:/opt/build_env/bin:/opt/bin:$PATH
 
-
-# Create build environment (compilers + C++ deps)
-RUN micromamba create -y -c conda-forge -p /opt/env \
+# Create build environment (compilers + C++ compile-time deps)
+RUN micromamba create -y -c conda-forge -p /opt/build_env \
     gcc=11 \
     gxx=11 \
-    boost-cpp \
     benchmark \
     gtest \
     cmake \
-    hdf5 \
-    hdf5-external-filter-plugins \
     bitshuffle \
-    ninja \
-    gemmi
+    ninja
 
-# Copy source
-COPY . /opt/ffs_src
-
-# Build the C++/CUDA backend
-WORKDIR /opt/build
-RUN cmake /opt/ffs_src -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs
-RUN cmake --build .
-
-# Create a python environment to install into
+# Create the runtime environment to install into
 RUN micromamba create -y -c conda-forge -p /opt/ffs \
+    boost-cpp \
     python \
     pip \
     hdf5 \
@@ -58,9 +46,19 @@ RUN micromamba create -y -c conda-forge -p /opt/ffs \
     pydantic \
     rich
 
-RUN cmake --install --component Runtime .
+# Copy source
+COPY . /opt/ffs_src
+
+# Build the C++/CUDA backend
+WORKDIR /opt/build
+RUN cmake /opt/ffs_src -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs
+RUN cmake --build . --target spotfinder
+
+RUN cmake --install . --component Runtime
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
 
+
+# Now copy this into an isolated runtime container
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04
 COPY --from=build /opt/ffs /opt/ffs
 

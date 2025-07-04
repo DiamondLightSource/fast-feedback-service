@@ -1,11 +1,26 @@
-*
-!*/
-!**/CMakeLists.txt
-!*.lock
-!**/*.in
-!**/*.cu
-!**/*.cuh
-!**/*.hpp
-!**/*.cc
-!**/*.cpp
-!**/*.h
+.git/
+__pycache__/
+*.pyc
+*.pyo
+build/
+_build/
+.env
+.vscode/
+.DS_Store
+Dockerfile
+Makefile
+*.sif
+*.tar
+.*_cache
+ENV/
+# This is better, but doesn't work with podman. sigh.
+# *
+# !**/CMakeLists.txt
+# !**.lock
+# !**/*.in
+# !**/*.cu
+# !**/*.cuh
+# !**/*.hpp
+# !**/*.cc
+# !**/*.cpp
+# !**/*.h
