@@ -58,7 +58,7 @@ RUN micromamba create -y -c conda-forge -p /opt/ffs \
     pydantic \
     rich
 
-RUN cmake --install .
+RUN cmake --install --component Runtime .
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04
