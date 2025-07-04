@@ -108,20 +108,19 @@ xyz_to_rlp_results xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
     return results;  // Return the data and spans.
 }
 
-void px_to_mm(
-  const mdspan_type<double> &px_input,
-  mdspan_type<double> &mm_output,
-  const Scan& scan,
-  const Panel& panel
-) {
-  const auto [osc_start, osc_width] = scan.get_oscillation();
-  int image_range_start = scan.get_image_range()[0];
-  for (int i=0;i<px_input.extent(0);++i){
-    std::array<double, 2> xymm = panel.px_to_mm(px_input(i,0), px_input(i,1));
-    double rot_angle =
-      (((px_input(i,2) + 1 - image_range_start) * osc_width) + osc_start) * DEG2RAD;
-    mm_output(i,0) = xymm[0];
-    mm_output(i,1) = xymm[1];
-    mm_output(i,2) = rot_angle;
-  }
+void px_to_mm(const mdspan_type<double> &px_input,
+              mdspan_type<double> &mm_output,
+              const Scan &scan,
+              const Panel &panel) {
+    const auto [osc_start, osc_width] = scan.get_oscillation();
+    int image_range_start = scan.get_image_range()[0];
+    for (int i = 0; i < px_input.extent(0); ++i) {
+        std::array<double, 2> xymm = panel.px_to_mm(px_input(i, 0), px_input(i, 1));
+        double rot_angle =
+          (((px_input(i, 2) + 1 - image_range_start) * osc_width) + osc_start)
+          * DEG2RAD;
+        mm_output(i, 0) = xymm[0];
+        mm_output(i, 1) = xymm[1];
+        mm_output(i, 2) = rot_angle;
+    }
 }

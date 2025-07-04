@@ -1,57 +1,55 @@
 #pragma once
-#include <dx2/detector.hpp>
 #include <Eigen/Dense>
-#include "refinement_utils.cc"
 #include <cmath>
+#include <dx2/detector.hpp>
+
+#include "refinement_utils.cc"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 
 class DetectorParameterisation {
-public:
-  DetectorParameterisation(
-    const Panel &panel,
-    bool fix_dist,
-    bool fix_shift1,
-    bool fix_shift2,
-    bool fix_tau1,
-    bool fix_tau2,
-    bool fix_tau3);
-  std::vector<double> get_params() const;
-  void set_params(std::vector<double> p);
-  Matrix3d get_state() const;
-  std::vector<Matrix3d> get_dS_dp() const;
-  bool dist_fixed() const;
-  bool shift1_fixed() const;
-  bool shift2_fixed() const;
-  bool tau1_fixed() const;
-  bool tau2_fixed() const;
-  bool tau3_fixed() const;
+  public:
+    DetectorParameterisation(const Panel& panel,
+                             bool fix_dist,
+                             bool fix_shift1,
+                             bool fix_shift2,
+                             bool fix_tau1,
+                             bool fix_tau2,
+                             bool fix_tau3);
+    std::vector<double> get_params() const;
+    void set_params(std::vector<double> p);
+    Matrix3d get_state() const;
+    std::vector<Matrix3d> get_dS_dp() const;
+    bool dist_fixed() const;
+    bool shift1_fixed() const;
+    bool shift2_fixed() const;
+    bool tau1_fixed() const;
+    bool tau2_fixed() const;
+    bool tau3_fixed() const;
 
-private:
-  std::vector<double> params_ = {0.0,0.0,0.0,0.0,0.0,0.0}; //
-  void compose();
-  std::vector<Matrix3d> dS_dp{
-    6,
-    Matrix3d {{0, 0, 0}, {0, 0, 0}, {0,0,0}}};
-  Vector3d initial_offset{{0.0,0.0,0.0}};
-  Vector3d initial_d1{{0.0,0.0,0.0}};
-  Vector3d initial_d2{{0.0,0.0,0.0}};
-  Vector3d initial_dn{{0.0,0.0,0.0}};
-  Vector3d initial_origin{{0.0,0.0,0.0}};
-  Vector3d current_origin{{0.0,0.0,0.0}};
-  Vector3d current_d1{{0.0,0.0,0.0}};
-  Vector3d current_d2{{0.0,0.0,0.0}};
-  bool _fix_dist{true};
-  bool _fix_shift1{false};
-  bool _fix_shift2{true};
-  bool _fix_tau1{true};
-  bool _fix_tau2{true};
-  bool _fix_tau3{true};
+  private:
+    std::vector<double> params_ = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};  //
+    void compose();
+    std::vector<Matrix3d> dS_dp{6, Matrix3d{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}};
+    Vector3d initial_offset{{0.0, 0.0, 0.0}};
+    Vector3d initial_d1{{0.0, 0.0, 0.0}};
+    Vector3d initial_d2{{0.0, 0.0, 0.0}};
+    Vector3d initial_dn{{0.0, 0.0, 0.0}};
+    Vector3d initial_origin{{0.0, 0.0, 0.0}};
+    Vector3d current_origin{{0.0, 0.0, 0.0}};
+    Vector3d current_d1{{0.0, 0.0, 0.0}};
+    Vector3d current_d2{{0.0, 0.0, 0.0}};
+    bool _fix_dist{true};
+    bool _fix_shift1{false};
+    bool _fix_shift2{true};
+    bool _fix_tau1{true};
+    bool _fix_tau2{true};
+    bool _fix_tau3{true};
 };
 
-void DetectorParameterisation::compose(){
+void DetectorParameterisation::compose() {
     double t1r = params_[3] / 1000.0;
     double t2r = params_[4] / 1000.0;
     double t3r = params_[5] / 1000.0;
@@ -68,9 +66,9 @@ void DetectorParameterisation::compose(){
     Vector3d Py = P0 + initial_d2;
     Vector3d dsv = P0 + (params_[1] * initial_d1) + (params_[2] * initial_d2);
     Vector3d dorg = (Tau321 * dsv) - (Tau32 * P0) + P0;
-    Vector3d d1 = (Tau321 * (Px-P0));
+    Vector3d d1 = (Tau321 * (Px - P0));
     d1.normalize();
-    Vector3d d2 = (Tau321 * (Py-P0));
+    Vector3d d2 = (Tau321 * (Py - P0));
     d2.normalize();
     Vector3d dn = d1.cross(d2);
     dn.normalize();
@@ -81,7 +79,7 @@ void DetectorParameterisation::compose(){
     current_origin = o;
 
     // derivative of dorg wrt dist
-    Vector3d ddorg_ddist = (Tau321*initial_dn) - (Tau32*initial_dn) + initial_dn;
+    Vector3d ddorg_ddist = (Tau321 * initial_dn) - (Tau32 * initial_dn) + initial_dn;
     Vector3d ddorg_dshift1 = Tau321 * initial_d1;
     Vector3d ddorg_dshift2 = Tau321 * initial_d2;
     // derivative wrt tau1, tau2, tau3
@@ -108,9 +106,12 @@ void DetectorParameterisation::compose(){
     Vector3d do_ddist = ddorg_ddist;
     Vector3d do_dshift1 = ddorg_dshift1;
     Vector3d do_dshift2 = ddorg_dshift2;
-    Vector3d do_dtau1 = ddorg_dtau1 + initial_offset[0] * dd1_dtau1 + initial_offset[1] * dd2_dtau1;
-    Vector3d do_dtau2 = ddorg_dtau2 + initial_offset[0] * dd1_dtau2 + initial_offset[1] * dd2_dtau2;
-    Vector3d do_dtau3 = ddorg_dtau3 + initial_offset[0] * dd1_dtau3 + initial_offset[1] * dd2_dtau3;
+    Vector3d do_dtau1 =
+      ddorg_dtau1 + initial_offset[0] * dd1_dtau1 + initial_offset[1] * dd2_dtau1;
+    Vector3d do_dtau2 =
+      ddorg_dtau2 + initial_offset[0] * dd1_dtau2 + initial_offset[1] * dd2_dtau2;
+    Vector3d do_dtau3 =
+      ddorg_dtau3 + initial_offset[0] * dd1_dtau3 + initial_offset[1] * dd2_dtau3;
     do_dtau1 /= 1000.0;
     do_dtau2 /= 1000.0;
     do_dtau3 /= 1000.0;
@@ -121,49 +122,46 @@ void DetectorParameterisation::compose(){
     dd2_dtau2 /= 1000.0;
     dd2_dtau3 /= 1000.0;
 
-    dS_dp[0] = Matrix3d{
-        {0.0,0.0,0.0},
-        {0.0,0.0,0.0},
-        {do_ddist[0], do_ddist[1], do_ddist[2]}
-    }.transpose();
-    dS_dp[1] = Matrix3d{
-        {0.0,0.0,0.0},
-        {0.0,0.0,0.0},
-        {do_dshift1[0], do_dshift1[1], do_dshift1[2]}
-    }.transpose();
-    dS_dp[2] = Matrix3d{
-        {0.0,0.0,0.0},
-        {0.0,0.0,0.0},
-        {do_dshift2[0], do_dshift2[1], do_dshift2[2]}
-    }.transpose();
+    dS_dp[0] =
+      Matrix3d{
+        {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {do_ddist[0], do_ddist[1], do_ddist[2]}}
+        .transpose();
+    dS_dp[1] =
+      Matrix3d{
+        {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {do_dshift1[0], do_dshift1[1], do_dshift1[2]}}
+        .transpose();
+    dS_dp[2] =
+      Matrix3d{
+        {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {do_dshift2[0], do_dshift2[1], do_dshift2[2]}}
+        .transpose();
 
-    dS_dp[3] = Matrix3d{
-        {dd1_dtau1[0], dd1_dtau1[1], dd1_dtau1[2]},
-        {dd2_dtau1[0], dd2_dtau1[1], dd2_dtau1[2]},
-        {do_dtau1[0], do_dtau1[1], do_dtau1[2]}
-    }.transpose();
-    dS_dp[4] = Matrix3d{
-        {dd1_dtau2[0], dd1_dtau2[1], dd1_dtau2[2]},
-        {dd2_dtau2[0], dd2_dtau2[1], dd2_dtau2[2]},
-        {do_dtau2[0], do_dtau2[1], do_dtau2[2]}
-    }.transpose();
-    dS_dp[5] = Matrix3d{
-        {dd1_dtau3[0], dd1_dtau3[1], dd1_dtau3[2]},
-        {dd2_dtau3[0], dd2_dtau3[1], dd2_dtau3[2]},
-        {do_dtau3[0], do_dtau3[1], do_dtau3[2]}
-    }.transpose();
+    dS_dp[3] = Matrix3d{{dd1_dtau1[0], dd1_dtau1[1], dd1_dtau1[2]},
+                        {dd2_dtau1[0], dd2_dtau1[1], dd2_dtau1[2]},
+                        {do_dtau1[0], do_dtau1[1], do_dtau1[2]}}
+                 .transpose();
+    dS_dp[4] = Matrix3d{{dd1_dtau2[0], dd1_dtau2[1], dd1_dtau2[2]},
+                        {dd2_dtau2[0], dd2_dtau2[1], dd2_dtau2[2]},
+                        {do_dtau2[0], do_dtau2[1], do_dtau2[2]}}
+                 .transpose();
+    dS_dp[5] = Matrix3d{{dd1_dtau3[0], dd1_dtau3[1], dd1_dtau3[2]},
+                        {dd2_dtau3[0], dd2_dtau3[1], dd2_dtau3[2]},
+                        {do_dtau3[0], do_dtau3[1], do_dtau3[2]}}
+                 .transpose();
 }
 
-DetectorParameterisation::DetectorParameterisation(
-    const Panel& p,
-    bool fix_dist=false,
-    bool fix_shift1=false,
-    bool fix_shift2=false,
-    bool fix_tau1=false,
-    bool fix_tau2=false,
-    bool fix_tau3=false): 
-        _fix_dist{fix_dist}, _fix_shift1{fix_shift1}, _fix_shift2{fix_shift2},
-        _fix_tau1{fix_tau1}, _fix_tau2{fix_tau2}, _fix_tau3{fix_tau3}{
+DetectorParameterisation::DetectorParameterisation(const Panel& p,
+                                                   bool fix_dist = false,
+                                                   bool fix_shift1 = false,
+                                                   bool fix_shift2 = false,
+                                                   bool fix_tau1 = false,
+                                                   bool fix_tau2 = false,
+                                                   bool fix_tau3 = false)
+    : _fix_dist{fix_dist},
+      _fix_shift1{fix_shift1},
+      _fix_shift2{fix_shift2},
+      _fix_tau1{fix_tau1},
+      _fix_tau2{fix_tau2},
+      _fix_tau3{fix_tau3} {
     Vector3d so = p.get_origin();
     Vector3d d1 = p.get_fast_axis();
     Vector3d d2 = p.get_slow_axis();
@@ -174,9 +172,9 @@ DetectorParameterisation::DetectorParameterisation(
     double panel_lim_x = p.get_image_size_mm()[0];
     double panel_lim_y = p.get_image_size_mm()[1];
     initial_offset = {-0.5 * panel_lim_x, -0.5 * panel_lim_y, 0.0};
-    Vector3d dorg = so - (initial_offset[0]*d1) - (initial_offset[1]*d2);
+    Vector3d dorg = so - (initial_offset[0] * d1) - (initial_offset[1] * d2);
     params_[0] = p.get_directed_distance();
-    Vector3d shift = dorg - dn*params_[0];
+    Vector3d shift = dorg - dn * params_[0];
     params_[1] = shift.dot(d1);
     params_[2] = shift.dot(d2);
     params_[3] = 0.0;
@@ -185,24 +183,22 @@ DetectorParameterisation::DetectorParameterisation(
     compose();
 }
 
-Matrix3d DetectorParameterisation::get_state() const{
-    Matrix3d m{
-        {current_d1[0], current_d2[0], current_origin[0]},
-        {current_d1[1], current_d2[1], current_origin[1]},
-        {current_d1[2], current_d2[2], current_origin[2]}
-    };
+Matrix3d DetectorParameterisation::get_state() const {
+    Matrix3d m{{current_d1[0], current_d2[0], current_origin[0]},
+               {current_d1[1], current_d2[1], current_origin[1]},
+               {current_d1[2], current_d2[2], current_origin[2]}};
     return m;
 }
 
 std::vector<double> DetectorParameterisation::get_params() const {
-  return params_;
+    return params_;
 }
 void DetectorParameterisation::set_params(std::vector<double> p) {
-  params_ = p;
-  compose();
+    params_ = p;
+    compose();
 }
-std::vector<Matrix3d> DetectorParameterisation::get_dS_dp() const  {
-  return dS_dp;
+std::vector<Matrix3d> DetectorParameterisation::get_dS_dp() const {
+    return dS_dp;
 }
 
 bool DetectorParameterisation::dist_fixed() const {

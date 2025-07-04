@@ -1,44 +1,45 @@
 #pragma once
+#include <Eigen/Dense>
 #include <dx2/beam.hpp>
 #include <dx2/goniometer.hpp>
+
 #include "refinement_utils.cc"
-#include <Eigen/Dense>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector3i;
 
 class BeamParameterisation {
-public:
-  BeamParameterisation(
-    const MonochromaticBeam& beam, const Goniometer& goniometer,
-    bool fix_in_spindle_plane, bool fix_out_spindle_plane, bool fix_wavelength);
-  std::vector<double> get_params() const;
-  void set_params(std::vector<double> p);
-  Vector3d get_state() const;
-  std::vector<Vector3d> get_dS_dp() const;
-  bool in_spindle_plane_fixed() const;
-  bool out_spindle_plane_fixed() const;
-  bool wavelength_fixed() const;
+  public:
+    BeamParameterisation(const MonochromaticBeam& beam,
+                         const Goniometer& goniometer,
+                         bool fix_in_spindle_plane,
+                         bool fix_out_spindle_plane,
+                         bool fix_wavelength);
+    std::vector<double> get_params() const;
+    void set_params(std::vector<double> p);
+    Vector3d get_state() const;
+    std::vector<Vector3d> get_dS_dp() const;
+    bool in_spindle_plane_fixed() const;
+    bool out_spindle_plane_fixed() const;
+    bool wavelength_fixed() const;
 
-private:
-  std::vector<double> params_ = {0.0,0.0,0.0}; //mu1, mu2, nu
-  void compose();
-  Vector3d istate_s0{};
-  Vector3d istate_pol_norm{};
-  Vector3d s0{};
-  Vector3d pn{};
-  Vector3d s0_plane_dir1{};
-  Vector3d s0_plane_dir2{};
-  std::vector<Vector3d> dS_dp{
-    3,
-    Vector3d(0.0, 0, 0)};
-  bool _fix_in_spindle_plane{true};
-  bool _fix_out_spindle_plane{false};
-  bool _fix_wavelength{true};
+  private:
+    std::vector<double> params_ = {0.0, 0.0, 0.0};  //mu1, mu2, nu
+    void compose();
+    Vector3d istate_s0{};
+    Vector3d istate_pol_norm{};
+    Vector3d s0{};
+    Vector3d pn{};
+    Vector3d s0_plane_dir1{};
+    Vector3d s0_plane_dir2{};
+    std::vector<Vector3d> dS_dp{3, Vector3d(0.0, 0, 0)};
+    bool _fix_in_spindle_plane{true};
+    bool _fix_out_spindle_plane{false};
+    bool _fix_wavelength{true};
 };
 
-void BeamParameterisation::compose(){
+void BeamParameterisation::compose() {
     double mu1rad = params_[0] / 1000.0;
     double mu2rad = params_[1] / 1000.0;
     Matrix3d Mu1 = axis_and_angle_as_rot(s0_plane_dir1, mu1rad);
@@ -69,46 +70,45 @@ void BeamParameterisation::compose(){
     dS_dp[2] = s0_new_dir;
 }
 
-BeamParameterisation::BeamParameterisation(
-    const MonochromaticBeam& beam,
-    const Goniometer& goniometer,
-    bool fix_in_spindle_plane=true,
-    bool fix_out_spindle_plane=false,
-    bool fix_wavelength=true):
-        _fix_in_spindle_plane{fix_in_spindle_plane},
-        _fix_out_spindle_plane{fix_out_spindle_plane},
-        _fix_wavelength{fix_wavelength} {
+BeamParameterisation::BeamParameterisation(const MonochromaticBeam& beam,
+                                           const Goniometer& goniometer,
+                                           bool fix_in_spindle_plane = true,
+                                           bool fix_out_spindle_plane = false,
+                                           bool fix_wavelength = true)
+    : _fix_in_spindle_plane{fix_in_spindle_plane},
+      _fix_out_spindle_plane{fix_out_spindle_plane},
+      _fix_wavelength{fix_wavelength} {
     s0 = beam.get_s0();
     istate_s0 = s0 / s0.norm();
     istate_pol_norm = beam.get_polarization_normal();
     Vector3d spindle = goniometer.get_rotation_axis();
     s0_plane_dir2 = s0.cross(spindle);
-    s0_plane_dir2.normalize(); // axis associated with mu2
+    s0_plane_dir2.normalize();  // axis associated with mu2
     s0_plane_dir1 = s0_plane_dir2.cross(s0);
-    s0_plane_dir1.normalize(); //axis associated with mu1
+    s0_plane_dir1.normalize();  //axis associated with mu1
     params_[2] = s0.norm();
     compose();
 }
 
 Vector3d BeamParameterisation::get_state() const {
-  return s0;
+    return s0;
 }
 std::vector<double> BeamParameterisation::get_params() const {
-  return params_;
+    return params_;
 }
 void BeamParameterisation::set_params(std::vector<double> p) {
-  params_ = p;
-  compose();
+    params_ = p;
+    compose();
 }
 std::vector<Vector3d> BeamParameterisation::get_dS_dp() const {
-  return dS_dp;
+    return dS_dp;
 }
 bool BeamParameterisation::in_spindle_plane_fixed() const {
-  return _fix_in_spindle_plane;
+    return _fix_in_spindle_plane;
 }
-bool BeamParameterisation::out_spindle_plane_fixed() const{
-  return _fix_out_spindle_plane;
+bool BeamParameterisation::out_spindle_plane_fixed() const {
+    return _fix_out_spindle_plane;
 }
-bool BeamParameterisation::wavelength_fixed() const{
-  return _fix_wavelength;
+bool BeamParameterisation::wavelength_fixed() const {
+    return _fix_wavelength;
 }

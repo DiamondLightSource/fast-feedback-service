@@ -24,6 +24,7 @@
 #include <thread>
 #include <vector>
 
+#include "assign_indices.cc"
 #include "combinations.cc"
 #include "ffs_logger.hpp"
 #include "fft3d.cc"
@@ -32,7 +33,6 @@
 #include "peaks_to_rlvs.cc"
 #include "score_crystals.cc"
 #include "xyz_to_rlp.cc"
-#include "assign_indices.cc"
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -250,8 +250,10 @@ int main(int argc, char** argv) {
     }
     ReflectionTable reflections;
     reflections.add_column(std::string("flags"), flags);
-    reflections.add_column(
-      std::string("xyzobs.mm.value"), results.xyzobs_mm.extent(0), 3, results.xyzobs_mm_data);
+    reflections.add_column(std::string("xyzobs.mm.value"),
+                           results.xyzobs_mm.extent(0),
+                           3,
+                           results.xyzobs_mm_data);
     reflections.add_column(std::string("s1"), results.s1.extent(0), 3, results.s1_data);
     reflections.add_column(
       std::string("rlp"), results.rlp.extent(0), 3, results.rlp_data);
@@ -370,8 +372,12 @@ int main(int argc, char** argv) {
     expt.detector().update(best_panel.get_d_matrix());
     gemmi::UnitCell bestcell = best_xtal.get_unit_cell();
     logger.info("Best cell (P1): {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f}",
-      bestcell.a, bestcell.b, bestcell.c, bestcell.alpha, bestcell.beta, bestcell.gamma
-    );
+                bestcell.a,
+                bestcell.b,
+                bestcell.c,
+                bestcell.alpha,
+                bestcell.beta,
+                bestcell.gamma);
 
     // Save the indexed experiment list.
     json elist_out = expt.to_json();
@@ -381,60 +387,67 @@ int main(int argc, char** argv) {
     logger.info("Saved experiment list to {}", efile_name);
 
     bool no_output = parser.get<bool>("no-output");
-    if (!no_output){
-      // Create an indexed reflection table.
-      std::vector<uint64_t> ids = {0};
-      std::vector<std::string> labels = {expt.identifier()};
-      ReflectionTable final_reflections(ids, labels);
+    if (!no_output) {
+        // Create an indexed reflection table.
+        std::vector<uint64_t> ids = {0};
+        std::vector<std::string> labels = {expt.identifier()};
+        ReflectionTable final_reflections(ids, labels);
 
-      // Recalculate the rlp and s1 vectors based on the updated models.
-      xyz_to_rlp_results final_results = xyz_to_rlp(xyzobs_px, detector.panels()[0], expt.beam(), scan, gonio);
-      final_reflections.add_column(std::string("flags"), flags);
-      final_reflections.add_column(
-        std::string("xyzobs.mm.value"), final_results.xyzobs_mm.extent(0), 3, final_results.xyzobs_mm_data);
-      final_reflections.add_column(std::string("s1"), final_results.s1.extent(0), 3, final_results.s1_data);
-      final_reflections.add_column(
-        std::string("rlp"), final_results.rlp.extent(0), 3, final_results.rlp_data);
+        // Recalculate the rlp and s1 vectors based on the updated models.
+        xyz_to_rlp_results final_results =
+          xyz_to_rlp(xyzobs_px, detector.panels()[0], expt.beam(), scan, gonio);
+        final_reflections.add_column(std::string("flags"), flags);
+        final_reflections.add_column(std::string("xyzobs.mm.value"),
+                                     final_results.xyzobs_mm.extent(0),
+                                     3,
+                                     final_results.xyzobs_mm_data);
+        final_reflections.add_column(
+          std::string("s1"), final_results.s1.extent(0), 3, final_results.s1_data);
+        final_reflections.add_column(
+          std::string("rlp"), final_results.rlp.extent(0), 3, final_results.rlp_data);
 
-      // Add required columns for next steps (DIALS compatibility)
-      std::string xyzvar_name = "/dials/processing/group_0/xyzobs.px.variance";
-      std::vector<double> xyzobs_px_var_data =
-        read_array_from_h5_file<double>(filename, xyzvar_name);
-      final_reflections.add_column(
-        std::string("xyzobs.px.variance"), final_results.xyzobs_mm.extent(0), 3, xyzobs_px_var_data);
-      final_reflections.add_column(
-        std::string("xyzobs.px.value"), xyzobs_px.extent(0), 3, xyzobs_px_data);
-      std::vector<uint64_t> panel_column(final_results.rlp.extent(0), 0);
-      final_reflections.add_column(std::string("panel"), final_results.xyzobs_mm.extent(0), 1, panel_column);
+        // Add required columns for next steps (DIALS compatibility)
+        std::string xyzvar_name = "/dials/processing/group_0/xyzobs.px.variance";
+        std::vector<double> xyzobs_px_var_data =
+          read_array_from_h5_file<double>(filename, xyzvar_name);
+        final_reflections.add_column(std::string("xyzobs.px.variance"),
+                                     final_results.xyzobs_mm.extent(0),
+                                     3,
+                                     xyzobs_px_var_data);
+        final_reflections.add_column(
+          std::string("xyzobs.px.value"), xyzobs_px.extent(0), 3, xyzobs_px_data);
+        std::vector<uint64_t> panel_column(final_results.rlp.extent(0), 0);
+        final_reflections.add_column(
+          std::string("panel"), final_results.xyzobs_mm.extent(0), 1, panel_column);
 
-      // Need to convert the px variance to mm variance
-      std::vector<double> xyzobs_mm_var_data(xyzobs_px_var_data.size());
-      mdspan_type<double> xyzobs_mm_variance =
-        mdspan_type<double>(xyzobs_mm_var_data.data(), xyzobs_mm_var_data.size() / 3, 3);
-      auto xyzobs_px_var_ = final_reflections.column<double>("xyzobs.px.variance");
-      const auto& xyzobs_px_variance = xyzobs_px_var_.value();
-      px_to_mm(xyzobs_px_variance, xyzobs_mm_variance, scan, best_panel);
-      final_reflections.add_column("xyzobs.mm.variance", xyzobs_mm_variance.extent(0), 3, xyzobs_mm_var_data);
+        // Need to convert the px variance to mm variance
+        std::vector<double> xyzobs_mm_var_data(xyzobs_px_var_data.size());
+        mdspan_type<double> xyzobs_mm_variance = mdspan_type<double>(
+          xyzobs_mm_var_data.data(), xyzobs_mm_var_data.size() / 3, 3);
+        auto xyzobs_px_var_ = final_reflections.column<double>("xyzobs.px.variance");
+        const auto& xyzobs_px_variance = xyzobs_px_var_.value();
+        px_to_mm(xyzobs_px_variance, xyzobs_mm_variance, scan, best_panel);
+        final_reflections.add_column(
+          "xyzobs.mm.variance", xyzobs_mm_variance.extent(0), 3, xyzobs_mm_var_data);
 
-      // Index the data with the refined models.
-      assign_indices_results assign_results =
-        assign_indices_global(expt.crystal().get_A_matrix(), final_results.rlp, final_results.xyzobs_mm);
-      logger.info("Indexed {}/{} reflections using the refined models", assign_results.number_indexed, xyzobs_px.extent(0));
-      final_reflections.add_column(
-        std::string("miller_index"),
-        assign_results.miller_indices.extent(0),
-        assign_results.miller_indices.extent(1),
-        assign_results.miller_indices_data
-      );
-      // Generate an id column.
-      std::vector<int> id_column(final_results.rlp.extent(0), 0);
-      final_reflections.add_column("id", final_results.rlp.extent(0), 1, id_column);
+        // Index the data with the refined models.
+        assign_indices_results assign_results = assign_indices_global(
+          expt.crystal().get_A_matrix(), final_results.rlp, final_results.xyzobs_mm);
+        logger.info("Indexed {}/{} reflections using the refined models",
+                    assign_results.number_indexed,
+                    xyzobs_px.extent(0));
+        final_reflections.add_column(std::string("miller_index"),
+                                     assign_results.miller_indices.extent(0),
+                                     assign_results.miller_indices.extent(1),
+                                     assign_results.miller_indices_data);
+        // Generate an id column.
+        std::vector<int> id_column(final_results.rlp.extent(0), 0);
+        final_reflections.add_column("id", final_results.rlp.extent(0), 1, id_column);
 
-
-      // Save the indexed reflection table.
-      std::string output_filename = "indexed.refl";
-      final_reflections.write(output_filename);
-      logger.info("Saved reflection table to {}", output_filename);
+        // Save the indexed reflection table.
+        std::string output_filename = "indexed.refl";
+        final_reflections.write(output_filename);
+        logger.info("Saved reflection table to {}", output_filename);
     }
 
     auto t2 = std::chrono::system_clock::now();

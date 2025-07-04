@@ -8,11 +8,12 @@
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <vector>
+
 #include "assign_indices.cc"
 #include "ffs_logger.hpp"
 #include "non_primitive_basis.cc"
-#include "reflection_filter.cc"
 #include "refine_candidate.cc"
+#include "reflection_filter.cc"
 
 std::mutex score_and_crystal_mtx;
 
@@ -93,9 +94,10 @@ void evaluate_crystal(Crystal crystal,
 
     auto t4 = std::chrono::system_clock::now();
     double xyrmsd = refine_indexing_candidate(crystal, gonio, beam, panel, sel_obs);
-    std::chrono::duration<double> elapsed_time_refine = std::chrono::system_clock::now() - t4;
+    std::chrono::duration<double> elapsed_time_refine =
+      std::chrono::system_clock::now() - t4;
     logger.debug("Time for candidate refinement: {:.5f}s", elapsed_time_refine.count());
-    
+
     // Write some data to the results map
     score_and_crystal sac;
     sac.crystal = crystal;
