@@ -38,11 +38,12 @@ target_include_directories(pocketfft INTERFACE ${pocketfft_SOURCE_DIR})
 if(NOT TARGET GTest::gtest_main)
     FetchContent_MakeAvailable(GTest)
 endif()
-
 add_subdirectory(tests)
 add_executable(baseline_indexer
     indexer.cc
 )
+target_include_directories(baseline_indexer PRIVATE ${CMAKE_SOURCE_DIR}/baseline/predictor)
+target_include_directories(baseline_indexer PRIVATE ${CMAKE_SOURCE_DIR}/baseline/refiner)
 target_link_libraries(baseline_indexer
     PRIVATE
     fmt
