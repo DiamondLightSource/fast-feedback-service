@@ -1,2 +1,3 @@
 add_subdirectory(spotfinder)
+add_subdirectory(refiner)
 add_subdirectory(indexer)
