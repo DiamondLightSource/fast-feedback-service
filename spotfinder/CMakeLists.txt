@@ -32,6 +32,7 @@ target_link_libraries(spotfinder
     dx2
     version
     ffs_common
+    cuda_parser
 )
 
 set_property(TARGET spotfinder PROPERTY CUDA_SEPARABLE_COMPILATION ON)
