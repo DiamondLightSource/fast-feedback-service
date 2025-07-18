@@ -55,11 +55,9 @@ FFSArgumentParser::FFSArgumentParser(std::string version)
 
 void FFSArgumentParser::add_h5read_arguments() {
     // Check if implicit sample is enable via environment variable
-    // TODO: Check this
-    // Create a mutually exclusive group for sample vs file input
     bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != nullptr;
-    // auto &group = add_mutually_exclusive_group(!implicit_sample);
-    auto &group = add_mutually_exclusive_group(false);
+    // Create a mutually exclusive group for sample vs file input
+    auto &group = add_mutually_exclusive_group(!implicit_sample);
 
     group.add_argument("--sample")
       .help("Use generated test data (H5READ_IMPLICIT_SAMPLE)")
