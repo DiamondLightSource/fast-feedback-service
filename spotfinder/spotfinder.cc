@@ -25,6 +25,7 @@
 #include "cbfread.hpp"
 #include "common.hpp"
 #include "connected_components/connected_components.hpp"
+#include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
