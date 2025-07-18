@@ -68,7 +68,6 @@ if(PIXEL_DATA_32BIT)
 else()
     message(STATUS "Building with 16-bit pixel data support")
 endif()
-
 # Make a common C++ library for shared code
 add_library(ffs_common STATIC 
     src/ffs/ffs_logger.cc
