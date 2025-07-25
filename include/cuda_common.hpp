@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "common.hpp"
+#include "ffs_logger.hpp"
 
 // #if __has_include(<hdf5.h>)
 // #define HAS_HDF5
@@ -191,6 +192,233 @@ class CudaEvent {
         if (cudaEventSynchronize(event) != cudaSuccess) {
             cuda_throw_error();
         }
+    }
+};
+
+// Color constants for DeviceBuffer logging
+constexpr auto host_color =
+  fmt::fg(fmt::terminal_color::bright_yellow) | fmt::emphasis::bold;
+constexpr auto device_color =
+  fmt::fg(fmt::terminal_color::bright_green) | fmt::emphasis::bold;
+
+constexpr auto host_to_device =
+  fmt::fg(fmt::terminal_color::green) | fmt::emphasis::bold;
+constexpr auto device_to_host =
+  fmt::fg(fmt::terminal_color::yellow) | fmt::emphasis::bold;
+
+/**
+ * @brief RAII wrapper for managing CUDA device memory buffers
+ *
+ * This class provides automatic memory management for 1D device arrays,
+ * including allocation, deallocation, and host-device data transfer
+ * operations. The class follows RAII principles and is move-only to
+ * ensure unique ownership of GPU memory resources.
+ *
+ * @tparam T Type of elements stored in the buffer
+ */
+template <typename T>
+class DeviceBuffer {
+  private:
+    T *device_ptr_ = nullptr;  ///< Pointer to allocated device memory
+    size_t count_ = 0;         ///< Number of elements in the buffer
+
+  public:
+    /**
+   * @brief Default constructor creates an empty buffer
+   */
+    DeviceBuffer() = default;
+
+    /**
+   * @brief Construct a device buffer with specified element count
+   *
+   * Allocates GPU memory for the specified number of elements and logs
+   * the allocation details. Throws std::runtime_error if allocation
+   * fails.
+   *
+   * @param count Number of elements to allocate
+   * @throws std::runtime_error If cudaMalloc fails
+   */
+    DeviceBuffer(size_t count) : count_(count) {
+        // Attempt to allocate device memory
+        auto err = cudaMalloc(&device_ptr_, count_ * sizeof(T));
+        if (err != cudaSuccess) {
+            auto error_msg =
+              fmt::format("cudaMalloc failed for {} elements of size {}: {} ({})",
+                          count,
+                          sizeof(T),
+                          cudaGetErrorString(err),
+                          cudaGetErrorName(err));
+            logger.error(error_msg);
+            throw std::runtime_error(error_msg);
+        }
+        // Log successful allocation for debugging
+        logger.debug("Allocated {} bytes of {} memory for {} elements",
+                     count * sizeof(T),
+                     fmt::format(device_color, "device"),
+                     count);
+    }
+
+    /**
+   * @brief Destructor automatically frees device memory
+   *
+   * Safely releases GPU memory and logs any errors that occur during
+   * deallocation. Errors are logged but not thrown to prevent
+   * destructor exceptions.
+   */
+    ~DeviceBuffer() {
+        if (device_ptr_) {
+            auto err = cudaFree(device_ptr_);
+            if (err != cudaSuccess) {
+                // Can't throw in destructor, but we can log the error
+                logger.error("cudaFree failed in DeviceBuffer destructor: {} ({})",
+                             cudaGetErrorString(err),
+                             cudaGetErrorName(err));
+            } else {
+                logger.debug("Freed {} memory for {} elements",
+                             fmt::format(device_color, "device"),
+                             count_);
+            }
+        }
+    }
+
+    /**
+   * @brief Get raw pointer to device memory
+   * @return Pointer to the device memory buffer
+   */
+    T *data() {
+        return device_ptr_;
+    }
+
+    /**
+   * @brief Get const raw pointer to device memory
+   * @return Const pointer to the device memory buffer
+   */
+    const T *data() const {
+        return device_ptr_;
+    }
+
+    /**
+   * @brief Copy data from host memory to device buffer
+   *
+   * Performs synchronous memory copy from host to device and logs the
+   * transfer. The host data array must contain at least count_
+   * elements.
+   *
+   * @param host_data Pointer to host memory containing data to copy
+   * @throws std::runtime_error If cudaMemcpy fails
+   */
+    void assign(const T *host_data) {
+        // Perform synchronous host-to-device memory copy
+        auto err = cudaMemcpy(
+          device_ptr_, host_data, count_ * sizeof(T), cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            auto error_msg =
+              fmt::format("cudaMemcpy (host to device) failed for {} elements: {} ({})",
+                          count_,
+                          cudaGetErrorString(err),
+                          cudaGetErrorName(err));
+            logger.error(error_msg);
+            throw std::runtime_error(error_msg);
+        }
+        logger.debug("Copied {} bytes: {} {} {}",
+                     count_ * sizeof(T),
+                     fmt::format(host_color, "host"),
+                     fmt::format(host_to_device, "━━▶"),
+                     fmt::format(device_color, "device"));
+    }
+
+    /**
+   * @brief Copy data from device buffer to host memory
+   *
+   * Performs synchronous memory copy from device to host and logs the
+   * transfer. The host data array must have space for at least count_
+   * elements.
+   *
+   * @param host_data Pointer to host memory where data will be copied
+   * @throws std::runtime_error If cudaMemcpy fails
+   */
+    void extract(T *host_data) const {
+        // Perform synchronous device-to-host memory copy
+        auto err = cudaMemcpy(
+          host_data, device_ptr_, count_ * sizeof(T), cudaMemcpyDeviceToHost);
+        if (err != cudaSuccess) {
+            auto error_msg =
+              fmt::format("cudaMemcpy (device to host) failed for {} elements: {} ({})",
+                          count_,
+                          cudaGetErrorString(err),
+                          cudaGetErrorName(err));
+            logger.error(error_msg);
+            throw std::runtime_error(error_msg);
+        }
+        logger.debug("Copied {} bytes: {} {} {}",
+                     count_ * sizeof(T),
+                     fmt::format(host_color, "host"),
+                     fmt::format(device_to_host, "◀━━"),
+                     fmt::format(device_color, "device"));
+    }
+
+    /**
+   * @brief Get the number of elements in the buffer
+   * @return Number of elements allocated in the buffer
+   */
+    size_t size() const {
+        return count_;
+    }
+
+    // Non-copyable to ensure unique ownership of GPU memory
+    DeviceBuffer(const DeviceBuffer &) = delete;
+    DeviceBuffer &operator=(const DeviceBuffer &) = delete;
+
+    /**
+   * @brief Move constructor transfers ownership of device memory
+   *
+   * Takes ownership of another buffer's device memory and nullifies the
+   * source. This prevents double-free errors and maintains unique
+   * ownership semantics.
+   *
+   * @param other Source buffer to move from (will be left in empty
+   * state)
+   */
+    DeviceBuffer(DeviceBuffer &&other) noexcept
+        : device_ptr_(other.device_ptr_), count_(other.count_) {
+        // Transfer ownership and nullify source to prevent double-free
+        other.device_ptr_ = nullptr;
+        other.count_ = 0;
+        logger.debug("Moved DeviceBuffer ownership ({} elements)", count_);
+    }
+
+    /**
+   * @brief Move assignment operator transfers ownership of device
+   * memory
+   *
+   * Frees any existing memory in this buffer, then takes ownership of
+   * the source buffer's memory. The source buffer is left in an empty
+   * state.
+   *
+   * @param other Source buffer to move from (will be left in empty
+   * state)
+   * @return Reference to this buffer after move assignment
+   */
+    DeviceBuffer &operator=(DeviceBuffer &&other) noexcept {
+        if (this != &other) {  // Self-assignment check
+            // Free existing memory if we have any
+            if (device_ptr_) {
+                auto err = cudaFree(device_ptr_);
+                if (err != cudaSuccess) {
+                    logger.error("cudaFree failed in move assignment: {} ({})",
+                                 cudaGetErrorString(err),
+                                 cudaGetErrorName(err));
+                }
+            }
+            // Transfer ownership from source
+            device_ptr_ = other.device_ptr_;
+            count_ = other.count_;
+            // Nullify source to prevent double-free
+            other.device_ptr_ = nullptr;
+            other.count_ = 0;
+            logger.debug("Move assigned DeviceBuffer ({} elements)", count_);
+        }
+        return *this;
     }
 };
 
