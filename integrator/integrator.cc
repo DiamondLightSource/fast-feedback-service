@@ -19,6 +19,8 @@
 #include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
+#include "kabsch.cuh"
+#include "math/vector3d.cuh"
 #include "version.hpp"
 
 #pragma region Algorithms
@@ -227,32 +229,49 @@ int main(int argc, char** argv) {
     MonochromaticBeam beam = expt.beam();
     Goniometer gonio = expt.goniometer();
 
-    Eigen::Vector3d s0 = beam.get_s0();
-    Eigen::Vector3d rotation_axis = gonio.get_rotation_axis();
+    Eigen::Vector3d s0_eigen = beam.get_s0();
+    Eigen::Vector3d rotation_axis_eigen = gonio.get_rotation_axis();
 
-    std::vector<double> eps_centre;  // flat [ε1,ε2,ε3, …] output
-    eps_centre.reserve(s1_vectors->extent(0) * 3);
+    fastfb::Vector3D s0(s0_eigen.x(), s0_eigen.y(), s0_eigen.z());
+    fastfb::Vector3D rotation_axis(
+      rotation_axis_eigen.x(), rotation_axis_eigen.y(), rotation_axis_eigen.z());
 
-    for (std::size_t i = 0; i < s1_vectors->extent(0); ++i) {
-        // centroid values
-        Eigen::Vector3d s1_centroid(
+    size_t num_reflections = s1_vectors->extent(0);
+
+    // Convert s1 vectors to fastfb::Vector3D array
+    std::vector<fastfb::Vector3D> h_s1(num_reflections);
+    std::vector<double> h_phi(num_reflections);
+
+    for (size_t i = 0; i < num_reflections; ++i) {
+        h_s1[i] = fastfb::Vector3D(
           (*s1_vectors)(i, 0), (*s1_vectors)(i, 1), (*s1_vectors)(i, 2));
+        h_phi[i] = (*phi_column)(i, 2);  // xyzcal.mm third component is φᶜ (rad)
+    }
 
-        double phi_centroid =
-          (*phi_column)(i, 2);  // xyzcal.mm third component is φᶜ (rad)
+    // Prepare output arrays
+    std::vector<fastfb::Vector3D> h_eps(num_reflections);
+    std::vector<double> h_s1_len(num_reflections);
 
-        /* The centroid maps to ε = (0,0,0).  We nevertheless call the helper once
-        so that it returns the per-reflection |s1| value for later bookkeeping. */
-        double s1_len = 0.0;  // will be filled by pixel_to_kabsch
-        Eigen::Vector3d eps = pixel_to_kabsch(s0,
-                                              s1_centroid,
-                                              phi_centroid,
-                                              s1_centroid,
-                                              phi_centroid,
-                                              rotation_axis,
-                                              s1_len);
+    // Call CUDA Kabsch function
+    try {
+        compute_kabsch(h_s1.data(),
+                       h_phi.data(),
+                       s0,
+                       rotation_axis,
+                       h_eps.data(),
+                       h_s1_len.data(),
+                       num_reflections);
+    } catch (const std::runtime_error& ex) {
+        logger.error("CUDA Kabsch computation failed: {}", ex.what());
+        return 1;
+    }
 
-        eps_centre.insert(eps_centre.end(), {eps.x(), eps.y(), eps.z()});
+    // Convert results to flat vector for reflection table storage
+    std::vector<double> eps_centre;
+    eps_centre.reserve(num_reflections * 3);
+
+    for (size_t i = 0; i < num_reflections; ++i) {
+        eps_centre.insert(eps_centre.end(), {h_eps[i].x, h_eps[i].y, h_eps[i].z});
     }
 
     reflections.add_column(
