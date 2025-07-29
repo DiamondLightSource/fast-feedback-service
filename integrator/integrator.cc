@@ -253,13 +253,16 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
         }
 
         // Transform s′ vectors back to detector coordinates using Panel's get_ray_intersection
-        // As specified in the instruction paper: (x,y) = panel.get_ray_intersection(s')
         std::vector<std::pair<double, double>> detector_coords;
         for (const auto& s_prime : s_prime_vectors) {
             // Direct conversion from s′ vector to detector coordinates
             // get_ray_intersection returns coordinates in mm
             std::array<double, 2> xy_mm = panel.get_ray_intersection(s_prime);
-            detector_coords.push_back({xy_mm[0], xy_mm[1]});
+
+            // Convert from mm to pixels using the new mm_to_px function
+            std::array<double, 2> xy_pixels = panel.mm_to_px(xy_mm[0], xy_mm[1]);
+
+            detector_coords.push_back({xy_pixels[0], xy_pixels[1]});
         }
 
         // Determine the bounding box in detector coordinates
@@ -288,12 +291,15 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
             double phi_plus = phi_c + delta_m / zeta;
             double phi_minus = phi_c - delta_m / zeta;
 
+            // Convert phi angles from radians to degrees before using scan parameters
+            double phi_plus_deg = phi_plus * 180.0 / M_PI;
+            double phi_minus_deg = phi_minus * 180.0 / M_PI;
+
             // Transform rotation angles to image numbers using scan parameters
-            // Following the same convention as xyz_to_rlp transformation
             double z_plus =
-              image_range_start - 1 + ((phi_plus - osc_start) / osc_width);
+              image_range_start - 1 + ((phi_plus_deg - osc_start) / osc_width);
             double z_minus =
-              image_range_start - 1 + ((phi_minus - osc_start) / osc_width);
+              image_range_start - 1 + ((phi_minus_deg - osc_start) / osc_width);
 
             // Clamp to the actual image range and use floor/ceil for integer bounds
             bbox.z_min =
@@ -391,6 +397,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Load reflection data
     logger.info("Loading data from file: {}", reflection_file);
     ReflectionTable reflections(reflection_file);
 
@@ -401,28 +408,27 @@ int main(int argc, char** argv) {
     }
     logger.info("Column names: {}", column_names_str);
 
-    auto s1_vectors = reflections.column<double>("s1");
-    if (!s1_vectors) {
+    // Extract required columns and dereference optionals
+    auto s1_vectors_opt = reflections.column<double>("s1");
+    if (!s1_vectors_opt) {
         logger.error("Column 's1' not found in reflection data.");
         return 1;
     }
+    auto s1_vectors = *s1_vectors_opt;
 
-    // Load phi positions (used later for φ′ - φ)
-    auto phi_column = reflections.column<double>("xyzcal.mm");
-    if (!phi_column) {
+    auto phi_column_opt = reflections.column<double>("xyzcal.mm");
+    if (!phi_column_opt) {
         logger.error("Column 'xyzcal.mm' not found for phi positions.");
         return 1;
     }
+    auto phi_column = *phi_column_opt;
 
-    // Print first 10 s1 vectors for debugging
-    logger.trace("First 10 s1 vectors:");
-    for (size_t i = 0; i < std::min<size_t>(s1_vectors->extent(0), 10); ++i) {
-        logger.trace(fmt::format("s1[{}]:\n\t({}, {}, {})",
-                                 i,
-                                 (*s1_vectors)(i, 0),
-                                 (*s1_vectors)(i, 1),
-                                 (*s1_vectors)(i, 2)));
+    auto bbox_column_opt = reflections.column<int>("bbox");
+    if (!bbox_column_opt) {
+        logger.error("Column 'bbox' not found in reflection data.");
+        return 1;
     }
+    auto bbox_column = *bbox_column_opt;
 
     // Parse experiment list from JSON
     std::ifstream f(experiment_file);
@@ -437,7 +443,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Construct Experiment object and extract beam
+    // Construct Experiment object and extract components
     Experiment<MonochromaticBeam> expt;
     try {
         expt = Experiment<MonochromaticBeam>(elist_json_obj);
@@ -446,78 +452,276 @@ int main(int argc, char** argv) {
           "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
         return 1;
     }
+
+    // Extract experimental components
     MonochromaticBeam beam = expt.beam();
     Goniometer gonio = expt.goniometer();
+    const Panel& panel = expt.detector().panels()[0];  // Assuming single panel detector
+    const Scan& scan = expt.scan();
 
-    Eigen::Vector3d s0_eigen = beam.get_s0();
-    Eigen::Vector3d rotation_axis_eigen = gonio.get_rotation_axis();
+    // Extract vectors and parameters
+    Eigen::Vector3d s0 = beam.get_s0();
+    Eigen::Vector3d rotation_axis = gonio.get_rotation_axis();
+    size_t num_reflections = s1_vectors.extent(0);
+    const auto [osc_start, osc_width] = scan.get_oscillation();
+    int image_range_start = scan.get_image_range()[0];
+    double wl = beam.get_wavelength();
 
-    fastfb::Vector3D s0(s0_eigen.x(), s0_eigen.y(), s0_eigen.z());
-    fastfb::Vector3D rotation_axis(
-      rotation_axis_eigen.x(), rotation_axis_eigen.y(), rotation_axis_eigen.z());
+    // Compute new bounding boxes using Kabsch coordinate system
 
-    size_t num_reflections = s1_vectors->extent(0);
+    logger.info("Computing new Kabsch bounding boxes for {} reflections",
+                num_reflections);
 
-    // Convert s1 vectors to fastfb::Vector3D array
-    std::vector<fastfb::Vector3D> h_s1(num_reflections);
-    std::vector<double> h_phi(num_reflections);
+    // Compute new bounding boxes
+    auto computed_bounding_boxes = compute_kabsch_bounding_boxes(s0,
+                                                                 rotation_axis,
+                                                                 s1_vectors,
+                                                                 phi_column,
+                                                                 num_reflections,
+                                                                 sigma_b,
+                                                                 sigma_m,
+                                                                 panel,
+                                                                 scan,
+                                                                 beam);
 
-    for (size_t i = 0; i < num_reflections; ++i) {
-        h_s1[i] = fastfb::Vector3D(
-          (*s1_vectors)(i, 0), (*s1_vectors)(i, 1), (*s1_vectors)(i, 2));
-        h_phi[i] = (*phi_column)(i, 2);  // xyzcal.mm third component is φᶜ (rad)
+    // Convert to reflection table format for comparison
+    std::vector<double> computed_bbox_data;
+    computed_bbox_data.reserve(num_reflections * 6);
+    for (const auto& bbox : computed_bounding_boxes) {
+        computed_bbox_data.insert(computed_bbox_data.end(),
+                                  {bbox.x_min,
+                                   bbox.x_max,
+                                   bbox.y_min,
+                                   bbox.y_max,
+                                   static_cast<double>(bbox.z_min),
+                                   static_cast<double>(bbox.z_max)});
     }
 
-    // Prepare output arrays
-    std::vector<fastfb::Vector3D> h_eps(num_reflections);
-    std::vector<double> h_s1_len(num_reflections);
+    // Compare with existing bounding boxes
+    logger.info("Comparing computed bounding boxes with existing bbox column");
+    logger.trace("First 5 bounding box comparisons:");
+    for (size_t i = 0; i < std::min<size_t>(5, num_reflections); ++i) {
+        // Existing bbox
+        double ex_x_min = bbox_column(i, 0);
+        double ex_x_max = bbox_column(i, 1);
+        double ex_y_min = bbox_column(i, 2);
+        double ex_y_max = bbox_column(i, 3);
+        int ex_z_min = static_cast<int>(bbox_column(i, 4));
+        int ex_z_max = static_cast<int>(bbox_column(i, 5));
 
-    // Call CUDA Kabsch function
-    try {
-        compute_kabsch(h_s1.data(),
-                       h_phi.data(),
-                       s0,
-                       rotation_axis,
-                       h_eps.data(),
-                       h_s1_len.data(),
-                       num_reflections);
-    } catch (const std::runtime_error& ex) {
-        logger.error("CUDA Kabsch computation failed: {}", ex.what());
-        return 1;
+        // Computed bbox
+        const auto& comp_bbox = computed_bounding_boxes[i];
+
+        logger.trace("bbox[{}]: existing x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
+                     i,
+                     ex_x_min,
+                     ex_x_max,
+                     ex_y_min,
+                     ex_y_max,
+                     ex_z_min,
+                     ex_z_max);
+        logger.trace("bbox[{}]: computed x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
+                     i,
+                     comp_bbox.x_min,
+                     comp_bbox.x_max,
+                     comp_bbox.y_min,
+                     comp_bbox.y_max,
+                     comp_bbox.z_min,
+                     comp_bbox.z_max);
     }
 
-    // Convert results to flat vector for reflection table storage
-    std::vector<double> eps_centre;
-    eps_centre.reserve(num_reflections * 3);
+    // Compute Kabsch coordinates for all voxels using existing bbox
 
-    for (size_t i = 0; i < num_reflections; ++i) {
-        eps_centre.insert(eps_centre.end(), {h_eps[i].x, h_eps[i].y, h_eps[i].z});
+    logger.info(
+      "Computing Kabsch coordinates for voxel centers within existing bounding boxes");
+
+    std::vector<double> voxel_kabsch_coords;  // ε₁, ε₂, ε₃ for each voxel center
+    std::vector<int> voxel_reflection_ids;    // Which reflection each voxel belongs to
+    std::vector<double> voxel_positions;      // x, y, z positions for each voxel center
+    std::vector<double> voxel_s1_lengths;     // |s₁| for each voxel center
+
+    // Convert global vectors to CUDA format once
+    fastfb::Vector3D s0_cuda(s0.x(), s0.y(), s0.z());
+    fastfb::Vector3D rotation_axis_cuda(
+      rotation_axis.x(), rotation_axis.y(), rotation_axis.z());
+
+    // Process each reflection's existing bounding box
+    for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
+        // Extract bounding box from existing column (format: x_min, x_max, y_min, y_max, z_min, z_max)
+        double x_min = bbox_column(refl_id, 0);
+        double x_max = bbox_column(refl_id, 1);
+        double y_min = bbox_column(refl_id, 2);
+        double y_max = bbox_column(refl_id, 3);
+        int z_min = static_cast<int>(bbox_column(refl_id, 4));
+        int z_max = static_cast<int>(bbox_column(refl_id, 5));
+
+        // Debug: Calculate expected voxel count
+        int x_count = static_cast<int>(x_max) - static_cast<int>(x_min);
+        int y_count = static_cast<int>(y_max) - static_cast<int>(y_min);
+        int z_count = z_max - z_min;
+        int expected_voxels = x_count * y_count * z_count;
+
+        logger.trace(
+          "Reflection {}: bbox x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
+          refl_id,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          z_min,
+          z_max);
+        logger.trace("Expected voxels: {} x {} x {} = {}",
+                     x_count,
+                     y_count,
+                     z_count,
+                     expected_voxels);
+
+        // Get reflection centroid data
+        Eigen::Vector3d s1_c_eigen(
+          s1_vectors(refl_id, 0), s1_vectors(refl_id, 1), s1_vectors(refl_id, 2));
+        fastfb::Vector3D s1_c_cuda(s1_c_eigen.x(), s1_c_eigen.y(), s1_c_eigen.z());
+        double phi_c = phi_column(refl_id, 2);
+
+        logger.trace(
+          "Processing reflection {} with existing bbox x=[{:.1f},{:.1f}] "
+          "y=[{:.1f},{:.1f}] z=[{},{}]",
+          refl_id,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          z_min,
+          z_max);
+
+        // Collect all voxel data for this reflection for batch processing
+        std::vector<fastfb::Vector3D> batch_s_pixels;
+        std::vector<double> batch_phi_pixels;
+        std::vector<std::tuple<double, double, double>> batch_voxel_coords;
+
+        // Iterate through all voxel centers in the bounding box
+        for (int z = z_min; z < z_max; ++z) {
+            double phi_pixel =
+              osc_start + (z - image_range_start + 1.5) * osc_width / 180.0 * M_PI;
+
+            for (int y = static_cast<int>(y_min); y < static_cast<int>(y_max); ++y) {
+                for (int x = static_cast<int>(x_min); x < static_cast<int>(x_max);
+                     ++x) {
+                    // Use voxel center coordinates
+                    // double voxel_x = x + 0.5;
+                    // double voxel_y = y + 0.5;
+                    double voxel_z = 1;  //z + 0.5;
+
+                    std::array<double, 2> xy_mm = panel.px_to_mm(
+                      static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5);
+
+                    double voxel_x = xy_mm[0];
+                    double voxel_y = xy_mm[1];
+
+                    // Convert detector coordinates to lab coordinate using panel geometry
+                    Vector3d lab_coord =
+                      panel.get_d_matrix() * Vector3d(voxel_x, voxel_y, 1.0);
+
+                    // logger.trace(
+                    //   "Voxel center ({}, {}, {}): lab_coord = ({:.6f}, {:.6f}, {:.6f})",
+                    //   voxel_x,
+                    //   voxel_y,
+                    //   voxel_z,
+                    //   lab_coord.x(),
+                    //   lab_coord.y(),
+                    //   lab_coord.z());
+
+                    // Convert lab coordinate to reciprocal space vector
+                    Eigen::Vector3d s_pixel_eigen = lab_coord.normalized() / wl;
+                    fastfb::Vector3D s_pixel_cuda(
+                      s_pixel_eigen.x(), s_pixel_eigen.y(), s_pixel_eigen.z());
+
+                    // Store for batch processing
+                    batch_s_pixels.push_back(s_pixel_cuda);
+                    batch_phi_pixels.push_back(phi_pixel);
+                    batch_voxel_coords.emplace_back(voxel_x, voxel_y, voxel_z);
+                }
+            }
+        }
+
+        // Process all voxels for this reflection with CUDA if we have any
+        if (!batch_s_pixels.empty()) {
+            size_t num_voxels = batch_s_pixels.size();
+
+            // Output arrays
+            std::vector<fastfb::Vector3D> batch_eps_results(num_voxels);
+            std::vector<double> batch_s1_len_results(num_voxels);
+
+            // Call CUDA function for voxel processing
+            compute_voxel_kabsch(batch_s_pixels.data(),
+                                 batch_phi_pixels.data(),
+                                 s1_c_cuda,
+                                 phi_c,
+                                 s0_cuda,
+                                 rotation_axis_cuda,
+                                 batch_eps_results.data(),
+                                 batch_s1_len_results.data(),
+                                 num_voxels);
+
+            // Store results
+            for (size_t i = 0; i < num_voxels; ++i) {
+                const auto& [voxel_x, voxel_y, voxel_z] = batch_voxel_coords[i];
+                const auto& eps = batch_eps_results[i];
+
+                voxel_kabsch_coords.insert(voxel_kabsch_coords.end(),
+                                           {eps.x, eps.y, eps.z});
+                voxel_reflection_ids.push_back(static_cast<int>(refl_id));
+                voxel_positions.insert(voxel_positions.end(),
+                                       {voxel_x, voxel_y, voxel_z});
+                voxel_s1_lengths.push_back(batch_s1_len_results[i]);
+            }
+        }
     }
 
+    size_t actual_voxels = voxel_reflection_ids.size();
+    logger.info("Processed {} voxel centers, computed {} Kabsch coordinates",
+                actual_voxels,
+                voxel_kabsch_coords.size() / 3);
+
+    // Add debugging information
+    logger.info(
+      "Vector sizes: kabsch_coords={}, reflection_ids={}, positions={}, s1_lengths={}",
+      voxel_kabsch_coords.size(),
+      voxel_reflection_ids.size(),
+      voxel_positions.size(),
+      voxel_s1_lengths.size());
+
+    logger.info(
+      "Expected sizes: kabsch_coords={}, reflection_ids={}, positions={}, "
+      "s1_lengths={}",
+      actual_voxels * 3,
+      actual_voxels,
+      actual_voxels * 3,
+      actual_voxels);
+
+    // Save results
+
+    // Add computed bounding boxes to reflection table for comparison
     reflections.add_column(
-      "eps_centre", std::vector<size_t>{s1_vectors->extent(0), 3}, eps_centre);
+      "computed_bbox", std::vector<size_t>{num_reflections, 6}, computed_bbox_data);
 
-    logger.trace("Centroid ε-vectors (should be ~0):");
-    for (std::size_t i = 0; i < std::min<std::size_t>(5, eps_centre.size() / 3); ++i) {
-        logger.trace("  refl {:>3}  (ε1,ε2,ε3) = ({:+.4e},{:+.4e},{:+.4e})",
-                     i,
-                     eps_centre[i * 3 + 0],
-                     eps_centre[i * 3 + 1],
-                     eps_centre[i * 3 + 2]);
-    }
+    // Create voxel data table
+    ReflectionTable voxel_table;
+    voxel_table.add_column(
+      "kabsch_coordinates", std::vector<size_t>{actual_voxels, 3}, voxel_kabsch_coords);
+    voxel_table.add_column(
+      "reflection_id",
+      std::vector<size_t>{actual_voxels, 1},
+      std::vector<double>(voxel_reflection_ids.begin(), voxel_reflection_ids.end()));
+    voxel_table.add_column(
+      "pixel_coordinates", std::vector<size_t>{actual_voxels, 3}, voxel_positions);
+    voxel_table.add_column(
+      "voxel_s1_length", std::vector<size_t>{actual_voxels, 1}, voxel_s1_lengths);
 
-    // Display debug output
-    logger.trace("First 5 Kabsch coordinates:");
-    for (size_t i = 0; i < std::min<size_t>(eps_centre.size() / 3, 5); ++i) {
-        logger.trace("kabsch[{}]: ({:.5f}, {:.5f}, {:.5f})",
-                     i,
-                     eps_centre[i * 3 + 0],
-                     eps_centre[i * 3 + 1],
-                     eps_centre[i * 3 + 2]);
-    }
-
-    // Add as a column to the reflection table
+    // Write output files
     reflections.write("output_reflections.h5");
+    voxel_table.write("voxel_kabsch_data.h5");
+
+    logger.info("Results saved to output_reflections.h5 and voxel_kabsch_data.h5");
 
     return 0;
 }
