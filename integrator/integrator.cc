@@ -541,9 +541,9 @@ int main(int argc, char** argv) {
     std::vector<double> voxel_s1_lengths;     // |s₁| for each voxel center
 
     // Convert global vectors to CUDA format once
-    fastfb::Vector3D s0_cuda(s0.x(), s0.y(), s0.z());
-    fastfb::Vector3D rotation_axis_cuda(
-      rotation_axis.x(), rotation_axis.y(), rotation_axis.z());
+    fastvec::Vector3D s0_cuda = fastvec::make_vector3d(s0.x(), s0.y(), s0.z());
+    fastvec::Vector3D rotation_axis_cuda =
+      fastvec::make_vector3d(rotation_axis.x(), rotation_axis.y(), rotation_axis.z());
 
     // Process each reflection's existing bounding box
     for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
@@ -579,7 +579,8 @@ int main(int argc, char** argv) {
         // Get reflection centroid data
         Eigen::Vector3d s1_c_eigen(
           s1_vectors(refl_id, 0), s1_vectors(refl_id, 1), s1_vectors(refl_id, 2));
-        fastfb::Vector3D s1_c_cuda(s1_c_eigen.x(), s1_c_eigen.y(), s1_c_eigen.z());
+        fastvec::Vector3D s1_c_cuda =
+          fastvec::make_vector3d(s1_c_eigen.x(), s1_c_eigen.y(), s1_c_eigen.z());
         double phi_c = phi_column(refl_id, 2);
 
         logger.trace(
@@ -594,8 +595,8 @@ int main(int argc, char** argv) {
           z_max);
 
         // Collect all voxel data for this reflection for batch processing
-        std::vector<fastfb::Vector3D> batch_s_pixels;
-        std::vector<double> batch_phi_pixels;
+        std::vector<fastvec::Vector3D> batch_s_pixels;
+        std::vector<fastvec::scalar_t> batch_phi_pixels;
         std::vector<std::tuple<double, double, double>> batch_voxel_coords;
 
         // Iterate through all voxel centers in the bounding box
@@ -632,12 +633,13 @@ int main(int argc, char** argv) {
 
                     // Convert lab coordinate to reciprocal space vector
                     Eigen::Vector3d s_pixel_eigen = lab_coord.normalized() / wl;
-                    fastfb::Vector3D s_pixel_cuda(
+                    fastvec::Vector3D s_pixel_cuda = fastvec::make_vector3d(
                       s_pixel_eigen.x(), s_pixel_eigen.y(), s_pixel_eigen.z());
 
                     // Store for batch processing
                     batch_s_pixels.push_back(s_pixel_cuda);
-                    batch_phi_pixels.push_back(phi_pixel);
+                    batch_phi_pixels.push_back(
+                      static_cast<fastvec::scalar_t>(phi_pixel));
                     batch_voxel_coords.emplace_back(voxel_x, voxel_y, voxel_z);
                 }
             }
@@ -648,14 +650,14 @@ int main(int argc, char** argv) {
             size_t num_voxels = batch_s_pixels.size();
 
             // Output arrays
-            std::vector<fastfb::Vector3D> batch_eps_results(num_voxels);
-            std::vector<double> batch_s1_len_results(num_voxels);
+            std::vector<fastvec::Vector3D> batch_eps_results(num_voxels);
+            std::vector<fastvec::scalar_t> batch_s1_len_results(num_voxels);
 
             // Call CUDA function for voxel processing
             compute_voxel_kabsch(batch_s_pixels.data(),
                                  batch_phi_pixels.data(),
                                  s1_c_cuda,
-                                 phi_c,
+                                 static_cast<fastvec::scalar_t>(phi_c),
                                  s0_cuda,
                                  rotation_axis_cuda,
                                  batch_eps_results.data(),
@@ -672,7 +674,8 @@ int main(int argc, char** argv) {
                 voxel_reflection_ids.push_back(static_cast<int>(refl_id));
                 voxel_positions.insert(voxel_positions.end(),
                                        {voxel_x, voxel_y, voxel_z});
-                voxel_s1_lengths.push_back(batch_s1_len_results[i]);
+                voxel_s1_lengths.push_back(
+                  static_cast<double>(batch_s1_len_results[i]));
             }
         }
     }
