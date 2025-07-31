@@ -42,6 +42,8 @@
 #include "kabsch.cuh"
 #include "math/vector3d.cuh"
 
+using namespace fastvec;
+
 /**
  * @brief Transform a pixel from reciprocal space into the local Kabsch
    coordinate frame
@@ -64,48 +66,48 @@
  * @param s1_len_out Output parameter for magnitude of s₁ᶜ (|s₁|)
  * @return Transformed coordinates in Kabsch space (ε₁, ε₂, ε₃)
  */
-__device__ fastfb::Vector3D pixel_to_kabsch(const fastfb::Vector3D& s0,
-                                            const fastfb::Vector3D& s1_c,
-                                            double phi_c,
-                                            const fastfb::Vector3D& s_pixel,
-                                            double phi_pixel,
-                                            const fastfb::Vector3D& rot_axis,
-                                            double& s1_len_out) {
+__device__ Vector3D pixel_to_kabsch(const Vector3D& s0,
+                                    const Vector3D& s1_c,
+                                    scalar_t phi_c,
+                                    const Vector3D& s_pixel,
+                                    scalar_t phi_pixel,
+                                    const Vector3D& rot_axis,
+                                    scalar_t& s1_len_out) {
     // Define the local Kabsch basis vectors:
 
     // e1 is perpendicular to the scattering plane
-    fastfb::Vector3D e1 = s1_c.cross(s0).normalized();
+    Vector3D e1 = normalized(cross(s1_c, s0));
 
     // e2 lies within the scattering plane, orthogonal to e1
-    fastfb::Vector3D e2 = s1_c.cross(e1).normalized();
+    Vector3D e2 = normalized(cross(s1_c, e1));
 
     // e3 bisects the angle between s0 and s1
-    fastfb::Vector3D e3 = (s1_c + s0).normalized();
+    Vector3D e3 = normalized(s1_c + s0);
 
     // Compute the length of the predicted diffracted vector (|s₁|)
-    double s1_len = s1_c.norm();
+    scalar_t s1_len = norm(s1_c);
     s1_len_out = s1_len;
 
     // Rotation offset between the pixel and reflection centre
-    double dphi = phi_pixel - phi_c;
+    scalar_t dphi = phi_pixel - phi_c;
 
     // Compute the predicted diffracted vector at φ′
-    fastfb::Vector3D s1_phi_prime = s1_c + e3 * dphi;
+    Vector3D s1_phi_prime = s1_c + e3 * dphi;
 
     // Difference vector between pixel's s′ and the φ′-adjusted centroid
-    fastfb::Vector3D deltaS = s_pixel - s1_phi_prime;
+    Vector3D deltaS = s_pixel - s1_phi_prime;
 
     // ε₁: displacement along e1, normalised by |s₁|
-    double eps1 = e1.dot(deltaS) / s1_len;
+    scalar_t eps1 = dot(e1, deltaS) / s1_len;
 
     // ε₂: displacement along e2, normalised by |s₁|
-    double eps2 = e2.dot(deltaS) / s1_len;
+    scalar_t eps2 = dot(e2, deltaS) / s1_len;
 
     // ε₃: displacement along rotation axis, scaled by ζ = m₂ · e₁
-    double zeta = rot_axis.dot(e1);
-    double eps3 = zeta * dphi;
+    scalar_t zeta = dot(rot_axis, e1);
+    scalar_t eps3 = zeta * dphi;
 
-    return fastfb::Vector3D(eps1, eps2, eps3);
+    return make_vector3d(eps1, eps2, eps3);
 }
 
 /**
@@ -127,27 +129,26 @@ __device__ fastfb::Vector3D pixel_to_kabsch(const fastfb::Vector3D& s0,
  * @param s1_len_array Output array for s1 lengths
  * @param n Number of voxels to process
  */
-__global__ void compute_voxel_kabsch_kernel(
-  const fastfb::Vector3D* __restrict__ s_pixels,
-  const double* __restrict__ phi_pixels,
-  fastfb::Vector3D s1_c,
-  double phi_c,
-  fastfb::Vector3D s0,
-  fastfb::Vector3D rot_axis,
-  fastfb::Vector3D* eps_array,
-  double* s1_len_array,
-  size_t n) {
+__global__ void compute_voxel_kabsch_kernel(const Vector3D* __restrict__ s_pixels,
+                                            const scalar_t* __restrict__ phi_pixels,
+                                            Vector3D s1_c,
+                                            scalar_t phi_c,
+                                            Vector3D s0,
+                                            Vector3D rot_axis,
+                                            Vector3D* eps_array,
+                                            scalar_t* s1_len_array,
+                                            size_t n) {
     // Calculate global thread index
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;  // Bounds check
 
     // Get input data for this voxel
-    fastfb::Vector3D s_pixel = s_pixels[i];
-    double phi_pixel = phi_pixels[i];
+    Vector3D s_pixel = s_pixels[i];
+    scalar_t phi_pixel = phi_pixels[i];
 
     // Compute Kabsch transformation using the device function
-    double s1_len;
-    fastfb::Vector3D eps =
+    scalar_t s1_len;
+    Vector3D eps =
       pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_pixel, rot_axis, s1_len);
 
     // Store results
@@ -168,20 +169,20 @@ __global__ void compute_voxel_kabsch_kernel(
  * @param h_s1_len Host array to store output s1 lengths
  * @param n Number of voxels
  */
-void compute_voxel_kabsch(const fastfb::Vector3D* h_s_pixels,
-                          const double* h_phi_pixels,
-                          fastfb::Vector3D s1_c,
-                          double phi_c,
-                          fastfb::Vector3D s0,
-                          fastfb::Vector3D rot_axis,
-                          fastfb::Vector3D* h_eps,
-                          double* h_s1_len,
+void compute_voxel_kabsch(const Vector3D* h_s_pixels,
+                          const scalar_t* h_phi_pixels,
+                          Vector3D s1_c,
+                          scalar_t phi_c,
+                          Vector3D s0,
+                          Vector3D rot_axis,
+                          Vector3D* h_eps,
+                          scalar_t* h_s1_len,
                           size_t n) {
     // Create RAII device buffers
-    DeviceBuffer<fastfb::Vector3D> d_s_pixels(n);  // Input s_pixel vectors
-    DeviceBuffer<double> d_phi_pixels(n);          // Input phi_pixel angles
-    DeviceBuffer<fastfb::Vector3D> d_eps(n);       // Output Kabsch coordinates
-    DeviceBuffer<double> d_s1_len(n);              // Output s1 lengths
+    DeviceBuffer<Vector3D> d_s_pixels(n);    // Input s_pixel vectors
+    DeviceBuffer<scalar_t> d_phi_pixels(n);  // Input phi_pixel angles
+    DeviceBuffer<Vector3D> d_eps(n);         // Output Kabsch coordinates
+    DeviceBuffer<scalar_t> d_s1_len(n);      // Output s1 lengths
 
     // Copy input data from host to device
     d_s_pixels.assign(h_s_pixels);
