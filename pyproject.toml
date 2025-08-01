@@ -28,6 +28,11 @@ dependencies = [
 "GPUPerImageAnalysis" = "ffs.service:GPUPerImageAnalysis"
 "XRCResultCompare" = "compare_service:XRCResultCompare"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+[tool.setuptools.package-data]
+"ffs" = ["index*.so"]
+
 [tool.ruff]
 lint.ignore = ["E501", "E741"]
 lint.select = ["C9", "E", "F", "W", "I"]

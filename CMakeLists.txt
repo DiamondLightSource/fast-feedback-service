@@ -18,6 +18,13 @@ include(AlwaysColourCompilation)
 
 include_directories(include)
 
+# Add nanobind
+add_subdirectory(external/nanobind)
+
+# Find Python
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+include_directories(${Python3_INCLUDE_DIRS})
+
 # Dependency fetching
 set(FETCHCONTENT_QUIET OFF)
 include(FetchContent)

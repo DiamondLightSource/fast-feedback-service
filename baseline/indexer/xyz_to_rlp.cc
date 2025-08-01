@@ -108,6 +108,48 @@ xyz_to_rlp_results xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
     return results;  // Return the data and spans.
 }
 
+std::vector<double> ssx_xyz_to_rlp(
+  const std::vector<double>& xyzobs_px,
+  double wavelength,
+  const Panel& panel
+  ){
+    Vector3d s0 = {0.0,0.0,-1.0/wavelength};
+    std::vector<double> rlp(xyzobs_px.size(), 0);
+    Matrix3d d_matrix = panel.get_d_matrix();
+    double rot_angle = 0.0;
+    for (int i = 0; i < xyzobs_px.size() / 3; ++i) {
+        // first convert detector pixel positions into mm
+        double x1 = xyzobs_px[i*3];
+        double x2 = xyzobs_px[i*3 + 1];
+        std::array<double, 2> xymm = panel.px_to_mm(x1, x2);
+
+        // calculate the s1 vector using the detector d matrix
+        Vector3d m = {xymm[0], xymm[1], 1.0};
+        Vector3d s1_i = d_matrix * m;
+        s1_i.normalize();
+        // convert into inverse ansgtroms
+        Vector3d s1_this = s1_i / wavelength;
+
+        Vector3d S = s1_this - s0;
+        rlp[i*3] = S[0];
+        rlp[i*3+1] = S[1];
+        rlp[i*3+2] = S[2];
+    }
+    return rlp;
+}
+
+Panel make_panel(
+  double distance, double beam_center_x, double beam_center_y,
+  double pixel_size_x, double pixel_size_y, int image_size_x, int image_size_y
+  ){
+  std::array<double, 2> beam_center = {beam_center_x, beam_center_y};
+  std::array<double, 2> pixel_size = {pixel_size_x, pixel_size_y};
+  std::array<int, 2> image_size = {image_size_x, image_size_y};
+  Panel panel(distance, beam_center, pixel_size, image_size);
+  panel.set_correction_parameters(0.45,3.9220781,true); //FIXME add to constructor
+  return panel;
+}
+
 void px_to_mm(const mdspan_type<double> &px_input,
               mdspan_type<double> &mm_output,
               const Scan &scan,
