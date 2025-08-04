@@ -25,6 +25,7 @@
 
 #include <cstddef>
 
+#include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
 
 /**
@@ -41,11 +42,11 @@
  * @param n Number of voxels
  */
 void compute_voxel_kabsch(const fastvec::Vector3D* h_s_pixels,
-                          const fastvec::scalar_t* h_phi_pixels,
+                          const scalar_t* h_phi_pixels,
                           fastvec::Vector3D s1_c,
-                          fastvec::scalar_t phi_c,
+                          scalar_t phi_c,
                           fastvec::Vector3D s0,
                           fastvec::Vector3D rot_axis,
                           fastvec::Vector3D* h_eps,
-                          fastvec::scalar_t* h_s1_len,
+                          scalar_t* h_s1_len,
                           size_t n);
