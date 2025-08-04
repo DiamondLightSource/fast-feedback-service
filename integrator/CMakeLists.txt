@@ -6,6 +6,7 @@ add_executable(integrator
     integrator.cc
     integrator.cu
     kabsch.cu
+    extent.cu
 )
 
 target_link_libraries(integrator
