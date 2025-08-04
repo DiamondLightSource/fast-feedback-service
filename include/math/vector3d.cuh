@@ -53,19 +53,17 @@
 #include <cstdio>
 #include <experimental/mdspan>
 
+#include "math/device_precision.cuh"
+
 namespace fastvec {
 
-// Type configuration - change this to switch between float and double precision
+// Type configuration
 #ifdef USE_DOUBLE_PRECISION
 using Vector3D = double3;
-using scalar_t = double;
 #define MAKE_VECTOR3D make_double3
-#define CUDA_SQRT sqrt
 #else
 using Vector3D = float3;
-using scalar_t = float;
 #define MAKE_VECTOR3D make_float3
-#define CUDA_SQRT sqrtf
 #endif
 
 // Convenience aliases for mdspan types

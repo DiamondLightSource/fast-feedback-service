@@ -40,6 +40,7 @@
 #include "cuda_common.hpp"
 #include "integrator.cuh"
 #include "kabsch.cuh"
+#include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
 
 using namespace fastvec;
