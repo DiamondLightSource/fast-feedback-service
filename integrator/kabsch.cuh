@@ -41,12 +41,12 @@
  * @param h_s1_len Host array to store output s1 lengths
  * @param n Number of voxels
  */
-void compute_voxel_kabsch(const fastvec::Vector3D* h_s_pixels,
-                          const scalar_t* h_phi_pixels,
-                          fastvec::Vector3D s1_c,
-                          scalar_t phi_c,
-                          fastvec::Vector3D s0,
-                          fastvec::Vector3D rot_axis,
-                          fastvec::Vector3D* h_eps,
-                          scalar_t* h_s1_len,
-                          size_t n);
+void compute_kabsch_transform(const fastvec::Vector3D* h_s_pixels,
+                              const scalar_t* h_phi_pixels,
+                              fastvec::Vector3D s1_c,
+                              scalar_t phi_c,
+                              fastvec::Vector3D s0,
+                              fastvec::Vector3D rot_axis,
+                              fastvec::Vector3D* h_eps,
+                              scalar_t* h_s1_len,
+                              size_t n);
