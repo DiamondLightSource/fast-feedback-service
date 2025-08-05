@@ -130,15 +130,15 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D& s0,
  * @param s1_len_array Output array for s1 lengths
  * @param n Number of voxels to process
  */
-__global__ void compute_voxel_kabsch_kernel(const Vector3D* __restrict__ s_pixels,
-                                            const scalar_t* __restrict__ phi_pixels,
-                                            Vector3D s1_c,
-                                            scalar_t phi_c,
-                                            Vector3D s0,
-                                            Vector3D rot_axis,
-                                            Vector3D* eps_array,
-                                            scalar_t* s1_len_array,
-                                            size_t n) {
+__global__ void kabsch_transform(const Vector3D* __restrict__ s_pixels,
+                                 const scalar_t* __restrict__ phi_pixels,
+                                 Vector3D s1_c,
+                                 scalar_t phi_c,
+                                 Vector3D s0,
+                                 Vector3D rot_axis,
+                                 Vector3D* eps_array,
+                                 scalar_t* s1_len_array,
+                                 size_t n) {
     // Calculate global thread index
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;  // Bounds check
@@ -170,15 +170,15 @@ __global__ void compute_voxel_kabsch_kernel(const Vector3D* __restrict__ s_pixel
  * @param h_s1_len Host array to store output s1 lengths
  * @param n Number of voxels
  */
-void compute_voxel_kabsch(const Vector3D* h_s_pixels,
-                          const scalar_t* h_phi_pixels,
-                          Vector3D s1_c,
-                          scalar_t phi_c,
-                          Vector3D s0,
-                          Vector3D rot_axis,
-                          Vector3D* h_eps,
-                          scalar_t* h_s1_len,
-                          size_t n) {
+void compute_kabsch_transform(const Vector3D* h_s_pixels,
+                              const scalar_t* h_phi_pixels,
+                              Vector3D s1_c,
+                              scalar_t phi_c,
+                              Vector3D s0,
+                              Vector3D rot_axis,
+                              Vector3D* h_eps,
+                              scalar_t* h_s1_len,
+                              size_t n) {
     // Create RAII device buffers
     DeviceBuffer<Vector3D> d_s_pixels(n);    // Input s_pixel vectors
     DeviceBuffer<scalar_t> d_phi_pixels(n);  // Input phi_pixel angles
@@ -194,15 +194,15 @@ void compute_voxel_kabsch(const Vector3D* h_s_pixels,
     int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
     // Launch kernel
-    compute_voxel_kabsch_kernel<<<blocksPerGrid, threadsPerBlock>>>(d_s_pixels.data(),
-                                                                    d_phi_pixels.data(),
-                                                                    s1_c,
-                                                                    phi_c,
-                                                                    s0,
-                                                                    rot_axis,
-                                                                    d_eps.data(),
-                                                                    d_s1_len.data(),
-                                                                    n);
+    kabsch_transform<<<blocksPerGrid, threadsPerBlock>>>(d_s_pixels.data(),
+                                                         d_phi_pixels.data(),
+                                                         s1_c,
+                                                         phi_c,
+                                                         s0,
+                                                         rot_axis,
+                                                         d_eps.data(),
+                                                         d_s1_len.data(),
+                                                         n);
 
     // Check for kernel launch errors
     cudaError_t err = cudaGetLastError();
