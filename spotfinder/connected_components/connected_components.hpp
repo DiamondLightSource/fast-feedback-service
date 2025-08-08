@@ -253,6 +253,10 @@ class ConnectedComponents {
       const uint min_spot_size,
       const uint max_peak_centroid_separation);
 
+    std::vector<Reflection3D> find_2d_components(
+      const uint min_spot_size,
+      const uint max_peak_centroid_separation);
+
   private:
     uint num_strong_pixels;           // Number of strong pixels
     uint num_strong_pixels_filtered;  // Number of strong pixels after filtering
