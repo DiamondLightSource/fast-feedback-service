@@ -612,8 +612,10 @@ int main(int argc, char **argv) {
       rotation_slices = nullptr;
     std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
     // Create a unique pointer to store the reflection centres if we want to save 2D spot data.
-    std::unique_ptr<std::unordered_map<int, std::vector<float>>> reflection_centers_2d = nullptr;
-    std::mutex reflection_centers_2d_mutex;  // Mutex to protect the reflection centers 2d map
+    std::unique_ptr<std::unordered_map<int, std::vector<float>>> reflection_centers_2d =
+      nullptr;
+    std::mutex
+      reflection_centers_2d_mutex;  // Mutex to protect the reflection centers 2d map
 
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
@@ -622,9 +624,10 @@ int main(int argc, char **argv) {
         fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
     } else {
         fmt::print("Dataset type: {}\n", fmt::styled("Still set", fmt_magenta));
-        if (save_to_h5){
+        if (save_to_h5) {
             // A map we will use to save results as we go.
-            reflection_centers_2d = std::make_unique<std::unordered_map<int, std::vector<float>>>();
+            reflection_centers_2d =
+              std::make_unique<std::unordered_map<int, std::vector<float>>>();
         }
     }
 
@@ -815,27 +818,26 @@ int main(int argc, char **argv) {
                   connected_components_2d->get_num_strong_pixels();
                 size_t num_strong_pixels_filtered =
                   connected_components_2d->get_num_strong_pixels_filtered();
-                
+
                 std::vector<float> centers_of_mass;
                 // If this is a rotation dataset, store the connected component slice
-                if (oscillation_width){
+                if (oscillation_width) {
                     // Lock the mutex to protect the map
                     std::lock_guard<std::mutex> lock(rotation_slices_mutex);
                     // Store the connected components slice in the map
                     (*rotation_slices)[offset_image_num] =
                       std::move(connected_components_2d);
-                }
-                else if (save_to_h5 | pipe_for_index){
-                    std::vector<Reflection3D> reflections = connected_components_2d->find_2d_components(
-                        min_spot_size, max_peak_centroid_separation
-                    );
-                    for (const auto& r: reflections){
+                } else if (save_to_h5 | pipe_for_index) {
+                    std::vector<Reflection3D> reflections =
+                      connected_components_2d->find_2d_components(
+                        min_spot_size, max_peak_centroid_separation);
+                    for (const auto &r : reflections) {
                         auto [x, y, z] = r.center_of_mass();
                         centers_of_mass.push_back(x);
                         centers_of_mass.push_back(y);
                         centers_of_mass.push_back(z);
                     }
-                    if (save_to_h5){
+                    if (save_to_h5) {
                         std::lock_guard<std::mutex> lock(reflection_centers_2d_mutex);
                         (*reflection_centers_2d)[offset_image_num] = centers_of_mass;
                     }
@@ -909,7 +911,7 @@ int main(int argc, char **argv) {
                                       {"file", args.file},
                                       {"file-number", image_num},
                                       {"n_spots_total", boxes.size()}};
-                    if (pipe_for_index){
+                    if (pipe_for_index) {
                         json_data["spot_centers"] = centers_of_mass;
                     }
                     // Send the JSON data through the pipe
@@ -1093,8 +1095,7 @@ int main(int argc, char **argv) {
         }
 
         logger.info("3D spot analysis complete");
-    }
-    else if (save_to_h5){ // i.e. not rotation, but want to save results to disk.
+    } else if (save_to_h5) {  // i.e. not rotation, but want to save results to disk.
         logger.info("Processing 2D spots");
         logger.debug("Writing 2D reflections to HDF5 file");
 
@@ -1102,18 +1103,18 @@ int main(int argc, char **argv) {
             std::vector<double> flat_coms;
             std::vector<int> ids;
             std::vector<int> centers_map_keys;
-            for (const auto& pair : *reflection_centers_2d) {
+            for (const auto &pair : *reflection_centers_2d) {
                 centers_map_keys.push_back(pair.first);
             }
             std::sort(centers_map_keys.begin(), centers_map_keys.end());
             int id = 0;
-            for (int imageno : centers_map_keys){
+            for (int imageno : centers_map_keys) {
                 std::vector<float> flat_coms_this = (*reflection_centers_2d)[imageno];
                 int n_refls = flat_coms_this.size() / 3;
-                for (auto com:flat_coms_this){
+                for (auto com : flat_coms_this) {
                     flat_coms.push_back(static_cast<double>(com));
                 }
-                for (int i=0;i<n_refls;++i){
+                for (int i = 0; i < n_refls; ++i) {
                     ids.push_back(id);
                 }
                 id += 1;
@@ -1121,7 +1122,7 @@ int main(int argc, char **argv) {
 
             // Make the reflection table with correctly assigned IDS.
             ReflectionTable table;
-            for (int i=0;i<id-1;++i){
+            for (int i = 0; i < id - 1; ++i) {
                 // Currently no other way to trigger generating UUIDs from here.
                 table.generate_new_attributes();
             }
@@ -1138,7 +1139,7 @@ int main(int argc, char **argv) {
         } catch (...) {
             logger.error("Unknown error writing data to HDF5 file");
         }
-      logger.info("2D spot analysis complete");
+        logger.info("2D spot analysis complete");
     }
 #pragma endregion 3D Connected Components
 

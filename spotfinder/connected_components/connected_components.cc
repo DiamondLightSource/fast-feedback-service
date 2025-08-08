@@ -142,8 +142,6 @@ void ConnectedComponents::generate_boxes(const ushort width,
 std::vector<Reflection3D> ConnectedComponents::find_2d_components(
   const uint min_spot_size,
   const uint max_peak_centroid_separation) {
-
-
     std::vector<int> labels(boost::num_vertices(graph));
     uint num_labels = boost::connected_components(graph, labels.data());
 
@@ -162,12 +160,12 @@ std::vector<Reflection3D> ConnectedComponents::find_2d_components(
     if (min_spot_size > 0) {
         logger.debug("Filtering reflections by minimum spot size");
         reflections.erase(std::remove_if(reflections.begin(),
-                                            reflections.end(),
-                                            [min_spot_size](const auto &reflection) {
-                                                return reflection.get_num_pixels()
-                                                       < min_spot_size;
-                                            }),
-                             reflections.end());
+                                         reflections.end(),
+                                         [min_spot_size](const auto &reflection) {
+                                             return reflection.get_num_pixels()
+                                                    < min_spot_size;
+                                         }),
+                          reflections.end());
     }
     uint filtered_spot_count = reflections.size();
     if (max_peak_centroid_separation > 0) {
