@@ -18,6 +18,7 @@
 #include "common.hpp"
 #include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
+#include "extent.cuh"
 #include "ffs_logger.hpp"
 #include "kabsch.cuh"
 #include "math/vector3d.cuh"
@@ -25,300 +26,23 @@
 
 // Define a 2D mdspan type alias for convenience
 using mdspan_2d =
-  std::experimental::mdspan<double, std::experimental::dextents<size_t, 2>>;
-
-#pragma region Algorithms
+  std::experimental::mdspan<scalar_t, std::experimental::dextents<size_t, 2>>;
 
 /**
- * @brief Transform a pixel from reciprocal space into the local Kabsch
- * coordinate frame.
- *
- * Given a predicted reflection centre and a pixel's position in
- * reciprocal space, this function calculates the local Kabsch
- * coordinates (ε₁, ε₂, ε₃), which represent displacements along a
- * non-orthonormal basis defined by the scattering geometry.
- *
- * This is used to determine whether a pixel falls within the profile of
- * a reflection in Kabsch space, which allows summation or profile
- * integration to proceed in a geometry-invariant coordinate frame.
- *
- * @param s0 Incident beam vector (s₀), units of 1/Å
- * @param s1_c Predicted diffracted vector at the reflection centre
- * (s₁ᶜ), units of 1/Å
- * @param phi_c Rotation angle at the reflection centre (φᶜ), in radians
- * @param s_pixel Diffracted vector at the current pixel (S′), units of
- * 1/Å
- * @param phi_pixel Rotation angle at the pixel (φ′), in radians
- * @param rot_axis Unit goniometer rotation axis vector (m₂)
- * @param s1_len_out Optional output for magnitude of s₁ᶜ (|s₁|)
- * @return Eigen::Vector3d The local coordinates (ε₁, ε₂, ε₃) in Kabsch
- * space
+ * @brief Structure to hold detector parameters for GPU kernels
+ * 
+ * This struct packages all the detector-specific parameters needed for
+ * correct coordinate transformations on the GPU, including parallax correction.
  */
-Eigen::Vector3d pixel_to_kabsch(const Eigen::Vector3d& s0,
-                                const Eigen::Vector3d& s1_c,
-                                double phi_c,
-                                const Eigen::Vector3d& s_pixel,
-                                double phi_pixel,
-                                const Eigen::Vector3d& rot_axis,
-                                double& s1_len_out) {
-    // Define the local Kabsch basis vectors:
-    // e1 is perpendicular to the scattering plane
-    Eigen::Vector3d e1 = s1_c.cross(s0).normalized();
-
-    // e2 lies within the scattering plane, orthogonal to e1
-    Eigen::Vector3d e2 = s1_c.cross(e1).normalized();
-
-    // e3 bisects the angle between s0 and s1
-    Eigen::Vector3d e3 = (s1_c + s0).normalized();
-
-    // Compute the length of the predicted diffracted vector (|s₁|)
-    double s1_len = s1_c.norm();
-    s1_len_out = s1_len;
-
-    // Rotation offset between the pixel and reflection centre
-    double dphi = phi_pixel - phi_c;
-
-    // Compute the predicted diffracted vector at φ′
-    Eigen::Vector3d s1_phi_prime = s1_c + e3 * dphi;
-
-    // Difference vector between pixel's s′ and the φ′-adjusted centroid
-    Eigen::Vector3d deltaS = s_pixel - s1_phi_prime;
-
-    // ε₁: displacement along e1, normalised by |s₁|
-    double eps1 = e1.dot(deltaS) / s1_len;
-
-    // ε₂: displacement along e2, with correction for non-orthogonality to e3
-    double eps2 = e2.dot(deltaS) / s1_len - (e2.dot(e3) * dphi) / s1_len;
-
-    // ε₃: displacement along rotation axis, scaled by ζ = m₂ · e₁
-    double zeta = rot_axis.dot(e1);
-    double eps3 = zeta * dphi;
-
-    return {eps1, eps2, eps3};
-}
-
-/**
- * @brief Structure to hold pixel coordinate extents for reflection bounding
- * boxes.
- *
- * Contains the minimum and maximum bounds in detector pixel coordinates (x, y)
- * and image numbers (z) that define the region of interest around each
- * reflection for integration.
- */
-struct BoundingBoxExtents {
-    double x_min, x_max;  ///< Detector x-pixel range (fast axis)
-    double y_min, y_max;  ///< Detector y-pixel range (slow axis)
-    int z_min, z_max;     ///< Image number range (rotation axis)
+struct DetectorParameters {
+    scalar_t pixel_size[2];       // [x_size, y_size] in mm
+    bool parallax_correction;     // Whether to apply parallax correction
+    scalar_t mu;                  // Absorption coefficient
+    scalar_t thickness;           // Detector thickness in mm
+    fastvec::Vector3D fast_axis;  // Detector fast axis direction
+    fastvec::Vector3D slow_axis;  // Detector slow axis direction
+    fastvec::Vector3D origin;     // Detector origin position
 };
-
-/**
- * @brief Compute bounding box extents for reflection integration using the
- * Kabsch coordinate system.
- *
- * 1. Calculates angular divergence parameters Δb and Δm
- * 2. Projects these divergences onto the Kabsch coordinate system to find
- *    the corners of the integration region in reciprocal space
- * 3. Transforms these reciprocal space coordinates back to detector pixel
- *    coordinates and image numbers to define practical bounding boxes
- *
- * The method accounts for the non-orthonormal nature of the Kabsch basis
- * and ensures that the bounding boxes encompass the full extent of each
- * reflection's diffraction profile.
- *
- * @param s0 Incident beam vector (s₀), units of 1/Å
- * @param rot_axis Unit goniometer rotation axis vector (m₂)
- * @param s1_vectors Matrix of predicted s₁ vectors for all reflections,
- *                   shape (num_reflections, 3)
- * @param phi_positions Matrix containing reflection positions, where the third
- *                      column contains φᶜ values in radians
- * @param num_reflections Number of reflections to process
- * @param sigma_b Beam divergence standard deviation (σb), in reciprocal space
- *                units
- * @param sigma_m Mosaicity standard deviation (σm), in reciprocal space units
- * @param panel Detector panel object for coordinate transformations
- * @param scan Scan object containing oscillation and image range information
- * @param beam Beam object for wavelength and other beam properties
- * @param n_sigma Number of standard deviations to include in the bounding box
- *                (default: 3.0)
- * @param sigma_b_multiplier Additional multiplier for beam divergence
- *                           (default: 2.0, called 'm' in DIALS)
- * @return Vector of BoundingBoxExtents structures, one per reflection
- */
-std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
-  const Eigen::Vector3d& s0,
-  const Eigen::Vector3d& rot_axis,
-  const mdspan_2d& s1_vectors,
-  const mdspan_2d& phi_positions,
-  const size_t num_reflections,
-  const double sigma_b,                     // σb from arguments
-  const double sigma_m,                     // σm from arguments
-  const Panel& panel,                       // Panel for coordinate transformations
-  const Scan& scan,                         // Scan for oscillation and image range data
-  const MonochromaticBeam& beam,            // Beam for wavelength
-  const double n_sigma = 3.0,               // Number of standard deviations
-  const double sigma_b_multiplier = 2.0) {  // m parameter from DIALS
-
-    std::vector<BoundingBoxExtents> extents;
-    extents.reserve(num_reflections);
-
-    /*
-    * Tolerance for detecting when a reflection is nearly parallel to
-    * the rotation axis. When ζ = m₂ · e₁ approaches zero, it indicates
-    * the reflection's scattering plane is nearly parallel to the
-    * goniometer rotation axis, making the φ-to-image conversion
-    * numerically unstable. This threshold (1e-10) is chosen based on
-    * geometric considerations rather than pure floating-point precision
-    * - it represents a practical limit for "nearly parallel" geometry
-    * where the standard bounding box calculation should be bypassed in
-    * favor of spanning the entire image range.
-    */
-    static constexpr double ZETA_TOLERANCE = 1e-10;
-
-    // Calculate the angular divergence parameters:
-    // Δb = nσ × σb × m (beam divergence extent)
-    // Δm = nσ × σm (mosaicity extent)
-    double delta_b = n_sigma * sigma_b * sigma_b_multiplier;
-    double delta_m = n_sigma * sigma_m;
-
-    // Extract experimental parameters needed for coordinate transformations
-    const auto [osc_start, osc_width] = scan.get_oscillation();
-    int image_range_start = scan.get_image_range()[0];
-    int image_range_end = scan.get_image_range()[1];
-    double wl = beam.get_wavelength();
-    Matrix3d d_matrix_inv = panel.get_d_matrix().inverse();
-
-    // Process each reflection individually
-    for (size_t i = 0; i < num_reflections; ++i) {
-        // Extract reflection centroid data
-        Eigen::Vector3d s1_c(
-          s1_vectors(i, 0), s1_vectors(i, 1), s1_vectors(i, 2));  // s₁ᶜ from s1_vectors
-        double phi_c = (phi_positions(i, 2));  // φᶜ from xyzcal.mm column
-
-        // Construct the Kabsch coordinate system for this reflection
-        // e1 = s₁ᶜ × s₀ / |s₁ᶜ × s₀| (perpendicular to scattering plane)
-        Eigen::Vector3d e1 = s1_c.cross(s0).normalized();
-        // e2 = s₁ᶜ × e₁ / |s₁ᶜ × e₁| (within scattering plane, orthogonal to e1)
-        Eigen::Vector3d e2 = s1_c.cross(e1).normalized();
-
-        double s1_len = s1_c.norm();
-
-        // Calculate s′ vectors at the four corners of the integration region
-        // These correspond to the extremes: (±Δb, ±Δb) in Kabsch coordinates
-        std::vector<Eigen::Vector3d> s_prime_vectors;
-        static constexpr std::array<std::pair<int, int>, 4> corner_signs = {
-          {{1, 1}, {1, -1}, {-1, 1}, {-1, -1}}};
-
-        for (auto [e1_sign, e2_sign] : corner_signs) {
-            // Project Δb divergences onto Kabsch basis vectors
-            // p represents the displacement in reciprocal space
-            Eigen::Vector3d p =
-              (e1_sign * delta_b * e1 / s1_len) + (e2_sign * delta_b * e2 / s1_len);
-
-            // Debug output for the Ewald sphere calculation
-            double p_magnitude = p.norm();
-            logger.trace(
-              "Reflection {}, corner ({},{}): p.norm()={:.6f}, s1_len={:.6f}, "
-              "delta_b={:.6f}",
-              i,
-              e1_sign,
-              e2_sign,
-              p_magnitude,
-              s1_len,
-              delta_b);
-
-            // Ensure the resulting s′ vector lies on the Ewald sphere
-            // This involves solving: |s′|² = |s₁ᶜ|² for the correct magnitude
-            double b = s1_len * s1_len - p.dot(p);
-            if (b < 0) {
-                logger.error(
-                  "Negative b value: {:.6f} for reflection {} (p.dot(p)={:.6f}, "
-                  "s1_len²={:.6f})",
-                  b,
-                  i,
-                  p.dot(p),
-                  s1_len * s1_len);
-                logger.error(
-                  "This means the displacement vector is too large for the Ewald "
-                  "sphere");
-                // Skip this corner or use a fallback approach
-                continue;
-            }
-            double d = -(p.dot(s1_c) / s1_len) + std::sqrt(b);
-
-            logger.trace("Reflection {}: b={:.6f}, d={:.6f}", i, b, d);
-
-            // Construct the s′ vector: s′ = (d × ŝ₁ᶜ) + p
-            Eigen::Vector3d s_prime = (d * s1_c / s1_len) + p;
-            s_prime_vectors.push_back(s_prime);
-        }
-
-        // Transform s′ vectors back to detector coordinates using Panel's get_ray_intersection
-        std::vector<std::pair<double, double>> detector_coords;
-        for (const auto& s_prime : s_prime_vectors) {
-            // Direct conversion from s′ vector to detector coordinates
-            // get_ray_intersection returns coordinates in mm
-            std::array<double, 2> xy_mm = panel.get_ray_intersection(s_prime);
-
-            // Convert from mm to pixels using the new mm_to_px function
-            std::array<double, 2> xy_pixels = panel.mm_to_px(xy_mm[0], xy_mm[1]);
-
-            detector_coords.push_back({xy_pixels[0], xy_pixels[1]});
-        }
-
-        // Determine the bounding box in detector coordinates
-        // Find minimum and maximum coordinates from the four corners
-        auto [min_x_it, max_x_it] = std::minmax_element(
-          detector_coords.begin(),
-          detector_coords.end(),
-          [](const auto& a, const auto& b) { return a.first < b.first; });
-        auto [min_y_it, max_y_it] = std::minmax_element(
-          detector_coords.begin(),
-          detector_coords.end(),
-          [](const auto& a, const auto& b) { return a.second < b.second; });
-
-        BoundingBoxExtents bbox;
-        // Use floor/ceil as specified in the paper: xmin = floor(min([x1,x2,x3,x4]))
-        bbox.x_min = std::floor(min_x_it->first);
-        bbox.x_max = std::ceil(max_x_it->first);
-        bbox.y_min = std::floor(min_y_it->second);
-        bbox.y_max = std::ceil(max_y_it->second);
-
-        // Calculate the image range (z-direction) using mosaicity parameter Δm
-        // The extent in φ depends on the geometry factor ζ = m₂ · e₁
-        double zeta = rot_axis.dot(e1);
-        if (std::abs(zeta) > ZETA_TOLERANCE) {  // Avoid division by zero
-            // Convert angular extents to rotation angles: φ′ = φᶜ ± Δm/ζ
-            double phi_plus = phi_c + delta_m / zeta;
-            double phi_minus = phi_c - delta_m / zeta;
-
-            // Convert phi angles from radians to degrees before using scan parameters
-            double phi_plus_deg = phi_plus * 180.0 / M_PI;
-            double phi_minus_deg = phi_minus * 180.0 / M_PI;
-
-            // Transform rotation angles to image numbers using scan parameters
-            double z_plus =
-              image_range_start - 1 + ((phi_plus_deg - osc_start) / osc_width);
-            double z_minus =
-              image_range_start - 1 + ((phi_minus_deg - osc_start) / osc_width);
-
-            // Clamp to the actual image range and use floor/ceil for integer bounds
-            bbox.z_min =
-              std::max(image_range_start, (int)std::floor(std::min(z_plus, z_minus)));
-            bbox.z_max =
-              std::min(image_range_end, (int)std::ceil(std::max(z_plus, z_minus)));
-        } else {
-            // Handle degenerate case where reflection is parallel to rotation axis
-            // In this case, the reflection spans the entire image range
-            bbox.z_min = image_range_start;
-            bbox.z_max = image_range_end;
-        }
-
-        extents.push_back(bbox);
-    }
-
-    return extents;
-}
-#pragma endregion Algorithms
 
 #pragma region Argument Parsing
 class IntegratorArgumentParser : public CUDAArgumentParser {
@@ -408,6 +132,8 @@ int main(int argc, char** argv) {
     }
     logger.info("Column names: {}", column_names_str);
 
+#pragma region Data preparation
+
     // Extract required columns and dereference optionals
     auto s1_vectors_opt = reflections.column<double>("s1");
     if (!s1_vectors_opt) {
@@ -467,35 +193,100 @@ int main(int argc, char** argv) {
     int image_range_start = scan.get_image_range()[0];
     double wl = beam.get_wavelength();
 
+#pragma endregion Data preparation
+#pragma region Bbox computation
+
     // Compute new bounding boxes using Kabsch coordinate system
 
     logger.info("Computing new Kabsch bounding boxes for {} reflections",
                 num_reflections);
 
-    // Compute new bounding boxes
-    auto computed_bounding_boxes = compute_kabsch_bounding_boxes(s0,
-                                                                 rotation_axis,
-                                                                 s1_vectors,
-                                                                 phi_column,
-                                                                 num_reflections,
-                                                                 sigma_b,
-                                                                 sigma_m,
-                                                                 panel,
-                                                                 scan,
-                                                                 beam);
+    // Create output array for bounding boxes (6 values per reflection)
+    std::vector<scalar_t> computed_bbox_data(num_reflections * 6);
+
+    // TODO: Make these conversions better
+
+    // Convert s1_vectors from double to scalar_t (float) format
+    std::vector<fastvec::Vector3D> s1_vectors_converted(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        s1_vectors_converted[i] =
+          fastvec::make_vector3d(static_cast<scalar_t>(s1_vectors(i, 0)),
+                                 static_cast<scalar_t>(s1_vectors(i, 1)),
+                                 static_cast<scalar_t>(s1_vectors(i, 2)));
+    }
+
+    // Convert phi values from double to scalar_t
+    std::vector<scalar_t> phi_values_converted(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        phi_values_converted[i] =
+          static_cast<scalar_t>(phi_column(i, 2));  // Extract phi (z-component)
+    }
+
+    // Extract detector parameters (assuming you add accessors to Panel class)
+    DetectorParameters detector_params;
+    auto pixel_size_array = panel.get_pixel_size();
+    detector_params.pixel_size[0] = static_cast<scalar_t>(pixel_size_array[0]);
+    detector_params.pixel_size[1] = static_cast<scalar_t>(pixel_size_array[1]);
+
+    // TODO: Add these accessors to Panel class
+    detector_params.parallax_correction = panel.has_parallax_correction();
+    detector_params.mu = static_cast<scalar_t>(panel.get_mu());
+    detector_params.thickness = static_cast<scalar_t>(panel.get_thickness());
+
+    // Convert geometry vectors to CUDA format
+    auto fast_axis_eigen = panel.get_fast_axis();
+    auto slow_axis_eigen = panel.get_slow_axis();
+    auto origin_eigen = panel.get_origin();
+
+    detector_params.fast_axis =
+      fastvec::make_vector3d(static_cast<scalar_t>(fast_axis_eigen.x()),
+                             static_cast<scalar_t>(fast_axis_eigen.y()),
+                             static_cast<scalar_t>(fast_axis_eigen.z()));
+    detector_params.slow_axis =
+      fastvec::make_vector3d(static_cast<scalar_t>(slow_axis_eigen.x()),
+                             static_cast<scalar_t>(slow_axis_eigen.y()),
+                             static_cast<scalar_t>(slow_axis_eigen.z()));
+    detector_params.origin =
+      fastvec::make_vector3d(static_cast<scalar_t>(origin_eigen.x()),
+                             static_cast<scalar_t>(origin_eigen.y()),
+                             static_cast<scalar_t>(origin_eigen.z()));
+
+    // Get D-matrix inverse
+    auto d_matrix_inv = panel.get_d_matrix().inverse();
+    std::vector<scalar_t> d_matrix_inv_flat(9);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            d_matrix_inv_flat[i * 3 + j] = static_cast<scalar_t>(d_matrix_inv(i, j));
+        }
+    }
+
+    // Compute new bounding boxes using CUDA with proper detector parameters
+    compute_bbox_extent(
+      s1_vectors_converted.data(),
+      phi_values_converted.data(),
+      fastvec::make_vector3d(s0.x(), s0.y(), s0.z()),
+      fastvec::make_vector3d(rotation_axis.x(), rotation_axis.y(), rotation_axis.z()),
+      sigma_b,
+      sigma_m,
+      static_cast<scalar_t>(osc_start),
+      static_cast<scalar_t>(osc_width),
+      image_range_start,
+      scan.get_image_range()[1],  // image_range_end
+      static_cast<scalar_t>(beam.get_wavelength()),
+      d_matrix_inv_flat.data(),
+      detector_params.pixel_size,
+      detector_params.parallax_correction,
+      detector_params.mu,
+      detector_params.thickness,
+      detector_params.fast_axis,
+      detector_params.slow_axis,
+      detector_params.origin,
+      computed_bbox_data.data(),
+      num_reflections);
 
     // Convert to reflection table format for comparison
-    std::vector<double> computed_bbox_data;
-    computed_bbox_data.reserve(num_reflections * 6);
-    for (const auto& bbox : computed_bounding_boxes) {
-        computed_bbox_data.insert(computed_bbox_data.end(),
-                                  {bbox.x_min,
-                                   bbox.x_max,
-                                   bbox.y_min,
-                                   bbox.y_max,
-                                   static_cast<double>(bbox.z_min),
-                                   static_cast<double>(bbox.z_max)});
-    }
+    // Data is already in the correct flat format from compute_bbox_extent
+    logger.info("Bounding box computation completed");
 
     // Compare with existing bounding boxes
     logger.info("Comparing computed bounding boxes with existing bbox column");
@@ -509,8 +300,13 @@ int main(int argc, char** argv) {
         int ex_z_min = static_cast<int>(bbox_column(i, 4));
         int ex_z_max = static_cast<int>(bbox_column(i, 5));
 
-        // Computed bbox
-        const auto& comp_bbox = computed_bounding_boxes[i];
+        // Computed bbox (from flat array)
+        double comp_x_min = computed_bbox_data[i * 6 + 0];
+        double comp_x_max = computed_bbox_data[i * 6 + 1];
+        double comp_y_min = computed_bbox_data[i * 6 + 2];
+        double comp_y_max = computed_bbox_data[i * 6 + 3];
+        int comp_z_min = static_cast<int>(computed_bbox_data[i * 6 + 4]);
+        int comp_z_max = static_cast<int>(computed_bbox_data[i * 6 + 5]);
 
         logger.trace("bbox[{}]: existing x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
                      i,
@@ -522,15 +318,16 @@ int main(int argc, char** argv) {
                      ex_z_max);
         logger.trace("bbox[{}]: computed x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
                      i,
-                     comp_bbox.x_min,
-                     comp_bbox.x_max,
-                     comp_bbox.y_min,
-                     comp_bbox.y_max,
-                     comp_bbox.z_min,
-                     comp_bbox.z_max);
+                     comp_x_min,
+                     comp_x_max,
+                     comp_y_min,
+                     comp_y_max,
+                     comp_z_min,
+                     comp_z_max);
     }
 
-    // Compute Kabsch coordinates for all voxels using existing bbox
+#pragma endregion Bbox computation
+#pragma region Kabsch tf
 
     logger.info(
       "Computing Kabsch coordinates for voxel centers within existing bounding boxes");
@@ -596,7 +393,7 @@ int main(int argc, char** argv) {
 
         // Collect all voxel data for this reflection for batch processing
         std::vector<fastvec::Vector3D> batch_s_pixels;
-        std::vector<fastvec::scalar_t> batch_phi_pixels;
+        std::vector<scalar_t> batch_phi_pixels;
         std::vector<std::tuple<double, double, double>> batch_voxel_coords;
 
         // Iterate through all voxel centers in the bounding box
@@ -638,8 +435,7 @@ int main(int argc, char** argv) {
 
                     // Store for batch processing
                     batch_s_pixels.push_back(s_pixel_cuda);
-                    batch_phi_pixels.push_back(
-                      static_cast<fastvec::scalar_t>(phi_pixel));
+                    batch_phi_pixels.push_back(static_cast<scalar_t>(phi_pixel));
                     batch_voxel_coords.emplace_back(voxel_x, voxel_y, voxel_z);
                 }
             }
@@ -651,18 +447,18 @@ int main(int argc, char** argv) {
 
             // Output arrays
             std::vector<fastvec::Vector3D> batch_eps_results(num_voxels);
-            std::vector<fastvec::scalar_t> batch_s1_len_results(num_voxels);
+            std::vector<scalar_t> batch_s1_len_results(num_voxels);
 
             // Call CUDA function for voxel processing
-            compute_voxel_kabsch(batch_s_pixels.data(),
-                                 batch_phi_pixels.data(),
-                                 s1_c_cuda,
-                                 static_cast<fastvec::scalar_t>(phi_c),
-                                 s0_cuda,
-                                 rotation_axis_cuda,
-                                 batch_eps_results.data(),
-                                 batch_s1_len_results.data(),
-                                 num_voxels);
+            compute_kabsch_transform(batch_s_pixels.data(),
+                                     batch_phi_pixels.data(),
+                                     s1_c_cuda,
+                                     static_cast<scalar_t>(phi_c),
+                                     s0_cuda,
+                                     rotation_axis_cuda,
+                                     batch_eps_results.data(),
+                                     batch_s1_len_results.data(),
+                                     num_voxels);
 
             // Store results
             for (size_t i = 0; i < num_voxels; ++i) {
@@ -701,11 +497,15 @@ int main(int argc, char** argv) {
       actual_voxels * 3,
       actual_voxels);
 
-    // Save results
+#pragma endregion Kabsch tf
+#pragma region Application Output
 
     // Add computed bounding boxes to reflection table for comparison
-    reflections.add_column(
-      "computed_bbox", std::vector<size_t>{num_reflections, 6}, computed_bbox_data);
+    std::vector<double> computed_bbox_data_double(computed_bbox_data.begin(),
+                                                  computed_bbox_data.end());
+    reflections.add_column("computed_bbox",
+                           std::vector<size_t>{num_reflections, 6},
+                           computed_bbox_data_double);
 
     // Create voxel data table
     ReflectionTable voxel_table;
@@ -727,5 +527,6 @@ int main(int argc, char** argv) {
     logger.info("Results saved to output_reflections.h5 and voxel_kabsch_data.h5");
 
     return 0;
+#pragma endregion Application Output
 }
 #pragma endregion Application Entry
