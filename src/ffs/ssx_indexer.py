@@ -1,3 +1,10 @@
+"""
+A program that acts like a service to run GPU per-image spotfinding and indexing.
+
+Usage:
+python src/ffs/ssx_indexer.py /path/to/master.h5 --detector detector.json --cell 78 78 38 90 90 90 --wavelength 0.976
+"""
+
 import os
 import subprocess
 import sys

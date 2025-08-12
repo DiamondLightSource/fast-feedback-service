@@ -9,9 +9,10 @@ import subprocess
 import sys
 import threading
 import time
+import gemmi
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Tuple
+from typing import Iterator, Optional
 import numpy as np
 import workflows.recipe
 from pydantic import BaseModel, ValidationError
