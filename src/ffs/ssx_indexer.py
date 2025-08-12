@@ -5,25 +5,26 @@ import time
 import json
 from typing import Iterator, Optional
 import threading
-import ffbidx
 import numpy as np
-from dials.array_family import flex
-from dxtbx import flumpy
-from cctbx import uctbx
-from dxtbx.serialize import load
-from dxtbx.model import ExperimentList, Crystal, Experiment
-from cctbx.sgtbx import space_group
-from dials.algorithms.indexing import assign_indices
 import pydantic
+import ffs.index
+from pathlib import Path
+import gemmi
+from service import DetectorGeometry
+import argparse
 
-spotfinder_executable = "fast-feedback-service/build/bin/spotfinder"
+try:
+    import ffbidx
+except ModuleNotFoundError:
+    raise RuntimeError("ffbidx not found, has the fast-feedback-indexer module been built and sourced?")
 
+spotfinder_executable = Path.cwd() / "build_ws448/bin/spotfinder" ##FIXME assumes running from root dir - would use 'find_spotfinder' logic.
 
 class IndexedLatticeResult(pydantic.BaseModel):
     unit_cell: tuple[float, float, float, float, float, float]
+    U_matrix: tuple[float, float, float, float, float, float, float, float, float]
     space_group: str
     n_indexed: pydantic.NonNegativeInt
-
 
 class IndexingResult(pydantic.BaseModel):
     lattices: list[IndexedLatticeResult]
@@ -31,49 +32,36 @@ class IndexingResult(pydantic.BaseModel):
 
 class GPUIndexer:
 
-    def __init__(self, expts):
+    def __init__(self, cell: gemmi.UnitCell, detector: DetectorGeometry, wavelength:float):
         self.indexer = ffbidx.Indexer(
             max_output_cells=32,
             max_spots=300,
             num_candidate_vectors=32,
             redundant_computations=True,
         )
-        target_cell = uctbx.unit_cell((97,97,127,90,90,90))
-
-        self.input_cell = np.reshape(
-            np.array(target_cell.orthogonalization_matrix(), dtype="float32"), (3, 3)
+        self.panel = ffs.index.make_panel(
+            detector.distance,
+            detector.beam_center_x, detector.beam_center_y,
+            detector.pixel_size_x, detector.pixel_size_y,
+            detector.image_size_x, detector.image_size_y
         )
-        self.expts = expts[0:1]
+        self.input_cell = np.reshape(np.array(cell.orth.mat, dtype="float32"), (3,3)) ## As an orthogonalisation matrix
         self.n_indexed = 0
         self.n_total = 0
+        self.wavelength = wavelength
 
     def index(self, data, image_no):
         self.n_total += 1
-        data = data.reshape(-1,3)
-        ### >>>>> This could be replaced by a call to xyz_to_rlp
-        refls = flex.reflection_table([])
-        refls["xyzobs.px.value"] = flex.vec3_double(data)
-        if refls.size() < 10:
+        if data.size < 30:
             indexing_result = IndexingResult(
                 lattices=[],
-                n_unindexed=refls.size(),
+                n_unindexed=int(data.size/3),
             )
             return indexing_result
-        refls["imageset_id"] = flex.int(
-            refls.size(), 0
-        )  # needed for centroid_px_to_mm
-        refls["id"] = flex.int(
-            refls.size(), 0
-        )
-        refls["panel"] = flex.size_t(
-            refls.size(), 0
-        )
-        refls.centroid_px_to_mm(self.expts)
-        refls.map_centroids_to_reciprocal_space(self.expts)
-        rlp = np.array(flumpy.to_numpy(refls["rlp"]), dtype="float32")
-        ### <<<<< This could be replaced by a call to xyz_to_rlp
-        rlp = rlp.transpose().copy()
 
+        rlp_ = ffs.index.ssx_xyz_to_rlp(data, self.wavelength, self.panel) ## FIXME pass through wavelength.
+        rlp = np.array(rlp_, dtype="float32").reshape(-1,3)
+        rlp = rlp.transpose().copy()
 
         output_cells, scores = self.indexer.run(
             rlp,
@@ -101,70 +89,34 @@ class GPUIndexer:
         if cell_indices is None:
             indexing_result = IndexingResult(
                 lattices=[],
-                n_unindexed=refls.size(),
+                n_unindexed=int(data.size/3),
             )
-            return indexing_result
         else:
-            ### >>>>> This could be replaced by calls to existing ffs indexing/dx2 code
-            candidate_crystal_models = []
+            cells = np.array([], dtype="float64")
             for index in cell_indices:
                 j = 3 * index
                 real_a = output_cells[:, j]
                 real_b = output_cells[:, j + 1]
                 real_c = output_cells[:, j + 2]
-                crystal = Crystal(
-                    real_a.tolist(),
-                    real_b.tolist(),
-                    real_c.tolist(),
-                    space_group=space_group("P1"),
-                )
-                candidate_crystal_models.append(crystal)
-            expt = self.expts[0]
-            results = []
-            n_indexed_per_candidate = []
-            n_unindexed_per_candidate = []
-            reflections = refls
-            for cm in candidate_crystal_models:
-                reflections["id"] = flex.int(reflections.size(), -1)
-                reflections.unset_flags(flex.bool(reflections.size(), True), reflections.flags.indexed)
-                experiments = ExperimentList(
-                    [Experiment(
-                        imageset=expt.imageset,
-                        beam=expt.beam,
-                        detector=expt.detector,
-                        goniometer=expt.goniometer,
-                        scan=expt.scan,
-                        crystal=cm,
-                    )]
-                )
-                assign_indices_ = assign_indices.AssignIndicesGlobal(tolerance=0.3)
-                assign_indices_(reflections, experiments)
-                n = reflections.get_flags(reflections.flags.indexed).count(True)
-                n_indexed_per_candidate.append(n)
-                n_unindexed_per_candidate.append(reflections.size() - n)
-                results.append(experiments)
-            if any(n_indexed_per_candidate):
-                best = n_indexed_per_candidate.index(max(n_indexed_per_candidate))
-                expt = results[best][0]
-                print(f"Indexed {n_indexed_per_candidate[best]}/{reflections.size()} spots on image {image_no-1}")
-                self.n_indexed += 1
-                indexing_result = IndexingResult(
-                    lattices=[
-                        IndexedLatticeResult(
-                            unit_cell=expt.crystal.get_unit_cell().parameters(),
-                            space_group=str(expt.crystal.get_space_group().info()),
-                            n_indexed=n_indexed_per_candidate[best],
-                        )
-                    ],
-                    n_unindexed=n_unindexed_per_candidate[best],
-                )
-            else:
-                indexing_result = IndexingResult(
-                    lattices=[],
-                    n_unindexed=reflections.size(),
-                )
-            ### <<<<< This could be replaced by calls to existing ffs indexing/dx2 code
-            return indexing_result
+                cells = np.concatenate((cells, real_a, real_b, real_c), axis=None)
+            ## For now, just determines the cell with the highest number of indexed spots.
+            n_indexed, cell, orientation = ffs.index.index_from_ssx_cells(cells, rlp_, data)
+            n_unindexed = int(data.size/3) - n_indexed
+            print(f"Indexed {n_indexed}/{int(data.size/3)} spots on image {image_no}")
+            indexing_result = IndexingResult(
+                lattices=[
+                    IndexedLatticeResult(
+                        unit_cell=list(cell),
+                        space_group="P1",
+                        n_indexed=n_indexed,
+                        U_matrix=list(orientation),
+                    )
+                ],
+                n_unindexed=n_unindexed,
+            )
+            print(f"Image {image_no} results: {indexing_result.model_dump()}")
+            self.n_indexed += 1
+        return indexing_result
 
 
     def run(self, data_path):
@@ -174,14 +126,11 @@ class GPUIndexer:
         command = [
             str(spotfinder_executable),
             str(data_path),
-            "--images",
-            str(100),
-            "--start-index",
-            str(1),
             "--threads",
             str(20),
             "--pipe_fd",
             str(write_fd),
+            "--pipe-output-for-index",
         ]
         print(f"Running: {' '.join(str(x) for x in command)}")
 
@@ -218,14 +167,16 @@ class GPUIndexer:
                 # XRC has one-based-indexing
                 data["file-number"] += 1
                 xyzobs_px = np.array(data["spot_centers"])
-                result = self.index(xyzobs_px, data["file-number"])
-                #refls = flex.reflection_table([])
-                #refls["xyzobs.px.mm"] = flumpy.from_numpy(xyzobs_px)
-                #print(f"Sending: {data}")
-                #rw.set_default_channel("result")
-                #rw.send_to("result", data)
-
-            #self.log.info("Results finished sending")
+                indexing_result = self.index(xyzobs_px, data["file-number"])
+                '''# Pass through all file* fields
+                for key in (x for x in message if x.startswith("file")):
+                    result[key] = message[key]
+                self.log.info(f"{message=}")
+                self.log.info(f"{result=}")
+                # Send results onwards
+                rw.set_default_channel("result")
+                rw.send_to("result", result, transaction=txn)
+                rw.transport.transaction_commit(txn)'''
 
         start_time = time.monotonic()
 
@@ -242,6 +193,9 @@ class GPUIndexer:
         # Wait for the process to finish
         self._spotfind_proc.wait()
 
+        #FIXME seems to have an issue of missing the last few if the spotfinder ends prematurely
+        # sometimes see Error: Could not find data file for frame 0?
+        time.sleep(0.05)
         # Log the duration
         duration = time.monotonic() - start_time
         print(f"Analysis complete in {duration:.1f} s")
@@ -252,8 +206,37 @@ class GPUIndexer:
 
 
 def run(args):
-    idxr = GPUIndexer(load.experiment_list(args[1]))
-    idxr.run(args[0])
+    print(args)
+    parser = argparse.ArgumentParser(
+                        prog='ffs',
+                        description='Runs standalone spotfinding and indexing of serial data using the GPU fast-feedback-indexer',
+                        epilog='Text at the bottom of help')
+    parser.add_argument('datafile')
+    parser.add_argument('-c', '--cell', type=float, nargs=6, metavar=('a', 'b', 'c', 'alpha', 'beta', 'gamma'),
+        help='Unit cell parameters: a b c alpha beta gamma')
+    parser.add_argument("-w", "-λ", "--wavelength", type=float)
+    parser.add_argument("--detector", help="Path to the detector model json")
+    parsed = parser.parse_args(args)
+
+
+    cell = gemmi.UnitCell(*parsed.cell)
+    wavelength = parsed.wavelength
+    with open(parsed.detector, "r") as f:
+        detector = json.load(f)
+    detector_geometry = DetectorGeometry(
+        distance=detector["distance"],
+        beam_center_x=detector["beam_center_x"],
+        beam_center_y=detector["beam_center_y"],
+        pixel_size_x=detector["pixel_size_x"], 
+        pixel_size_y=detector["pixel_size_y"],
+        image_size_x=int(detector["image_size_x"]),
+        image_size_y=int(detector["image_size_y"])
+    )
+
+    idxr = GPUIndexer(cell, detector_geometry, wavelength)
+    idxr.run(parsed.datafile)
 
 if __name__ == "__main__":
+    st = time.time()
     run(sys.argv[1:])
+    print(f"Program time: {time.time()-st:.6f}s")

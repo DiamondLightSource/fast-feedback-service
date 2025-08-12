@@ -43,8 +43,8 @@ class PiaRequest(BaseModel):
 class DetectorGeometry(BaseModel):
     pixel_size_x: float = 0.075  # Default value for Eiger
     pixel_size_y: float = 0.075  # Default value for Eiger
-    image_size_x: float = 4148 # Default value for Eiger
-    image_size_y: float = 4362 # Default value for Eiger
+    image_size_x: int = 4148 # Default value for Eiger
+    image_size_y: int = 4362 # Default value for Eiger
     distance: float
     beam_center_x: float
     beam_center_y: float
