@@ -285,6 +285,11 @@ int main(int argc, char **argv) {
       .metavar("N")
       .default_value<uint32_t>(3)
       .scan<'u', uint32_t>();
+    parser.add_argument("--max-peak-centroid-separation")
+      .help("Reflections with a peak-centroid difference greater than this will be filtered during output.")
+      .metavar("N")
+      .default_value<float>(2.0)
+      .scan<'f', float>();
     parser.add_argument("--start-index")
       .help("Index of first image. Only used for CBF reading, and can only be 0 or 1.")
       .metavar("N")
@@ -324,7 +329,7 @@ int main(int argc, char **argv) {
       .metavar("FILE")
       .default_value(false)
       .implicit_value(true);
-    parser.add_argument("--pipe-output-for-index")
+    parser.add_argument("--output-for-index")
       .help("Pipe spot centroids from 2D images to enable indexing")
       .default_value(false)
       .implicit_value(true);
@@ -335,7 +340,7 @@ int main(int argc, char **argv) {
     int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
     bool save_to_h5 = parser.get<bool>("save-h5");
-    bool pipe_for_index = parser.get<bool>("pipe-output-for-index");
+    bool output_for_index = parser.get<bool>("output-for-index");
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
@@ -351,6 +356,7 @@ int main(int argc, char **argv) {
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
     uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
+    float max_peak_centroid_separation = parser.get<float>("max-peak-centroid-separation");
 
     std::unique_ptr<Reader> reader_ptr;
 
@@ -389,7 +395,7 @@ int main(int argc, char **argv) {
     ushort height = reader.image_shape()[0];
     ushort width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
-    constexpr uint max_peak_centroid_separation = 2;  // Hardcoded for now
+
     detector_geometry detector;
 
     if (parser.is_used("detector")) {
@@ -827,11 +833,12 @@ int main(int argc, char **argv) {
                     // Store the connected components slice in the map
                     (*rotation_slices)[offset_image_num] =
                       std::move(connected_components_2d);
-                } else if (save_to_h5 | pipe_for_index) {
-                    std::vector<Reflection3D> reflections =
-                      connected_components_2d->find_2d_components(
-                        min_spot_size, max_peak_centroid_separation);
-                    for (const auto &r : reflections) {
+                }
+                else if (save_to_h5 | output_for_index){
+                    std::vector<Reflection3D> reflections = connected_components_2d->find_2d_components(
+                        min_spot_size, max_peak_centroid_separation
+                    );
+                    for (const auto& r: reflections){
                         auto [x, y, z] = r.center_of_mass();
                         centers_of_mass.push_back(x);
                         centers_of_mass.push_back(y);
@@ -911,7 +918,7 @@ int main(int argc, char **argv) {
                                       {"file", args.file},
                                       {"file-number", image_num},
                                       {"n_spots_total", boxes.size()}};
-                    if (pipe_for_index) {
+                    if (output_for_index){
                         json_data["spot_centers"] = centers_of_mass;
                     }
                     // Send the JSON data through the pipe

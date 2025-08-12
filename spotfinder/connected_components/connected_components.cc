@@ -141,7 +141,8 @@ void ConnectedComponents::generate_boxes(const ushort width,
 #pragma region 2D Connected Components
 std::vector<Reflection3D> ConnectedComponents::find_2d_components(
   const uint min_spot_size,
-  const uint max_peak_centroid_separation) {
+  const float max_peak_centroid_separation) {
+
     std::vector<int> labels(boost::num_vertices(graph));
     uint num_labels = boost::connected_components(graph, labels.data());
 
@@ -194,7 +195,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
   const ushort width,
   const ushort height,
   const uint min_spot_size,
-  const uint max_peak_centroid_separation) {
+  const float max_peak_centroid_separation) {
     /*
      * Initialize global containers for the 3D connected components
      */
