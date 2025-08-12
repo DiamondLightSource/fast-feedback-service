@@ -9,6 +9,7 @@ import numpy as np
 import pydantic
 import ffs.index
 from pathlib import Path
+import gemmi
 
 try:
     import ffbidx
@@ -20,6 +21,7 @@ spotfinder_executable = Path.cwd() / "build_ws448/bin/spotfinder" ##FIXME assume
 
 class IndexedLatticeResult(pydantic.BaseModel):
     unit_cell: tuple[float, float, float, float, float, float]
+    U_matrix: tuple[float, float, float, float, float, float, float, float, float]
     space_group: str
     n_indexed: pydantic.NonNegativeInt
 
@@ -37,18 +39,30 @@ class GPUIndexer:
             num_candidate_vectors=32,
             redundant_computations=True,
         )
-        self.panel = ffs.index.make_panel(
+        # parameters for FATAATA
+        '''self.panel = ffs.index.make_panel(
             237.017, #distance
             2046.78,2205.76, #beam center
             0.075,0.075, 4148, 4362  # pixel size, image size
+        )'''
+        # parameters for x471
+        self.panel = ffs.index.make_panel(
+            290.522, #distance
+            1006.77,1099.95, #beam center
+            0.075,0.075, 2068,2162  # pixel size, image size
         )
+        # parameters for A71EV2A-x0021
+        '''self.panel = ffs.index.make_panel(
+            150.0, #distance
+            1006.8,1115.20, #beam center
+            0.075,0.075, 2068,2162  # pixel size, image size
+        )'''
         cell = [float(i) for i in cell.split(",")] ## FIXME cell argument handling
         print(f"Using input crystal unit cell of {cell}")
         if len(cell) != 6:
             raise RuntimeError(f"Invalid cell given as input, expecting 6 values, received {len(cell)} values.")
-        self.input_cell = np.reshape(
-            np.array(ffs.index.cell_matrix_from_parameters(cell), dtype="float32"), (3, 3)
-        )
+        cell = gemmi.UnitCell(*cell)
+        self.input_cell = np.reshape(np.array(cell.orth.mat, dtype="float32"), (3,3))
         self.n_indexed = 0
         self.n_total = 0
 
@@ -102,7 +116,7 @@ class GPUIndexer:
                 real_c = output_cells[:, j + 2]
                 cells = np.concatenate((cells, real_a, real_b, real_c), axis=None)
             ## For now, just determines the cell with the highest number of indexed spots.
-            n_indexed, cell = ffs.index.index_from_ssx_cells(cells, rlp_, data)
+            n_indexed, cell, orientation = ffs.index.index_from_ssx_cells(cells, rlp_, data)
             n_unindexed = int(data.size/3) - n_indexed
             print(f"Indexed {n_indexed}/{int(data.size/3)} spots on image {image_no}")
             indexing_result = IndexingResult(
@@ -111,11 +125,12 @@ class GPUIndexer:
                         unit_cell=list(cell),
                         space_group="P1",
                         n_indexed=n_indexed,
+                        U_matrix=list(orientation),
                     )
                 ],
                 n_unindexed=n_unindexed,
             )
-            print(indexing_result.model_dump())
+            print(f"Image {image_no} results: {indexing_result.model_dump()}")
             self.n_indexed += 1
         return indexing_result
 
@@ -127,10 +142,10 @@ class GPUIndexer:
         command = [
             str(spotfinder_executable),
             str(data_path),
-            "--images",
-            str(100),
-            "--start-index",
-            str(1),
+            #"--images",
+            #str(300),
+            #"--start-index",
+            #str(1),
             "--threads",
             str(20),
             "--pipe_fd",
@@ -198,6 +213,9 @@ class GPUIndexer:
         # Wait for the process to finish
         self._spotfind_proc.wait()
 
+        #FIXME seems to have an issue of missing the last few if the spotfinder ends prematurely
+        # sometimes see Error: Could not find data file for frame 0?
+        time.sleep(0.05)
         # Log the duration
         duration = time.monotonic() - start_time
         print(f"Analysis complete in {duration:.1f} s")

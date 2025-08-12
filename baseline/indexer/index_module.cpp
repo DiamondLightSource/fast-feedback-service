@@ -7,6 +7,7 @@
 #include <nanobind/stl/array.h>
 #include <dx2/crystal.hpp>
 #include <tuple>
+#include <Eigen/Dense>
 
 namespace nb = nanobind;
 
@@ -22,21 +23,14 @@ auto make_mdspan_2d(T* data, size_t dim0, size_t dim1) {
     >(data, std::experimental::dextents<size_t, 2>(dim0, dim1));
 }
 
-std::array<double, 9> cell_matrix_from_parameters(std::array<double, 6> p){
-  gemmi::UnitCell cell(p[0], p[1], p[2], p[3], p[4], p[5]);
-  gemmi::Mat33 B = cell.orth.mat;
-  std::array<double, 9> matrix_elems = {
-    B[0][0], B[0][1], B[0][2],B[1][0], B[1][1], B[1][2],B[2][0], B[2][1], B[2][2]};
-  return matrix_elems;
-}
-
-std::tuple<int, std::vector<double>> index_from_ssx_cells(
+std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
   const std::vector<double>& crystal_vectors,
   std::vector<double> rlp,
   std::vector<double> xyzobs_mm){
-  std::vector<double> n_indexed(0);
-  std::vector<double> n_unindexed(0);
-  std::vector<std::vector<double>> cells(0);
+  std::vector<double> n_indexed {};
+  std::vector<double> n_unindexed {};
+  std::vector<std::vector<double>> cells {};
+  std::vector<std::vector<double>> orientations {};
   mdspan_type<double> xyzobs_mm_span = make_mdspan_2d(xyzobs_mm.data(), xyzobs_mm.size() / 3, 3);
   mdspan_type<double> rlp_span = make_mdspan_2d(rlp.data(), rlp.size() / 3, 3);
 
@@ -46,6 +40,7 @@ std::tuple<int, std::vector<double>> index_from_ssx_cells(
     Vector3d b = {crystal_vectors[start+3],crystal_vectors[start+4],crystal_vectors[start+5]};
     Vector3d c = {crystal_vectors[start+6],crystal_vectors[start+7],crystal_vectors[start+8]};
     Crystal crystal(a,b,c,*gemmi::find_spacegroup_by_name("P1"));
+    //crystal.niggli_reduce();
     assign_indices_results results =
       assign_indices_global(crystal.get_A_matrix(), rlp_span, xyzobs_mm_span);
     n_indexed.push_back(results.number_indexed);
@@ -53,10 +48,13 @@ std::tuple<int, std::vector<double>> index_from_ssx_cells(
     gemmi::UnitCell cell = crystal.get_unit_cell();
     std::vector<double> cell_parameters = {cell.a, cell.b, cell.c, cell.alpha, cell.beta, cell.gamma};
     cells.push_back(cell_parameters);
+    Matrix3d U = crystal.get_U_matrix();
+    std::vector<double> orientation(U.data(), U.data() + U.size()); 
+    orientations.push_back(orientation);
   }
   auto max_iter = std::max_element(n_indexed.begin(), n_indexed.end());
   int max_index = std::distance(n_indexed.begin(), max_iter);
-  return std::make_tuple(n_indexed[max_index], cells[max_index]);
+  return std::make_tuple(n_indexed[max_index], cells[max_index], orientations[max_index]);
 }
 
 NB_MODULE(index, m) {
@@ -68,7 +66,6 @@ NB_MODULE(index, m) {
     nb::class_<Panel>(m, "Panel")
         .def(nb::init<double, std::array<double, 2>, std::array<double, 2>, std::array<int, 2>>())
         .def("set_correction_parameters", &Panel::set_correction_parameters);
-    m.def("cell_matrix_from_parameters", &cell_matrix_from_parameters, "Return the orthogonalisation matrix for a cell");
     m.def("make_panel", &make_panel, "Create a configured Panel object");
     m.def("ssx_xyz_to_rlp", &ssx_xyz_to_rlp,
           nb::arg("xyzobs_px"),
