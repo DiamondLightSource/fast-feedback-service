@@ -286,7 +286,9 @@ int main(int argc, char **argv) {
       .default_value<uint32_t>(3)
       .scan<'u', uint32_t>();
     parser.add_argument("--max-peak-centroid-separation")
-      .help("Reflections with a peak-centroid difference greater than this will be filtered during output.")
+      .help(
+        "Reflections with a peak-centroid difference greater than this will be "
+        "filtered during output.")
       .metavar("N")
       .default_value<float>(2.0)
       .scan<'f', float>();
@@ -356,7 +358,8 @@ int main(int argc, char **argv) {
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
     uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
-    float max_peak_centroid_separation = parser.get<float>("max-peak-centroid-separation");
+    float max_peak_centroid_separation =
+      parser.get<float>("max-peak-centroid-separation");
 
     std::unique_ptr<Reader> reader_ptr;
 
@@ -833,12 +836,11 @@ int main(int argc, char **argv) {
                     // Store the connected components slice in the map
                     (*rotation_slices)[offset_image_num] =
                       std::move(connected_components_2d);
-                }
-                else if (save_to_h5 | output_for_index){
-                    std::vector<Reflection3D> reflections = connected_components_2d->find_2d_components(
-                        min_spot_size, max_peak_centroid_separation
-                    );
-                    for (const auto& r: reflections){
+                } else if (save_to_h5 | output_for_index) {
+                    std::vector<Reflection3D> reflections =
+                      connected_components_2d->find_2d_components(
+                        min_spot_size, max_peak_centroid_separation);
+                    for (const auto &r : reflections) {
                         auto [x, y, z] = r.center_of_mass();
                         centers_of_mass.push_back(x);
                         centers_of_mass.push_back(y);
@@ -918,7 +920,7 @@ int main(int argc, char **argv) {
                                       {"file", args.file},
                                       {"file-number", image_num},
                                       {"n_spots_total", boxes.size()}};
-                    if (output_for_index){
+                    if (output_for_index) {
                         json_data["spot_centers"] = centers_of_mass;
                     }
                     // Send the JSON data through the pipe

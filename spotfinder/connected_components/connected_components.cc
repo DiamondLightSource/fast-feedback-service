@@ -142,7 +142,6 @@ void ConnectedComponents::generate_boxes(const ushort width,
 std::vector<Reflection3D> ConnectedComponents::find_2d_components(
   const uint min_spot_size,
   const float max_peak_centroid_separation) {
-
     std::vector<int> labels(boost::num_vertices(graph));
     uint num_labels = boost::connected_components(graph, labels.data());
 
