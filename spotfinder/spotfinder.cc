@@ -285,6 +285,13 @@ int main(int argc, char **argv) {
       .metavar("N")
       .default_value<uint32_t>(3)
       .scan<'u', uint32_t>();
+    parser.add_argument("--max-peak-centroid-separation")
+      .help(
+        "Reflections with a peak-centroid difference greater than this will be "
+        "filtered during output.")
+      .metavar("N")
+      .default_value<float>(2.0)
+      .scan<'f', float>();
     parser.add_argument("--start-index")
       .help("Index of first image. Only used for CBF reading, and can only be 0 or 1.")
       .metavar("N")
@@ -324,6 +331,10 @@ int main(int argc, char **argv) {
       .metavar("FILE")
       .default_value(false)
       .implicit_value(true);
+    parser.add_argument("--output-for-index")
+      .help("Pipe spot centroids from 2D images to enable indexing")
+      .default_value(false)
+      .implicit_value(true);
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -331,6 +342,7 @@ int main(int argc, char **argv) {
     int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
     bool save_to_h5 = parser.get<bool>("save-h5");
+    bool output_for_index = parser.get<bool>("output-for-index");
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
@@ -346,6 +358,8 @@ int main(int argc, char **argv) {
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
     uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
+    float max_peak_centroid_separation =
+      parser.get<float>("max-peak-centroid-separation");
 
     std::unique_ptr<Reader> reader_ptr;
 
@@ -606,13 +620,24 @@ int main(int argc, char **argv) {
     std::unique_ptr<std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>
       rotation_slices = nullptr;
     std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
+    // Create a unique pointer to store the reflection centres if we want to save 2D spot data.
+    std::unique_ptr<std::unordered_map<int, std::vector<float>>> reflection_centers_2d =
+      nullptr;
+    std::mutex
+      reflection_centers_2d_mutex;  // Mutex to protect the reflection centers 2d map
+
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
-        fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
         rotation_slices = std::make_unique<
           std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>();
+        fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
     } else {
         fmt::print("Dataset type: {}\n", fmt::styled("Still set", fmt_magenta));
+        if (save_to_h5) {
+            // A map we will use to save results as we go.
+            reflection_centers_2d =
+              std::make_unique<std::unordered_map<int, std::vector<float>>>();
+        }
     }
 
     // Spawn the reader threads
@@ -803,13 +828,28 @@ int main(int argc, char **argv) {
                 size_t num_strong_pixels_filtered =
                   connected_components_2d->get_num_strong_pixels_filtered();
 
+                std::vector<float> centers_of_mass;
                 // If this is a rotation dataset, store the connected component slice
-                if (rotation_slices) {
+                if (oscillation_width) {
                     // Lock the mutex to protect the map
                     std::lock_guard<std::mutex> lock(rotation_slices_mutex);
                     // Store the connected components slice in the map
                     (*rotation_slices)[offset_image_num] =
                       std::move(connected_components_2d);
+                } else if (save_to_h5 | output_for_index) {
+                    std::vector<Reflection3D> reflections =
+                      connected_components_2d->find_2d_components(
+                        min_spot_size, max_peak_centroid_separation);
+                    for (const auto &r : reflections) {
+                        auto [x, y, z] = r.center_of_mass();
+                        centers_of_mass.push_back(x);
+                        centers_of_mass.push_back(y);
+                        centers_of_mass.push_back(z);
+                    }
+                    if (save_to_h5) {
+                        std::lock_guard<std::mutex> lock(reflection_centers_2d_mutex);
+                        (*reflection_centers_2d)[offset_image_num] = centers_of_mass;
+                    }
                 }
 
                 end.record(stream);
@@ -880,6 +920,9 @@ int main(int argc, char **argv) {
                                       {"file", args.file},
                                       {"file-number", image_num},
                                       {"n_spots_total", boxes.size()}};
+                    if (output_for_index) {
+                        json_data["spot_centers"] = centers_of_mass;
+                    }
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
@@ -975,7 +1018,7 @@ int main(int argc, char **argv) {
 
 #pragma region 3D Connected Components
     // After all threads have finished processing slices
-    if (rotation_slices) {
+    if (oscillation_width) {
         logger.info("Processing 3D spots");
 
         // Step 1: Convert rotation_slices map to a vector
@@ -985,7 +1028,6 @@ int main(int argc, char **argv) {
         }
 
         // Step 2: Call find_3d_components
-        constexpr uint max_peak_centroid_separation = 2;  // Hardcoded for now
         auto reflections_3d = ConnectedComponents::find_3d_components(
           slices, width, height, min_spot_size_3d, max_peak_centroid_separation);
 
@@ -1062,6 +1104,51 @@ int main(int argc, char **argv) {
         }
 
         logger.info("3D spot analysis complete");
+    } else if (save_to_h5) {  // i.e. not rotation, but want to save results to disk.
+        logger.info("Processing 2D spots");
+        logger.debug("Writing 2D reflections to HDF5 file");
+
+        try {
+            std::vector<double> flat_coms;
+            std::vector<int> ids;
+            std::vector<int> centers_map_keys;
+            for (const auto &pair : *reflection_centers_2d) {
+                centers_map_keys.push_back(pair.first);
+            }
+            std::sort(centers_map_keys.begin(), centers_map_keys.end());
+            int id = 0;
+            for (int imageno : centers_map_keys) {
+                std::vector<float> flat_coms_this = (*reflection_centers_2d)[imageno];
+                int n_refls = flat_coms_this.size() / 3;
+                for (auto com : flat_coms_this) {
+                    flat_coms.push_back(static_cast<double>(com));
+                }
+                for (int i = 0; i < n_refls; ++i) {
+                    ids.push_back(id);
+                }
+                id += 1;
+            }
+
+            // Make the reflection table with correctly assigned IDS.
+            ReflectionTable table;
+            for (int i = 0; i < id - 1; ++i) {
+                // Currently no other way to trigger generating UUIDs from here.
+                table.generate_new_attributes();
+            }
+            // Add the reflection centroids to the table
+            table.add_column("xyzobs.px.value", flat_coms.size() / 3, 3, flat_coms);
+            // Map each reflection to the generated experiment ID
+            table.add_column("id", ids.size(), 1, ids);
+
+            // Write the table to an HDF5 file
+            table.write("results_ffs.h5", "dials/processing/group_0");
+            logger.info("Succesfully wrote {} 2D reflections to HDF5 file", ids.size());
+        } catch (const std::exception &e) {
+            logger.error("Error writing data to HDF5 file: {}", e.what());
+        } catch (...) {
+            logger.error("Unknown error writing data to HDF5 file");
+        }
+        logger.info("2D spot analysis complete");
     }
 #pragma endregion 3D Connected Components
 
