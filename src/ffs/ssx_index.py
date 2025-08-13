@@ -2,7 +2,7 @@
 A program to run standalone indexing of strong spots from still shot images,
 the equivalent of the indexing part of the ffs service.
 
-Usage: python ssx_index.py -r strong.refl --detector detector.json --cell 78 78 38 90 90 90 --wavelength 0.976
+Usage: python src/ffs/ssx_index.py -r strong.refl --detector detector.json --cell 78 78 38 90 90 90 --wavelength 0.976
 """
 import argparse
 import sys
