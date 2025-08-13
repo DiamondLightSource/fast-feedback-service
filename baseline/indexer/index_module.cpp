@@ -58,11 +58,6 @@ std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
 }
 
 NB_MODULE(index, m) {
-    nb::class_<xyz_to_rlp_results>(m, "XYZToRLPResults")
-        .def(nb::init<int>())
-        .def_ro("rlp_data", &xyz_to_rlp_results::rlp_data)
-        .def_ro("s1_data", &xyz_to_rlp_results::s1_data)
-        .def_ro("xyzobs_mm_data", &xyz_to_rlp_results::xyzobs_mm_data);
     nb::class_<Panel>(m, "Panel")
         .def(nb::init<double, std::array<double, 2>, std::array<double, 2>, std::array<int, 2>>())
         .def("set_correction_parameters", &Panel::set_correction_parameters);
