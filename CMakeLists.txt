@@ -18,9 +18,6 @@ include(AlwaysColourCompilation)
 
 include_directories(include)
 
-# Add nanobind
-add_subdirectory(external/nanobind)
-
 # Find Python
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 include_directories(${Python3_INCLUDE_DIRS})
@@ -28,6 +25,12 @@ include_directories(${Python3_INCLUDE_DIRS})
 # Dependency fetching
 set(FETCHCONTENT_QUIET OFF)
 include(FetchContent)
+FetchContent_Declare(
+  nanobind
+  GIT_REPOSITORY https://github.com/wjakob/nanobind.git
+  GIT_TAG        master # or a specific commit/tag
+)
+FetchContent_MakeAvailable(nanobind)
 FetchContent_Declare(
     fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git

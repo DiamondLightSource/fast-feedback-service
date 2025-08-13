@@ -25,7 +25,7 @@ try:
 except ModuleNotFoundError:
     raise RuntimeError("ffbidx not found, has the fast-feedback-indexer module been built and sourced?")
 
-spotfinder_executable = Path.cwd() / "build_ws448/bin/spotfinder" ##FIXME assumes running from root dir - would use 'find_spotfinder' logic.
+spotfinder_executable = Path.cwd() / "build/bin/spotfinder" ##FIXME assumes running from root dir - would use 'find_spotfinder' logic.
 
 def run_spotfind_and_indexing(data_path, cell, panel, wavelength):
 
