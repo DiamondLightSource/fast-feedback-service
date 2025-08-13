@@ -47,7 +47,7 @@ def run_spotfind_and_indexing(data_path, cell, panel, wavelength):
         str(20),
         "--pipe_fd",
         str(write_fd),
-        "--pipe-output-for-index",
+        "--output-for-index",
     ]
     print(f"Running: {' '.join(str(x) for x in command)}")
 
