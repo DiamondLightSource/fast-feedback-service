@@ -1,27 +1,15 @@
 #include <nanobind/nanobind.h>
 #include "xyz_to_rlp.cc"
 #include "assign_indices.cc"
-#include <experimental/mdspan>
 #include <nanobind/stl/vector.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/array.h>
 #include <dx2/crystal.hpp>
 #include <tuple>
 #include <Eigen/Dense>
+#include <experimental/mdspan>
 
 namespace nb = nanobind;
-
-template <typename T>
-using mdspan_type =
-  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
-
-template <typename T>
-auto make_mdspan_2d(T* data, size_t dim0, size_t dim1) {
-    return std::experimental::mdspan<
-        T,
-        std::experimental::dextents<size_t, 2>
-    >(data, std::experimental::dextents<size_t, 2>(dim0, dim1));
-}
 
 std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
   const std::vector<double>& crystal_vectors,
@@ -31,8 +19,8 @@ std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
   std::vector<double> n_unindexed {};
   std::vector<std::vector<double>> cells {};
   std::vector<std::vector<double>> orientations {};
-  mdspan_type<double> xyzobs_mm_span = make_mdspan_2d(xyzobs_mm.data(), xyzobs_mm.size() / 3, 3);
-  mdspan_type<double> rlp_span = make_mdspan_2d(rlp.data(), rlp.size() / 3, 3);
+  mdspan_type<double> xyzobs_mm_span = mdspan_type<double>(xyzobs_mm.data(), xyzobs_mm.size() / 3, 3);
+  mdspan_type<double> rlp_span = mdspan_type<double>(rlp.data(), rlp.size() / 3, 3);
 
   for (int i=0;i<crystal_vectors.size()/9;++i){
     int start = i*9;
@@ -40,7 +28,6 @@ std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
     Vector3d b = {crystal_vectors[start+3],crystal_vectors[start+4],crystal_vectors[start+5]};
     Vector3d c = {crystal_vectors[start+6],crystal_vectors[start+7],crystal_vectors[start+8]};
     Crystal crystal(a,b,c,*gemmi::find_spacegroup_by_name("P1"));
-    //crystal.niggli_reduce();
     assign_indices_results results =
       assign_indices_global(crystal.get_A_matrix(), rlp_span, xyzobs_mm_span);
     n_indexed.push_back(results.number_indexed);
