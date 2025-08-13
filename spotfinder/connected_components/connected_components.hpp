@@ -6,8 +6,8 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 #include <cstdint>
-#include <vector>
 #include <tuple>
+#include <vector>
 
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
@@ -180,9 +180,9 @@ class Reflection3D {
 * The `max_peak_centroid_separation` is the maximum allow difference (in pixels) between
 * the spot's centre of mass and the location of the peak intensity pixel.
 */
-std::tuple<int, int> filter_reflections(std::vector<Reflection3D>& reflections,
-    const uint min_spot_size,
-    const float max_peak_centroid_separation);
+std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
+                                        const uint min_spot_size,
+                                        const float max_peak_centroid_separation);
 
 /**
  * @brief Class to find connected components in a 2D image

@@ -5,8 +5,8 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 #include <cstdint>
-#include <vector>
 #include <tuple>
+#include <vector>
 
 #include "common.hpp"
 #include "cuda_common.hpp"
@@ -140,29 +140,32 @@ void ConnectedComponents::generate_boxes(const ushort width,
 #pragma endregion Connected Components
 
 #pragma region 2D Connected Components
-std::tuple<int, int> filter_reflections(std::vector<Reflection3D>& reflections,
-                                            const uint min_spot_size,
-                                            const float max_peak_centroid_separation) {
+std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
+                                        const uint min_spot_size,
+                                        const float max_peak_centroid_separation) {
     int n_filtered_by_spot_size;
     int n_filtered_by_separation;
     int n_current = reflections.size();
     if (min_spot_size > 0) {
         reflections.erase(std::remove_if(reflections.begin(),
-                                       reflections.end(),
-                                       [min_spot_size](const auto &reflection) {
-                                           return reflection.get_num_pixels() < min_spot_size;
-                                       }),
-                        reflections.end());
+                                         reflections.end(),
+                                         [min_spot_size](const auto &reflection) {
+                                             return reflection.get_num_pixels()
+                                                    < min_spot_size;
+                                         }),
+                          reflections.end());
         n_filtered_by_spot_size = n_current - reflections.size();
         n_current = reflections.size();
     }
     if (max_peak_centroid_separation > 0) {
-        reflections.erase(std::remove_if(reflections.begin(),
-                                       reflections.end(),
-                                       [max_peak_centroid_separation](const auto &reflection) {
-                                           return reflection.peak_centroid_distance() > max_peak_centroid_separation;
-                                       }),
-                        reflections.end());
+        reflections.erase(
+          std::remove_if(reflections.begin(),
+                         reflections.end(),
+                         [max_peak_centroid_separation](const auto &reflection) {
+                             return reflection.peak_centroid_distance()
+                                    > max_peak_centroid_separation;
+                         }),
+          reflections.end());
         n_filtered_by_separation = n_current - reflections.size();
     }
     return std::make_tuple(n_filtered_by_spot_size, n_filtered_by_separation);
@@ -186,16 +189,14 @@ std::vector<Reflection3D> ConnectedComponents::find_2d_components(
 
     int n_filtered_min_spot_size;
     int n_filtered_max_separation;
-    std::tie(n_filtered_min_spot_size, n_filtered_max_separation) = filter_reflections(
-        reflections, min_spot_size, max_peak_centroid_separation
-    );
+    std::tie(n_filtered_min_spot_size, n_filtered_max_separation) =
+      filter_reflections(reflections, min_spot_size, max_peak_centroid_separation);
     // Note, don't log min_spot_size filtering as an equivalent log is made during
     // the call to generate_boxes
-    if (n_filtered_max_separation > 0){
-        logger.info(
-        fmt::format("Filtered {} spots with peak-centroid distance > {}",
-                    fmt::styled(n_filtered_max_separation, fmt_cyan),
-                    fmt::styled(max_peak_centroid_separation, fmt_cyan)));
+    if (n_filtered_max_separation > 0) {
+        logger.info(fmt::format("Filtered {} spots with peak-centroid distance > {}",
+                                fmt::styled(n_filtered_max_separation, fmt_cyan),
+                                fmt::styled(max_peak_centroid_separation, fmt_cyan)));
     }
     return reflections;
 }
@@ -390,20 +391,17 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
       fmt::format("Calculated {} spots", fmt::styled(initial_spot_count, fmt_cyan)));
     int n_filtered_min_spot_size;
     int n_filtered_max_separation;
-    std::tie(n_filtered_min_spot_size, n_filtered_max_separation) = filter_reflections(
-        reflections_3d, min_spot_size, max_peak_centroid_separation
-    );
-    if (n_filtered_min_spot_size > 0){
-        logger.info(
-            fmt::format("Filtered {} spots with size < {} pixels",
-                  fmt::styled(n_filtered_min_spot_size, fmt_cyan),
-                  fmt::styled(min_spot_size, fmt_cyan)));
+    std::tie(n_filtered_min_spot_size, n_filtered_max_separation) =
+      filter_reflections(reflections_3d, min_spot_size, max_peak_centroid_separation);
+    if (n_filtered_min_spot_size > 0) {
+        logger.info(fmt::format("Filtered {} spots with size < {} pixels",
+                                fmt::styled(n_filtered_min_spot_size, fmt_cyan),
+                                fmt::styled(min_spot_size, fmt_cyan)));
     }
-    if (n_filtered_max_separation > 0){
-        logger.info(
-        fmt::format("Filtered {} spots with peak-centroid distance > {}",
-                    fmt::styled(n_filtered_max_separation, fmt_cyan),
-                    fmt::styled(max_peak_centroid_separation, fmt_cyan)));
+    if (n_filtered_max_separation > 0) {
+        logger.info(fmt::format("Filtered {} spots with peak-centroid distance > {}",
+                                fmt::styled(n_filtered_max_separation, fmt_cyan),
+                                fmt::styled(max_peak_centroid_separation, fmt_cyan)));
     }
     return reflections_3d;
 }
