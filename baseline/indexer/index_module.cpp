@@ -28,6 +28,10 @@ std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
   const std::vector<double>& crystal_vectors,
   std::vector<double> rlp,
   std::vector<double> xyzobs_mm){
+  // Note, xyzobs_mm is only used in assign_indices_global, and only the z-component
+  // is used to test a condition. Given that all the z's are zero for ssx data, whether
+  // in px or mm, we can safely provide xyzobs_px as input to avoid additional conversion
+  // calculation.
   std::vector<double> n_indexed {};
   std::vector<double> n_unindexed {};
   std::vector<std::vector<double>> cells {};
