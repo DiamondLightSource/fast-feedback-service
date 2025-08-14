@@ -148,7 +148,8 @@ def run(args):
         detector_geometry.distance,
         detector_geometry.beam_center_x, detector_geometry.beam_center_y,
         detector_geometry.pixel_size_x, detector_geometry.pixel_size_y,
-        detector_geometry.image_size_x, detector_geometry.image_size_y)
+        detector_geometry.image_size_x, detector_geometry.image_size_y,
+        detector_geometry.thickness, detector_geometry.mu)
 
     run_spotfind_and_indexing(parsed.datafile, cell, panel, wavelength)
 

@@ -160,7 +160,8 @@ def run(args):
         panel = ffs.index.make_panel(
             detector["distance"],
             detector["beam_center_x"], detector["beam_center_y"],
-            detector["pixel_size_x"], detector["pixel_size_y"],detector["image_size_x"], detector["image_size_y"]
+            detector["pixel_size_x"], detector["pixel_size_y"],detector["image_size_x"],
+            detector["image_size_y"], detector["thickness"], detector["mu"]
         )
     except Exception as e:
         print(f"Unable to compose a detector panel model from the detector json.\n Error: {e}")

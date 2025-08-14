@@ -52,6 +52,8 @@ class DetectorGeometry(BaseModel):
     distance: float
     beam_center_x: float
     beam_center_y: float
+    thickness: float = 0.45 # Default value for Eiger
+    mu: float = 3.9220781 # Default value for Eiger
 
     def to_json(self):
         return json.dumps(self.dict(), indent=4)
@@ -225,7 +227,7 @@ class GPUPerImageAnalysis(CommonService):
                 detector_geometry.distance,
                 detector_geometry.beam_center_x, detector_geometry.beam_center_y,
                 detector_geometry.pixel_size_x, detector_geometry.pixel_size_y,
-                detector_geometry.image_size_x, detector_geometry.image_size_y
+                detector_geometry.image_size_x, detector_geometry.image_size_y, detector_geometry.thickness, detector_geometry.mu
             )
             self.indexer.wavelength = parameters.wavelength
 

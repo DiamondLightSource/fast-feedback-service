@@ -5,11 +5,24 @@
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/array.h>
 #include <dx2/crystal.hpp>
+#include <dx2/detector.hpp>
 #include <tuple>
 #include <Eigen/Dense>
 #include <experimental/mdspan>
 
 namespace nb = nanobind;
+
+Panel make_panel(
+  double distance, double beam_center_x, double beam_center_y,
+  double pixel_size_x, double pixel_size_y, int image_size_x, int image_size_y,
+  double thickness, double mu
+  ){
+  std::array<double, 2> beam_center = {beam_center_x, beam_center_y};
+  std::array<double, 2> pixel_size = {pixel_size_x, pixel_size_y};
+  std::array<int, 2> image_size = {image_size_x, image_size_y};
+  Panel panel(distance, beam_center, pixel_size, image_size, "x", "-y", thickness, mu);
+  return panel;
+}
 
 std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
   const std::vector<double>& crystal_vectors,
@@ -46,8 +59,7 @@ std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
 
 NB_MODULE(index, m) {
     nb::class_<Panel>(m, "Panel")
-        .def(nb::init<double, std::array<double, 2>, std::array<double, 2>, std::array<int, 2>>())
-        .def("set_correction_parameters", &Panel::set_correction_parameters);
+        .def(nb::init<double, std::array<double, 2>, std::array<double, 2>, std::array<int, 2>, std::string, std::string, double, double>());
     m.def("make_panel", &make_panel, "Create a configured Panel object");
     m.def("ssx_xyz_to_rlp", &ssx_xyz_to_rlp,
           nb::arg("xyzobs_px"),
