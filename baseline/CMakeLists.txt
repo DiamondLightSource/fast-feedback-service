@@ -1,2 +1,3 @@
 add_subdirectory(spotfinder)
 add_subdirectory(indexer)
+add_subdirectory(integrator)
