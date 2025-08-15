@@ -54,6 +54,30 @@ struct _h5read_handle {
     float oscillation_width;
 };
 
+/// Validate that the HDF5 datatype size matches the expected pixel data size
+///
+/// @param datatype The HDF5 datatype to validate
+static void _validate_data_type_size(hid_t datatype) {
+    size_t datasize = H5Tget_size(datatype);
+#ifdef PIXEL_DATA_32BIT
+    if (datasize != 4) {
+        fprintf(stderr,
+                "Error: Expected 32-bit data but got %zu bytes. Use "
+                "-DPIXEL_DATA_32BIT=OFF for 16-bit data.\n",
+                datasize);
+        exit(1);
+    }
+#else
+    if (datasize != 2) {
+        fprintf(stderr,
+                "Error: Expected 16-bit data but got %zu bytes. Use "
+                "-DPIXEL_DATA_32BIT=ON for 32-bit data.\n",
+                datasize);
+        exit(1);
+    }
+#endif
+}
+
 void h5read_free(h5read_handle *obj) {
 #ifdef HAVE_HDF5
     for (int i = 0; i < obj->data_file_count; i++) {
@@ -114,7 +138,8 @@ void _blit(image_t *image, image_modules_t *modules) {
 
     size_t module_pixels = E2XE_MOD_SLOW * E2XE_MOD_FAST;
 
-    modules->data = (uint16_t *)malloc(sizeof(uint16_t) * slow * fast * module_pixels);
+    modules->data =
+      (image_t_type *)malloc(sizeof(image_t_type) * slow * fast * module_pixels);
 
     for (size_t _slow = 0; _slow < slow; _slow++) {
         size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image->fast;
@@ -126,7 +151,7 @@ void _blit(image_t *image, image_modules_t *modules) {
                   (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
                 memcpy((void *)&modules->data[target],
                        (void *)&image->data[offset],
-                       sizeof(uint16_t) * E2XE_MOD_FAST);
+                       sizeof(image_t_type) * E2XE_MOD_FAST);
             }
         }
     }
@@ -174,10 +199,10 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
     assert(n >= 0 && n <= NUM_SAMPLE_IMAGES);
 
     if (n == 0) {
-        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
+        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(image_t_type));
     } else if (n == 1) {
         // Image 1: I=1 for every unmasked pixel
-        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
+        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(image_t_type));
         for (int mody = 0; mody < E2XE_16M_NSLOW; ++mody) {
             // row0 is the row of the module top row
             size_t row0 = mody * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
@@ -193,7 +218,7 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
         }
     } else if (n == 2) {
         // Image 2: High pixel (100) every 42 pixels across the detector
-        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
+        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(image_t_type));
         for (int y = 0; y < E2XE_16M_SLOW; y += 42) {
             for (int x = 0; x < E2XE_16M_FAST; x += 42) {
                 int k = y * E2XE_16M_FAST + x;
@@ -221,7 +246,7 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
         // Image 3: "Random" background, zero on masks
 
         pcg32_random_t state = {0};
-        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
+        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(image_t_type));
         for (int mody = 0; mody < E2XE_16M_NSLOW; ++mody) {
             // row0 is the row of the module top row
             size_t row0 = mody * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
@@ -312,11 +337,7 @@ void h5read_get_raw_chunk(h5read_handle *obj,
     }
 
     hid_t datatype = H5Dget_type(current->dataset);
-    hsize_t datasize = H5Tget_size(datatype);
-    if (datasize != 2) {
-        fprintf(stderr, "Error: Unexpected datasize\n");
-        exit(1);
-    }
+    _validate_data_type_size(datatype);
 
     uint32_t filter = 0;
     herr_t err = H5Dread_chunk(current->dataset, H5P_DEFAULT, offset, &filter, data);
@@ -584,10 +605,13 @@ herr_t _read_single_value_image_t_type(hid_t origin,
                 datatype_size);
         exit(1);
     }
-    assert(sizeof(image_t_type) == 2);
-    image_t_type value;
+#ifdef PIXEL_DATA_32BIT
+    if (H5Dread(dataset, H5T_NATIVE_UINT32, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
+        < 0) {
+#else
     if (H5Dread(dataset, H5T_NATIVE_UINT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
         < 0) {
+#endif
         char name[256] = "\0";
         H5Iget_name(origin, name, 256);
         fprintf(stderr,
@@ -659,13 +683,27 @@ herr_t _read_single_value_float(hid_t origin, const char *path, float *destinati
 
 void read_trusted_range(h5read_handle *obj) {
     obj->trusted_range_min = 0;
-    obj->trusted_range_max = (image_t_type)(-1);
-    _read_single_value_image_t_type(obj->master_file,
-                                    "/entry/instrument/detector/saturation_value",
-                                    &obj->trusted_range_max);
-    _read_single_value_image_t_type(obj->master_file,
-                                    "/entry/instrument/detector/underload_value",
-                                    &obj->trusted_range_min);
+#ifdef PIXEL_DATA_32BIT
+    obj->trusted_range_max = UINT32_MAX;
+#else
+    obj->trusted_range_max = UINT16_MAX;
+#endif
+
+    // Try to read saturation value, but don't fail if it doesn't exist
+    if (_read_single_value_image_t_type(obj->master_file,
+                                        "/entry/instrument/detector/saturation_value",
+                                        &obj->trusted_range_max)
+        < 0) {
+        fprintf(stderr, "Warning: No saturation_value found, using maximum value\n");
+    }
+
+    // Try to read underload value, but don't fail if it doesn't exist
+    if (_read_single_value_image_t_type(obj->master_file,
+                                        "/entry/instrument/detector/underload_value",
+                                        &obj->trusted_range_min)
+        < 0) {
+        fprintf(stderr, "Warning: No underload_value found, using 0\n");
+    }
 }
 
 void read_wavelength(h5read_handle *obj) {
@@ -712,34 +750,41 @@ void read_detector_metadata(h5read_handle *obj) {
                                  "/entry/instrument/detector/x_pixel_size",
                                  &obj->pixel_size_x)
         < 0) {
+        fprintf(stderr, "Warning: No x_pixel_size found\n");
         obj->pixel_size_x = -1;
     }
     if (_read_single_value_float(obj->master_file,
                                  "/entry/instrument/detector/y_pixel_size",
                                  &obj->pixel_size_y)
         < 0) {
+        fprintf(stderr, "Warning: No y_pixel_size found\n");
         obj->pixel_size_y = -1;
     }
     if (_read_single_value_float(obj->master_file,
                                  "/entry/instrument/detector/beam_center_x",
                                  &obj->beam_center_x)
         < 0) {
+        fprintf(stderr, "Warning: No beam_center_x found\n");
         obj->beam_center_x = -1;
     }
     if (_read_single_value_float(obj->master_file,
                                  "/entry/instrument/detector/beam_center_y",
                                  &obj->beam_center_y)
         < 0) {
+        fprintf(stderr, "Warning: No beam_center_y found\n");
         obj->beam_center_y = -1;
     }
     if (_read_single_value_float(obj->master_file,
                                  "/entry/instrument/detector/distance",
                                  &obj->detector_distance)
         < 0) {
-        obj->detector_distance = 0;
+        fprintf(stderr, "Warning: No detector distance found\n");
+        obj->detector_distance = -1;
     }
 
-    printf("Read pixel size: %f\n", obj->pixel_size_x);
+    if (obj->pixel_size_x > 0) {
+        printf("Read pixel size: %f\n", obj->pixel_size_x);
+    }
 }
 
 /// Get number of VDS and read info about all the sub-files.
@@ -887,10 +932,7 @@ void setup_data(h5read_handle *obj) {
     hid_t dataset = obj->data_files[0].dataset;
     hid_t datatype = H5Dget_type(dataset);
 
-    if (H5Tget_size(datatype) != 2) {
-        fprintf(stderr, "native data size != 2 (%ld)\n", H5Tget_size(datatype));
-        exit(1);
-    }
+    _validate_data_type_size(datatype);
 
     hid_t space = H5Dget_space(dataset);
 
