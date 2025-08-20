@@ -11,8 +11,8 @@ def test_baseline_indexer(tmp_path, dials_data):
     source = dials_data("indexing_test_data", pathlib=True) / "ins14_24_strong.refl.gz"
     expts = dials_data("indexing_test_data", pathlib=True) / "ins14_24_imported.expt"
     shutil.copy(source, tmp_path / source.name)
-    proc = subprocess.run(["gunzip", source.name], cwd=tmp_path)
-    proc = subprocess.run(
+    subprocess.run(["gunzip", source.name], cwd=tmp_path)
+    subprocess.run(
         [
             indexer_path,
             "-r",
@@ -201,8 +201,8 @@ def test_baseline_indexer_c2sum(tmp_path):
     source = dials_data("indexing_test_data", pathlib=True) / "c2sum_strong.refl.gz"
     expts = dials_data("indexing_test_data", pathlib=True) / "c2sum_imported.expt"
     shutil.copy(source, tmp_path / source.name)
-    proc = subprocess.run(["gunzip", source.name], cwd=tmp_path)
-    proc = subprocess.run(
+    subprocess.run(["gunzip", source.name], cwd=tmp_path)
+    subprocess.run(
         [
             indexer_path,
             "-r",
