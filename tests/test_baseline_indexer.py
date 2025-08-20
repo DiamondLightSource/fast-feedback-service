@@ -195,7 +195,7 @@ def test_baseline_indexer(tmp_path, dials_data):
     assert candidate_crystals == expected_crystals_output
 
 
-def test_baseline_indexer_c2sum(tmp_path):
+def test_baseline_indexer_c2sum(tmp_path, dials_data):
     indexer_path: str | Path | None = os.getenv("INDEXER")
     assert indexer_path is not None
     source = dials_data("indexing_test_data", pathlib=True) / "c2sum_strong.refl.gz"
