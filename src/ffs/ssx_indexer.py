@@ -143,6 +143,10 @@ def run(args):
         image_size_x=int(detector["image_size_x"]),
         image_size_y=int(detector["image_size_y"])
     )
+    if "thickness" in detector:
+        detector_geometry.thickness = detector["thickness"]
+    if "mu" in detector:
+        detector_geometry.mu = detector["mu"]
     cell = np.reshape(np.array(cell.orth.mat, dtype="float32"), (3,3)) ## Cell as an orthogonalisation matrix
     panel = ffs.index.make_panel(
         detector_geometry.distance,

@@ -52,8 +52,8 @@ class DetectorGeometry(BaseModel):
     distance: float
     beam_center_x: float
     beam_center_y: float
-    thickness: float = 0.45 # Default value for Eiger
-    mu: float = 3.9220781 # Default value for Eiger
+    thickness: float = 0.45 # Default value for Eiger (Silicon)
+    mu: float = 3.9220781 # Default value for Eiger (Silicon)
 
     def to_json(self):
         return json.dumps(self.dict(), indent=4)
