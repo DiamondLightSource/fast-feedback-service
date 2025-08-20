@@ -1,6 +1,8 @@
 import os
-import pytest
 from pathlib import Path
+
+import pytest
+
 
 @pytest.fixture(autouse=True)
 def set_env_vars():
