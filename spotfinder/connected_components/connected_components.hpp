@@ -6,6 +6,7 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 #include <cstdint>
+#include <tuple>
 #include <vector>
 
 #include "cuda_common.hpp"
@@ -173,6 +174,17 @@ class Reflection3D {
 };
 
 /**
+* @brief Filters reflections based on a minimum spot size and peak-centroid separation.
+*
+* The `min_spot_size` is the minimum number of pixels needed for a spot to pass the filter.
+* The `max_peak_centroid_separation` is the maximum allow difference (in pixels) between
+* the spot's centre of mass and the location of the peak intensity pixel.
+*/
+std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
+                                        const uint min_spot_size,
+                                        const float max_peak_centroid_separation);
+
+/**
  * @brief Class to find connected components in a 2D image
  * 
  * The `ConnectedComponents` class identifies connected components (clusters) in a
@@ -251,7 +263,11 @@ class ConnectedComponents {
       const ushort width,
       const ushort height,
       const uint min_spot_size,
-      const uint max_peak_centroid_separation);
+      const float max_peak_centroid_separation);
+
+    std::vector<Reflection3D> find_2d_components(
+      const uint min_spot_size,
+      const float max_peak_centroid_separation);
 
   private:
     uint num_strong_pixels;           // Number of strong pixels
