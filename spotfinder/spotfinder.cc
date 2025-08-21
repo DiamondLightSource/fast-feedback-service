@@ -776,8 +776,11 @@ int main(int argc, char **argv) {
                 // the decompression
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4:
-                    bshuf_decompress_lz4(
-                      buffer.data() + 12, host_image.get(), width * height, 2, 0);
+                    bshuf_decompress_lz4(buffer.data() + 12,
+                                         host_image.get(),
+                                         width * height,
+                                         sizeof(pixel_t),
+                                         0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
                     // decompress_byte_offset<pixel_t>(buffer,
@@ -791,6 +794,7 @@ int main(int argc, char **argv) {
                     // std::exit(1);
                     break;
                 }
+
                 start.record(stream);
                 // Copy the image to GPU
                 CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
