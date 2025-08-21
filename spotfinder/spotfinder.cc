@@ -256,7 +256,6 @@ class PipeHandler {
 class SpotfinderArgumentParser : public CUDAArgumentParser {
   public:
     SpotfinderArgumentParser(std::string version) : CUDAArgumentParser(version) {
-        add_h5read_arguments();
         add_spotfinder_arguments();
     }
 
