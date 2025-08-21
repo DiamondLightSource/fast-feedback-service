@@ -80,9 +80,10 @@ else()
     message(STATUS "Building with 16-bit pixel data support")
 endif()
 
-# Make a library for a global logger
+# Make a common C++ library for shared code
 add_library(ffs_common STATIC 
-    ffs_logger.cc
+    src/ffs/ffs_logger.cc
+    src/ffs/arg_parser.cc
 )
 target_include_directories(ffs_common PUBLIC
     ${CMAKE_SOURCE_DIR}/include
@@ -91,7 +92,36 @@ target_link_libraries(ffs_common PUBLIC
     compile_options
     spdlog
     fmt
+    argparse
 )
+
+# Check if CUDA is available
+find_package(CUDAToolkit)
+
+if (CUDAToolkit_FOUND)
+    message(STATUS "CUDA found: Building CUDA components.")
+    set(FFS_ENABLE_CUDA ON)
+else()
+    message(STATUS "CUDA not found: Skipping CUDA components.")
+    set(FFS_ENABLE_CUDA OFF)
+endif()
+
+# Conditionally add a CUDA common library
+if (FFS_ENABLE_CUDA)
+    add_library(cuda_parser STATIC
+        src/ffs/cuda_arg_parser.cc
+    )
+
+    target_include_directories(cuda_parser PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(cuda_parser
+        ffs_common
+        argparse
+        CUDA::cudart
+    )
+endif()
 
 enable_testing()
 
