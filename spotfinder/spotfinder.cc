@@ -294,6 +294,14 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
           .default_value<uint32_t>(3)
           .scan<'u', uint32_t>();
 
+        add_argument("--max-peak-centroid-separation")
+          .help(
+            "Reflections with a peak-centroid difference greater than this will be "
+            "filtered during output.")
+          .metavar("N")
+          .default_value<float>(2.0)
+          .scan<'f', float>();
+
         add_argument("--start-index")
           .help(
             "Index of first image. Only used for CBF reading, and can only be 0 or 1.")
