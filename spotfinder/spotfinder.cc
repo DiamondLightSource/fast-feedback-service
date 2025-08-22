@@ -646,26 +646,25 @@ int main(int argc, char **argv) {
     }
 
     // Create a unique pointer to store the image slices if this is a rotation dataset
-    std::unique_ptr<std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>
+    std::unique_ptr<std::map<int, std::unique_ptr<ConnectedComponents>>>
       rotation_slices = nullptr;
     std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
     // Create a unique pointer to store the reflection centres if we want to save 2D spot data.
-    std::unique_ptr<std::unordered_map<int, std::vector<float>>> reflection_centers_2d =
-      nullptr;
+    std::unique_ptr<std::map<int, std::vector<float>>> reflection_centers_2d = nullptr;
     std::mutex
       reflection_centers_2d_mutex;  // Mutex to protect the reflection centers 2d map
 
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
-        rotation_slices = std::make_unique<
-          std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>();
+        rotation_slices =
+          std::make_unique<std::map<int, std::unique_ptr<ConnectedComponents>>>();
         fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
     } else {
         fmt::print("Dataset type: {}\n", fmt::styled("Still set", fmt_magenta));
         if (save_to_h5) {
             // A map we will use to save results as we go.
             reflection_centers_2d =
-              std::make_unique<std::unordered_map<int, std::vector<float>>>();
+              std::make_unique<std::map<int, std::vector<float>>>();
         }
     }
 
