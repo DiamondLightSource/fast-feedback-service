@@ -9,17 +9,19 @@ import subprocess
 import sys
 import threading
 import time
-import gemmi
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
+
+import gemmi
 import numpy as np
 import workflows.recipe
 from pydantic import BaseModel, ValidationError
 from rich.logging import RichHandler
-from workflows.services.common_service import CommonService
-import ffs.index
 from ssx_index import GPUIndexer
+from workflows.services.common_service import CommonService
+
+import ffs.index
 
 logger = logging.getLogger(__name__)
 logger.level = logging.DEBUG
@@ -47,13 +49,13 @@ class PiaRequest(BaseModel):
 class DetectorGeometry(BaseModel):
     pixel_size_x: float = 0.075  # Default value for Eiger
     pixel_size_y: float = 0.075  # Default value for Eiger
-    image_size_x: int = 2068 # Default value for Eiger
-    image_size_y: int = 2162 # Default value for Eiger
+    image_size_x: int = 2068  # Default value for Eiger
+    image_size_y: int = 2162  # Default value for Eiger
     distance: float
     beam_center_x: float
     beam_center_y: float
-    thickness: float = 0.45 # Default value for Eiger (Silicon)
-    mu: float = 3.9220781 # Default value for Eiger (Silicon)
+    thickness: float = 0.45  # Default value for Eiger (Silicon)
+    mu: float = 3.9220781  # Default value for Eiger (Silicon)
 
     def to_json(self):
         return json.dumps(self.dict(), indent=4)
@@ -188,8 +190,9 @@ class GPUPerImageAnalysis(CommonService):
         try:
             self.indexer = GPUIndexer()
         except ModuleNotFoundError:
-            self.log.debug("ffbidx not found, has the fast-feedback-indexer module been built and sourced?")
-
+            self.log.debug(
+                "ffbidx not found, has the fast-feedback-indexer module been built and sourced?"
+            )
 
     def gpu_per_image_analysis(
         self,
@@ -222,12 +225,19 @@ class GPUPerImageAnalysis(CommonService):
         if self.indexer and parameters.cell and parameters.wavelength:
             ## We have all we need to index, so make up to date models.
             cell = gemmi.UnitCell(*parameters.cell)
-            self.indexer.cell = np.reshape(np.array(cell.orth.mat, dtype="float32"), (3,3)) ## Cell as an orthogonalisation matrix
+            self.indexer.cell = np.reshape(
+                np.array(cell.orth.mat, dtype="float32"), (3, 3)
+            )  ## Cell as an orthogonalisation matrix
             self.indexer.panel = ffs.index.make_panel(
                 detector_geometry.distance,
-                detector_geometry.beam_center_x, detector_geometry.beam_center_y,
-                detector_geometry.pixel_size_x, detector_geometry.pixel_size_y,
-                detector_geometry.image_size_x, detector_geometry.image_size_y, detector_geometry.thickness, detector_geometry.mu
+                detector_geometry.beam_center_x,
+                detector_geometry.beam_center_y,
+                detector_geometry.pixel_size_x,
+                detector_geometry.pixel_size_y,
+                detector_geometry.image_size_x,
+                detector_geometry.image_size_y,
+                detector_geometry.thickness,
+                detector_geometry.mu,
             )
             self.indexer.wavelength = parameters.wavelength
 
@@ -337,7 +347,7 @@ class GPUPerImageAnalysis(CommonService):
                 # XRC has one-based-indexing
                 data["file-number"] += 1
                 ## Do indexing
-                if (self.indexer and self.cell and self.panel and self.wavelength):
+                if self.indexer and self.cell and self.panel and self.wavelength:
                     xyzobs_px = np.array(data["spot_centers"])
                     indexing_result = self.indexer.index(xyzobs_px)
                     result = indexing_result.model_dump()

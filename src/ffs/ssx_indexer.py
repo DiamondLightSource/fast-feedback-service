@@ -5,30 +5,36 @@ Usage:
 python src/ffs/ssx_indexer.py /path/to/master.h5 --detector detector.json --cell 78 78 38 90 90 90 --wavelength 0.976
 """
 
+import argparse
+import json
 import os
 import subprocess
 import sys
-import time
-import json
-from typing import Iterator, Optional
 import threading
-import numpy as np
-import pydantic
-import ffs.index
+import time
 from pathlib import Path
+from typing import Iterator
+
 import gemmi
+import numpy as np
 from service import DetectorGeometry
-import argparse
 from ssx_index import GPUIndexer
+
+import ffs.index
+
 try:
     import ffbidx
 except ModuleNotFoundError:
-    raise RuntimeError("ffbidx not found, has the fast-feedback-indexer module been built and sourced?")
+    raise RuntimeError(
+        "ffbidx not found, has the fast-feedback-indexer module been built and sourced?"
+    )
 
-spotfinder_executable = Path.cwd() / "build/bin/spotfinder" ##FIXME assumes running from root dir - would use 'find_spotfinder' logic.
+spotfinder_executable = (
+    Path.cwd() / "build/bin/spotfinder"
+)  ##FIXME assumes running from root dir - would use 'find_spotfinder' logic.
+
 
 def run_spotfind_and_indexing(data_path, cell, panel, wavelength):
-
     indexer = GPUIndexer()
     indexer.cell = cell
     indexer.panel = panel
@@ -86,12 +92,16 @@ def run_spotfind_and_indexing(data_path, cell, panel, wavelength):
             data["file-number"] += 1
             xyzobs_px = np.array(data["spot_centers"])
             indexing_result = indexer.index(xyzobs_px)
-            n_total +=1
+            n_total += 1
             if indexing_result.lattices:
                 n_indexed += 1
                 lattice = indexing_result.lattices[0]
-                print(f"Indexed {lattice.n_indexed}/{int(xyzobs_px.size/3)} spots on image {data["file-number"]}")
-                print(f"Image {data["file-number"]} results: {indexing_result.model_dump()}")
+                print(
+                    f"Indexed {lattice.n_indexed}/{int(xyzobs_px.size / 3)} spots on image {data['file-number']}"
+                )
+                print(
+                    f"Image {data['file-number']} results: {indexing_result.model_dump()}"
+                )
 
     start_time = time.monotonic()
 
@@ -119,16 +129,22 @@ def run_spotfind_and_indexing(data_path, cell, panel, wavelength):
 
 def run(args):
     parser = argparse.ArgumentParser(
-                        prog='ffs',
-                        description='Runs standalone spotfinding and indexing of serial data using the GPU fast-feedback-indexer',
-                        epilog='Text at the bottom of help')
-    parser.add_argument('datafile')
-    parser.add_argument('-c', '--cell', type=float, nargs=6, metavar=('a', 'b', 'c', 'alpha', 'beta', 'gamma'),
-        help='Unit cell parameters: a b c alpha beta gamma')
+        prog="ffs",
+        description="Runs standalone spotfinding and indexing of serial data using the GPU fast-feedback-indexer",
+        epilog="Text at the bottom of help",
+    )
+    parser.add_argument("datafile")
+    parser.add_argument(
+        "-c",
+        "--cell",
+        type=float,
+        nargs=6,
+        metavar=("a", "b", "c", "alpha", "beta", "gamma"),
+        help="Unit cell parameters: a b c alpha beta gamma",
+    )
     parser.add_argument("-w", "-λ", "--wavelength", type=float)
     parser.add_argument("--detector", help="Path to the detector model json")
     parsed = parser.parse_args(args)
-
 
     cell = gemmi.UnitCell(*parsed.cell)
     wavelength = parsed.wavelength
@@ -138,26 +154,34 @@ def run(args):
         distance=detector["distance"],
         beam_center_x=detector["beam_center_x"],
         beam_center_y=detector["beam_center_y"],
-        pixel_size_x=detector["pixel_size_x"], 
+        pixel_size_x=detector["pixel_size_x"],
         pixel_size_y=detector["pixel_size_y"],
         image_size_x=int(detector["image_size_x"]),
-        image_size_y=int(detector["image_size_y"])
+        image_size_y=int(detector["image_size_y"]),
     )
     if "thickness" in detector:
         detector_geometry.thickness = detector["thickness"]
     if "mu" in detector:
         detector_geometry.mu = detector["mu"]
-    cell = np.reshape(np.array(cell.orth.mat, dtype="float32"), (3,3)) ## Cell as an orthogonalisation matrix
+    cell = np.reshape(
+        np.array(cell.orth.mat, dtype="float32"), (3, 3)
+    )  ## Cell as an orthogonalisation matrix
     panel = ffs.index.make_panel(
         detector_geometry.distance,
-        detector_geometry.beam_center_x, detector_geometry.beam_center_y,
-        detector_geometry.pixel_size_x, detector_geometry.pixel_size_y,
-        detector_geometry.image_size_x, detector_geometry.image_size_y,
-        detector_geometry.thickness, detector_geometry.mu)
+        detector_geometry.beam_center_x,
+        detector_geometry.beam_center_y,
+        detector_geometry.pixel_size_x,
+        detector_geometry.pixel_size_y,
+        detector_geometry.image_size_x,
+        detector_geometry.image_size_y,
+        detector_geometry.thickness,
+        detector_geometry.mu,
+    )
 
     run_spotfind_and_indexing(parsed.datafile, cell, panel, wavelength)
+
 
 if __name__ == "__main__":
     st = time.time()
     run(sys.argv[1:])
-    print(f"Program time: {time.time()-st:.6f}s")
+    print(f"Program time: {time.time() - st:.6f}s")
