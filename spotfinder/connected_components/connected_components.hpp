@@ -6,6 +6,7 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 #include <cstdint>
+#include <map>
 #include <tuple>
 #include <vector>
 
@@ -228,7 +229,7 @@ class ConnectedComponents {
         return boxes;
     }
 
-    std::unordered_map<size_t, Signal> &get_signals() {
+    std::map<size_t, Signal> &get_signals() {
         return signals;
     }
 
@@ -274,11 +275,11 @@ class ConnectedComponents {
     uint num_strong_pixels_filtered;  // Number of strong pixels after filtering
     std::vector<Reflection> boxes;    // Bounding boxes
     // Maps pixel linear index -> Signal (used to store signal pixels)
-    std::unordered_map<size_t, Signal> signals;
+    std::map<size_t, Signal> signals;
     // Maps graph linear index -> vertex ID
-    std::unordered_map<size_t, size_t> index_to_vertex;
+    std::map<size_t, size_t> index_to_vertex;
     // Maps graph vertex ID -> linear index
-    std::unordered_map<size_t, size_t> vertex_to_index;
+    std::map<size_t, size_t> vertex_to_index;
     // 2D graph representing the connected components
     boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS> graph;
 
