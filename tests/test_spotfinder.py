@@ -3,6 +3,7 @@ Tests for the fast-feedback spotfinder. Output values are compared to the equiva
 processing from dials v3.25.0, which should be exactly the same as the GPU spotfinder.
 
 Equivalent dials command:
+dials.import $(dials.data get -q thaumatin_i03_rotation)/thau_2_1.nxs image_range=1,10
 dials.find_spots imported.expt algorithm=dispersion d_min=3.0 disable_parallax_correction=True
 """
 
