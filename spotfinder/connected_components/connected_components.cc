@@ -390,10 +390,8 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
             // Get the reflection for this label
             auto &reflection = reflections_3d[label];
 
-            // Calculate DIALS z-index by reversing the slice index
-            auto z_index = slices.size() - z - 1;
             // Add z-index to the signal
-            signal.z = std::make_optional(z_index);
+            signal.z = std::make_optional(z);
 
             // Update the reflection with the signal
             reflection.add_signal(signal);
