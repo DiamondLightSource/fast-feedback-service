@@ -112,19 +112,39 @@ class Reflection3D {
             throw std::runtime_error("No pixels in 3D reflection");
         }
 
+        logger.debug("Finding peak signal for reflection with {} pixels",
+                     signals_.size());
+
         // Find the signal with the highest intensity
         const Signal *peak_signal = nullptr;
         double max_intensity = std::numeric_limits<double>::min();
+        int candidates_with_max_intensity = 0;
 
         for (const auto &signal : signals_) {
             bool should_update = false;
 
             if (signal.intensity > max_intensity) {
                 should_update = true;
+                candidates_with_max_intensity = 1;
+                logger.trace(
+                  "New max intensity found: {} at ({}, {}, {}) linear_index: {}",
+                  signal.intensity,
+                  signal.x,
+                  signal.y,
+                  signal.z.has_value() ? signal.z.value() : -1,
+                  signal.linear_index);
             }
             // If intensities are equal, prefer signal with smaller linear index
             else if (signal.intensity == max_intensity && peak_signal != nullptr) {
+                candidates_with_max_intensity++;
                 should_update = (signal.linear_index < peak_signal->linear_index);
+                logger.trace(
+                  "Tie at intensity {}: current linear_index {} vs peak linear_index "
+                  "{}, should_update: {}",
+                  signal.intensity,
+                  signal.linear_index,
+                  peak_signal->linear_index,
+                  should_update);
             }
 
             if (should_update) {
@@ -138,15 +158,33 @@ class Reflection3D {
             throw std::runtime_error("Failed to find peak intensity signal");
         }
 
+        logger.debug(
+          "Selected peak signal: intensity={}, position=({}, {}, {}), linear_index={}, "
+          "candidates_with_max_intensity={}",
+          peak_signal->intensity,
+          peak_signal->x,
+          peak_signal->y,
+          peak_signal->z.has_value() ? peak_signal->z.value() : -1,
+          peak_signal->linear_index,
+          candidates_with_max_intensity);
+
         // Get the cached or computed center of mass
         auto [com_x, com_y, com_z] = center_of_mass();
+        logger.debug("Center of mass: ({:.3f}, {:.3f}, {:.3f})", com_x, com_y, com_z);
 
         // Calculate the Euclidean distance
         float dx = (peak_signal->x + 0.5f) - com_x;
         float dy = (peak_signal->y + 0.5f) - com_y;
         float dz = (peak_signal->z.value() + 0.5f) - com_z;
 
-        return std::sqrt(dx * dx + dy * dy + dz * dz);
+        float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        logger.debug("Peak-centroid distance: {:.3f} (dx={:.3f}, dy={:.3f}, dz={:.3f})",
+                     distance,
+                     dx,
+                     dy,
+                     dz);
+
+        return distance;
     }
 
     // Getters for bounding box
