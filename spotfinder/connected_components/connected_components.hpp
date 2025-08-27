@@ -117,7 +117,17 @@ class Reflection3D {
         double max_intensity = std::numeric_limits<double>::min();
 
         for (const auto &signal : signals_) {
+            bool should_update = false;
+
             if (signal.intensity > max_intensity) {
+                should_update = true;
+            }
+            // If intensities are equal, prefer signal with smaller linear index
+            else if (signal.intensity == max_intensity && peak_signal != nullptr) {
+                should_update = (signal.linear_index < peak_signal->linear_index);
+            }
+
+            if (should_update) {
                 max_intensity = signal.intensity;
                 peak_signal = &signal;
             }
