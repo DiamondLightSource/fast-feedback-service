@@ -121,10 +121,15 @@ class Reflection3D {
         int candidates_with_max_intensity = 0;
 
         for (const auto &signal : signals_) {
-            bool should_update = false;
+            // Guard: Skip if intensity is lower than current max
+            if (signal.intensity < max_intensity) {
+                continue;
+            }
 
+            // Handle new maximum intensity
             if (signal.intensity > max_intensity) {
-                should_update = true;
+                max_intensity = signal.intensity;
+                peak_signal = &signal;
                 candidates_with_max_intensity = 1;
                 logger.trace(
                   "New max intensity found: {} at ({}, {}, {}) linear_index: {}",
@@ -133,22 +138,33 @@ class Reflection3D {
                   signal.y,
                   signal.z.has_value() ? signal.z.value() : -1,
                   signal.linear_index);
-            }
-            // If intensities are equal, prefer signal with smaller linear index
-            else if (signal.intensity == max_intensity && peak_signal != nullptr) {
-                candidates_with_max_intensity++;
-                should_update = (signal.linear_index < peak_signal->linear_index);
-                logger.trace(
-                  "Tie at intensity {}: current linear_index {} vs peak linear_index "
-                  "{}, should_update: {}",
-                  signal.intensity,
-                  signal.linear_index,
-                  peak_signal->linear_index,
-                  should_update);
+                continue;
             }
 
-            if (should_update) {
-                max_intensity = signal.intensity;
+            // At this point, signal.intensity == max_intensity
+            candidates_with_max_intensity++;
+
+            // Guard: Skip tie-breaking if no current peak (shouldn't happen, but safety)
+            if (peak_signal == nullptr) {
+                continue;
+            }
+
+            // Deterministic tie-breaking using coordinate comparison
+            bool should_update_tie = is_signal_preferred(signal, *peak_signal);
+
+            logger.trace(
+              "Tie at intensity {}: current ({}, {}, {}) vs peak ({}, {}, {}), "
+              "should_update: {}",
+              signal.intensity,
+              signal.x,
+              signal.y,
+              signal.z.value(),
+              peak_signal->x,
+              peak_signal->y,
+              peak_signal->z.value(),
+              should_update_tie);
+
+            if (should_update_tie) {
                 peak_signal = &signal;
             }
         }
@@ -220,6 +236,16 @@ class Reflection3D {
     // com cache for lazy evaluation
     mutable bool com_cached_;
     mutable std::tuple<float, float, float> com_cache_;
+
+    /**
+     * @brief Determines if the first signal should be preferred over the second
+     *        in case of intensity ties using coordinate-based tie-breaking.
+     * 
+     * @param signal1 The signal to compare
+     * @param signal2 The current preferred signal
+     * @return true if signal1 should be preferred over signal2
+     */
+    bool is_signal_preferred(const Signal &signal1, const Signal &signal2) const;
 };
 
 /**

@@ -139,6 +139,24 @@ void ConnectedComponents::generate_boxes(const ushort width,
 }
 #pragma endregion Connected Components
 
+#pragma region Reflection3D
+bool Reflection3D::is_signal_preferred(const Signal &signal1,
+                                       const Signal &signal2) const {
+    // Compare z-coordinates first
+    if (signal1.z.value() != signal2.z.value()) {
+        return signal1.z.value() < signal2.z.value();
+    }
+
+    // If z is equal, compare y-coordinates
+    if (signal1.y != signal2.y) {
+        return signal1.y < signal2.y;
+    }
+
+    // If both z and y are equal, compare x-coordinates
+    return signal1.x < signal2.x;
+}
+#pragma endregion Reflection3D
+
 #pragma region 2D Connected Components
 std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
                                         const uint min_spot_size,
