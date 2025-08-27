@@ -14,6 +14,7 @@ import subprocess
 import h5py
 import numpy as np
 import pytest
+from pathlib import Path
 
 
 def strip_ansi(text: str) -> str:
