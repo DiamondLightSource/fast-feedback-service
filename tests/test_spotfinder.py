@@ -10,11 +10,11 @@ dials.find_spots imported.expt algorithm=dispersion d_min=3.0 disable_parallax_c
 import os
 import re
 import subprocess
+from pathlib import Path
 
 import h5py
 import numpy as np
 import pytest
-from pathlib import Path
 
 
 def strip_ansi(text: str) -> str:
