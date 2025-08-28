@@ -140,20 +140,20 @@ void ConnectedComponents::generate_boxes(const ushort width,
 #pragma endregion Connected Components
 
 #pragma region Reflection3D
-bool Reflection3D::is_signal_preferred(const Signal &signal1,
-                                       const Signal &signal2) const {
+bool Reflection3D::is_signal_preferred(const Signal &candidate,
+                                       const Signal &current) const {
     // Compare z-coordinates first
-    if (signal1.z.value() != signal2.z.value()) {
-        return signal1.z.value() < signal2.z.value();
+    if (candidate.z.value() != current.z.value()) {
+        return candidate.z.value() < current.z.value();
     }
 
     // If z is equal, compare y-coordinates
-    if (signal1.y != signal2.y) {
-        return signal1.y < signal2.y;
+    if (candidate.y != current.y) {
+        return candidate.y < current.y;
     }
 
     // If both z and y are equal, compare x-coordinates
-    return signal1.x < signal2.x;
+    return candidate.x < current.x;
 }
 #pragma endregion Reflection3D
 

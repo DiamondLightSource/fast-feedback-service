@@ -241,11 +241,11 @@ class Reflection3D {
      * @brief Determines if the first signal should be preferred over the second
      *        in case of intensity ties using coordinate-based tie-breaking.
      * 
-     * @param signal1 The signal to compare
-     * @param signal2 The current preferred signal
-     * @return true if signal1 should be preferred over signal2
+     * @param candidate The signal to compare
+     * @param current The current preferred signal
+     * @return true if candidate should be preferred over current
      */
-    bool is_signal_preferred(const Signal &signal1, const Signal &signal2) const;
+    bool is_signal_preferred(const Signal &candidate, const Signal &current) const;
 };
 
 /**
