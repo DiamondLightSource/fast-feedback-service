@@ -273,7 +273,8 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
         // Current slice's vertex id -> linear index map
         const auto &vertex_to_index = slices[i]->get_vertex_to_index();
 
-        logger.trace("Copying edges from slice {}", i);
+        // logger.trace("Copying edges from slice {}", i);
+
         // Iterate over the edges in the slice's graph
         for (const auto &edge : boost::make_iterator_range(boost::edges(graph_2d))) {
             // Get the source and target vertices for the edge
