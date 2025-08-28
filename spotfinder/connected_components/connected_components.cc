@@ -139,6 +139,24 @@ void ConnectedComponents::generate_boxes(const ushort width,
 }
 #pragma endregion Connected Components
 
+#pragma region Reflection3D
+bool Reflection3D::is_signal_preferred(const Signal &candidate,
+                                       const Signal &current) const {
+    // Compare z-coordinates first
+    if (candidate.z.value() != current.z.value()) {
+        return candidate.z.value() < current.z.value();
+    }
+
+    // If z is equal, compare y-coordinates
+    if (candidate.y != current.y) {
+        return candidate.y < current.y;
+    }
+
+    // If both z and y are equal, compare x-coordinates
+    return candidate.x < current.x;
+}
+#pragma endregion Reflection3D
+
 #pragma region 2D Connected Components
 std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
                                         const uint min_spot_size,
@@ -255,7 +273,8 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
         // Current slice's vertex id -> linear index map
         const auto &vertex_to_index = slices[i]->get_vertex_to_index();
 
-        logger.trace("Copying edges from slice {}", i);
+        // logger.trace("Copying edges from slice {}", i);
+
         // Iterate over the edges in the slice's graph
         for (const auto &edge : boost::make_iterator_range(boost::edges(graph_2d))) {
             // Get the source and target vertices for the edge
@@ -372,10 +391,8 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
             // Get the reflection for this label
             auto &reflection = reflections_3d[label];
 
-            // Calculate DIALS z-index by reversing the slice index
-            auto z_index = slices.size() - z - 1;
             // Add z-index to the signal
-            signal.z = std::make_optional(z_index);
+            signal.z = std::make_optional(z);
 
             // Update the reflection with the signal
             reflection.add_signal(signal);
