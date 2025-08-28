@@ -344,12 +344,13 @@ def test_dispersion_extended_dmin(dials_data, tmp_path):
         assert maximum.tolist() == pytest.approx([2920.70, 3077.46, 9.50], abs=5e-3)
         assert mean.tolist() == pytest.approx([2047.54, 2216.19, 4.86], abs=5e-3)
 
+
 def test_dispersion_gridscan(dials_data, tmp_path):
     """
     An extended test to test the 2d connected components analysis only.
-    
+
     Runs the spotfinder on 420 images, and doesn't apply any filtering,
-    so just tests that the 2D """
+    so just tests that the 2D"""
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
     assert spotfinder_path
     d = dials_data("thaumatin_i03_grid_scans", pathlib=True)
@@ -361,9 +362,9 @@ def test_dispersion_gridscan(dials_data, tmp_path):
             "10",
             "--save-h5",
             "--min-spot-size",
-            "1", #i.e. don't filter on spot size
+            "1",  # i.e. don't filter on spot size
             "--max-peak-centroid-separation",
-            "20" #i.e. don't filter on peak-centroid separation
+            "20",  # i.e. don't filter on peak-centroid separation
         ],
         capture_output=True,
         cwd=tmp_path,
@@ -380,13 +381,13 @@ def test_dispersion_gridscan(dials_data, tmp_path):
     expected_strong_pixels = {}
     root_dir = Path(os.getenv("FFS_ROOT_DIR"))
     assert root_dir
-    dials_output_regex = r'Found\s+(\d+)\s+strong pixels on image\s+(\d+)\s+'
+    dials_output_regex = r"Found\s+(\d+)\s+strong pixels on image\s+(\d+)\s+"
     with open(root_dir / "tests/dials_2d_spotfinding_output.txt", "r") as f:
         for line in f.readlines():
             match = re.search(dials_output_regex, line)
             if match:
-                expected_strong_pixels[int(match.group(2))-1] = int(match.group(1))
-    
+                expected_strong_pixels[int(match.group(2)) - 1] = int(match.group(1))
+
     spots_match_regex_2d = r"Succesfully wrote\s+(\d+)\s+2D reflections to HDF5 file"
 
     for line in loglines:
@@ -401,7 +402,6 @@ def test_dispersion_gridscan(dials_data, tmp_path):
 
     assert n_spots_found == n_spots_expected
     assert found_strong_pixels == expected_strong_pixels
-    
 
     ## Now load the file and evaluate the calculated centroids....
     with h5py.File(tmp_path / "results_ffs.h5", "r") as file:
