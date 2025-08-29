@@ -81,6 +81,13 @@ Then launch the service through Zocalo:
 zocalo.service -s GPUPerImageAnalysis
 ```
 
+## Running the program tests
+To run the tests, you need to have pytest and dials-data available in your environment and be on a machine with an NVIDIA GPU and the CUDA toolkit installed.
+Run:
+```bash
+python -m pytest tests/ -v --regression
+```
+
 ## Goals
 - [x] 500 Hz throughput for Eiger real-time data collection
 - [ ] 2500 Hz throughput for Jungfrau real-time data collection
