@@ -1127,7 +1127,7 @@ int main(int argc, char **argv) {
 
                 // Write the table to an HDF5 file
                 table.write("results_ffs.h5", "dials/processing/group_0");
-                logger.info("Succesfully wrote 3D reflections to HDF5 file");
+                logger.info("Successfully wrote 3D reflections to HDF5 file");
             } catch (const std::exception &e) {
                 logger.error("Error writing data to HDF5 file: {}", e.what());
             } catch (...) {
@@ -1174,7 +1174,7 @@ int main(int argc, char **argv) {
 
             // Write the table to an HDF5 file
             table.write("results_ffs.h5", "dials/processing/group_0");
-            logger.info("Succesfully wrote {} 2D reflections to HDF5 file", ids.size());
+            logger.info("Successfully wrote {} 2D reflections to HDF5 file", ids.size());
         } catch (const std::exception &e) {
             logger.error("Error writing data to HDF5 file: {}", e.what());
         } catch (...) {

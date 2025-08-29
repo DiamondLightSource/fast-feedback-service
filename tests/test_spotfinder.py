@@ -392,14 +392,14 @@ def test_dispersion_gridscan(dials_data, tmp_path):
             if match:
                 expected_strong_pixels[int(match.group(2)) - 1] = int(match.group(1))
 
-    spots_match_regex_2d = r"Succesfully wrote\s+(\d+)\s+2D reflections to HDF5 file"
+    spots_match_regex_2d = r"Successfully wrote\s+(\d+)\s+2D reflections to HDF5 file"
 
     for line in loglines:
         if "strong pixels" in line:
             match = re.search(pixels_match_regex, line)
             if match:
                 found_strong_pixels[int(match.group(1))] = int(match.group(2))
-        elif "Succesfully" in line:
+        elif "Successfully" in line:
             match = re.search(spots_match_regex_2d, line)
             if match:
                 n_spots_found = int(match.group(1))
