@@ -350,7 +350,9 @@ def test_dispersion_gridscan(dials_data, tmp_path):
     An extended test to test the 2d connected components analysis only.
 
     Runs the spotfinder on 420 images, and doesn't apply any filtering,
-    so just tests that the 2D"""
+    so just tests that the 2D strong pixel maps have the same number
+    of strong pixels to dials.
+    """
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
     assert spotfinder_path
     d = dials_data("thaumatin_i03_grid_scans", pathlib=True)
@@ -382,6 +384,8 @@ def test_dispersion_gridscan(dials_data, tmp_path):
     root_dir = Path(os.getenv("FFS_ROOT_DIR"))
     assert root_dir
     dials_output_regex = r"Found\s+(\d+)\s+strong pixels on image\s+(\d+)\s+"
+    ## This file is the output of dials.find_spots with the options 
+    ## disable_parallax_correction=True max_separation=20 min_spot_size=1
     with open(root_dir / "tests/dials_2d_spotfinding_output.txt", "r") as f:
         for line in f.readlines():
             match = re.search(dials_output_regex, line)
