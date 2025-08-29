@@ -384,7 +384,7 @@ def test_dispersion_gridscan(dials_data, tmp_path):
     root_dir = Path(os.getenv("FFS_ROOT_DIR"))
     assert root_dir
     dials_output_regex = r"Found\s+(\d+)\s+strong pixels on image\s+(\d+)\s+"
-    ## This file is the output of dials.find_spots with the options 
+    ## This file is the output of dials.find_spots with the options
     ## disable_parallax_correction=True max_separation=20 min_spot_size=1
     with open(root_dir / "tests/dials_2d_spotfinding_output.txt", "r") as f:
         for line in f.readlines():
