@@ -175,7 +175,7 @@ void call_do_spotfinding_dispersion(dim3 blocks,
       threads, KERNEL_RADIUS);  // Required shared memory
 
     // Synchronize the CUDA stream to ensure the kernel constants are set
-    cudaStreamSynchronize(stream);
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     // Launch the dispersion threshold kernel
     dispersion<<<blocks, threads, shared_memory, stream>>>(
@@ -184,8 +184,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
       result_strong->get()  // Output mask pointer
     );
 
-    cudaStreamSynchronize(
-      stream);  // Synchronize the CUDA stream to ensure the kernel is complete
+    // Synchronize the CUDA stream to ensure the kernel is complete
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 }
 
 /**
@@ -245,7 +245,7 @@ void call_do_spotfinding_extended(dim3 blocks,
     PitchedMalloc<uint8_t> d_erosion_mask(width, height);
 
     // Synchronize the CUDA stream to ensure the kernel constants are set
-    cudaStreamSynchronize(stream);
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     /*
      * First pass 🔎
@@ -264,8 +264,8 @@ void call_do_spotfinding_extended(dim3 blocks,
     shared_memory = calculate_shared_memory<uint8_t>(
       threads, KERNEL_RADIUS);  // Required shared memory
 
-    cudaStreamSynchronize(
-      stream);  // Synchronize the CUDA stream to ensure the first pass is complete
+    // Synchronize the CUDA stream to ensure the first pass is complete
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     if (do_writeout) {
         printf("First pass complete\n");
@@ -301,8 +301,8 @@ void call_do_spotfinding_extended(dim3 blocks,
     shared_memory = calculate_shared_memory<pixel_t, uint8_t, uint8_t>(
       threads, KERNEL_RADIUS_EXTENDED);  // Required shared memory
 
-    cudaStreamSynchronize(
-      stream);  // Synchronize the CUDA stream to ensure the erosion pass is complete
+    // Synchronize the CUDA stream to ensure the erosion pass is complete
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     if (do_writeout) {
         printf("Erosion pass complete\n");
@@ -328,8 +328,9 @@ void call_do_spotfinding_extended(dim3 blocks,
       result_strong->get(),  // Output result mask pointer
       d_erosion_mask.pitch   // Dispersion mask pitch
     );
-    cudaStreamSynchronize(
-      stream);  // Synchronize the CUDA stream to ensure the second pass is complete
+
+    // Synchronize the CUDA stream to ensure the second pass is complete
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     if (do_writeout) {
         printf("Second pass complete\n");
