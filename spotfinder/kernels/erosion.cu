@@ -92,6 +92,13 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
             int lx = x + j;                        // Offset x coordinate
             int ly = y + i;                        // Offset y coordinate
 
+            // Boundary guard - don't index outside the image
+            if (lx < 0 || ly < 0 || lx >= static_cast<int>(kernel_constants.width)
+                || ly >= static_cast<int>(kernel_constants.height)) {
+                // Out of bounds - treat as not valid for erosion checks
+                continue;
+            }
+
             // Check if the pixel is masked
             if (mask(lx, ly) == 0) {
                 // If so, skip the pixel
