@@ -50,9 +50,9 @@ extern __constant__ KernelConstants kernel_constants;
  * @param erosion_mask_pitch Pitch of the erosion mask data
  * @param radius Radius of the erosion kernel
  */
-__global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
-                        uint8_t __restrict__ *erosion_mask_ptr,
-                        uint8_t __restrict__ *mask_ptr,
+__global__ void erosion(uint8_t __restrict__* dispersion_mask_ptr,
+                        uint8_t __restrict__* erosion_mask_ptr,
+                        uint8_t __restrict__* mask_ptr,
                         size_t dispersion_mask_pitch,
                         size_t erosion_mask_pitch,
                         size_t mask_pitch,

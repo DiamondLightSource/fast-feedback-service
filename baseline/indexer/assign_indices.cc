@@ -33,9 +33,9 @@ struct assign_indices_results {
  * @param tolerance The tolerance within which the fractional miller index must be for acceptance.
  * @returns A struct containing the assigned miller indices and the number of reciprocal lattice points successfully indexed.
  */
-assign_indices_results assign_indices_global(Matrix3d const &A,
-                                             mdspan_type<double> const &rlp,
-                                             mdspan_type<double> const &xyzobs_mm,
+assign_indices_results assign_indices_global(Matrix3d const& A,
+                                             mdspan_type<double> const& rlp,
+                                             mdspan_type<double> const& xyzobs_mm,
                                              const double tolerance = 0.3) {
     // Consider only a single lattice.
     assign_indices_results results(rlp.extent(0));
@@ -45,10 +45,10 @@ assign_indices_results assign_indices_global(Matrix3d const &A,
     typedef std::multimap<
       Vector3i,
       std::size_t,
-      std::function<bool(const Eigen::Vector3i &, const Eigen::Vector3i &)>>
+      std::function<bool(const Eigen::Vector3i&, const Eigen::Vector3i&)>>
       hklmap;
 
-    hklmap miller_idx_to_iref([](const Vector3i &a, const Vector3i &b) -> bool {
+    hklmap miller_idx_to_iref([](const Vector3i& a, const Vector3i& b) -> bool {
         return std::lexicographical_compare(
           a.data(), a.data() + a.size(), b.data(), b.data() + b.size());
     });

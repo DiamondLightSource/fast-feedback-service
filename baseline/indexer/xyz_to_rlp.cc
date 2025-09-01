@@ -43,11 +43,11 @@ struct xyz_to_rlp_results {
  * @param gonio A dx2 Goniometer object.
  * @returns A struct containing reciprocal space coordinates, s1 vectors and pixel coordinates in mm.
  */
-xyz_to_rlp_results xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
-                              const Panel &panel,
-                              const MonochromaticBeam &beam,
-                              const Scan &scan,
-                              const Goniometer &gonio) {
+xyz_to_rlp_results xyz_to_rlp(const mdspan_type<double>& xyzobs_px,
+                              const Panel& panel,
+                              const MonochromaticBeam& beam,
+                              const Scan& scan,
+                              const Goniometer& gonio) {
     // Use the experimental models to perform a coordinate transformation from
     // pixel coordinates in detector space to reciprocal space, in units of
     // inverse angstrom.
@@ -108,10 +108,10 @@ xyz_to_rlp_results xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
     return results;  // Return the data and spans.
 }
 
-void px_to_mm(const mdspan_type<double> &px_input,
-              mdspan_type<double> &mm_output,
-              const Scan &scan,
-              const Panel &panel) {
+void px_to_mm(const mdspan_type<double>& px_input,
+              mdspan_type<double>& mm_output,
+              const Scan& scan,
+              const Panel& panel) {
     const auto [osc_start, osc_width] = scan.get_oscillation();
     int image_range_start = scan.get_image_range()[0];
     for (int i = 0; i < px_input.extent(0); ++i) {

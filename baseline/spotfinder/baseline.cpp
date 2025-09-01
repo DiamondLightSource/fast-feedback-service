@@ -73,8 +73,8 @@ class DispersionThreshold {
      */
     template <typename T>
     void compute_sat(af::ref<Data<T>> table,
-                     const af::const_ref<T, af::c_grid<2>> &src,
-                     const af::const_ref<bool, af::c_grid<2>> &mask) {
+                     const af::const_ref<T, af::c_grid<2>>& src,
+                     const af::const_ref<bool, af::c_grid<2>>& mask) {
         // Largest value to consider
         const T BIG = (1 << 24);  // About 16m counts
 
@@ -113,8 +113,8 @@ class DispersionThreshold {
      */
     template <typename T>
     void compute_threshold(af::ref<Data<T>> table,
-                           const af::const_ref<T, af::c_grid<2>> &src,
-                           const af::const_ref<bool, af::c_grid<2>> &mask,
+                           const af::const_ref<T, af::c_grid<2>>& src,
+                           const af::const_ref<bool, af::c_grid<2>>& mask,
                            af::ref<bool, af::c_grid<2>> dst) {
         // Get the size of the image
         std::size_t ysize = src.accessor()[0];
@@ -141,24 +141,24 @@ class DispersionThreshold {
                 double x = 0;
                 double y = 0;
                 if (i0 >= 0 && j0 >= 0) {
-                    const Data<T> &d00 = table[k0 + i0];
-                    const Data<T> &d10 = table[k1 + i0];
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d00 = table[k0 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
+                    const Data<T>& d01 = table[k0 + i1];
                     m += d00.m - (d10.m + d01.m);
                     x += d00.x - (d10.x + d01.x);
                     y += d00.y - (d10.y + d01.y);
                 } else if (i0 >= 0) {
-                    const Data<T> &d10 = table[k1 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
                     m -= d10.m;
                     x -= d10.x;
                     y -= d10.y;
                 } else if (j0 >= 0) {
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d01 = table[k0 + i1];
                     m -= d01.m;
                     x -= d01.x;
                     y -= d01.y;
                 }
-                const Data<T> &d11 = table[k1 + i1];
+                const Data<T>& d11 = table[k1 + i1];
                 m += d11.m;
                 x += d11.x;
                 y += d11.y;
@@ -185,9 +185,9 @@ class DispersionThreshold {
      */
     template <typename T>
     void compute_threshold(af::ref<Data<T>> table,
-                           const af::const_ref<T, af::c_grid<2>> &src,
-                           const af::const_ref<bool, af::c_grid<2>> &mask,
-                           const af::const_ref<double, af::c_grid<2>> &gain,
+                           const af::const_ref<T, af::c_grid<2>>& src,
+                           const af::const_ref<bool, af::c_grid<2>>& mask,
+                           const af::const_ref<double, af::c_grid<2>>& gain,
                            af::ref<bool, af::c_grid<2>> dst) {
         // Get the size of the image
         std::size_t ysize = src.accessor()[0];
@@ -214,24 +214,24 @@ class DispersionThreshold {
                 double x = 0;
                 double y = 0;
                 if (i0 >= 0 && j0 >= 0) {
-                    const Data<T> &d00 = table[k0 + i0];
-                    const Data<T> &d10 = table[k1 + i0];
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d00 = table[k0 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
+                    const Data<T>& d01 = table[k0 + i1];
                     m += d00.m - (d10.m + d01.m);
                     x += d00.x - (d10.x + d01.x);
                     y += d00.y - (d10.y + d01.y);
                 } else if (i0 >= 0) {
-                    const Data<T> &d10 = table[k1 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
                     m -= d10.m;
                     x -= d10.x;
                     y -= d10.y;
                 } else if (j0 >= 0) {
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d01 = table[k0 + i1];
                     m -= d01.m;
                     x -= d01.x;
                     y -= d01.y;
                 }
-                const Data<T> &d11 = table[k1 + i1];
+                const Data<T>& d11 = table[k1 + i1];
                 m += d11.m;
                 x += d11.x;
                 y += d11.y;
@@ -256,8 +256,8 @@ class DispersionThreshold {
      * @param dst - The destination array.
      */
     template <typename T>
-    void threshold(const af::const_ref<T, af::c_grid<2>> &src,
-                   const af::const_ref<bool, af::c_grid<2>> &mask,
+    void threshold(const af::const_ref<T, af::c_grid<2>>& src,
+                   const af::const_ref<bool, af::c_grid<2>>& mask,
                    af::ref<bool, af::c_grid<2>> dst) {
         // check the input
         DIALS_ASSERT(src.accessor().all_eq(image_size_));
@@ -268,8 +268,7 @@ class DispersionThreshold {
         DIALS_ASSERT(sizeof(T) <= sizeof(double));
 
         // Cast the buffer to the table type
-        af::ref<Data<T>> table(reinterpret_cast<Data<T> *>(&buffer_[0]),
-                               buffer_.size());
+        af::ref<Data<T>> table(reinterpret_cast<Data<T>*>(&buffer_[0]), buffer_.size());
 
         // compute the summed area table
         compute_sat(table, src, mask);
@@ -286,9 +285,9 @@ class DispersionThreshold {
      * @param dst - The destination array.
      */
     template <typename T>
-    void threshold_w_gain(const af::const_ref<T, af::c_grid<2>> &src,
-                          const af::const_ref<bool, af::c_grid<2>> &mask,
-                          const af::const_ref<double, af::c_grid<2>> &gain,
+    void threshold_w_gain(const af::const_ref<T, af::c_grid<2>>& src,
+                          const af::const_ref<bool, af::c_grid<2>>& mask,
+                          const af::const_ref<double, af::c_grid<2>>& gain,
                           af::ref<bool, af::c_grid<2>> dst) {
         // check the input
         DIALS_ASSERT(src.accessor().all_eq(image_size_));
@@ -300,7 +299,7 @@ class DispersionThreshold {
         DIALS_ASSERT(sizeof(T) <= sizeof(double));
 
         // Cast the buffer to the table type
-        af::ref<Data<T>> table((Data<T> *)&buffer_[0], buffer_.size());
+        af::ref<Data<T>> table((Data<T>*)&buffer_[0], buffer_.size());
 
         // compute the summed area table
         compute_sat(table, src, mask);
@@ -373,8 +372,8 @@ class DispersionExtendedThreshold {
      */
     template <typename T>
     void compute_sat(af::ref<Data<T>> table,
-                     const af::const_ref<T, af::c_grid<2>> &src,
-                     const af::const_ref<bool, af::c_grid<2>> &mask) {
+                     const af::const_ref<T, af::c_grid<2>>& src,
+                     const af::const_ref<bool, af::c_grid<2>>& mask) {
         // Largest value to consider
         const T BIG = (1 << 24);  // About 16m counts
 
@@ -413,8 +412,8 @@ class DispersionExtendedThreshold {
      */
     template <typename T>
     void compute_dispersion_threshold(af::ref<Data<T>> table,
-                                      const af::const_ref<T, af::c_grid<2>> &src,
-                                      const af::const_ref<bool, af::c_grid<2>> &mask,
+                                      const af::const_ref<T, af::c_grid<2>>& src,
+                                      const af::const_ref<bool, af::c_grid<2>>& mask,
                                       af::ref<bool, af::c_grid<2>> dst) {
         // Get the size of the image
         std::size_t ysize = src.accessor()[0];
@@ -441,24 +440,24 @@ class DispersionExtendedThreshold {
                 double x = 0;
                 double y = 0;
                 if (i0 >= 0 && j0 >= 0) {
-                    const Data<T> &d00 = table[k0 + i0];
-                    const Data<T> &d10 = table[k1 + i0];
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d00 = table[k0 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
+                    const Data<T>& d01 = table[k0 + i1];
                     m += d00.m - (d10.m + d01.m);
                     x += d00.x - (d10.x + d01.x);
                     y += d00.y - (d10.y + d01.y);
                 } else if (i0 >= 0) {
-                    const Data<T> &d10 = table[k1 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
                     m -= d10.m;
                     x -= d10.x;
                     y -= d10.y;
                 } else if (j0 >= 0) {
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d01 = table[k0 + i1];
                     m -= d01.m;
                     x -= d01.x;
                     y -= d01.y;
                 }
-                const Data<T> &d11 = table[k1 + i1];
+                const Data<T>& d11 = table[k1 + i1];
                 m += d11.m;
                 x += d11.x;
                 y += d11.y;
@@ -483,9 +482,9 @@ class DispersionExtendedThreshold {
      */
     template <typename T>
     void compute_dispersion_threshold(af::ref<Data<T>> table,
-                                      const af::const_ref<T, af::c_grid<2>> &src,
-                                      const af::const_ref<bool, af::c_grid<2>> &mask,
-                                      const af::const_ref<double, af::c_grid<2>> &gain,
+                                      const af::const_ref<T, af::c_grid<2>>& src,
+                                      const af::const_ref<bool, af::c_grid<2>>& mask,
+                                      const af::const_ref<double, af::c_grid<2>>& gain,
                                       af::ref<bool, af::c_grid<2>> dst) {
         // Get the size of the image
         std::size_t ysize = src.accessor()[0];
@@ -512,24 +511,24 @@ class DispersionExtendedThreshold {
                 double x = 0;
                 double y = 0;
                 if (i0 >= 0 && j0 >= 0) {
-                    const Data<T> &d00 = table[k0 + i0];
-                    const Data<T> &d10 = table[k1 + i0];
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d00 = table[k0 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
+                    const Data<T>& d01 = table[k0 + i1];
                     m += d00.m - (d10.m + d01.m);
                     x += d00.x - (d10.x + d01.x);
                     y += d00.y - (d10.y + d01.y);
                 } else if (i0 >= 0) {
-                    const Data<T> &d10 = table[k1 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
                     m -= d10.m;
                     x -= d10.x;
                     y -= d10.y;
                 } else if (j0 >= 0) {
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d01 = table[k0 + i1];
                     m -= d01.m;
                     x -= d01.x;
                     y -= d01.y;
                 }
-                const Data<T> &d11 = table[k1 + i1];
+                const Data<T>& d11 = table[k1 + i1];
                 m += d11.m;
                 x += d11.x;
                 y += d11.y;
@@ -549,7 +548,7 @@ class DispersionExtendedThreshold {
      * Erode the dispersion mask
      * @param dst The dispersion mask
      */
-    void erode_dispersion_mask(const af::const_ref<bool, af::c_grid<2>> &mask,
+    void erode_dispersion_mask(const af::const_ref<bool, af::c_grid<2>>& mask,
                                af::ref<bool, af::c_grid<2>> dst) {
         // The distance array
         af::versa<int, af::c_grid<2>> distance(dst.accessor(), 0);
@@ -578,8 +577,8 @@ class DispersionExtendedThreshold {
      */
     template <typename T>
     void compute_final_threshold(af::ref<Data<T>> table,
-                                 const af::const_ref<T, af::c_grid<2>> &src,
-                                 const af::const_ref<bool, af::c_grid<2>> &mask,
+                                 const af::const_ref<T, af::c_grid<2>>& src,
+                                 const af::const_ref<bool, af::c_grid<2>>& mask,
                                  af::ref<bool, af::c_grid<2>> dst) {
         // Get the size of the image
         std::size_t ysize = src.accessor()[0];
@@ -605,21 +604,21 @@ class DispersionExtendedThreshold {
                 double m = 0;
                 double x = 0;
                 if (i0 >= 0 && j0 >= 0) {
-                    const Data<T> &d00 = table[k0 + i0];
-                    const Data<T> &d10 = table[k1 + i0];
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d00 = table[k0 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
+                    const Data<T>& d01 = table[k0 + i1];
                     m += d00.m - (d10.m + d01.m);
                     x += d00.x - (d10.x + d01.x);
                 } else if (i0 >= 0) {
-                    const Data<T> &d10 = table[k1 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
                     m -= d10.m;
                     x -= d10.x;
                 } else if (j0 >= 0) {
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d01 = table[k0 + i1];
                     m -= d01.m;
                     x -= d01.x;
                 }
-                const Data<T> &d11 = table[k1 + i1];
+                const Data<T>& d11 = table[k1 + i1];
                 m += d11.m;
                 x += d11.x;
 
@@ -652,9 +651,9 @@ class DispersionExtendedThreshold {
      */
     template <typename T>
     void compute_final_threshold(af::ref<Data<T>> table,
-                                 const af::const_ref<T, af::c_grid<2>> &src,
-                                 const af::const_ref<bool, af::c_grid<2>> &mask,
-                                 const af::const_ref<double, af::c_grid<2>> &gain,
+                                 const af::const_ref<T, af::c_grid<2>>& src,
+                                 const af::const_ref<bool, af::c_grid<2>>& mask,
+                                 const af::const_ref<double, af::c_grid<2>>& gain,
                                  af::ref<bool, af::c_grid<2>> dst) {
         // Get the size of the image
         std::size_t ysize = src.accessor()[0];
@@ -680,21 +679,21 @@ class DispersionExtendedThreshold {
                 double m = 0;
                 double x = 0;
                 if (i0 >= 0 && j0 >= 0) {
-                    const Data<T> &d00 = table[k0 + i0];
-                    const Data<T> &d10 = table[k1 + i0];
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d00 = table[k0 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
+                    const Data<T>& d01 = table[k0 + i1];
                     m += d00.m - (d10.m + d01.m);
                     x += d00.x - (d10.x + d01.x);
                 } else if (i0 >= 0) {
-                    const Data<T> &d10 = table[k1 + i0];
+                    const Data<T>& d10 = table[k1 + i0];
                     m -= d10.m;
                     x -= d10.x;
                 } else if (j0 >= 0) {
-                    const Data<T> &d01 = table[k0 + i1];
+                    const Data<T>& d01 = table[k0 + i1];
                     m -= d01.m;
                     x -= d01.x;
                 }
-                const Data<T> &d11 = table[k1 + i1];
+                const Data<T>& d11 = table[k1 + i1];
                 m += d11.m;
                 x += d11.x;
 
@@ -727,8 +726,8 @@ class DispersionExtendedThreshold {
      * @param dst - The destination array.
      */
     template <typename T>
-    void threshold(const af::const_ref<T, af::c_grid<2>> &src,
-                   const af::const_ref<bool, af::c_grid<2>> &mask,
+    void threshold(const af::const_ref<T, af::c_grid<2>>& src,
+                   const af::const_ref<bool, af::c_grid<2>>& mask,
                    af::ref<bool, af::c_grid<2>> dst) {
         // check the input
         DIALS_ASSERT(src.accessor().all_eq(image_size_));
@@ -739,8 +738,7 @@ class DispersionExtendedThreshold {
         DIALS_ASSERT(sizeof(T) <= sizeof(double));
 
         // Cast the buffer to the table type
-        af::ref<Data<T>> table(reinterpret_cast<Data<T> *>(&buffer_[0]),
-                               buffer_.size());
+        af::ref<Data<T>> table(reinterpret_cast<Data<T>*>(&buffer_[0]), buffer_.size());
 
         // compute the summed area table
         compute_sat(table, src, mask);
@@ -768,9 +766,9 @@ class DispersionExtendedThreshold {
      * @param dst - The destination array.
      */
     template <typename T>
-    void threshold_w_gain(const af::const_ref<T, af::c_grid<2>> &src,
-                          const af::const_ref<bool, af::c_grid<2>> &mask,
-                          const af::const_ref<double, af::c_grid<2>> &gain,
+    void threshold_w_gain(const af::const_ref<T, af::c_grid<2>>& src,
+                          const af::const_ref<bool, af::c_grid<2>>& mask,
+                          const af::const_ref<double, af::c_grid<2>>& gain,
                           af::ref<bool, af::c_grid<2>> dst) {
         // check the input
         DIALS_ASSERT(src.accessor().all_eq(image_size_));
@@ -782,7 +780,7 @@ class DispersionExtendedThreshold {
         DIALS_ASSERT(sizeof(T) <= sizeof(double));
 
         // Cast the buffer to the table type
-        af::ref<Data<T>> table((Data<T> *)&buffer_[0], buffer_.size());
+        af::ref<Data<T>> table((Data<T>*)&buffer_[0], buffer_.size());
 
         // compute the summed area table
         compute_sat(table, src, mask);
@@ -818,11 +816,11 @@ template <typename T, typename internal_T = T>
 class _spotfind_context {
   public:
     af::ref<bool, af::c_grid<2>> dst;
-    bool *_dest_store = nullptr;
+    bool* _dest_store = nullptr;
     af::tiny<int, 2> size;
 
     af::ref<internal_T, af::c_grid<2>> src_converted;
-    internal_T *_src_converted_store;
+    internal_T* _src_converted_store;
 
     baseline::DispersionThreshold algo;
 
@@ -840,27 +838,27 @@ class _spotfind_context {
         delete[] _dest_store;
         delete[] _src_converted_store;
     }
-    void threshold(const af::const_ref<internal_T, af::c_grid<2>> &src,
-                   const af::const_ref<bool, af::c_grid<2>> &mask) {
+    void threshold(const af::const_ref<internal_T, af::c_grid<2>>& src,
+                   const af::const_ref<bool, af::c_grid<2>>& mask) {
         algo.threshold(src_converted, mask, dst);
     }
 };
 
-void *spotfinder_create(size_t width, size_t height) {
+void* spotfinder_create(size_t width, size_t height) {
     return new _spotfind_context<image_t_type, double>(width, height);
 }
-void spotfinder_free(void *context) {
-    delete reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
+void spotfinder_free(void* context) {
+    delete reinterpret_cast<_spotfind_context<image_t_type, double>*>(context);
 }
 
-uint32_t spotfinder_standard_dispersion(void *context,
-                                        image_t *image,
-                                        bool **destination) {
-    auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
+uint32_t spotfinder_standard_dispersion(void* context,
+                                        image_t* image,
+                                        bool** destination) {
+    auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double>*>(context);
 
     // mask needs to convert uint8_t to bool
     auto mask = af::const_ref<bool, af::c_grid<2>>(
-      reinterpret_cast<bool *>(image->mask), af::c_grid<2>(ctx->size[0], ctx->size[1]));
+      reinterpret_cast<bool*>(image->mask), af::c_grid<2>(ctx->size[0], ctx->size[1]));
 
     // Convert all items from the source image type to double
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
