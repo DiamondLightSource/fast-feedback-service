@@ -36,7 +36,7 @@ FFSArgumentParser::FFSArgumentParser(std::string version)
     : ArgumentParser("", version, argparse::default_arguments::help) {
     add_argument("--version")
       .help("Print version information and exit")
-      .action([=](const auto &) {
+      .action([=](const auto&) {
           fmt::print("{}\n", version);
           std::exit(0);
       })
@@ -47,7 +47,7 @@ FFSArgumentParser::FFSArgumentParser(std::string version)
     add_argument("-v", "--verbose")
       .help("Verbose output")
       .implicit_value(false)
-      .action([&](const std::string &) { _arguments.verbose = true; });
+      .action([&](const std::string&) { _arguments.verbose = true; });
 
     // Initialize HDF5 reading arguments by default
     add_h5read_arguments();
@@ -57,7 +57,7 @@ void FFSArgumentParser::add_h5read_arguments() {
     // Check if implicit sample is enable via environment variable
     bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != nullptr;
     // Create a mutually exclusive group for sample vs file input
-    auto &group = add_mutually_exclusive_group(!implicit_sample);
+    auto& group = add_mutually_exclusive_group(!implicit_sample);
 
     group.add_argument("--sample")
       .help(
@@ -69,12 +69,12 @@ void FFSArgumentParser::add_h5read_arguments() {
     group.add_argument("file")
       .metavar("FILE.nxs")
       .help("Path to the Nexus file to parse")
-      .action([&](const std::string &val) { _arguments.file = val; });
+      .action([&](const std::string& val) { _arguments.file = val; });
 
     _activated_h5read = true;
 }
 
-auto FFSArgumentParser::parse_args(int argc, char **argv) -> FFSArguments {
+auto FFSArgumentParser::parse_args(int argc, char** argv) -> FFSArguments {
     // Convert command line arguments to vector for easier manipulation
     std::vector<std::string> args{argv, argv + argc};
 
@@ -95,7 +95,7 @@ auto FFSArgumentParser::parse_args(int argc, char **argv) -> FFSArguments {
 
     try {
         ArgumentParser::parse_args(args);
-    } catch (const std::runtime_error &e) {
+    } catch (const std::runtime_error& e) {
         fmt::print("{}: {}\n{}\n", bold(red("Error")), red(e.what()), usage());
         std::exit(1);
     }

@@ -35,13 +35,13 @@ typedef struct h5_data_file {
 struct _h5read_handle {
     hid_t master_file;
     int data_file_count;
-    h5_data_file *data_files;
+    h5_data_file* data_files;
     size_t frames;  ///< Number of frames in this dataset
     size_t slow;    ///< Pixel dimension of images in the slow direction
     size_t fast;    ///< Pixel dimensions of images in the fast direction
 
-    uint8_t *mask;         ///< Shared image mask
-    uint8_t *module_mask;  ///< Shared module mask
+    uint8_t* mask;         ///< Shared image mask
+    uint8_t* module_mask;  ///< Shared module mask
     size_t mask_size;      ///< Total size(in pixels) of mask
     image_t_type trusted_range_min,
       trusted_range_max;  ///< Trusted range of this dataset
@@ -78,7 +78,7 @@ static void _validate_data_type_size(hid_t datatype) {
 #endif
 }
 
-void h5read_free(h5read_handle *obj) {
+void h5read_free(h5read_handle* obj) {
 #ifdef HAVE_HDF5
     for (int i = 0; i < obj->data_file_count; i++) {
         H5Dclose(obj->data_files[i].dataset);
@@ -94,25 +94,25 @@ void h5read_free(h5read_handle *obj) {
 }
 
 /// Get the number of frames available
-size_t h5read_get_number_of_images(h5read_handle *obj) {
+size_t h5read_get_number_of_images(h5read_handle* obj) {
     return obj->frames;
 }
 
-size_t h5read_get_image_slow(h5read_handle *obj) {
+size_t h5read_get_image_slow(h5read_handle* obj) {
     return obj->slow;
 }
 
-size_t h5read_get_image_fast(h5read_handle *obj) {
+size_t h5read_get_image_fast(h5read_handle* obj) {
     return obj->fast;
 }
 
-void h5read_free_image(image_t *i) {
+void h5read_free_image(image_t* i) {
     free(i->data);
     // Mask is a pointer to the file-global file mask so isn't freed
     free(i);
 }
 
-uint8_t *h5read_get_mask(h5read_handle *obj) {
+uint8_t* h5read_get_mask(h5read_handle* obj) {
     return obj->mask;
 }
 
@@ -121,7 +121,7 @@ uint8_t *h5read_get_mask(h5read_handle *obj) {
 ///
 /// @param image    The image to blit from
 /// @param modules  The modules object to fill
-void _blit(image_t *image, image_modules_t *modules) {
+void _blit(image_t* image, image_modules_t* modules) {
     // Number of modules in fast, slow directions
     size_t fast, slow;
     if (image->slow == E2XE_16M_SLOW) {
@@ -139,7 +139,7 @@ void _blit(image_t *image, image_modules_t *modules) {
     size_t module_pixels = E2XE_MOD_SLOW * E2XE_MOD_FAST;
 
     modules->data =
-      (image_t_type *)malloc(sizeof(image_t_type) * slow * fast * module_pixels);
+      (image_t_type*)malloc(sizeof(image_t_type) * slow * fast * module_pixels);
 
     for (size_t _slow = 0; _slow < slow; _slow++) {
         size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image->fast;
@@ -149,17 +149,17 @@ void _blit(image_t *image, image_modules_t *modules) {
                   (row0 + row * image->fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
                 size_t target =
                   (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
-                memcpy((void *)&modules->data[target],
-                       (void *)&image->data[offset],
+                memcpy((void*)&modules->data[target],
+                       (void*)&image->data[offset],
                        sizeof(image_t_type) * E2XE_MOD_FAST);
             }
         }
     }
 }
 
-image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t n) {
-    image_t *image = h5read_get_image(obj, n);
-    image_modules_t *modules = malloc(sizeof(image_modules_t));
+image_modules_t* h5read_get_image_modules(h5read_handle* obj, size_t n) {
+    image_t* image = h5read_get_image(obj, n);
+    image_modules_t* modules = malloc(sizeof(image_modules_t));
     modules->data = NULL;
     modules->mask = obj->module_mask;
     modules->modules = -1;
@@ -170,7 +170,7 @@ image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t n) {
     return modules;
 }
 
-void h5read_free_image_modules(image_modules_t *i) {
+void h5read_free_image_modules(image_modules_t* i) {
     free(i->data);
     // Like image, mask is held on the central h5read_handle object
     free(i);
@@ -182,7 +182,7 @@ typedef struct {
     uint64_t state;
     uint64_t inc;
 } pcg32_random_t;
-uint32_t pcg32_random_r(pcg32_random_t *rng) {
+uint32_t pcg32_random_r(pcg32_random_t* rng) {
     uint64_t oldstate = rng->state;
     // Advance internal state
     rng->state = oldstate * 6364136223846793005ULL + (rng->inc | 1);
@@ -195,7 +195,7 @@ uint32_t pcg32_random_r(pcg32_random_t *rng) {
 #define NUM_SAMPLE_IMAGES 6
 
 /// Generate a sample image from number
-void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
+void _generate_sample_image(h5read_handle* obj, size_t n, image_t_type* data) {
     assert(n >= 0 && n <= NUM_SAMPLE_IMAGES);
 
     if (n == 0) {
@@ -270,7 +270,7 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
 /// Find the data file index for a particular image number.
 /// If the image isn't found on any data files, returns obj->data_file_count
 /// FIXME returns updated in index in place
-int _find_data_file_for_image(h5read_handle *obj, size_t *index) {
+int _find_data_file_for_image(h5read_handle* obj, size_t* index) {
     int data_file = 0;
     size_t subtracted = *index;
     for (; data_file < obj->data_file_count; data_file++) {
@@ -285,7 +285,7 @@ int _find_data_file_for_image(h5read_handle *obj, size_t *index) {
     return data_file;
 }
 
-size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
+size_t h5read_get_chunk_size(h5read_handle* obj, size_t index) {
     if (obj->data_files == 0) {
         fprintf(stderr, "Error: Cannot do direct chunk read with sample data\n", index);
         exit(1);
@@ -296,7 +296,7 @@ size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
         exit(1);
     }
-    h5_data_file *current = &(obj->data_files[data_file]);
+    h5_data_file* current = &(obj->data_files[data_file]);
 
     hsize_t offset[3] = {index + current->offset, 0, 0};
     hsize_t chunk_size = 0;
@@ -309,10 +309,10 @@ size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
     return (size_t)chunk_size;
 }
 
-void h5read_get_raw_chunk(h5read_handle *obj,
+void h5read_get_raw_chunk(h5read_handle* obj,
                           size_t index,
-                          size_t *size,
-                          uint8_t *data,
+                          size_t* size,
+                          uint8_t* data,
                           size_t max_size) {
     if (obj->data_files == 0) {
         fprintf(stderr, "Error: Cannot do direct chunk read with sample data\n", index);
@@ -324,7 +324,7 @@ void h5read_get_raw_chunk(h5read_handle *obj,
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
         exit(1);
     }
-    h5_data_file *current = &(obj->data_files[data_file]);
+    h5_data_file* current = &(obj->data_files[data_file]);
 
     hsize_t offset[3] = {index + current->offset, 0, 0};
     hsize_t chunk_size = 0;
@@ -348,7 +348,7 @@ void h5read_get_raw_chunk(h5read_handle *obj,
 #endif
 }
 
-void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data) {
+void h5read_get_image_into(h5read_handle* obj, size_t index, image_t_type* data) {
     if (index >= obj->frames) {
         fprintf(stderr,
                 "Error: image %ld greater than number of frames (%ld)\n",
@@ -373,7 +373,7 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
         exit(1);
     }
 
-    h5_data_file *current = &(obj->data_files[data_file]);
+    h5_data_file* current = &(obj->data_files[data_file]);
 
     hid_t space = H5Dget_space(current->dataset);
     hid_t datatype = H5Dget_type(current->dataset);
@@ -395,9 +395,9 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
 #endif
 }
 
-image_t *h5read_get_image(h5read_handle *obj, size_t n) {
+image_t* h5read_get_image(h5read_handle* obj, size_t n) {
     // Make an image_t to write into
-    image_t *result = malloc(sizeof(image_t));
+    image_t* result = malloc(sizeof(image_t));
     result->mask = obj->mask;
     result->fast = obj->fast;
     result->slow = obj->slow;
@@ -409,9 +409,9 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     return result;
 }
 
-void h5read_get_trusted_range(h5read_handle *obj,
-                              image_t_type *min,
-                              image_t_type *max) {
+void h5read_get_trusted_range(h5read_handle* obj,
+                              image_t_type* min,
+                              image_t_type* max) {
     if (min != NULL) {
         *min = obj->trusted_range_min;
     }
@@ -420,34 +420,34 @@ void h5read_get_trusted_range(h5read_handle *obj,
     }
 }
 
-float h5read_get_wavelength(h5read_handle *obj) {
+float h5read_get_wavelength(h5read_handle* obj) {
     return obj->wavelength;
 }
 
-float h5read_get_pixel_size_slow(h5read_handle *obj) {
+float h5read_get_pixel_size_slow(h5read_handle* obj) {
     return obj->pixel_size_x;
 }
-float h5read_get_pixel_size_fast(h5read_handle *obj) {
+float h5read_get_pixel_size_fast(h5read_handle* obj) {
     return obj->pixel_size_y;
 }
-float h5read_get_detector_distance(h5read_handle *obj) {
+float h5read_get_detector_distance(h5read_handle* obj) {
     return obj->detector_distance;
 }
-float h5read_get_beam_center_x(h5read_handle *obj) {
+float h5read_get_beam_center_x(h5read_handle* obj) {
     return obj->beam_center_x;
 }
-float h5read_get_beam_center_y(h5read_handle *obj) {
+float h5read_get_beam_center_y(h5read_handle* obj) {
     return obj->beam_center_y;
 }
-float h5read_get_oscillation_start(h5read_handle *obj) {
+float h5read_get_oscillation_start(h5read_handle* obj) {
     return obj->oscillation_start;
 }
-float h5read_get_oscillation_width(h5read_handle *obj) {
+float h5read_get_oscillation_width(h5read_handle* obj) {
     return obj->oscillation_width;
 }
 
 #ifdef HAVE_HDF5
-void read_mask(h5read_handle *obj) {
+void read_mask(h5read_handle* obj) {
     char mask_path[] = "/entry/instrument/detector/pixel_mask";
 
     hid_t mask_dataset = H5Dopen(obj->master_file, mask_path, H5P_DEFAULT);
@@ -478,16 +478,16 @@ void read_mask(h5read_handle *obj) {
 
     printf("Mask has %ld elements\n", obj->mask_size);
 
-    void *buffer = NULL;
+    void* buffer = NULL;
 
-    uint32_t *raw_mask = NULL;
-    uint64_t *raw_mask_64 = NULL;  // why?
+    uint32_t* raw_mask = NULL;
+    uint64_t* raw_mask_64 = NULL;  // why?
     if (mask_dsize == 4) {
-        raw_mask = (uint32_t *)malloc(sizeof(uint32_t) * obj->mask_size);
-        buffer = (void *)raw_mask;
+        raw_mask = (uint32_t*)malloc(sizeof(uint32_t) * obj->mask_size);
+        buffer = (void*)raw_mask;
     } else {
-        raw_mask_64 = (uint64_t *)malloc(sizeof(uint64_t) * obj->mask_size);
-        buffer = (void *)raw_mask_64;
+        raw_mask_64 = (uint64_t*)malloc(sizeof(uint64_t) * obj->mask_size);
+        buffer = (void*)raw_mask_64;
     }
 
     if (H5Dread(mask_dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buffer) < 0) {
@@ -499,7 +499,7 @@ void read_mask(h5read_handle *obj) {
 
     size_t zero = 0;
 
-    obj->mask = (uint8_t *)malloc(sizeof(uint8_t) * obj->mask_size);
+    obj->mask = (uint8_t*)malloc(sizeof(uint8_t) * obj->mask_size);
 
     if (mask_dsize == 4) {
         for (size_t j = 0; j < obj->mask_size; j++) {
@@ -537,7 +537,7 @@ void read_mask(h5read_handle *obj) {
         image_slow = E2XE_4M_SLOW;
         image_fast = E2XE_4M_FAST;
     }
-    obj->module_mask = (uint8_t *)malloc(sizeof(uint8_t) * fast * slow * module_pixels);
+    obj->module_mask = (uint8_t*)malloc(sizeof(uint8_t) * fast * slow * module_pixels);
     for (size_t _slow = 0; _slow < slow; _slow++) {
         size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image_fast;
         for (size_t _fast = 0; _fast < fast; _fast++) {
@@ -545,8 +545,8 @@ void read_mask(h5read_handle *obj) {
                 offset =
                   (row0 + row * image_fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
                 target = (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
-                memcpy((void *)&obj->module_mask[target],
-                       (void *)&obj->mask[offset],
+                memcpy((void*)&obj->module_mask[target],
+                       (void*)&obj->mask[offset],
                        sizeof(uint8_t) * E2XE_MOD_FAST);
             }
         }
@@ -572,8 +572,8 @@ void read_mask(h5read_handle *obj) {
 ///
 /// @return The HDF error code (negative) if opening the dataset failed, or 0
 herr_t _read_single_value_image_t_type(hid_t origin,
-                                       const char *dataset_path,
-                                       image_t_type *destination) {
+                                       const char* dataset_path,
+                                       image_t_type* destination) {
     hid_t dataset = H5Dopen(origin, dataset_path, H5P_DEFAULT);
     if (dataset < 0) {
         return dataset;
@@ -635,7 +635,7 @@ herr_t _read_single_value_image_t_type(hid_t origin,
 /// successful.
 ///
 /// @return HDF error (negative) if opening the dataset failed. Othewise, 0.
-herr_t _read_single_value_float(hid_t origin, const char *path, float *destination) {
+herr_t _read_single_value_float(hid_t origin, const char* path, float* destination) {
     hid_t dataset = H5Dopen(origin, path, H5P_DEFAULT);
     if (dataset < 0) {
         return dataset;
@@ -681,7 +681,7 @@ herr_t _read_single_value_float(hid_t origin, const char *path, float *destinati
     return 0;
 }
 
-void read_trusted_range(h5read_handle *obj) {
+void read_trusted_range(h5read_handle* obj) {
     obj->trusted_range_min = 0;
 #ifdef PIXEL_DATA_32BIT
     obj->trusted_range_max = UINT32_MAX;
@@ -706,7 +706,7 @@ void read_trusted_range(h5read_handle *obj) {
     }
 }
 
-void read_wavelength(h5read_handle *obj) {
+void read_wavelength(h5read_handle* obj) {
     if (_read_single_value_float(obj->master_file,
                                  "/entry/instrument/beam/incident_wavelength",
                                  &obj->wavelength)
@@ -716,7 +716,7 @@ void read_wavelength(h5read_handle *obj) {
     }
 }
 
-void read_oscillation_start_and_width(h5read_handle *obj) {
+void read_oscillation_start_and_width(h5read_handle* obj) {
     char omega_path[] = "/entry/sample/sample_omega/omega";
 
     hid_t omega_dataset = H5Dopen(obj->master_file, omega_path, H5P_DEFAULT);
@@ -733,8 +733,8 @@ void read_oscillation_start_and_width(h5read_handle *obj) {
         fprintf(stderr, "Error: While reading oscillation, size<2\n");
         exit(1);
     }
-    double *raw_omega = (double *)malloc(sizeof(double) * size);
-    void *buffer = (void *)raw_omega;
+    double* raw_omega = (double*)malloc(sizeof(double) * size);
+    void* buffer = (void*)raw_omega;
     if (H5Dread(omega_dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buffer) < 0) {
         fprintf(stderr, "Error: While reading oscillation\n");
         exit(1);
@@ -745,7 +745,7 @@ void read_oscillation_start_and_width(h5read_handle *obj) {
     H5Dclose(omega_dataset);
 }
 
-void read_detector_metadata(h5read_handle *obj) {
+void read_detector_metadata(h5read_handle* obj) {
     if (_read_single_value_float(obj->master_file,
                                  "/entry/instrument/detector/x_pixel_size",
                                  &obj->pixel_size_x)
@@ -795,7 +795,7 @@ void read_detector_metadata(h5read_handle *obj) {
 ///                         allocated and filled with basic information
 ///                         about the VDS sub-files.
 /// @returns The number of VDS found and allocated into data_files_array
-int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_array) {
+int vds_info(char* root, hid_t master, hid_t dataset, h5_data_file** data_files_array) {
     hid_t plist, vds_source;
     size_t vds_count;
     herr_t status;
@@ -806,7 +806,7 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
 
     *data_files_array = calloc(vds_count, sizeof(h5_data_file));
     // Used to use vds parameter directly - put here so no mass-changes
-    h5_data_file *vds = *data_files_array;
+    h5_data_file* vds = *data_files_array;
 
     for (int j = 0; j < vds_count; j++) {
         hsize_t start[MAXDIM], stride[MAXDIM], count[MAXDIM], block[MAXDIM];
@@ -894,7 +894,7 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
 /// @param h5_data_file     The data_files array to be allocated and filled
 ///
 /// @returns The number of VDS files
-int unpack_vds(const char *filename, h5_data_file **data_files) {
+int unpack_vds(const char* filename, h5_data_file** data_files) {
     // TODO if we want this to become SWMR aware in the future will need to
     // allow for that here
     hid_t file = H5Fopen(filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
@@ -914,7 +914,7 @@ int unpack_vds(const char *filename, h5_data_file **data_files) {
     /* always set the absolute path to file information */
     char rootpath[MAXFILENAME];
     strncpy(rootpath, filename, MAXFILENAME);
-    char *root = dirname(rootpath);
+    char* root = dirname(rootpath);
     char cwd[MAXFILENAME];
     if ((strlen(root) == 1) && (root[0] == '.')) {
         root = getcwd(cwd, MAXFILENAME);
@@ -928,7 +928,7 @@ int unpack_vds(const char *filename, h5_data_file **data_files) {
     return vds_count;
 }
 
-void setup_data(h5read_handle *obj) {
+void setup_data(h5read_handle* obj) {
     hid_t dataset = obj->data_files[0].dataset;
     hid_t datatype = H5Dget_type(dataset);
 
@@ -951,7 +951,7 @@ void setup_data(h5read_handle *obj) {
     H5Sclose(space);
 }
 
-h5read_handle *h5read_open(const char *master_filename) {
+h5read_handle* h5read_open(const char* master_filename) {
     hid_t master_file =
       H5Fopen(master_filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
 
@@ -961,7 +961,7 @@ h5read_handle *h5read_open(const char *master_filename) {
     }
 
     // Create the H5 handle object
-    h5read_handle *file = calloc(1, sizeof(h5read_handle));
+    h5read_handle* file = calloc(1, sizeof(h5read_handle));
     file->master_file = master_file;
 
     file->data_file_count = unpack_vds(master_filename, &file->data_files);
@@ -975,7 +975,7 @@ h5read_handle *h5read_open(const char *master_filename) {
 
     // open up the actual data files, count all the frames
     file->frames = 0;
-    h5_data_file *data_files = file->data_files;
+    h5_data_file* data_files = file->data_files;
     for (int j = 0; j < file->data_file_count; j++) {
         data_files[j].file = H5Fopen(
           data_files[j].filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
@@ -1016,12 +1016,12 @@ h5read_handle *h5read_open(const char *master_filename) {
 #endif
 
 // Generate a mask with just module bounds masked off
-uint8_t *_generate_e2xe_16m_mask() {
+uint8_t* _generate_e2xe_16m_mask() {
     assert(E2XE_MOD_SLOW * E2XE_16M_NSLOW + E2XE_GAP_SLOW * (E2XE_16M_NSLOW - 1)
            == E2XE_16M_SLOW);
     assert(E2XE_MOD_FAST * E2XE_16M_NFAST + E2XE_GAP_FAST * (E2XE_16M_NFAST - 1)
            == E2XE_16M_FAST);
-    uint8_t *mask = calloc(E2XE_16M_SLOW * E2XE_16M_SLOW, sizeof(uint8_t));
+    uint8_t* mask = calloc(E2XE_16M_SLOW * E2XE_16M_SLOW, sizeof(uint8_t));
     for (size_t i = 0; i < E2XE_16M_SLOW * E2XE_16M_SLOW; ++i) {
         mask[i] = 1;
     }
@@ -1043,8 +1043,8 @@ uint8_t *_generate_e2xe_16m_mask() {
     return mask;
 }
 
-h5read_handle *h5read_generate_samples() {
-    h5read_handle *file = calloc(1, sizeof(h5read_handle));
+h5read_handle* h5read_generate_samples() {
+    h5read_handle* file = calloc(1, sizeof(h5read_handle));
 
     // Generate the mask - with module gaps masked off
     file->slow = E2XE_16M_SLOW;
@@ -1076,16 +1076,16 @@ h5read_handle *h5read_generate_samples() {
     return file;
 }
 
-h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
+h5read_handle* h5read_parse_standard_args(int argc, char** argv) {
     bool implicit_sample = getenv("H5READ_IMPLICIT_SAMPLE") != NULL;
 #ifndef HAVE_HDF5
     // Always assume implicit sample if we can't read HDF5 files
     implicit_sample = true;
 #endif
-    const char *USAGE = implicit_sample
+    const char* USAGE = implicit_sample
                           ? "Usage: %s [-h|--help] [-v] [FILE.nxs | --sample]\n"
                           : "Usage: %s [-h|--help] [-v] (FILE.nxs | --sample)\n";
-    const char *HELP =
+    const char* HELP =
       "Options:\n\
   FILE.nxs      Path to the Nexus file to parse\n\
   -h, --help    Show this message\n\
@@ -1151,7 +1151,7 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
         exit(1);
     }
 
-    h5read_handle *handle = 0;
+    h5read_handle* handle = 0;
     if (sample_data) {
         fprintf(stderr, "Using SAMPLE dataset\n");
         handle = h5read_generate_samples();
