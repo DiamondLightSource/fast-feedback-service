@@ -137,7 +137,7 @@ void configure_parser(argparse::ArgumentParser& parser) {
 
 #pragma region Index Generators
 /**
- * A class to generate miller indices with the Reeke algorithm for monochromatic beams
+ * A class to generate miller indices with the Reeke algorithm
  */
 class ReekeIndexGenerator {
   public:
@@ -233,7 +233,6 @@ class ReekeIndexGenerator {
       -> std::optional<std::pair<T, T>> {
         T min_v;
         T max_v;
-        std::vector<T> list;
         if (!pair1 && !pair2) return std::nullopt;
         if (pair1) {
             min_v = std::min(pair1->first, pair1->second);
@@ -571,7 +570,7 @@ class ReekeIndexGenerator {
 };
 
 /**
- * A class to generate miller indices with the Reeke algorithm for monochromatic beams
+ * A class to generate miller indices for stills experiments
  */
 class StillsIndexGenerator {
   public:
@@ -645,29 +644,6 @@ class StillsIndexGenerator {
     }
 
   private:
-    template <typename T>
-        requires(std::integral<T> or std::floating_point<T>)
-    auto get_min_max_pair(std::optional<std::pair<T, T>> pair1,
-                          std::optional<std::pair<T, T>> pair2)
-      -> std::optional<std::pair<T, T>> {
-        T min_v;
-        T max_v;
-        std::vector<T> list;
-        if (!pair1 && !pair2) return std::nullopt;
-        if (pair1) {
-            min_v = std::min(pair1->first, pair1->second);
-            max_v = std::max(pair1->first, pair1->second);
-            if (pair2) {
-                min_v = std::min(min_v, std::min(pair2->first, pair2->second));
-                max_v = std::max(max_v, std::max(pair2->first, pair2->second));
-            }
-        } else {
-            min_v = std::min(pair2->first, pair2->second);
-            max_v = std::max(pair2->first, pair2->second);
-        }
-        return std::pair<T, T>{min_v, max_v};
-    }
-
     /**
 	 * @brief Calculate the looping limits of the Miller index h
 	 *
@@ -711,7 +687,6 @@ class StillsIndexGenerator {
         int a = int((-r1 + sqrt(d)) / r2);
         int b = int((-r1 - sqrt(d)) / r2) + 1;
         return std::pair<int, int>{a, b};
-        // return std::pair{-100, 100};
     }
 
     /**
@@ -800,8 +775,6 @@ class StillsIndexGenerator {
                 l_limits[1] = std::nullopt;
             }
         return l_limits;
-        // return {calc_l_limits_T(T, h, k), std::nullopt};
-        // return {std::pair{-100, 100}, std::nullopt};
     }
 
     Matrix3d A;
@@ -1104,27 +1077,28 @@ int main(int argc, char** argv) {
     // Obtain argument values from the parsed command-line input
     const auto param_expt_paths = parser.get<std::vector<std::string>>("expt");
     auto param_dmin = parser.get<double>("dmin");
-    const auto param_force_static = parser.get<bool>("force_static");
+    auto param_force_static = parser.get<bool>("force_static");
     const auto param_dynamic_shadows = parser.get<bool>("dynamic_shadows");
     const auto param_buffer_size = parser.get<int>("buffer_size");
     const auto param_nthreads = parser.get<size_t>("nthreads");
     const std::string output_file_path = "predicted.refl";
     const uint64_t predicted_flag = (1 << 0);
 
-    // FIXME: We ar ein desperate need of an append function for reflection tables :(
     // Create std::vectors to store results in, and later add them as columns to a ReflectionTable.
     ReflectionTable predicted;
-    std::vector<std::array<int32_t, 3>> hkl;
+    // Shape {size, 3}
+    std::vector<int32_t> hkl;
+    std::vector<double> s1;
+    std::vector<double> xyz_px;
+    std::vector<double> xyz_mm;
+    std::vector<double> s0_cal;
+    // Shape {size, 1}
     std::vector<uint64_t> panels;
     std::vector<bool> enter;
-    std::vector<std::array<double, 3>> s1;
-    std::vector<std::array<double, 3>> xyz_px;
-    std::vector<std::array<double, 3>> xyz_mm;
     std::vector<uint64_t> flags;
     std::vector<int32_t> ids;
     std::vector<double> delpsi;
     std::vector<double> wavelength_cal;
-    std::vector<std::array<double, 3>> s0_cal;
     std::vector<uint64_t> experiment_ids;
     std::vector<std::string> identifiers;
 
@@ -1139,11 +1113,8 @@ int main(int argc, char** argv) {
         json experiment_list = data.at("experiment");
 
         for (int i_expt = 0; i_expt < experiment_list.size(); i_expt++) {
-            // FIXME: The below definition only works if hkl is a separate vector. When we start appending to the
-            // ReflectionTable directly (in the future, when this is supported), the below definition will need to
-            // be modified.
             // Compute the number of reflections predicted already (used when storing ids)
-            const std::size_t num_reflections_initial = hkl.size();
+            const std::size_t num_reflections_initial = panels.size();
 
 #pragma region Determine Experiment Parameters
             // FIXME: Extracting information from the json object manually here, as the ExperimentList
@@ -1153,10 +1124,6 @@ int main(int argc, char** argv) {
             const std::string identifier = expt_details.at("identifier");
 
             // Obtain the indices indicating where experiment data can be found
-            // FIXME: Handle cases where certain entries do not exist. Eg. goniometer doesn't
-            // have to exist for stills images! Is the best way forward to branch into different
-            // types of scans as soon as possible in the logic? The current branching based on
-            // several bools is getting annoying to keep track of and read.
             const std::size_t i_detector = expt_details.at("detector");
             const std::size_t i_goniometer = expt_details.at("goniometer");
             const std::size_t i_scan = expt_details.at("scan");
@@ -1206,7 +1173,7 @@ int main(int argc, char** argv) {
                             {scan.get_oscillation()[0]
                                - param_buffer_size * scan.get_oscillation()[1],
                              scan.get_oscillation()[1]});
-                // param_force_static = true;
+                param_force_static = true;
             }
 #pragma endregion
 
@@ -1281,7 +1248,8 @@ int main(int argc, char** argv) {
                     s0_at_scan_points = beam_data.at("s0_at_scan_points");
                     if (s0_at_scan_points.size() == num_images + 1) sv_type.beam = true;
                 }
-                // Experimental feature: Support for scan-varying polychromatic beams.
+                // // Experimental feature: Support for scan-varying polychromatic beams.
+                // // Uncomment the below code:
                 // else if (beam_data.contains("unit_s0_at_scan_points")) {
                 //     s0_at_scan_points = beam_data.at("unit_s0_at_scan_points");
                 //     if (s0_at_scan_points.size() == num_images + 1) sv_type.beam = true;
@@ -1381,15 +1349,16 @@ int main(int argc, char** argv) {
                     auto coords_px =
                       detector.panels()[panel].mm_to_px(coords_mm[0], coords_mm[1]);
 
-                    // FIXME: A push_back() or append() must exist for the
-                    // ReflectionTable class. This will lead to changes in
-                    // the code below.
-                    hkl.push_back(
-                      {index.value()[0], index.value()[1], index.value()[2]});
+                    hkl.insert(
+                      hkl.end(), std::begin(index.value()), std::end(index.value()));
                     enter.push_back(ray->entering);
-                    s1.push_back({ray->s1[0], ray->s1[1], ray->s1[2]});
-                    xyz_mm.push_back({coords_mm[0], coords_mm[1], 0});
-                    xyz_px.push_back({coords_px[0], coords_px[1], 0});
+                    s1.insert(s1.end(), std::begin(ray->s1), std::end(ray->s1));
+                    xyz_mm.insert(
+                      xyz_mm.end(), std::begin(coords_mm), std::end(coords_mm));
+                    xyz_mm.push_back(0);
+                    xyz_px.insert(
+                      xyz_px.end(), std::begin(coords_px), std::end(coords_px));
+                    xyz_px.push_back(0);
                     panels.push_back(panel);
                     flags.push_back(predicted_flag);
                     if (beam_type == BeamType::Monochromatic)
@@ -1397,7 +1366,8 @@ int main(int argc, char** argv) {
                     else {
                         wavelength_cal.push_back(1.0 / ray->s1.norm());
                         Vector3d s0_pred = s0.normalized() / ray->s1.norm();
-                        s0_cal.push_back({s0_pred[0], s0_pred[1], s0_pred[2]});
+                        s0_cal.insert(
+                          s0_cal.end(), std::begin(s0_pred), std::end(s0_pred));
                     }
                 }
             } else [[likely]] {
@@ -1525,15 +1495,17 @@ int main(int argc, char** argv) {
                             // Get the frame that a reflection with this angle will be observed at
                             double frame = z0 + (ray->angle - osc0) / d_osc;
 
-                            // FIXME: A push_back() or append() must exist for the
-                            // ReflectionTable class. This will lead to changes in
-                            // the code below.
-                            hkl.push_back(
-                              {index.value()[0], index.value()[1], index.value()[2]});
+                            hkl.insert(hkl.end(),
+                                       std::begin(index.value()),
+                                       std::end(index.value()));
                             enter.push_back(ray->entering);
-                            s1.push_back({ray->s1[0], ray->s1[1], ray->s1[2]});
-                            xyz_mm.push_back({coords_mm[0], coords_mm[1], ray->angle});
-                            xyz_px.push_back({coords_px[0], coords_px[1], frame});
+                            s1.insert(s1.end(), std::begin(ray->s1), std::end(ray->s1));
+                            xyz_mm.insert(
+                              xyz_mm.end(), std::begin(coords_mm), std::end(coords_mm));
+                            xyz_mm.push_back(ray->angle);
+                            xyz_px.insert(
+                              xyz_px.end(), std::begin(coords_px), std::end(coords_px));
+                            xyz_px.push_back(frame);
                             panels.push_back(panel);
                             flags.push_back(predicted_flag);
                         }
@@ -1541,7 +1513,7 @@ int main(int argc, char** argv) {
                 }
             }
 
-            std::size_t num_new_reflections = hkl.size() - num_reflections_initial;
+            std::size_t num_new_reflections = panels.size() - num_reflections_initial;
             std::vector<int32_t> new_ids(num_new_reflections, i_expt);
             ids.insert(ids.end(), new_ids.begin(), new_ids.end());
             experiment_ids.push_back(i_expt);
@@ -1550,13 +1522,13 @@ int main(int argc, char** argv) {
     }
 
     // Check if the vector sizes are consistent after prediction (before creating a ReflectionTable).
-    // Note that delpsi, wavelength_cal, and s0_cal are allowed to either be 0 or equal to the other
-    // sizes, depening on the type of prediction done.
-    if ((hkl.size() != panels.size()) || (hkl.size() != enter.size())
+    // Note that delpsi, wavelength_cal, and s0_cal are allowed to either be 0 or equal to the row
+    // size, depening on the type of prediction done.
+    if ((hkl.size() != 3 * panels.size()) || (hkl.size() != 3 * enter.size())
         || (hkl.size() != s1.size()) || (hkl.size() != xyz_px.size())
-        || (hkl.size() != xyz_mm.size()) || (hkl.size() != flags.size())
-        || !(hkl.size() == delpsi.size() || delpsi.size() == 0)
-        || !(hkl.size() == wavelength_cal.size() || wavelength_cal.size() == 0)
+        || (hkl.size() != xyz_mm.size()) || (hkl.size() != 3 * flags.size())
+        || !(hkl.size() == 3 * delpsi.size() || delpsi.size() == 0)
+        || !(hkl.size() == 3 * wavelength_cal.size() || wavelength_cal.size() == 0)
         || !(hkl.size() == s0_cal.size() || s0_cal.size() == 0)) {
         logger.error(
           "The sizes of the columns after prediction are not "
@@ -1581,37 +1553,20 @@ int main(int argc, char** argv) {
     }
 
     // Store the size, once it has been verified as being consistent across columns.
-    std::size_t sz = hkl.size();
+    std::size_t sz = panels.size();
 
-    // Flatten the std::vector<std::array>>s
-    // FIXME: This is quite inefficient; there should be support for `T=std::array>>` inside `ReflectionTable::add_column<T>()`
-    // FIXME: An alternative to the above approach is support for a pointer or `std::span` version of `add_column`; this will help avoid the duplication of data
-    // FIXME: Yet another alternative would be to support an `append`-type operation for `ReflectionTable`s, allowing us to circumvent the problem of having to
-    // explicitly store `std::vector`s of the prediction data until the very end, which makes the code very brittle and ugly. This option is the best of the 3.
-    std::vector<int> hkl_flat(sz * 3);
-    std::vector<double> s1_flat(sz * 3);
-    std::vector<double> xyz_px_flat(sz * 3);
-    std::vector<double> xyz_mm_flat(sz * 3);
-    std::vector<double> s0_cal_flat(sz * 3);
-    std::memcpy(hkl_flat.data(), hkl.data(), sz * sizeof(std::array<int, 3>));
-    std::memcpy(s1_flat.data(), s1.data(), sz * sizeof(std::array<double, 3>));
-    std::memcpy(xyz_px_flat.data(), xyz_px.data(), sz * sizeof(std::array<double, 3>));
-    std::memcpy(xyz_mm_flat.data(), xyz_mm.data(), sz * sizeof(std::array<double, 3>));
-    std::memcpy(
-      s0_cal_flat.data(), s0_cal.data(), s0_cal.size() * sizeof(std::array<double, 3>));
-
-    predicted.add_column<int32_t>("miller_index", {sz, 3}, hkl_flat);
+    predicted.add_column<int32_t>("miller_index", {sz, 3}, hkl);
     predicted.add_column<uint64_t>("panel", {sz}, panels);
     predicted.add_column<bool>("entering", {sz}, enter);
-    predicted.add_column<double>("s1", {sz, 3}, s1_flat);
-    predicted.add_column<double>("xyzcal.px", {sz, 3}, xyz_px_flat);
-    predicted.add_column<double>("xyzcal.mm", {sz, 3}, xyz_mm_flat);
+    predicted.add_column<double>("s1", {sz, 3}, s1);
+    predicted.add_column<double>("xyzcal.px", {sz, 3}, xyz_px);
+    predicted.add_column<double>("xyzcal.mm", {sz, 3}, xyz_mm);
     predicted.add_column<uint64_t>("flags", {sz}, flags);
     predicted.add_column<int32_t>("id", {sz}, ids);
     if (delpsi.size()) predicted.add_column<double>("delpsical.rad", {sz}, delpsi);
     if (wavelength_cal.size())
         predicted.add_column<double>("wavelength_cal", {sz}, wavelength_cal);
-    if (s0_cal.size()) predicted.add_column<double>("s0_cal", {sz, 3}, s0_cal_flat);
+    if (s0_cal.size()) predicted.add_column<double>("s0_cal", {sz, 3}, s0_cal);
     predicted.set_experiment_ids(experiment_ids);
     predicted.set_identifiers(identifiers);
 
