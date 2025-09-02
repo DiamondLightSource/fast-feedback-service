@@ -13,6 +13,9 @@ project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Option to use 32-bit pixel data instead of 16-bit
+option(PIXEL_DATA_32BIT "Use 32-bit pixel data instead of 16-bit" OFF)
+
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
@@ -66,17 +69,59 @@ project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
-# Make a library for a global logger
+# Create a header-only interface library for compile definitions
+add_library(compile_options INTERFACE)
+
+# Add compile definitions if enabled
+if(PIXEL_DATA_32BIT)
+    target_compile_definitions(compile_options INTERFACE PIXEL_DATA_32BIT)
+    message(STATUS "Building with 32-bit pixel data support")
+else()
+    message(STATUS "Building with 16-bit pixel data support")
+endif()
+
+# Make a common C++ library for shared code
 add_library(ffs_common STATIC 
-    ffs_logger.cc
+    src/ffs/ffs_logger.cc
+    src/ffs/arg_parser.cc
 )
 target_include_directories(ffs_common PUBLIC
     ${CMAKE_SOURCE_DIR}/include
 )
-target_link_libraries(ffs_common
+target_link_libraries(ffs_common PUBLIC
+    compile_options
     spdlog
     fmt
+    argparse
 )
+
+# Check if CUDA is available
+find_package(CUDAToolkit)
+
+if (CUDAToolkit_FOUND)
+    message(STATUS "CUDA found: Building CUDA components.")
+    set(FFS_ENABLE_CUDA ON)
+else()
+    message(STATUS "CUDA not found: Skipping CUDA components.")
+    set(FFS_ENABLE_CUDA OFF)
+endif()
+
+# Conditionally add a CUDA common library
+if (FFS_ENABLE_CUDA)
+    add_library(cuda_parser STATIC
+        src/ffs/cuda_arg_parser.cc
+    )
+
+    target_include_directories(cuda_parser PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(cuda_parser
+        ffs_common
+        argparse
+        CUDA::cudart
+    )
+endif()
 
 enable_testing()
 
