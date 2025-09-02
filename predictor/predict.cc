@@ -141,8 +141,6 @@ void configure_parser(argparse::ArgumentParser& parser) {
  */
 class ReekeIndexGenerator {
   public:
-    ReekeIndexGenerator() {}
-
     ReekeIndexGenerator(const Matrix3d& A1,
                         const Matrix3d& A2,
                         gemmi::GroupOps& crystal_symmetry_operations,
@@ -195,14 +193,13 @@ class ReekeIndexGenerator {
         switch (state) {
         case enter:
             state = yield;
-            h_lims = calc_h_limits(A1, A2, s0_1, s0_2, dmin);
+            h_lims = calc_h_limits();
             if (!h_lims) break;
             for (; h_lims->first <= h_lims->second; h_lims->first++) {
-                k_lims = calc_k_limits(T1, T2, h_lims->first, dmin);
+                k_lims = calc_k_limits(h_lims->first);
                 if (!k_lims) continue;
                 for (; k_lims->first <= k_lims->second; k_lims->first++) {
-                    l_lims_arr = calc_l_limits(
-                      T1, T2, h_lims->first, k_lims->first, dmin, use_mono_rotational);
+                    l_lims_arr = calc_l_limits(h_lims->first, k_lims->first);
                     l_index = 0;
                     for (; l_index < 2; ++l_index) {
                         if (!l_lims_arr[l_index]) continue;
@@ -256,9 +253,8 @@ class ReekeIndexGenerator {
 	 * @param dmin The minimum lattice spacing that can be resolved
 	 * @return std::pair<double, double>
 	 */
-    auto calc_h_limits_resolution(const Vector3d& a,
-                                  const Vector3d& s0,
-                                  const double dmin) -> std::pair<double, double> {
+    auto calc_h_limits_resolution(const Vector3d& a, const Vector3d& s0)
+      -> std::pair<double, double> {
         double dstar_max = 1.0 / dmin;
         double s0_len_sq = s0.squaredNorm();
         double s0_dot_a = s0.dot(a);
@@ -280,11 +276,7 @@ class ReekeIndexGenerator {
 	 * @param dmin The minimum lattice spacing that can be resolved
 	 * @return std::optional<std::pair<int, int>>
 	 */
-    auto calc_h_limits(const Matrix3d& A1,
-                       const Matrix3d& A2,
-                       const Vector3d& s0_1,
-                       const Vector3d& s0_2,
-                       const double dmin) -> std::optional<std::pair<int, int>> {
+    auto calc_h_limits() -> std::optional<std::pair<int, int>> {
         const Vector3d a1 = A1.inverse().row(0);
         const Vector3d a2 = A2.inverse().row(0);
         const double a1_len = a1.norm();
@@ -302,9 +294,9 @@ class ReekeIndexGenerator {
 
         // Calculate resolution limits
         std::pair<double, double> h_limits_resolution_1 =
-          calc_h_limits_resolution(a1, s0_1, dmin);
+          calc_h_limits_resolution(a1, s0_1);
         std::pair<double, double> h_limits_resolution_2 =
-          calc_h_limits_resolution(a2, s0_2, dmin);
+          calc_h_limits_resolution(a2, s0_2);
 
         // Conditionally combine the Ewald and resolution limits
         // The logic here is that is if the point of tangency between a plane of constant h and the Ewald sphere lies
@@ -368,7 +360,7 @@ class ReekeIndexGenerator {
      * @param dmin The minimum lattice spacing that can be resolved
      * @return std::optional<std::pair<int, int>> 
      */
-    auto calc_k_limits_resolution(const Matrix4d& T, const int h, const double dmin)
+    auto calc_k_limits_resolution(const Matrix4d& T, const int h)
       -> std::optional<std::pair<int, int>> {
         double r0 =
           h * h * (T(0, 2) * T(0, 2) - T(0, 0) * T(2, 2)) + T(2, 2) / (dmin * dmin);
@@ -394,16 +386,13 @@ class ReekeIndexGenerator {
      * @param dmin The minimum lattice spacing that can be resolved
      * @return std::optional<std::pair<int, int>> 
      */
-    auto calc_k_limits(const Matrix4d& T1,
-                       const Matrix4d& T2,
-                       const int h,
-                       const double dmin) -> std::optional<std::pair<int, int>> {
+    auto calc_k_limits(const int h) -> std::optional<std::pair<int, int>> {
         std::optional<std::pair<int, int>> k_limits_ewald_1 =
           calc_k_limits_ewald(T1, h);
         std::optional<std::pair<int, int>> k_limits_ewald_2 =
           calc_k_limits_ewald(T2, h);
         std::optional<std::pair<int, int>> k_limits_resolution =
-          calc_k_limits_resolution(T1, h, dmin);
+          calc_k_limits_resolution(T1, h);
 
         if (!k_limits_resolution) return std::nullopt;
 
@@ -454,10 +443,7 @@ class ReekeIndexGenerator {
      * @param dmin The minimum lattice spacing that can be resolved
      * @return std::optional<std::pair<int, int>> 
      */
-    auto calc_l_limits_resolution(const Matrix4d& T,
-                                  const int h,
-                                  const int k,
-                                  const double dmin)
+    auto calc_l_limits_resolution(const Matrix4d& T, const int h, const int k)
       -> std::optional<std::pair<int, int>> {
         double q0 =
           T(0, 0) * h * h + 2 * T(0, 1) * h * k + T(1, 1) * k * k - 1.0 / (dmin * dmin);
@@ -484,19 +470,14 @@ class ReekeIndexGenerator {
  * @param dmin The minimum lattice spacing that can be resolved
  * @return std::vector<std::pair<int, int>> A vector with 0, 1, or 2 elements, depending on the ewald sphere and resolution sphere calculations.
  */
-    auto calc_l_limits(const Matrix4d& T1,
-                       const Matrix4d& T2,
-                       const int h,
-                       const int k,
-                       const double dmin,
-                       const bool use_mono_rotational)
+    auto calc_l_limits(const int h, const int k)
       -> std::array<std::optional<std::pair<int, int>>, 2> {
         std::optional<std::pair<int, int>> l_limits_ewald_1 =
           calc_l_limits_ewald(T1, h, k);
         std::optional<std::pair<int, int>> l_limits_ewald_2 =
           calc_l_limits_ewald(T2, h, k);
         std::optional<std::pair<int, int>> l_limits_resolution =
-          calc_l_limits_resolution(T1, h, k, dmin);
+          calc_l_limits_resolution(T1, h, k);
         if (!l_limits_resolution) return {};
 
         // Rearrange the results into a vector of size 1 or 2, depending on the results of the ewald calculations
