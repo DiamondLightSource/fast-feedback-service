@@ -23,7 +23,7 @@ from ssx_index import GPUIndexer
 import ffs.index
 
 try:
-    import ffbidx
+    import ffbidx # ruff: noqa: F401
 except ModuleNotFoundError:
     raise RuntimeError(
         "ffbidx not found, has the fast-feedback-indexer module been built and sourced?"
@@ -34,7 +34,7 @@ spotfinder_executable = (
 )  ##FIXME assumes running from root dir - would use 'find_spotfinder' logic.
 
 
-def run_spotfind_and_indexing(data_path, cell, panel, wavelength):
+def run_spotfind_and_indexing(data_path, cell, panel, wavelength, images=None):
     indexer = GPUIndexer()
     indexer.cell = cell
     indexer.panel = panel
@@ -55,6 +55,8 @@ def run_spotfind_and_indexing(data_path, cell, panel, wavelength):
         str(write_fd),
         "--output-for-index",
     ]
+    if images:
+        command.extend(["--images", str(int(images))])
     print(f"Running: {' '.join(str(x) for x in command)}")
 
     def pipe_output(read_fd: int) -> Iterator[str]:
@@ -143,6 +145,7 @@ def run(args):
         help="Unit cell parameters: a b c alpha beta gamma",
     )
     parser.add_argument("-w", "-λ", "--wavelength", type=float)
+    parser.add_argument("--images", type=int, default=None)
     parser.add_argument("--detector", help="Path to the detector model json")
     parsed = parser.parse_args(args)
 
@@ -178,7 +181,7 @@ def run(args):
         detector_geometry.mu,
     )
 
-    run_spotfind_and_indexing(parsed.datafile, cell, panel, wavelength)
+    run_spotfind_and_indexing(parsed.datafile, cell, panel, wavelength, images=parsed.images)
 
 
 if __name__ == "__main__":
