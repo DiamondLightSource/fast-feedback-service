@@ -187,7 +187,7 @@ class GPUPerImageAnalysis(CommonService):
         self._order_resolver = MessageOrderResolver(self.log)
         ## Initialise the fast-feedback-indexer
         self.indexer = None
-        self.output_for_index = False # Only turn on when we have confirmed all the things we need (cell, etc)
+        self.output_for_index = False  # Only turn on when we have confirmed all the things we need (cell, etc)
         try:
             self.indexer = GPUIndexer()
         except ModuleNotFoundError:
@@ -241,7 +241,9 @@ class GPUPerImageAnalysis(CommonService):
                 detector_geometry.mu,
             )
             self.indexer.wavelength = parameters.wavelength
-            self.output_for_index = True # The indexer has been configured, so can run the spotfinder
+            self.output_for_index = (
+                True  # The indexer has been configured, so can run the spotfinder
+            )
             # with --output-for-index and capture the results in read_and_send.
 
         start_time = time.monotonic()
