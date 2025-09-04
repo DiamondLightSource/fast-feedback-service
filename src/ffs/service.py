@@ -350,8 +350,10 @@ class GPUPerImageAnalysis(CommonService):
                 if self.indexer and self.cell and self.panel and self.wavelength:
                     xyzobs_px = np.array(data["spot_centers"])
                     indexing_result = self.indexer.index(xyzobs_px)
+                    self.log.info(indexing_result.model_dump_json(indent=2))
                     result = indexing_result.model_dump()
-                    ## FIXME where to send the result on to...
+                    data.update(result)
+                    del data["spot_centers"] # don't send this data array onwards.
                 self.log.info(f"Sending: {data}")
                 rw.set_default_channel("result")
                 rw.send_to("result", data)
