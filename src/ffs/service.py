@@ -353,7 +353,7 @@ class GPUPerImageAnalysis(CommonService):
                     self.log.info(indexing_result.model_dump_json(indent=2))
                     result = indexing_result.model_dump()
                     data.update(result)
-                    del data["spot_centers"] # don't send this data array onwards.
+                    del data["spot_centers"]  # don't send this data array onwards.
                 self.log.info(f"Sending: {data}")
                 rw.set_default_channel("result")
                 rw.send_to("result", data)

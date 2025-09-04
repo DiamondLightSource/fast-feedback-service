@@ -29,7 +29,7 @@ spotfinder_executable = (
 
 def run_spotfind_and_indexing(data_path, cell, panel, wavelength, images=None):
     try:
-        indexer = GPUIndexer() # this will try to import ffbidx
+        indexer = GPUIndexer()  # this will try to import ffbidx
     except ModuleNotFoundError:
         raise RuntimeError(
             "ffbidx not found, has the fast-feedback-indexer module been built and sourced?"
@@ -179,7 +179,9 @@ def run(args):
         detector_geometry.mu,
     )
 
-    run_spotfind_and_indexing(parsed.datafile, cell, panel, wavelength, images=parsed.images)
+    run_spotfind_and_indexing(
+        parsed.datafile, cell, panel, wavelength, images=parsed.images
+    )
 
 
 if __name__ == "__main__":

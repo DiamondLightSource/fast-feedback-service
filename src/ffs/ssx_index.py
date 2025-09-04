@@ -32,7 +32,7 @@ class IndexingResult(BaseModel):
 
 class GPUIndexer:
     def __init__(self):
-        import ffbidx # Delay import to here, so that the fast
+        import ffbidx  # Delay import to here, so that the fast
         # feedback service does not need this available to run.
 
         self._indexer = ffbidx.Indexer(
