@@ -24,6 +24,10 @@ dependencies = [
 
 [tool.setuptools_scm]
 
+# pytest.ini
+[tool.pytest.ini_options]
+testpaths = "tests"
+
 [project.entry-points."workflows.services"]
 "GPUPerImageAnalysis" = "ffs.service:GPUPerImageAnalysis"
 "XRCResultCompare" = "compare_service:XRCResultCompare"

@@ -15,10 +15,12 @@ In order to create a development environment and compile the service, you need t
 - hdf5
 - hdf5-external-filter-plugins
 - gemmi
+- pytest
+- dials-data
 
 For example, you can create a conda/mamba environment with the following command:
 ```bash
-mamba create -c conda-forge -p ./ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog gemmi
+mamba create -c conda-forge -p ./ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog gemmi pytest dials-data
 ```
 
 ### Initialising submodules
@@ -38,6 +40,25 @@ cmake ..                    # Run cmake to generate the makefile
 make                        # Compile the code
 ```
 This will create the executable `spotfinder` in the [`build/bin/`] directory.
+
+### Configuring pixel data precision
+By default, the service is compiled to handle 16-bit pixel data. For detectors that produce 32-bit pixel data, you can enable 32-bit support using the `PIXEL_DATA_32BIT` option.
+
+**Using ccmake (recommended):**
+```bash
+cd build
+ccmake ..                   # Opens an interactive configuration interface
+# Navigate to PIXEL_DATA_32BIT and toggle it to ON
+# Press 'c' to configure, then 'g' to generate
+make                        # Compile with the new settings
+```
+
+**Using cmake command line:**
+```bash
+cd build
+cmake -DPIXEL_DATA_32BIT=ON ..  # Enable 32-bit pixel data support
+make                            # Compile with the new settings
+```
 
 ## Usage
 ### Environment Variables

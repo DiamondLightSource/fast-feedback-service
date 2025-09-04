@@ -25,6 +25,7 @@
 #include "cbfread.hpp"
 #include "common.hpp"
 #include "connected_components/connected_components.hpp"
+#include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
@@ -251,90 +252,118 @@ class PipeHandler {
     }
 };
 
+#pragma region Argument Parser
+class SpotfinderArgumentParser : public CUDAArgumentParser {
+  public:
+    SpotfinderArgumentParser(std::string version) : CUDAArgumentParser(version) {
+        add_spotfinder_arguments();
+    }
+
+    void add_spotfinder_arguments() {
+        add_argument("-n", "--threads")
+          .help("Number of parallel reader threads")
+          .default_value<uint32_t>(1)
+          .metavar("NUM")
+          .scan<'u', uint32_t>();
+
+        add_argument("--validate")
+          .help("Run DIALS standalone validation")
+          .default_value(false)
+          .implicit_value(true);
+
+        add_argument("--images")
+          .help("Maximum number of images to process")
+          .metavar("NUM")
+          .scan<'u', uint32_t>();
+
+        add_argument("--writeout")
+          .help("Write diagnostic output images")
+          .default_value(false)
+          .implicit_value(true);
+
+        add_argument("--min-spot-size")
+          .help("2D Reflections with a pixel count below this will be discarded.")
+          .metavar("N")
+          .default_value<uint32_t>(3)
+          .scan<'u', uint32_t>();
+
+        add_argument("--min-spot-size-3d")
+          .help("3D Reflections with a pixel count below this will be discarded.")
+          .metavar("N")
+          .default_value<uint32_t>(3)
+          .scan<'u', uint32_t>();
+
+        add_argument("--max-peak-centroid-separation")
+          .help(
+            "Reflections with a peak-centroid difference greater than this will be "
+            "filtered during output.")
+          .metavar("N")
+          .default_value<float>(2.0)
+          .scan<'f', float>();
+
+        add_argument("--start-index")
+          .help(
+            "Index of first image. Only used for CBF reading, and can only be 0 or 1.")
+          .metavar("N")
+          .default_value<uint32_t>(0)
+          .scan<'u', uint32_t>();
+
+        add_argument("-t", "--timeout")
+          .help("Amount of time (in seconds) to wait for new images before failing.")
+          .metavar("S")
+          .default_value<float>(30)
+          .scan<'f', float>();
+
+        add_argument("-fd", "--pipe_fd")
+          .help("File descriptor for the pipe to output data through")
+          .metavar("FD")
+          .default_value<int>(-1)
+          .scan<'i', int>();
+
+        add_argument("-a", "--algorithm")
+          .help("Dispersion algorithm to use")
+          .metavar("ALGO")
+          .default_value<std::string>("dispersion");
+
+        add_argument("--dmin")
+          .help("Minimum resolution (Å)")
+          .metavar("MIN D")
+          .default_value<float>(-1.f)
+          .scan<'f', float>();
+
+        add_argument("--dmax")
+          .help("Maximum resolution (Å)")
+          .metavar("MAX D")
+          .default_value<float>(-1.f)
+          .scan<'f', float>();
+
+        add_argument("-w", "-λ", "--wavelength")
+          .help("Wavelength of the X-ray beam (Å)")
+          .metavar("λ")
+          .scan<'f', float>();
+
+        add_argument("--detector").help("Detector geometry JSON").metavar("JSON");
+
+        add_argument("-h5", "--save-h5")
+          .help("Save the output to an HDF5 file")
+          .metavar("FILE")
+          .default_value(false)
+          .implicit_value(true);
+
+        add_argument("--output-for-index")
+          .help("Pipe spot centroids from 2D images to enable indexing")
+          .default_value(false)
+          .implicit_value(true);
+    }
+};
+#pragma endregion
+
+#pragma region Application Entry
 int main(int argc, char **argv) {
     logger.info("Spotfinder version: {}", FFS_VERSION);
-
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader
-    auto parser = CUDAArgumentParser(FFS_VERSION);
-    parser.add_h5read_arguments();
-    parser.add_argument("-n", "--threads")
-      .help("Number of parallel reader threads")
-      .default_value<uint32_t>(1)
-      .metavar("NUM")
-      .scan<'u', uint32_t>();
-    parser.add_argument("--validate")
-      .help("Run DIALS standalone validation")
-      .default_value(false)
-      .implicit_value(true);
-    parser.add_argument("--images")
-      .help("Maximum number of images to process")
-      .metavar("NUM")
-      .scan<'u', uint32_t>();
-    parser.add_argument("--writeout")
-      .help("Write diagnostic output images")
-      .default_value(false)
-      .implicit_value(true);
-    parser.add_argument("--min-spot-size")
-      .help("2D Reflections with a pixel count below this will be discarded.")
-      .metavar("N")
-      .default_value<uint32_t>(3)
-      .scan<'u', uint32_t>();
-    parser.add_argument("--min-spot-size-3d")
-      .help("3D Reflections with a pixel count below this will be discarded.")
-      .metavar("N")
-      .default_value<uint32_t>(3)
-      .scan<'u', uint32_t>();
-    parser.add_argument("--max-peak-centroid-separation")
-      .help(
-        "Reflections with a peak-centroid difference greater than this will be "
-        "filtered during output.")
-      .metavar("N")
-      .default_value<float>(2.0)
-      .scan<'f', float>();
-    parser.add_argument("--start-index")
-      .help("Index of first image. Only used for CBF reading, and can only be 0 or 1.")
-      .metavar("N")
-      .default_value<uint32_t>(0)
-      .scan<'u', uint32_t>();
-    parser.add_argument("-t", "--timeout")
-      .help("Amount of time (in seconds) to wait for new images before failing.")
-      .metavar("S")
-      .default_value<float>(30)
-      .scan<'f', float>();
-    parser.add_argument("-fd", "--pipe_fd")
-      .help("File descriptor for the pipe to output data through")
-      .metavar("FD")
-      .default_value<int>(-1)
-      .scan<'i', int>();
-    parser.add_argument("-a", "--algorithm")
-      .help("Dispersion algorithm to use")
-      .metavar("ALGO")
-      .default_value<std::string>("dispersion");
-    parser.add_argument("--dmin")
-      .help("Minimum resolution (Å)")
-      .metavar("MIN D")
-      .default_value<float>(-1.f)
-      .scan<'f', float>();
-    parser.add_argument("--dmax")
-      .help("Maximum resolution (Å)")
-      .metavar("MAX D")
-      .default_value<float>(-1.f)
-      .scan<'f', float>();
-    parser.add_argument("-w", "-λ", "--wavelength")
-      .help("Wavelength of the X-ray beam (Å)")
-      .metavar("λ")
-      .scan<'f', float>();
-    parser.add_argument("--detector").help("Detector geometry JSON").metavar("JSON");
-    parser.add_argument("-h5", "--save-h5")
-      .help("Save the output to an HDF5 file")
-      .metavar("FILE")
-      .default_value(false)
-      .implicit_value(true);
-    parser.add_argument("--output-for-index")
-      .help("Pipe spot centroids from 2D images to enable indexing")
-      .default_value(false)
-      .implicit_value(true);
+    SpotfinderArgumentParser parser(FFS_VERSION);
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -617,26 +646,25 @@ int main(int argc, char **argv) {
     }
 
     // Create a unique pointer to store the image slices if this is a rotation dataset
-    std::unique_ptr<std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>
+    std::unique_ptr<std::map<int, std::unique_ptr<ConnectedComponents>>>
       rotation_slices = nullptr;
     std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
     // Create a unique pointer to store the reflection centres if we want to save 2D spot data.
-    std::unique_ptr<std::unordered_map<int, std::vector<float>>> reflection_centers_2d =
-      nullptr;
+    std::unique_ptr<std::map<int, std::vector<float>>> reflection_centers_2d = nullptr;
     std::mutex
       reflection_centers_2d_mutex;  // Mutex to protect the reflection centers 2d map
 
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
-        rotation_slices = std::make_unique<
-          std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>();
+        rotation_slices =
+          std::make_unique<std::map<int, std::unique_ptr<ConnectedComponents>>>();
         fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
     } else {
         fmt::print("Dataset type: {}\n", fmt::styled("Still set", fmt_magenta));
         if (save_to_h5) {
             // A map we will use to save results as we go.
             reflection_centers_2d =
-              std::make_unique<std::unordered_map<int, std::vector<float>>>();
+              std::make_unique<std::map<int, std::vector<float>>>();
         }
     }
 
@@ -746,8 +774,11 @@ int main(int argc, char **argv) {
                 // the decompression
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4:
-                    bshuf_decompress_lz4(
-                      buffer.data() + 12, host_image.get(), width * height, 2, 0);
+                    bshuf_decompress_lz4(buffer.data() + 12,
+                                         host_image.get(),
+                                         width * height,
+                                         sizeof(pixel_t),
+                                         0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
                     // decompress_byte_offset<pixel_t>(buffer,
@@ -761,6 +792,7 @@ int main(int argc, char **argv) {
                     // std::exit(1);
                     break;
                 }
+
                 start.record(stream);
                 // Copy the image to GPU
                 CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
@@ -1175,3 +1207,4 @@ int main(int argc, char **argv) {
                    time_waiting_for_images);
     }
 }
+#pragma endregion Application Entry

@@ -13,10 +13,14 @@ extern "C" {
 typedef struct _h5read_handle h5read_handle;
 
 // Define a data type alias so that other users don't have to hardcode
+#ifdef PIXEL_DATA_32BIT
+typedef uint32_t image_t_type;
+#else
 typedef uint16_t image_t_type;
+#endif
 
 typedef struct image_t {
-    uint16_t *data;
+    image_t_type *data;
     uint8_t *mask;
     size_t slow;
     size_t fast;
@@ -24,7 +28,8 @@ typedef struct image_t {
 
 /* data as modules i.e. 3D array */
 typedef struct image_modules_t {
-    uint16_t *data;  ///< Module image data in a 3D array block of [module][slow][fast]
+    image_t_type
+      *data;         ///< Module image data in a 3D array block of [module][slow][fast]
     uint8_t *mask;   ///< Image mask, in the same shape as the module data
     size_t modules;  ///< Total number of modules
     size_t slow;     ///< Number of pixels in slow direction per module
@@ -186,11 +191,11 @@ class H5Read : public Reader {
     H5Read(int argc, char **argv) noexcept;
 
     /// Read image data into an existing buffer
-    void get_image_into(size_t index, uint16_t *data) {
+    void get_image_into(size_t index, image_t_type *data) {
         h5read_get_image_into(_handle.get(), index, data);
     }
     /// Read image data into an existing buffer
-    void get_image_into(size_t index, std::span<uint16_t> data) {
+    void get_image_into(size_t index, std::span<image_t_type> data) {
 #ifndef NDEBUG
         assert(data.size() >= get_image_slow() * get_image_fast());
 #endif

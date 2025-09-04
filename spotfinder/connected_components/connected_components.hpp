@@ -6,6 +6,7 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 #include <cstdint>
+#include <map>
 #include <tuple>
 #include <vector>
 
@@ -111,13 +112,59 @@ class Reflection3D {
             throw std::runtime_error("No pixels in 3D reflection");
         }
 
+        // logger.debug("Finding peak signal for reflection with {} pixels",
+        //              signals_.size());
+
         // Find the signal with the highest intensity
         const Signal *peak_signal = nullptr;
         double max_intensity = std::numeric_limits<double>::min();
+        int candidates_with_max_intensity = 0;
 
         for (const auto &signal : signals_) {
+            // Guard: Skip if intensity is lower than current max
+            if (signal.intensity < max_intensity) {
+                continue;
+            }
+
+            // Handle new maximum intensity
             if (signal.intensity > max_intensity) {
                 max_intensity = signal.intensity;
+                peak_signal = &signal;
+                candidates_with_max_intensity = 1;
+                // logger.trace(
+                //   "New max intensity found: {} at ({}, {}, {}) linear_index: {}",
+                //   signal.intensity,
+                //   signal.x,
+                //   signal.y,
+                //   signal.z.has_value() ? signal.z.value() : -1,
+                //   signal.linear_index);
+                continue;
+            }
+
+            // At this point, signal.intensity == max_intensity
+            candidates_with_max_intensity++;
+
+            // Guard: Skip tie-breaking if no current peak (shouldn't happen, but safety)
+            if (peak_signal == nullptr) {
+                continue;
+            }
+
+            // Deterministic tie-breaking using coordinate comparison
+            bool should_update_tie = is_signal_preferred(signal, *peak_signal);
+
+            // logger.trace(
+            //   "Tie at intensity {}: current ({}, {}, {}) vs peak ({}, {}, {}), "
+            //   "should_update: {}",
+            //   signal.intensity,
+            //   signal.x,
+            //   signal.y,
+            //   signal.z.value(),
+            //   peak_signal->x,
+            //   peak_signal->y,
+            //   peak_signal->z.value(),
+            //   should_update_tie);
+
+            if (should_update_tie) {
                 peak_signal = &signal;
             }
         }
@@ -127,15 +174,33 @@ class Reflection3D {
             throw std::runtime_error("Failed to find peak intensity signal");
         }
 
+        // logger.debug(
+        //   "Selected peak signal: intensity={}, position=({}, {}, {}), linear_index={}, "
+        //   "candidates_with_max_intensity={}",
+        //   peak_signal->intensity,
+        //   peak_signal->x,
+        //   peak_signal->y,
+        //   peak_signal->z.has_value() ? peak_signal->z.value() : -1,
+        //   peak_signal->linear_index,
+        //   candidates_with_max_intensity);
+
         // Get the cached or computed center of mass
         auto [com_x, com_y, com_z] = center_of_mass();
+        // logger.debug("Center of mass: ({:.3f}, {:.3f}, {:.3f})", com_x, com_y, com_z);
 
         // Calculate the Euclidean distance
         float dx = (peak_signal->x + 0.5f) - com_x;
         float dy = (peak_signal->y + 0.5f) - com_y;
         float dz = (peak_signal->z.value() + 0.5f) - com_z;
 
-        return std::sqrt(dx * dx + dy * dy + dz * dz);
+        float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        // logger.debug("Peak-centroid distance: {:.3f} (dx={:.3f}, dy={:.3f}, dz={:.3f})",
+        //              distance,
+        //              dx,
+        //              dy,
+        //              dz);
+
+        return distance;
     }
 
     // Getters for bounding box
@@ -171,6 +236,16 @@ class Reflection3D {
     // com cache for lazy evaluation
     mutable bool com_cached_;
     mutable std::tuple<float, float, float> com_cache_;
+
+    /**
+     * @brief Determines if the first signal should be preferred over the second
+     *        in case of intensity ties using coordinate-based tie-breaking.
+     * 
+     * @param candidate The signal to compare
+     * @param current The current preferred signal
+     * @return true if candidate should be preferred over current
+     */
+    bool is_signal_preferred(const Signal &candidate, const Signal &current) const;
 };
 
 /**
@@ -228,7 +303,7 @@ class ConnectedComponents {
         return boxes;
     }
 
-    std::unordered_map<size_t, Signal> &get_signals() {
+    std::map<size_t, Signal> &get_signals() {
         return signals;
     }
 
@@ -274,11 +349,11 @@ class ConnectedComponents {
     uint num_strong_pixels_filtered;  // Number of strong pixels after filtering
     std::vector<Reflection> boxes;    // Bounding boxes
     // Maps pixel linear index -> Signal (used to store signal pixels)
-    std::unordered_map<size_t, Signal> signals;
+    std::map<size_t, Signal> signals;
     // Maps graph linear index -> vertex ID
-    std::unordered_map<size_t, size_t> index_to_vertex;
+    std::map<size_t, size_t> index_to_vertex;
     // Maps graph vertex ID -> linear index
-    std::unordered_map<size_t, size_t> vertex_to_index;
+    std::map<size_t, size_t> vertex_to_index;
     // 2D graph representing the connected components
     boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS> graph;
 
