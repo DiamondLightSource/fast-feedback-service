@@ -17,14 +17,10 @@ from typing import Iterator
 
 import gemmi
 import numpy as np
-from service import DetectorGeometry
+from service import DetectorGeometry, _find_spotfinder
 from ssx_index import GPUIndexer
 
 import ffs.index
-
-spotfinder_executable = (
-    Path.cwd() / "build/bin/spotfinder"
-)  ##FIXME assumes running from root dir - would use 'find_spotfinder' logic.
 
 
 def run_spotfind_and_indexing(data_path, cell, panel, wavelength, images=None):
@@ -42,6 +38,8 @@ def run_spotfind_and_indexing(data_path, cell, panel, wavelength, images=None):
     n_total = 0
 
     read_fd, write_fd = os.pipe()
+
+    spotfinder_executable = _find_spotfinder()
 
     # Now run the spotfinder
     command = [
