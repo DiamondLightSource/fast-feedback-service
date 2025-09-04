@@ -22,20 +22,18 @@ from ssx_index import GPUIndexer
 
 import ffs.index
 
-try:
-    import ffbidx # ruff: noqa: F401
-except ModuleNotFoundError:
-    raise RuntimeError(
-        "ffbidx not found, has the fast-feedback-indexer module been built and sourced?"
-    )
-
 spotfinder_executable = (
     Path.cwd() / "build/bin/spotfinder"
 )  ##FIXME assumes running from root dir - would use 'find_spotfinder' logic.
 
 
 def run_spotfind_and_indexing(data_path, cell, panel, wavelength, images=None):
-    indexer = GPUIndexer()
+    try:
+        indexer = GPUIndexer() # this will try to import ffbidx
+    except ModuleNotFoundError:
+        raise RuntimeError(
+            "ffbidx not found, has the fast-feedback-indexer module been built and sourced?"
+        )
     indexer.cell = cell
     indexer.panel = panel
     indexer.wavelength = wavelength
