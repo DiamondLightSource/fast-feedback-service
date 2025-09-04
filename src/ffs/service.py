@@ -187,6 +187,7 @@ class GPUPerImageAnalysis(CommonService):
         self._order_resolver = MessageOrderResolver(self.log)
         ## Initialise the fast-feedback-indexer
         self.indexer = None
+        self.output_for_index = False # Only turn on when we have confirmed all the things we need (cell, etc)
         try:
             self.indexer = GPUIndexer()
         except ModuleNotFoundError:
@@ -240,6 +241,8 @@ class GPUPerImageAnalysis(CommonService):
                 detector_geometry.mu,
             )
             self.indexer.wavelength = parameters.wavelength
+            self.output_for_index = True # The indexer has been configured, so can run the spotfinder
+            # with --output-for-index and capture the results in read_and_send.
 
         start_time = time.monotonic()
         self.log.info(
@@ -308,6 +311,8 @@ class GPUPerImageAnalysis(CommonService):
             command.extend(["--dmin", str(parameters.d_min)])
         if parameters.d_max:
             command.extend(["--dmax", str(parameters.d_max)])
+        if self.output_for_index:
+            command.extend(["--output-for-index"])
 
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
 
@@ -347,7 +352,7 @@ class GPUPerImageAnalysis(CommonService):
                 # XRC has one-based-indexing
                 data["file-number"] += 1
                 ## Do indexing
-                if self.indexer and self.cell and self.panel and self.wavelength:
+                if self.output_for_index:
                     xyzobs_px = np.array(data["spot_centers"])
                     indexing_result = self.indexer.index(xyzobs_px)
                     self.log.info(indexing_result.model_dump_json(indent=2))
