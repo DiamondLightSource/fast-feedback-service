@@ -930,8 +930,8 @@ std::array<std::optional<Ray>, 2> predict_ray_monochromatic_static(
     if (angle_first < 0)
         angle_first += 360;
     else if (angle_first > 360)
-        angle_first -= 0;
-    if (angle_second < -180)
+        angle_first -= 360;
+    if (angle_second < 0)
         angle_second += 360;
     else if (angle_second > 360)
         angle_second -= 360;
@@ -1537,7 +1537,9 @@ int main(int argc, char** argv) {
                                                                    s0_2.normalized(),
                                                                    wavelength,
                                                                    wavelength_poly_max,
-                                                                   param_dmin);
+                                                                   param_dmin,
+                                                                   phi_beg,
+                                                                   d_osc);
 
                         for (std::optional<Ray> ray : rays) {
                             if (!ray) continue;
@@ -1560,7 +1562,7 @@ int main(int argc, char** argv) {
                             s1.insert(s1.end(), std::begin(ray->s1), std::end(ray->s1));
                             xyz_mm.insert(
                               xyz_mm.end(), std::begin(coords_mm), std::end(coords_mm));
-                            xyz_mm.push_back(ray->angle);
+                            xyz_mm.push_back(ray->angle * M_PI / 180);
                             xyz_px.insert(
                               xyz_px.end(), std::begin(coords_px), std::end(coords_px));
                             xyz_px.push_back(frame);
