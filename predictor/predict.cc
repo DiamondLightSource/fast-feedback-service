@@ -614,25 +614,49 @@ class ReekeIndexGenerator {
     gemmi::GroupOps crystal_symmetry_operations;
 };
 
+class PolychromaticRotationalIndexGenerator {
+    // FIXME: Currently, the Reek index generator has a use_monochromatic boolean that, when set to false,
+    // can generate indices for polychromtic beams. This is, however, expensive because the fine-slicing
+    // around the Ewald sphere no longer works and the full range of indices inside the larger Ewald sphere
+    // have to be generated. A new index generator is here needed, it should generate the indixes between
+    // the inner and outer Ewald spheres.
+    // Alternatively, the StillsIndex generator may be used (angular tolerance = rotation angle) without
+    // (IMO, but this is unmeasured) too much of an additional cost, since the number of polychromatic spots
+    // is large anyway, and the added
+};
+
 /**
  * A class to generate Miller indices for stills experiments
  */
 class StillsIndexGenerator {
   public:
+    // FIXME: This is quite ugly to accommodate polychromatic prediction, maybe a separate generator
+    // or better naming of variables will solve the problem.
     StillsIndexGenerator(const Matrix3d& A,
                          gemmi::GroupOps& crystal_symmetry_operations,
-                         const Vector3d& s0,
+                         const Vector3d& s0_upper,
+                         const Vector3d& s0_lower,
                          const double angular_tolerance)
-        : A(A), s0(s0), crystal_symmetry_operations(crystal_symmetry_operations) {
+        : A(A),
+          s0(s0_upper),
+          s0_lower(s0_lower),
+          crystal_symmetry_operations(crystal_symmetry_operations) {
         s0_len_sq = s0.squaredNorm();
-        s0_len_sq_min = s0_len_sq * (1 - angular_tolerance) * (1 - angular_tolerance);
+        s0_len_sq_min =
+          s0_lower.squaredNorm() * (1 - angular_tolerance) * (1 - angular_tolerance);
         s0_len_sq_max = s0_len_sq * (1 + angular_tolerance) * (1 + angular_tolerance);
         auto P = MatrixXd{
           {A(0, 0), A(0, 1), A(0, 2), s0[0]},
           {A(1, 0), A(1, 1), A(1, 2), s0[1]},
           {A(2, 0), A(2, 1), A(2, 2), s0[2]},
         };
+        auto P_inner = MatrixXd{
+          {A(0, 0), A(0, 1), A(0, 2), s0_lower[0]},
+          {A(1, 0), A(1, 1), A(1, 2), s0_lower[1]},
+          {A(2, 0), A(2, 1), A(2, 2), s0_lower[2]},
+        };
         T = P.transpose() * P;
+        T_inner = P_inner.transpose() * P_inner;
     }
 
     // Generate and return the next miller index.
@@ -744,16 +768,14 @@ class StillsIndexGenerator {
       -> std::array<std::optional<std::pair<double, double>>, 2> {
         std::array<std::optional<std::pair<double, double>>, 2> l_limits;
 
-        double q0_outer = T(0, 0) * h * h + 2 * T(0, 1) * h * k + T(1, 1) * k * k
-                          + 2 * T(0, 3) * h + 2 * T(1, 3) * k - s0_len_sq_max
-                          + s0_len_sq;
-        double q0_inner = q0_outer + s0_len_sq_max - s0_len_sq_min;
+        double q0 = T(0, 0) * h * h + 2 * T(0, 1) * h * k + T(1, 1) * k * k
+                    + 2 * T(0, 3) * h + 2 * T(1, 3) * k - s0_len_sq_max + s0_len_sq;
         double q1 = T(0, 2) * h + T(1, 2) * k + T(2, 3);
         double q2 = T(2, 2);
 
         if (q2 == 0) return {std::nullopt, std::nullopt};
 
-        double d = q1 * q1 - q0_inner * q2;
+        double d = q1 * q1 - q0 * q2;
         if (d < 0)
             l_limits[0] = std::nullopt;
         else {
@@ -762,7 +784,12 @@ class StillsIndexGenerator {
             l_limits[0] = std::pair<double, double>{a, b};
         }
 
-        d = q1 * q1 - q0_outer * q2;
+        q0 = T_inner(0, 0) * h * h + 2 * T_inner(0, 1) * h * k + T_inner(1, 1) * k * k
+             + 2 * T_inner(0, 3) * h + 2 * T_inner(1, 3) * k - s0_len_sq_min;
+        q1 = T_inner(0, 2) * h + T_inner(1, 2) * k + T_inner(2, 3);
+        q2 = T_inner(2, 2);
+
+        d = q1 * q1 - q0 * q2;
         if (d < 0)
             l_limits[1] = std::nullopt;
         else {
@@ -822,7 +849,9 @@ class StillsIndexGenerator {
 
     Matrix3d A;
     Matrix4d T;
+    Matrix4d T_inner;
     Vector3d s0;
+    Vector3d s0_lower;
     double s0_len_sq;
     double s0_len_sq_min;
     double s0_len_sq_max;
@@ -1251,6 +1280,7 @@ int main(int argc, char** argv) {
                 MonochromaticBeam beam(beam_data);
                 beam_type = BeamType::Monochromatic;
                 wavelength = beam.get_wavelength();
+                wavelength_poly_max = wavelength;
                 s0 = beam.get_s0();
             } else if (beam_data.at("__id__") == "polychromatic") {
                 PolychromaticBeam beam(beam_data);
@@ -1361,9 +1391,15 @@ int main(int argc, char** argv) {
                 // FIXME: Is there a clean way to determine this dynamically if the
                 // mosaicity values are provided in the experiment file? (See below.)
 
-                double angular_tolerance = 0.005;
+                double angular_tolerance =
+                  (beam_type == BeamType::Monochromatic) ? 0.005 : 0;
+                Vector3d s0_lower = s0 * wavelength / wavelength_poly_max;
+                // FIXME: This is very ugly because I had to make last-minute adjustments to accommodate
+                // polychromatic prediction. Perhaps it is a better ideas to branch into mono and poly first,
+                // then construct this generator! s0 here (for polychormatic) represents s0_upper (i.e. the
+                // s0 corresponding to the lower wavelength)
                 StillsIndexGenerator index_generator(
-                  A, crystal_symmetry_operations, s0, angular_tolerance);
+                  A, crystal_symmetry_operations, s0, s0_lower, angular_tolerance);
 
                 for (;;) {
                     auto index = index_generator.next();
