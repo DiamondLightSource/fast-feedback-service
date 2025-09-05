@@ -35,6 +35,7 @@ using Eigen::Matrix4d;
 using Eigen::MatrixXd;
 using Eigen::Vector3d;
 
+// Enums to specify information about the experiment and beam.
 enum class ExperimentType { Stills, Rotational };
 enum class RotationalType { Static, ScanVarying };
 enum class BeamType { Monochromatic, Polychromatic };
@@ -50,9 +51,10 @@ struct PredictionType {
     RotationalType rotational_type = RotationalType::ScanVarying;
 };
 
+#pragma region Utilities
 /**
- * @brief This class stores the axis of rotation and returns a rotations matrix for a given angle using the Rodriguez formula.
- *
+ * @brief A class to store the axis of rotation and return a rotation matrix for a given angle using the Rodriguez formula.
+ * 
  */
 class Rotator {
   private:
@@ -62,9 +64,9 @@ class Rotator {
     Rotator(const Vector3d& axis) : axis_(axis.normalized()) {}
 
     /**
-	 * @brief Outputs rotation matrix corresponding to a given axis and angle.
+	 * @brief Output a rotation matrix corresponding to a given axis and angle.
 	 *
-	 * @param θ The angle of rotation in degrees
+	 * @param θ The angle of rotation (in degrees)
 	 */
     Matrix3d rotation_matrix(double θ) const {
         // Convert to radians
@@ -81,21 +83,59 @@ class Rotator {
     }
 
     /**
-	 * @brief Rotates a 3D vector by a given angle around the pre-specified axis
+	 * @brief Rotate a 3D vector by a given angle around the pre-specified axis
 	 *
 	 */
     Vector3d rotate(const Vector3d& vec, double θ) const {
         return rotation_matrix(θ) * vec;
     }
 
+    /**
+	 * @brief Multiply the rotation matrix (angle θ) by a 3x3 matrix and return the result.
+	 *
+	 */
     Matrix3d rotate(const Matrix3d& mat, double θ) const {
         return rotation_matrix(θ) * mat;
     }
 };
 
 /**
- * @brief Takes a default-initialized ArgumentParser object and configures it
- *      with the arguments to be parsed; also assigns various properties to each
+ * @brief Takes in a json list of numbers and returns a 3x3 matrix representation of it.
+ * 
+ * @param matrix_json The json object, a list of numbers with length 9.
+ * @return Matrix3d 
+ */
+Matrix3d matrix_3d_from_json(json matrix_json) {
+    return Matrix3d{{matrix_json[0], matrix_json[1], matrix_json[2]},
+                    {matrix_json[3], matrix_json[4], matrix_json[5]},
+                    {matrix_json[6], matrix_json[7], matrix_json[8]}};
+}
+
+/**
+ * @brief Takes in a json list of numbers and returns a 3D vector representation of it.
+ * 
+ * @param vector_json The json object, a list of numbers with length 3.
+ * @return Vector3d 
+ */
+Vector3d vector_3d_from_json(json vector_json) {
+    return Vector3d{{vector_json[0], vector_json[1], vector_json[2]}};
+}
+
+/**
+ * @brief A struct to store information about the predicted reflected ray.
+ * 
+ */
+struct Ray {
+    Vector3d s1;
+    double angle;
+    bool entering;
+};
+#pragma endregion
+
+#pragma region Argument Parser Configuration
+/**
+ * @brief Take a default-initialized ArgumentParser object and configure it
+ *      with the arguments to be parsed; assign various properties to each
  *      argument, eg. help message, default value, etc.
  *
  * @param parser The ArgumentParser object (pre-input) to be configured.
@@ -130,14 +170,35 @@ void configure_parser(argparse::ArgumentParser& parser) {
         "the number of threads to use for the fft calculation, "
         "defaults to the value of std::thread::hardware_concurrency, "
         "better performance can typically be obtained with a higher number"
-        "of threads than this.")
+        "of threads than this. UNUSED.")
       .scan<'u', size_t>()
       .default_value<size_t>(std::thread::hardware_concurrency());
 }
 
+/**
+ * @brief Take an ArgumentParser object after the user has entered input and check
+ *      it for consistency; output errors and exit the program if a check fails.
+ *
+ * @param parser The ArgumentParser object (post-input) to be verified.
+ */
+void verify_arguments(const argparse::ArgumentParser& parser) {
+    if (!parser.is_used("expt")) {
+        logger.error("Must specify experiment list file with -e or --expt\n");
+        std::exit(1);
+    }
+    if (parser.is_used("buffer_size") && parser.get<int>("buffer_size") < 0) {
+        logger.error("--buffer_size cannot be negative\n");
+    }
+    if (parser.is_used("nthreads") && parser.get<size_t>("nthreads") < 1) {
+        logger.error("--nthreads cannot be less than 1\n");
+        std::exit(1);
+    }
+}
+#pragma endregion
+
 #pragma region Index Generators
 /**
- * A class to generate miller indices with the Reeke algorithm
+ * A class to generate miller indices for rotational experiments using the Reeke algorithm.
  */
 class ReekeIndexGenerator {
   public:
@@ -147,13 +208,13 @@ class ReekeIndexGenerator {
                         const Vector3d& s0_1,
                         const Vector3d& s0_2,
                         const double dmin,
-                        const bool use_mono_rotational)
+                        const bool use_monochromatic)
         : A1(A1),
           A2(A2),
           s0_1(s0_1),
           s0_2(s0_2),
           dmin(dmin),
-          use_mono_rotational(use_mono_rotational),
+          use_monochromatic(use_monochromatic),
           crystal_symmetry_operations(crystal_symmetry_operations) {
         auto P1 = MatrixXd{
           {A1(0, 0), A1(0, 1), A1(0, 2), s0_1[0]},
@@ -169,11 +230,8 @@ class ReekeIndexGenerator {
         T2 = P2.transpose() * P2;
     }
 
-    /**
-	 * @returns The next miller index to be generated
-	 */
+    // Generate and return the next miller index.
     std::optional<std::array<int, 3>> next() {
-        // Constants to make clearer
         const int enter = 0;
         const int yield = 1;
 
@@ -184,9 +242,8 @@ class ReekeIndexGenerator {
         static std::size_t l_index;
         static int state = enter;
 
-        // This switch simulates a co-routine or python generator. The first time
-        // the function is executed, control starts at the top (case 0). On
-        // subsequent calls, control starts after the "yield" point (case 1), The
+        // The first time the function is executed, control starts at the top (case 0).
+        // On subsequent calls, control starts after the "yield" point (case 1), The
         // static variables ensure that the state is recovered on each subsequent
         // function call.
         std::array<int, 3> result;
@@ -223,6 +280,13 @@ class ReekeIndexGenerator {
     }
 
   private:
+    /**
+     * @brief Get the min and max elements from among the passed in values (if any).
+     * 
+     * @param pair1 
+     * @param pair2 
+     * @return std::optional<std::pair<T, T>> 
+     */
     template <typename T>
         requires(std::integral<T> or std::floating_point<T>)
     auto get_min_max_pair(std::optional<std::pair<T, T>> pair1,
@@ -246,7 +310,7 @@ class ReekeIndexGenerator {
     }
 
     /**
-	 * @brief Calculate the looping limits of the index h, considering only the Ewald sphere
+	 * @brief Calculate the looping limits of the Miller index h, considering only the resolution sphere
 	 *
 	 * @param a The vector normal to the plane of constant h, pointing in the direction of increasing h
 	 * @param s0 The incident beam vector
@@ -327,7 +391,7 @@ class ReekeIndexGenerator {
     }
 
     /**
-	 * @brief Calculate the looping limits of the index k, given index h and considering only the Ewald sphere
+	 * @brief Calculate the looping limits of the Miller index k, given index h and considering only the Ewald sphere
 	 *
 	 * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
 	 * @return std::optional<std::pair<int, int>>
@@ -353,7 +417,7 @@ class ReekeIndexGenerator {
     }
 
     /**
-     * @brief 
+     * @brief Calculate the looping limits of the Miller index k, given index h and considering only the resolution sphere
      * 
      * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
      * @param h The h Miller index
@@ -378,7 +442,7 @@ class ReekeIndexGenerator {
     }
 
     /**
-     * @brief 
+     * @brief Calculate the looping limits of the Miller index k, given index h.
      * 
      * @param T1 A 4d matrix (start of rotation); modified from the one defined on p. 54 of LURE Phase 1 and 2.
      * @param T2 A 4d matrix (end of rotation); modified from the one defined on p. 54 of LURE Phase 1 and 2.
@@ -410,7 +474,7 @@ class ReekeIndexGenerator {
     }
 
     /**
-     * @brief 
+     * @brief Calculate the looping limits of the Miller index l, given indices h and k and considering only the Ewald sphere
      * 
      * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
      * @param h The h Miller index
@@ -435,7 +499,7 @@ class ReekeIndexGenerator {
     }
 
     /**
-     * @brief 
+     * @brief Calculate the looping limits of the Miller index l, given indices h and k and considering only the resolution sphere
      * 
      * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
      * @param h The h Miller index
@@ -461,14 +525,14 @@ class ReekeIndexGenerator {
     }
 
     /**
- * @brief
+ * @brief Calculate the looping limits of the Miller index l, given indices h and k.
  *
  * @param T1 The T-matrix at the start of the rotation
  * @param T2 The T-matrix at the end of the rotation
  * @param h The h Miller index
  * @param k The k Miller index
  * @param dmin The minimum lattice spacing that can be resolved
- * @return std::vector<std::pair<int, int>> A vector with 0, 1, or 2 elements, depending on the ewald sphere and resolution sphere calculations.
+ * @return std::array<std::optional<std::pair<int, int>>, 2>
  */
     auto calc_l_limits(const int h, const int k)
       -> std::array<std::optional<std::pair<int, int>>, 2> {
@@ -482,7 +546,7 @@ class ReekeIndexGenerator {
 
         // Rearrange the results into a vector of size 1 or 2, depending on the results of the ewald calculations
         std::array<std::optional<std::pair<int, int>>, 2> l_limits_ewald;
-        if (use_mono_rotational) {
+        if (use_monochromatic) {
             // This is the vast majority of experiments and an optimisation exists when both
             // l_limits_ewald_1 and l_limits_ewald_2 are valid, in which we only need to consider
             // the thin slices of l around the min of the two and around the max of the two.
@@ -546,12 +610,12 @@ class ReekeIndexGenerator {
     Vector3d s0_1;
     Vector3d s0_2;
     double dmin;
-    bool use_mono_rotational;
+    bool use_monochromatic;
     gemmi::GroupOps crystal_symmetry_operations;
 };
 
 /**
- * A class to generate miller indices for stills experiments
+ * A class to generate Miller indices for stills experiments
  */
 class StillsIndexGenerator {
   public:
@@ -571,9 +635,7 @@ class StillsIndexGenerator {
         T = P.transpose() * P;
     }
 
-    /**
-	 * @returns The next miller index to be generated
-	 */
+    // Generate and return the next miller index.
     std::optional<std::array<int, 3>> next() {
         // Constants to make clearer
         const int enter = 0;
@@ -645,7 +707,7 @@ class StillsIndexGenerator {
     }
 
     /**
-     * @brief Calculate the looping limits of the Miller index h
+     * @brief Calculate the looping limits of the Miller index k
      * 
      * @param h The h Miller index
      * @return std::optional<std::pair<int, int>> 
@@ -671,12 +733,12 @@ class StillsIndexGenerator {
     }
 
     /**
-     * @brief 
+     * @brief Calculate the looping limits of the Miller index l, given indices h and k and considering only the Ewald sphere
      * 
      * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
      * @param h The h Miller index
      * @param k The k Miller index
-     * @return std::optional<std::pair<int, int>> 
+     * @return std::array<std::optional<std::pair<double, double>>, 2>
      */
     auto calc_l_limits_ewald(const int h, const int k)
       -> std::array<std::optional<std::pair<double, double>>, 2> {
@@ -713,11 +775,11 @@ class StillsIndexGenerator {
     }
 
     /**
-     * @brief
+     * @brief Calculate the looping limits of the Miller index l, given indices h and k.
      *
      * @param h The h Miller index
      * @param k The k Miller index
-     * @return 
+     * @return std::array<std::optional<std::pair<int, int>>, 2>
      */
     auto calc_l_limits(const int h, const int k)
       -> std::array<std::optional<std::pair<int, int>>, 2> {
@@ -766,49 +828,13 @@ class StillsIndexGenerator {
     double s0_len_sq_max;
     gemmi::GroupOps crystal_symmetry_operations;
 };
-
 #pragma endregion
 
-struct Ray {
-    Vector3d s1;
-    double angle;
-    bool entering;
-};
-
+#pragma region Ray Predictors
 /**
- * @brief Takes an ArgumentParser object after the user has entered input and checks
- *      it for consistency; outputs errors and exits the program if a check fails.
- *
- * @param parser The ArgumentParser object (post-input) to be verified.
- */
-void verify_arguments(const argparse::ArgumentParser& parser) {
-    if (!parser.is_used("expt")) {
-        logger.error("Must specify experiment list file with -e or --expt\n");
-        std::exit(1);
-    }
-    if (parser.is_used("buffer_size") && parser.get<int>("buffer_size") < 0) {
-        logger.error("--buffer_size cannot be negative\n");
-    }
-    if (parser.is_used("nthreads") && parser.get<size_t>("nthreads") < 1) {
-        logger.error("--nthreads cannot be less than 1\n");
-        std::exit(1);
-    }
-}
-
-Matrix3d matrix_3d_from_json(json matrix_json) {
-    return Matrix3d{{matrix_json[0], matrix_json[1], matrix_json[2]},
-                    {matrix_json[3], matrix_json[4], matrix_json[5]},
-                    {matrix_json[6], matrix_json[7], matrix_json[8]}};
-}
-
-Vector3d vector_3d_from_json(json vector_json) {
-    return Vector3d{{vector_json[0], vector_json[1], vector_json[2]}};
-}
-
-/**
- * @brief Returns a Ray object if a prediction is found within a give tolerance
+ * @brief Return a Ray object if a prediction is found within a give tolerance angle
  * 
- * @param index The Miller indices of the spot under consideration.
+ * @param index The Miller indices of the spot under consideration
  * @param A The (rotation * crystal setting matrix)
  * @param s0 The incident beam vector
  * @param dmin The minimum lattice spacing that can be resolved
@@ -842,9 +868,22 @@ std::optional<Ray> predict_ray_monochromatic_stills(const std::array<int, 3>& in
     return Ray{s1, abs(delta_psi), false};
 }
 
-// Predicts the exact reflection angles, even for large rotations
-// Assumes the rotation is through a angle < 180 deg.
-std::array<std::optional<Ray>, 2> predict_ray_monochromatic_rotational_static_exact(
+/**
+ * @brief Return a Ray object if a prediction is found during a static rotation
+ * 
+ * @param index The Miller indices of the spot under consideration
+ * @param A The (rotation * crystal setting matrix)
+ * @param r_setting The setting rotation matrix
+ * @param r_setting_inv The inverse of the setting rotation matrix
+ * @param s0 The incident beam vector
+ * @param m2 The goniometer rotation axis
+ * @param rotator The rotator object to generate rotations around axis m2
+ * @param dmin The minimum lattice spacing that can be resolved
+ * @param phi_beg The angle of the goniometer at the start of the rotation (in degrees)
+ * @param d_osc The amount the goniometer rotates during the image capture (in degrees)
+ * @return std::array<std::optional<Ray>, 2> 
+ */
+std::array<std::optional<Ray>, 2> predict_ray_monochromatic_static(
   const std::array<int, 3>& index,
   const Matrix3d& A,
   const Matrix3d& r_setting,
@@ -919,15 +958,27 @@ std::array<std::optional<Ray>, 2> predict_ray_monochromatic_rotational_static_ex
     return {ray_first, ray_second};
 }
 
-std::optional<Ray> predict_ray_monochromatic_rotational_sv(
-  const std::array<int, 3>& index,
-  const Matrix3d& A1,
-  const Matrix3d& A2,
-  const Vector3d& s0_1,
-  const Vector3d& s0_2,
-  const double dmin,
-  const double phi_beg,
-  const double d_osc) {
+/**
+ * @brief Return a Ray object if a prediction is found during a scan-varying rotation
+ * 
+ * @param index The Miller indices of the spot under consideration
+ * @param A1 The (rotation * crystal setting matrix) at the start of the rotation
+ * @param A2 The (rotation * crystal setting matrix) at the end of the rotation
+ * @param s0_1 The incident beam vector at the start of the rotation
+ * @param s0_2 The incident beam vector at the end of the rotation
+ * @param dmin The minimum lattice spacing that can be resolved
+ * @param phi_beg The angle of the goniometer at the start of the rotation (in degrees)
+ * @param d_osc The amount the goniometer rotates during the image capture (in degrees)
+ * @return std::optional<Ray>
+ */
+std::optional<Ray> predict_ray_monochromatic_sv(const std::array<int, 3>& index,
+                                                const Matrix3d& A1,
+                                                const Matrix3d& A2,
+                                                const Vector3d& s0_1,
+                                                const Vector3d& s0_2,
+                                                const double dmin,
+                                                const double phi_beg,
+                                                const double d_osc) {
     const Vector3d hkl_vec{(double)index[0], (double)index[1], (double)index[2]};
 
     // Calculate the reciprocal space vectors
@@ -1009,6 +1060,17 @@ std::optional<Ray> predict_ray_monochromatic_rotational_sv(
 }
 
 // Laue prediction
+/**
+ * @brief Return a Ray object if a prediction is found for a polychromatic beam.
+ * 
+ * @param index The Miller indices of the spot under consideration
+ * @param A The (rotation * crystal setting matrix)
+ * @param s0_unit The unit incident beam vector
+ * @param wavelength_min The lower end of the wavelength spectrum
+ * @param wavelength_max The upper end of the wavelength spectrum
+ * @param dmin The minimum lattice spacing that can be resolved
+ * @return std::optional<Ray> 
+ */
 std::optional<Ray> predict_ray_polychromatic_stills(const std::array<int, 3>& index,
                                                     const Matrix3d& A,
                                                     Vector3d s0_unit,
@@ -1027,18 +1089,36 @@ std::optional<Ray> predict_ray_polychromatic_stills(const std::array<int, 3>& in
     return Ray{s1, 0.0, false};
 }
 
-std::optional<Ray> predict_ray_polychromatic_rotational(
-  const std::array<int, 3>& index,
-  const Matrix3d& A1,
-  const Matrix3d& A2,
-  Vector3d s0_1_unit,
-  Vector3d s0_2_unit,
-  const double wavelength,
-  const double wavelength_poly_max,
-  const double dmin) {
+/**
+ * @brief Return a Ray object if a prediction is found during a scan-varying rotation for a polychromatic beam.
+ * 
+ * @param index The Miller indices of the spot under consideration
+ * @param A1 The (rotation * crystal setting matrix) at the start of the rotation
+ * @param A2 The (rotation * crystal setting matrix) at the end of the rotation
+ * @param s0_1_unit The unit incident beam vector at the start of the rotation
+ * @param s0_2_unit The unit incident beam vector at the end of the rotation
+ * @param wavelength_min The lower end of the wavelength spectrum
+ * @param wavelength_max The upper end of the wavelength spectrum
+ * @param dmin The minimum lattice spacing that can be resolved
+ * @param phi_beg The angle of the goniometer at the start of the rotation (in degrees)
+ * @param d_osc The amount the goniometer rotates during the image capture (in degrees)
+ * @return std::optional<Ray> 
+ */
+std::optional<Ray> predict_ray_polychromatic_rotational(const std::array<int, 3>& index,
+                                                        const Matrix3d& A1,
+                                                        const Matrix3d& A2,
+                                                        Vector3d s0_1_unit,
+                                                        Vector3d s0_2_unit,
+                                                        const double wavelength_min,
+                                                        const double wavelength_max,
+                                                        const double dmin,
+                                                        const double phi_beg,
+                                                        const double d_osc) {
     // FIXME: Not implemented
     return std::nullopt;
 }
+
+#pragma endregion
 
 int main(int argc, char** argv) {
     auto t1 = std::chrono::system_clock::now();
@@ -1065,6 +1145,7 @@ int main(int argc, char** argv) {
     const std::string output_file_path = "predicted.refl";
     const uint64_t predicted_flag = (1 << 0);
 
+#pragma region Create Reflection Data Containers
     // Create std::vectors to store results in, and later add them as columns to a ReflectionTable.
     ReflectionTable predicted;
     // Shape {size, 3}
@@ -1082,6 +1163,7 @@ int main(int argc, char** argv) {
     std::vector<double> wavelength_cal;
     std::vector<uint64_t> experiment_ids;
     std::vector<std::string> identifiers;
+#pragma endregion
 
     for (const std::string& expt_path : param_expt_paths) {
         // Get data from .expt file
@@ -1118,8 +1200,8 @@ int main(int argc, char** argv) {
             const json scan_data = data.at("scan")[i_scan];
             const json crystal_data = data.at("crystal")[i_crystal];
             const json beam_data = data.at("beam")[i_beam_data];
-            const json imageset = data.at("imageset")[i_imageset];
-            const std::string imageset_type = imageset.at("__id__");
+            const json imageset_data = data.at("imageset")[i_imageset];
+            const std::string imageset_type = imageset_data.at("__id__");
 
             // Construct dx2 objects from the json data
             Detector detector(detector_data);
@@ -1160,13 +1242,11 @@ int main(int argc, char** argv) {
 
 #pragma region Determine Beam Parameters
             BeamType beam_type;
-
             // Use the below for monochromatic and polychromatic prediction (where they represent the lower end of the wavelength)
             double wavelength;
             Vector3d s0;
             // Use the below for polychromatic prediction only
             double wavelength_poly_max = 0;
-
             if (beam_data.at("__id__") == "monochromatic") {
                 MonochromaticBeam beam(beam_data);
                 beam_type = BeamType::Monochromatic;
@@ -1185,9 +1265,9 @@ int main(int argc, char** argv) {
             }
 #pragma endregion
 
+#pragma region Determine dmin
             // Check if the minimum resolution paramenter (dmin) was passed in by the user,
             // if yes, check if it is a valid value; if not, assign a default.
-
             double dmin_min = 0.5 * wavelength;
             // FIXME: Need a better dmin_default from .expt file (like in DIALS)
             double dmin_default = dmin_min;
@@ -1204,6 +1284,7 @@ int main(int argc, char** argv) {
                   dmin_default);
                 param_dmin = dmin_default;
             }
+#pragma endregion
 
 #pragma region Determine Prediction Parameters
             // Determine experiment type and extract data depending on type of scan
@@ -1270,11 +1351,9 @@ int main(int argc, char** argv) {
                                                                : "Polychromatic",
                         prediction_type_string(),
                         expt_path);
-
 #pragma endregion
 
-            // For Laue (polychromatic) prediction, to replicate DIALS, set --force_static. Otherwise, this predictor
-            // also supports scan varying prediction for polychromatic beams.
+#pragma region Stills Prediction
             if (prediction_type.experiment_type == ExperimentType::Stills) {
                 // A large enough angular tolerance allows plenty of Miller indices to be
                 // available for checking against a finer tolerance.
@@ -1351,7 +1430,11 @@ int main(int argc, char** argv) {
                           s0_cal.end(), std::begin(s0_pred), std::end(s0_pred));
                     }
                 }
-            } else [[likely]] {
+            }
+#pragma endregion
+
+#pragma region Rotational Prediction
+            else [[likely]] {
                 // Rotational-experiment-specific code goes here
 
                 const Vector3d m2 = goniometer.get_rotation_axis();
@@ -1417,37 +1500,31 @@ int main(int argc, char** argv) {
                         std::array<std::optional<Ray>, 2> rays;
                         if (beam_type == BeamType::Monochromatic) {
                             if (prediction_type.rotational_type
-                                  == RotationalType::ScanVarying
-                                || d_osc < 5)
-                                // Monochromatic, Scan Varying or
-                                // Monochromatic, Static & Rotation < 5 degrees.
-                                // d_osc < 5 degrees is the vast majority of cases.
-                                rays[0] =
-                                  predict_ray_monochromatic_rotational_sv(index.value(),
-                                                                          A1,
-                                                                          A2,
-                                                                          s0_1,
-                                                                          s0_2,
-                                                                          param_dmin,
-                                                                          phi_beg,
-                                                                          d_osc);
+                                == RotationalType::ScanVarying)
+                                rays[0] = predict_ray_monochromatic_sv(index.value(),
+                                                                       A1,
+                                                                       A2,
+                                                                       s0_1,
+                                                                       s0_2,
+                                                                       param_dmin,
+                                                                       phi_beg,
+                                                                       d_osc);
                             else {
                                 // Monochromatic, Static, Rotation > 5 degrees.
                                 // This is a new use case not supported by DIALS.
                                 // For d_osc > 10 degrees, this exact calculator is much better
                                 // than the DIALS-style approximate predictor
-                                rays =
-                                  predict_ray_monochromatic_rotational_static_exact(
-                                    index.value(),
-                                    A1,
-                                    r_setting_1,
-                                    r_setting_1.inverse(),
-                                    s0,
-                                    m2,
-                                    rotator,
-                                    param_dmin,
-                                    phi_beg,
-                                    d_osc);
+                                rays = predict_ray_monochromatic_static(
+                                  index.value(),
+                                  A1,
+                                  r_setting_1,
+                                  r_setting_1.inverse(),
+                                  s0,
+                                  m2,
+                                  rotator,
+                                  param_dmin,
+                                  phi_beg,
+                                  d_osc);
                             }
 
                         } else
@@ -1501,7 +1578,9 @@ int main(int argc, char** argv) {
             identifiers.push_back(identifier);
         }
     }
+#pragma endregion
 
+#pragma region Populate Reflection Table
     // Check if the vector sizes are consistent after prediction (before creating a ReflectionTable).
     // Note that delpsi, wavelength_cal, and s0_cal are allowed to either be 0 or equal to the row
     // size, depening on the type of prediction done.
@@ -1551,6 +1630,9 @@ int main(int argc, char** argv) {
     predicted.set_experiment_ids(experiment_ids);
     predicted.set_identifiers(identifiers);
 
+#pragma endregion
+
+#pragma region Dynamic Shadowing
     // If not ignoring shadows, look for reflections in the masked region
     if (param_dynamic_shadows) {
     }
@@ -1570,6 +1652,7 @@ int main(int argc, char** argv) {
 			)
 			predicted_all = predicted_all.select(~shadowed)
 	*/
+#pragma endregion
 
     // FIXME: DIALS tries to find bounding boxes for each experiment.
     // If this is important, implement this. If not, leave this commented out.
@@ -1580,6 +1663,7 @@ int main(int argc, char** argv) {
 			pass
 	*/
 
+#pragma region Write to File
     // Save reflections to file
     predicted.write(output_file_path);
 
@@ -1587,5 +1671,6 @@ int main(int argc, char** argv) {
     std::chrono::duration<double> elapsed_time = t2 - t1;
     logger.info("Saved {} reflections to {}.", sz, output_file_path);
     logger.info("Total time for prediction: {:.4f}s", elapsed_time.count());
+#pragma endregion
     return 0;
 }
