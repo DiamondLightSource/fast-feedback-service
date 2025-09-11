@@ -93,8 +93,7 @@ __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,
             int ly = y + i;                        // Offset y coordinate
 
             // Boundary guard - don't index outside the image
-            if (lx < 0 || ly < 0 || lx >= static_cast<int>(kernel_constants.width)
-                || ly >= static_cast<int>(kernel_constants.height)) {
+            if (!in_bounds(lx, ly, kernel_constants.width, kernel_constants.height)) {
                 // Out of bounds - treat as not valid for erosion checks
                 continue;
             }
