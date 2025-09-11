@@ -15,24 +15,24 @@
 #include "h5read.h"
 
 struct Signal {
-    int x, y;              // Coordinates of the pixel
+    uint32_t x, y;         // Coordinates of the pixel
     std::optional<int> z;  // Optional z-index used in 3DCC
     pixel_t intensity;     // Pixel intensity
     size_t linear_index;   // Linear index of the pixel
 };
 
 struct Reflection {
-    int l, t, r, b;  // Bounding box: left, top, right, bottom
+    uint32_t l, t, r, b;  // Bounding box: left, top, right, bottom
     int num_pixels = 0;
 };
 
 class Reflection3D {
   public:
     Reflection3D()
-        : x_min_(std::numeric_limits<int>::max()),
-          x_max_(std::numeric_limits<int>::min()),
-          y_min_(std::numeric_limits<int>::max()),
-          y_max_(std::numeric_limits<int>::min()),
+        : x_min_(std::numeric_limits<uint32_t>::max()),
+          x_max_(std::numeric_limits<uint32_t>::min()),
+          y_min_(std::numeric_limits<uint32_t>::max()),
+          y_max_(std::numeric_limits<uint32_t>::min()),
           z_min_(std::numeric_limits<int>::max()),
           z_max_(std::numeric_limits<int>::min()),
           num_pixels_(0),
@@ -80,8 +80,8 @@ class Reflection3D {
         double total_intensity = 0;
 
         for (const auto &signal : signals_) {
-            weighted_sum_x += (signal.x + 0.5) * signal.intensity;
-            weighted_sum_y += (signal.y + 0.5) * signal.intensity;
+            weighted_sum_x += (static_cast<double>(signal.x) + 0.5) * signal.intensity;
+            weighted_sum_y += (static_cast<double>(signal.y) + 0.5) * signal.intensity;
             weighted_sum_z += (signal.z.value() + 0.5) * signal.intensity;
             total_intensity += signal.intensity;
         }
@@ -189,8 +189,8 @@ class Reflection3D {
         // logger.debug("Center of mass: ({:.3f}, {:.3f}, {:.3f})", com_x, com_y, com_z);
 
         // Calculate the Euclidean distance
-        float dx = (peak_signal->x + 0.5f) - com_x;
-        float dy = (peak_signal->y + 0.5f) - com_y;
+        float dx = (static_cast<float>(peak_signal->x) + 0.5f) - com_x;
+        float dy = (static_cast<float>(peak_signal->y) + 0.5f) - com_y;
         float dz = (peak_signal->z.value() + 0.5f) - com_z;
 
         float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -204,16 +204,16 @@ class Reflection3D {
     }
 
     // Getters for bounding box
-    inline int get_x_min() const {
+    inline uint32_t get_x_min() const {
         return x_min_;
     }
-    inline int get_x_max() const {
+    inline uint32_t get_x_max() const {
         return x_max_;
     }
-    inline int get_y_min() const {
+    inline uint32_t get_y_min() const {
         return y_min_;
     }
-    inline int get_y_max() const {
+    inline uint32_t get_y_max() const {
         return y_max_;
     }
     inline int get_z_min() const {
@@ -228,8 +228,8 @@ class Reflection3D {
 
   private:
     std::vector<Signal> signals_;
-    int x_min_, x_max_;
-    int y_min_, y_max_;
+    uint32_t x_min_, x_max_;
+    uint32_t y_min_, y_max_;
     int z_min_, z_max_;
     int num_pixels_;
 
@@ -281,8 +281,8 @@ class ConnectedComponents {
   public:
     ConnectedComponents(const uint8_t *result_image,
                         const pixel_t *original_image,
-                        const ushort width,
-                        const ushort height,
+                        const uint32_t width,
+                        const uint32_t height,
                         const uint min_spot_size);
 
     uint get_num_strong_pixels() const {
@@ -335,8 +335,8 @@ class ConnectedComponents {
    */
     static std::vector<Reflection3D> find_3d_components(
       const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
-      const ushort width,
-      const ushort height,
+      const uint32_t width,
+      const uint32_t height,
       const uint min_spot_size,
       const float max_peak_centroid_separation);
 
@@ -364,7 +364,7 @@ class ConnectedComponents {
      * This function uses the `signals` map to find neighboring pixels efficiently.
      * The `index_to_vertex` is used to map linear indices (from `signals`) to graph vertex IDs.
      */
-    void build_graph(const ushort width, const ushort height);
+    void build_graph(const uint32_t width, const uint32_t height);
 
     /**
      * @brief Generates bounding boxes for connected components using the graph labels.
@@ -372,8 +372,8 @@ class ConnectedComponents {
      * The `labels` vector maps each graph vertex to its connected component ID.
      * The `index_to_vertex` map is used to map linear indices to graph vertex IDs.
      */
-    void generate_boxes(const ushort width,
-                        const ushort height,
+    void generate_boxes(const uint32_t width,
+                        const uint32_t height,
                         const uint32_t min_spot_size);
 };
 

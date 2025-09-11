@@ -10,6 +10,7 @@
 #include <cooperative_groups/reduce.h>
 #include <cuda_runtime.h>
 
+#include <cstdint>
 #include <cuda/std/tuple>
 #include <type_traits>
 
@@ -37,8 +38,8 @@ struct KernelConstants {
     size_t image_pitch;           // Pitch of the image
     size_t mask_pitch;            // Pitch of the mask
     size_t result_pitch;          // Pitch of the result
-    ushort width;                 // Width of the image
-    ushort height;                // Height of the image
+    uint32_t width;               // Width of the image
+    uint32_t height;              // Height of the image
     float max_valid_pixel_value;  // Maximum valid pixel value
     uint8_t min_count;            // Minimum number of pixels in a spot
     float n_sig_b;                // Number of standard deviations for background
@@ -102,7 +103,10 @@ struct PitchedArray2D {
  *
  * Small, hot helper kept inline for callers inside tight inner loops.
  */
-__device__ __forceinline__ bool in_bounds(int x, int y, ushort width, ushort height) {
+__device__ __forceinline__ bool in_bounds(int x,
+                                          int y,
+                                          uint32_t width,
+                                          uint32_t height) {
     /*
    * Using unsigned comparison to avoid branching on negative values.
    * This works because if x or y is negative, casting to unsigned
@@ -111,8 +115,7 @@ __device__ __forceinline__ bool in_bounds(int x, int y, ushort width, ushort hei
    * checks for negative values (x >= 0 && y >= 0), thus reducing
    * branching and potentially improving performance.
   */
-    return static_cast<unsigned>(x) < static_cast<unsigned>(width)
-           && static_cast<unsigned>(y) < static_cast<unsigned>(height);
+    return static_cast<uint32_t>(x) < width && static_cast<uint32_t>(y) < height;
 }
 
 /*
@@ -188,8 +191,8 @@ template <typename... MappedPairs>
 __device__ void load_halo(const cooperative_groups::thread_block block,
                           const int x,
                           const int y,
-                          const ushort width,
-                          const ushort height,
+                          const uint32_t width,
+                          const uint32_t height,
                           const uint8_t kernel_width,
                           const uint8_t kernel_height,
                           MappedPairs... mapped_pairs) {
