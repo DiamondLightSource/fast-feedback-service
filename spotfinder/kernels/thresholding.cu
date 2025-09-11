@@ -37,26 +37,6 @@ extern __constant__ KernelConstants kernel_constants;
 
 #pragma region Device Functions
 /**
- * @brief Test whether integer coordinates are inside image bounds.
- *
- * Returns true when 0 <= x < width and 0 <= y < height.
- *
- * Small, hot helper kept inline for callers inside tight inner loops.
- */
-__device__ __forceinline__ bool in_bounds(int x, int y, ushort width, ushort height) {
-    /*
-   * Using unsigned comparison to avoid branching on negative values.
-   * This works because if x or y is negative, casting to unsigned
-   * will yield a large positive value, which will be greater than
-   * width or height respectively. This avoids the need for separate
-   * checks for negative values (x >= 0 && y >= 0), thus reducing
-   * branching and potentially improving performance.
-  */
-    return static_cast<unsigned>(x) < static_cast<unsigned>(width)
-           && static_cast<unsigned>(y) < static_cast<unsigned>(height);
-}
-
-/**
  * @brief Calculate the dispersion flags for a given pixel.
  * @param image Pointer to the input image data.
  * @param mask Pointer to the mask data indicating valid pixels.
