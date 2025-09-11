@@ -37,6 +37,26 @@ extern __constant__ KernelConstants kernel_constants;
 
 #pragma region Device Functions
 /**
+ * @brief Test whether integer coordinates are inside image bounds.
+ *
+ * Returns true when 0 <= x < width and 0 <= y < height.
+ *
+ * Small, hot helper kept inline for callers inside tight inner loops.
+ */
+__device__ __forceinline__ bool in_bounds(int x, int y, ushort width, ushort height) {
+    /*
+   * Using unsigned comparison to avoid branching on negative values.
+   * This works because if x or y is negative, casting to unsigned
+   * will yield a large positive value, which will be greater than
+   * width or height respectively. This avoids the need for separate
+   * checks for negative values (x >= 0 && y >= 0), thus reducing
+   * branching and potentially improving performance.
+  */
+    return static_cast<unsigned>(x) < static_cast<unsigned>(width)
+           && static_cast<unsigned>(y) < static_cast<unsigned>(height);
+}
+
+/**
  * @brief Calculate the dispersion flags for a given pixel.
  * @param image Pointer to the input image data.
  * @param mask Pointer to the mask data indicating valid pixels.
@@ -80,9 +100,10 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
     for (int i = -kernel_radius; i <= kernel_radius; ++i) {
 #pragma unroll
         for (int j = -kernel_radius; j <= kernel_radius; ++j) {
-            // Guard against global out of bounds access
-            if (global_x + j < 0 || global_x + j >= width || global_y + i < 0
-                || global_y + i >= height) {
+            // Guard against out-of-bounds access
+            int gx = global_x + j;
+            int gy = global_y + i;
+            if (!in_bounds(gx, gy, width, height)) {
                 continue;
             }
 
@@ -439,9 +460,10 @@ __global__ void dispersion_extended_second_pass(
     for (int i = -KERNEL_RADIUS_EXTENDED; i <= KERNEL_RADIUS_EXTENDED; ++i) {
 #pragma unroll
         for (int j = -KERNEL_RADIUS_EXTENDED; j <= KERNEL_RADIUS_EXTENDED; ++j) {
-            // Guard against global out of bounds access
-            if (global_x + j < 0 || global_x + j >= kernel_constants.width
-                || global_y + i < 0 || global_y + i >= kernel_constants.height) {
+            // Guard against out-of-bounds access
+            int gx = global_x + j;
+            int gy = global_y + i;
+            if (!in_bounds(gx, gy, kernel_constants.width, kernel_constants.height)) {
                 continue;
             }
 
