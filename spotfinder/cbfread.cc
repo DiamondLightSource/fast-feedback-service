@@ -14,7 +14,7 @@
 // const std::string BINARY_MARKER = "--CIF-BINARY-FORMAT-SECTION--";
 const std::string BINARY_MARKER = "\x0c\x1a\x04\xd5";
 
-auto expand_template(const std::string &template_path, size_t index) -> std::string {
+auto expand_template(const std::string& template_path, size_t index) -> std::string {
     std::string prefix = template_path.substr(0, template_path.find("#"));
     std::string suffix = template_path.substr(template_path.rfind("#") + 1);
     int template_length = template_path.length() - prefix.length() - suffix.length();
@@ -26,7 +26,7 @@ auto expand_template(const std::string &template_path, size_t index) -> std::str
 // void decompress_byte_offset(const std::span<uint8_t> in, std::span<uint16_t> out);
 
 /// Splits a header line by middle-space and returns the second value
-auto get_value_contents(const std::string &input) -> std::string {
+auto get_value_contents(const std::string& input) -> std::string {
     auto start = input.find_first_not_of(" #");
     auto end = input.find_last_not_of(" #\r");
     auto strimmed = input.substr(start, end - start + 1);
@@ -34,7 +34,7 @@ auto get_value_contents(const std::string &input) -> std::string {
     return strimmed.substr(strimmed.find(" ") + 1);
 }
 
-CBFRead::CBFRead(const std::string &templatestr, size_t num_images, size_t first_index)
+CBFRead::CBFRead(const std::string& templatestr, size_t num_images, size_t first_index)
     : _num_images(num_images), _first_index(first_index), _template_path(templatestr) {
     if (first_index > 1) {
         fmt::print("Error: Can only handle CBF start index of 0 or 1\n");
@@ -124,7 +124,7 @@ std::span<uint8_t> CBFRead::get_raw_chunk(size_t index,
 }
 
 template <>
-bool is_ready_for_read<CBFRead>(const std::string &path) {
+bool is_ready_for_read<CBFRead>(const std::string& path) {
     // Wait for the first (or second if starting from 0) image to exists
     return std::filesystem::exists(expand_template(path, 1));
 }

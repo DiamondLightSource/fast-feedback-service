@@ -10,13 +10,13 @@ using Eigen::Vector3d;
 
 class CrystalOrientationCompose {
   public:
-    CrystalOrientationCompose(const Matrix3d &U0,
+    CrystalOrientationCompose(const Matrix3d& U0,
                               double phi1,
-                              const Vector3d &phi1_axis,
+                              const Vector3d& phi1_axis,
                               double phi2,
-                              const Vector3d &phi2_axis,
+                              const Vector3d& phi2_axis,
                               double phi3,
-                              const Vector3d &phi3_axis) {
+                              const Vector3d& phi3_axis) {
         // convert angles from mrad to radians
         phi1 /= 1000.;
         phi2 /= 1000.;
@@ -68,7 +68,7 @@ class CrystalOrientationCompose {
 
 class OrientationParameterisation {
   public:
-    OrientationParameterisation(const Crystal &crystal);
+    OrientationParameterisation(const Crystal& crystal);
     std::vector<double> get_params() const;
     void set_params(std::vector<double> p);
     Matrix3d get_state() const;
@@ -92,7 +92,7 @@ void OrientationParameterisation::compose() {
     dS_dp[2] = coc.dU_dphi3();
 }
 
-OrientationParameterisation::OrientationParameterisation(const Crystal &crystal) {
+OrientationParameterisation::OrientationParameterisation(const Crystal& crystal) {
     istate = crystal.get_U_matrix();
     axes[1] = Vector3d(0.0, 1.0, 0.0);
     axes[2] = Vector3d(0.0, 0.0, 1.0);

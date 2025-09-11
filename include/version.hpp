@@ -1,3 +1,3 @@
 #pragma once
 
-extern const char *FFS_VERSION;
+extern const char* FFS_VERSION;

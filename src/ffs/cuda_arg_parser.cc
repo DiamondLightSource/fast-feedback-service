@@ -30,7 +30,7 @@ CUDAArgumentParser::CUDAArgumentParser(std::string version)
     add_argument("-d", "--device")
       .help("CUDA device index")
       .default_value(0)
-      .action([&](const std::string &val) {
+      .action([&](const std::string& val) {
           _cuda_args.device_index = std::stoi(val);
           return _cuda_args.device_index;
       });
@@ -38,7 +38,7 @@ CUDAArgumentParser::CUDAArgumentParser(std::string version)
     add_argument("--list-devices")
       .help("List CUDA devices and exit")
       .implicit_value(false)
-      .action([](const std::string &) {
+      .action([](const std::string&) {
           // Query available CUDA devices
           int count;
           cudaGetDeviceCount(&count);
@@ -74,7 +74,7 @@ void CUDAArgumentParser::post_parse() {
                _cuda_args.device.minor);
 }
 
-auto CUDAArgumentParser::parse_args(int argc, char **argv) -> CUDAArguments {
+auto CUDAArgumentParser::parse_args(int argc, char** argv) -> CUDAArguments {
     // Parse base arguments first
     FFSArgumentParser::parse_args(argc, argv);
 

@@ -35,9 +35,9 @@ using namespace pocketfft;
  * @param n_points The size of each dimension of the FFT grid.
  */
 void map_centroids_to_reciprocal_space_grid(
-  mdspan_type<double> const &reciprocal_space_vectors,
-  std::vector<std::complex<double>> &data_in,
-  std::vector<bool> &selection,
+  mdspan_type<double> const& reciprocal_space_vectors,
+  std::vector<std::complex<double>>& data_in,
+  std::vector<bool>& selection,
   double d_min,
   double b_iso = 0,
   uint32_t n_points = 256) {
@@ -99,8 +99,8 @@ void map_centroids_to_reciprocal_space_grid(
  * @param n_points The size of each dimension of the FFT grid.
  * @returns A boolean array indicating which coordinates were used for the FFT.
  */
-std::vector<bool> fft3d(mdspan_type<double> const &reciprocal_space_vectors,
-                        std::vector<double> &real_out,
+std::vector<bool> fft3d(mdspan_type<double> const& reciprocal_space_vectors,
+                        std::vector<double>& real_out,
                         double d_min,
                         double b_iso = 0,
                         uint32_t n_points = 256,

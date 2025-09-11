@@ -38,7 +38,7 @@ class Reflection3D {
           num_pixels_(0),
           com_cached_(false) {}
 
-    void add_signal(const Signal &signal) {
+    void add_signal(const Signal& signal) {
         signals_.push_back(signal);
 
         // Invalidate cached center of mass
@@ -79,7 +79,7 @@ class Reflection3D {
         double weighted_sum_x = 0, weighted_sum_y = 0, weighted_sum_z = 0;
         double total_intensity = 0;
 
-        for (const auto &signal : signals_) {
+        for (const auto& signal : signals_) {
             weighted_sum_x += (signal.x + 0.5) * signal.intensity;
             weighted_sum_y += (signal.y + 0.5) * signal.intensity;
             weighted_sum_z += (signal.z.value() + 0.5) * signal.intensity;
@@ -116,11 +116,11 @@ class Reflection3D {
         //              signals_.size());
 
         // Find the signal with the highest intensity
-        const Signal *peak_signal = nullptr;
+        const Signal* peak_signal = nullptr;
         double max_intensity = std::numeric_limits<double>::min();
         int candidates_with_max_intensity = 0;
 
-        for (const auto &signal : signals_) {
+        for (const auto& signal : signals_) {
             // Guard: Skip if intensity is lower than current max
             if (signal.intensity < max_intensity) {
                 continue;
@@ -245,7 +245,7 @@ class Reflection3D {
      * @param current The current preferred signal
      * @return true if candidate should be preferred over current
      */
-    bool is_signal_preferred(const Signal &candidate, const Signal &current) const;
+    bool is_signal_preferred(const Signal& candidate, const Signal& current) const;
 };
 
 /**
@@ -255,7 +255,7 @@ class Reflection3D {
 * The `max_peak_centroid_separation` is the maximum allow difference (in pixels) between
 * the spot's centre of mass and the location of the peak intensity pixel.
 */
-std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
+std::tuple<int, int> filter_reflections(std::vector<Reflection3D>& reflections,
                                         const uint min_spot_size,
                                         const float max_peak_centroid_separation);
 
@@ -279,8 +279,8 @@ std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
  */
 class ConnectedComponents {
   public:
-    ConnectedComponents(const uint8_t *result_image,
-                        const pixel_t *original_image,
+    ConnectedComponents(const uint8_t* result_image,
+                        const pixel_t* original_image,
                         const ushort width,
                         const ushort height,
                         const uint min_spot_size);
@@ -299,23 +299,23 @@ class ConnectedComponents {
      * without a costly copy.
     */
 
-    const std::vector<Reflection> &get_boxes() const {
+    const std::vector<Reflection>& get_boxes() const {
         return boxes;
     }
 
-    std::map<size_t, Signal> &get_signals() {
+    std::map<size_t, Signal>& get_signals() {
         return signals;
     }
 
-    const auto &get_graph() const {
+    const auto& get_graph() const {
         return graph;
     }
 
-    const auto &get_index_to_vertex() const {
+    const auto& get_index_to_vertex() const {
         return index_to_vertex;
     }
 
-    const auto &get_vertex_to_index() const {
+    const auto& get_vertex_to_index() const {
         return vertex_to_index;
     }
 
@@ -334,7 +334,7 @@ class ConnectedComponents {
    * @return A list of 3D reflections.
    */
     static std::vector<Reflection3D> find_3d_components(
-      const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
+      const std::vector<std::unique_ptr<ConnectedComponents>>& slices,
       const ushort width,
       const ushort height,
       const uint min_spot_size,
