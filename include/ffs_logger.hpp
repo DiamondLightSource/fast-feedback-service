@@ -1,6 +1,6 @@
 #pragma once
 
-#include <spdlog/async.h>
+//#include <spdlog/async.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -12,8 +12,8 @@
  * 
  * This class provides a single point of access to the logger instance
  * throughout the application, ensuring that all log messages are
- * written to the same console and optional log file sink while
- * utilizing asynchronous logging for multi-threaded logging.
+ * written to the same console and optional log file sink using
+ * synchronous logging for thread-safe console output.
  */
 class FFSLogger {
   public:
@@ -58,11 +58,9 @@ class FFSLogger {
      */
     static void initialiseLogger() {
         try {
-            // Queue size for async messages
-            size_t queue_size = 8192;  // Can adjust based on app requirements
-
-            // Initialize spdlog asynchronous mode with a background worker thread
-            spdlog::init_thread_pool(queue_size, 1);
+            // Create a coloured console sink for immediate, thread-safe output
+            auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+            console_sink->set_pattern("[%Y-%m-%d %H:%M:%S] [thread %t] [%^%l%$] %v");
 
             // Create a rotating file sink (max 5MB per file, 3 rotated files)
             auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
@@ -70,20 +68,10 @@ class FFSLogger {
             file_sink->set_pattern(
               "[%Y-%m-%d %H:%M:%S] [PID:%P Thread:%t] [%^%l%$] [%s:%#] %v");
 
-            // Create a colored console sink
-            auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-            console_sink->set_pattern("[%Y-%m-%d %H:%M:%S] [thread %t] [%^%l%$] %v");
-
-            // Combine sinks into one asynchronous logger
+            // Create a logger with both console and file sinks
             std::vector<spdlog::sink_ptr> sinks{console_sink, file_sink};
-            // std::vector<spdlog::sink_ptr> sinks{console_sink};
-            logger_ = std::make_shared<spdlog::async_logger>(
-              "FFSLogger",
-              sinks.begin(),
-              sinks.end(),
-              spdlog::thread_pool(),
-              spdlog::async_overflow_policy::block  // Block if queue is full
-            );
+            logger_ =
+              std::make_shared<spdlog::logger>("FFSLogger", sinks.begin(), sinks.end());
 
             // Get logging level from environment variable (if set)
             const char* logLevelEnv = std::getenv("LOG_LEVEL");
