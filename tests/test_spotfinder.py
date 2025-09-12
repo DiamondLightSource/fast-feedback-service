@@ -23,7 +23,7 @@ def strip_ansi(text: str) -> str:
     return ansi_escape.sub("", text)
 
 
-pixels_match_regex = r"image\s+(\d+).*?(\d+)\s+strong pixels"
+pixels_match_regex = r"image\s+(\d+)\s+with\s+(\d+)\s+strong pixels"
 spots_match_regex = r"Calculated\s+(\d+)\s+spots"
 min_spot_size_regex = r"Filtered\s+(\d+)\s+spots with size < 3 pixels"
 max_separation_regex = r"Filtered\s+(\d+)\s+spots with peak-centroid distance > 2"
