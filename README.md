@@ -20,7 +20,7 @@ In order to create a development environment and compile the service, you need t
 
 For example, you can create a conda/mamba environment with the following command:
 ```bash
-mamba create -c conda-forge -p ./ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog gemmi pytest dials-data
+mamba create -c conda-forge -p ./ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle gemmi pytest dials-data
 ```
 
 ### Initialising submodules
@@ -79,6 +79,13 @@ export ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
 Then launch the service through Zocalo:
 ```bash
 zocalo.service -s GPUPerImageAnalysis
+```
+
+## Running the program tests
+To run the tests, you need to have pytest and dials-data available in your environment and be on a machine with an NVIDIA GPU and the CUDA toolkit installed.
+Run:
+```bash
+python -m pytest tests/ -v --regression
 ```
 
 ## Goals
