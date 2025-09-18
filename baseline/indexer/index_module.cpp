@@ -31,7 +31,7 @@ Panel make_panel(double distance,
     return panel;
 }
 
-std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
+std::tuple<int, std::vector<double>, std::vector<double>, std::vector<int>> index_from_ssx_cells(
   const std::vector<double>& crystal_vectors,
   std::vector<double> rlp,
   std::vector<double> xyzobs_mm) {
@@ -43,6 +43,7 @@ std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
     std::vector<double> n_unindexed{};
     std::vector<std::vector<double>> cells{};
     std::vector<std::vector<double>> orientations{};
+    std::vector<std::vector<int>> miller_indices{};
     mdspan_type<double> xyzobs_mm_span =
       mdspan_type<double>(xyzobs_mm.data(), xyzobs_mm.size() / 3, 3);
     mdspan_type<double> rlp_span = mdspan_type<double>(rlp.data(), rlp.size() / 3, 3);
@@ -70,11 +71,12 @@ std::tuple<int, std::vector<double>, std::vector<double>> index_from_ssx_cells(
         Matrix3d U = crystal.get_U_matrix();
         std::vector<double> orientation(U.data(), U.data() + U.size());
         orientations.push_back(orientation);
+        miller_indices.push_back(results.miller_indices_data);
     }
     auto max_iter = std::max_element(n_indexed.begin(), n_indexed.end());
     int max_index = std::distance(n_indexed.begin(), max_iter);
     return std::make_tuple(
-      n_indexed[max_index], cells[max_index], orientations[max_index]);
+      n_indexed[max_index], cells[max_index], orientations[max_index], miller_indices[max_index]);
 }
 
 NB_MODULE(index, m) {
@@ -99,5 +101,5 @@ NB_MODULE(index, m) {
           nb::arg("crystal_vectors"),
           nb::arg("rlp"),
           nb::arg("xyzobs_mm"),
-          "Return the maximum number of indexed reflections and cell parameters");
+          "Return the maximum number of indexed reflections and cell parameters and miller indices");
 }

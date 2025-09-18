@@ -23,6 +23,8 @@ class IndexedLatticeResult(BaseModel):
     U_matrix: tuple[float, float, float, float, float, float, float, float, float]
     space_group: str
     n_indexed: NonNegativeInt
+    miller_indices: list[int] | None = None
+    xyzobs_px: list[float] | None = None
 
 
 class IndexingResult(BaseModel):
@@ -117,7 +119,8 @@ class GPUIndexer:
                 real_c = output_cells[:, j + 2]
                 cells = np.concatenate((cells, real_a, real_b, real_c), axis=None)
             ## For now, just determines the cell with the highest number of indexed spots.
-            n_indexed, cell, orientation = ffs.index.index_from_ssx_cells(
+            ## here, we could do a stills reflection prediction to calculate rmsds.
+            n_indexed, cell, orientation, miller_indices = ffs.index.index_from_ssx_cells(
                 cells, rlp_, xyzobs_px
             )
             n_unindexed = int(xyzobs_px.size / 3) - n_indexed
@@ -128,6 +131,8 @@ class GPUIndexer:
                         space_group="P1",
                         n_indexed=n_indexed,
                         U_matrix=list(orientation),
+                        miller_indices=miller_indices,
+                        xyzobs_px=xyzobs_px
                     )
                 ],
                 n_unindexed=n_unindexed,
@@ -211,6 +216,15 @@ def run(args):
 
     n_indexed_images = 0
     n_total = len(tables)
+
+    # items to aggregate for output.
+    miller_indices_output = []
+    xyzobs_output = []
+    ids_output = []
+    image_nos_output = []
+    output_id = 0
+    new_id_to_old_id = {}
+
     for t, i in zip(tables, id_values):
         data = t.flatten()
         if t.shape[0] < 10:
@@ -224,15 +238,41 @@ def run(args):
                 f"Indexed {lattice.n_indexed}/{int(data.size / 3)} spots on image {i + 1}"
             )
             print(f"Image {i + 1} results: {result.model_dump()}")
-            output_crystals[identifiers_map[i]] = {
+            output_crystals[identifiers_map[int(i)]] = {
                 "cell": lattice.unit_cell,
                 "U_matrix": lattice.U_matrix,
                 "n_indexed": lattice.n_indexed,
             }
+            # now save stuff for output
+            miller_indices_output.append(lattice.miller_indices)
+            xyzobs_output.append(lattice.xyzobs_px)
+            ids_output.append(np.array([output_id] * int(len(lattice.miller_indices) / 3), dtype=np.int32))
+            image_nos_output.append(np.array([i] * int(len(lattice.miller_indices) / 3), dtype=np.int32))
+            new_id_to_old_id[output_id] = i
+            output_id += 1
 
     print(f"Indexed {n_indexed_images}/{n_total} images")
+    # ideally would generate an indexed.expt type file...
     with open("indexed_crystals.json", "w") as f:
         json.dump(output_crystals, f, indent=2)
+
+    from pathlib import Path
+    # output in standard dials format so that can be understood by dials.
+    output_refl = h5py.File(Path.cwd() / "indexed.refl", "w")
+    output_refl.create_group("dials")
+    output_refl["dials"].create_group("processing")
+    output_refl["dials"]["processing"].create_group("group_0")
+    output_refl["dials"]["processing"]["group_0"]["id"] = np.concatenate(ids_output)
+    output_refl["dials"]["processing"]["group_0"]["image"] = np.concatenate(image_nos_output)
+    output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = np.concatenate(xyzobs_output).reshape(-1,3)
+    output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(miller_indices_output, dtype=np.int32).reshape(-1,3)
+    sorted_ids = sorted(list(set(np.uint(i) for i in new_id_to_old_id.keys())))
+    output_refl["dials"]["processing"]["group_0"].attrs["experiment_ids"] = sorted_ids
+    identifiers = [identifiers_map[new_id_to_old_id[i]] for i in sorted_ids]
+    output_refl["dials"]["processing"]["group_0"].attrs["identifiers"] = identifiers
+
+    ## extra potential data to output to enable further processing:
+    ## rlp, panel, flags, s1, xyzcal, xyzobs.mm.value
 
 
 if __name__ == "__main__":
