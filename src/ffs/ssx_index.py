@@ -120,8 +120,8 @@ class GPUIndexer:
                 cells = np.concatenate((cells, real_a, real_b, real_c), axis=None)
             ## For now, just determines the cell with the highest number of indexed spots.
             ## here, we could do a stills reflection prediction to calculate rmsds.
-            n_indexed, cell, orientation, miller_indices = ffs.index.index_from_ssx_cells(
-                cells, rlp_, xyzobs_px
+            n_indexed, cell, orientation, miller_indices = (
+                ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px)
             )
             n_unindexed = int(xyzobs_px.size / 3) - n_indexed
             indexing_result = IndexingResult(
@@ -132,7 +132,7 @@ class GPUIndexer:
                         n_indexed=n_indexed,
                         U_matrix=list(orientation),
                         miller_indices=miller_indices,
-                        xyzobs_px=xyzobs_px
+                        xyzobs_px=xyzobs_px,
                     )
                 ],
                 n_unindexed=n_unindexed,
@@ -246,8 +246,14 @@ def run(args):
             # now save stuff for output
             miller_indices_output.append(lattice.miller_indices)
             xyzobs_output.append(lattice.xyzobs_px)
-            ids_output.append(np.array([output_id] * int(len(lattice.miller_indices) / 3), dtype=np.int32))
-            image_nos_output.append(np.array([i] * int(len(lattice.miller_indices) / 3), dtype=np.int32))
+            ids_output.append(
+                np.array(
+                    [output_id] * int(len(lattice.miller_indices) / 3), dtype=np.int32
+                )
+            )
+            image_nos_output.append(
+                np.array([i] * int(len(lattice.miller_indices) / 3), dtype=np.int32)
+            )
             new_id_to_old_id[output_id] = i
             output_id += 1
 
@@ -257,15 +263,22 @@ def run(args):
         json.dump(output_crystals, f, indent=2)
 
     from pathlib import Path
+
     # output in standard dials format so that can be understood by dials.
     output_refl = h5py.File(Path.cwd() / "indexed.refl", "w")
     output_refl.create_group("dials")
     output_refl["dials"].create_group("processing")
     output_refl["dials"]["processing"].create_group("group_0")
     output_refl["dials"]["processing"]["group_0"]["id"] = np.concatenate(ids_output)
-    output_refl["dials"]["processing"]["group_0"]["image"] = np.concatenate(image_nos_output)
-    output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = np.concatenate(xyzobs_output).reshape(-1,3)
-    output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(miller_indices_output, dtype=np.int32).reshape(-1,3)
+    output_refl["dials"]["processing"]["group_0"]["image"] = np.concatenate(
+        image_nos_output
+    )
+    output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = np.concatenate(
+        xyzobs_output
+    ).reshape(-1, 3)
+    output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
+        miller_indices_output, dtype=np.int32
+    ).reshape(-1, 3)
     sorted_ids = sorted(list(set(np.uint(i) for i in new_id_to_old_id.keys())))
     output_refl["dials"]["processing"]["group_0"].attrs["experiment_ids"] = sorted_ids
     identifiers = [identifiers_map[new_id_to_old_id[i]] for i in sorted_ids]
