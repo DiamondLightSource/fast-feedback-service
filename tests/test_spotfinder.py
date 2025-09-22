@@ -417,3 +417,72 @@ def test_dispersion_gridscan(dials_data, tmp_path):
         assert minimum.tolist() == pytest.approx([0.50, 0.50, 0.50], abs=5e-3)
         assert maximum.tolist() == pytest.approx([4147.50, 4361.50, 0.50], abs=5e-3)
         assert mean.tolist() == pytest.approx([2070.02, 2141.43, 0.50], abs=5e-3)
+
+def test_dispersion_extended_32bit(dials_data, tmp_path):
+    """
+    An extended test to test the spotfinder on 32bit image data.
+    """
+    spotfinder_path: str | Path | None = os.getenv("SPOTFINDER_32BIT")
+    assert spotfinder_path
+    d = dials_data("lysozyme_ssx_25keV", pathlib=True)
+    proc = subprocess.run(
+        [
+            spotfinder_path,
+            d / "lysozyme_25keV.nxs",
+            "--threads",
+            "10",
+            "--save-h5",
+            "--images",
+            "100",
+            "--algorithm",
+            "dispersion_extended",
+        ],
+        capture_output=True,
+        cwd=tmp_path,
+    )
+    assert not proc.stderr
+    log = proc.stdout
+    loglines = strip_ansi(log.decode()).split("\n")
+
+    ## First check that the expected number of strong pixels per image have been found
+    found_strong_pixels = {}
+    n_spots_found = None
+    n_spots_expected = 4989
+
+    expected_strong_pixels = {}
+    root_dir = Path(os.getenv("FFS_ROOT_DIR"))
+    assert root_dir
+    dials_output_regex = r"Found\s+(\d+)\s+strong pixels on image\s+(\d+)\s+"
+    ## This file is the output of dials.find_spots with the options
+    ## disable_parallax_correction=True max_separation=20 min_spot_size=1
+    with open(root_dir / "tests/dials_32bit_spotfinding_output.txt", "r") as f:
+        for line in f.readlines():
+            match = re.search(dials_output_regex, line)
+            if match:
+                expected_strong_pixels[int(match.group(2)) - 1] = int(match.group(1))
+
+    spots_match_regex_2d = r"Successfully wrote\s+(\d+)\s+2D reflections to HDF5 file"
+
+    for line in loglines:
+        if "strong pixels" in line:
+            match = re.search(pixels_match_regex, line)
+            if match:
+                found_strong_pixels[int(match.group(1))] = int(match.group(2))
+        elif "Successfully" in line:
+            match = re.search(spots_match_regex_2d, line)
+            if match:
+                n_spots_found = int(match.group(1))
+
+    assert n_spots_found == n_spots_expected
+    assert found_strong_pixels == expected_strong_pixels
+
+    ## Now load the file and evaluate the calculated centroids....
+    with h5py.File(tmp_path / "results_ffs.h5", "r") as file:
+        data = file["/dials/processing/group_0/xyzobs.px.value"]
+        assert data.shape == (n_spots_expected, 3)
+        minimum = np.min(data, axis=0)
+        maximum = np.max(data, axis=0)
+        mean = np.mean(data, axis=0)
+        assert minimum.tolist() == pytest.approx([46.67, 344.61, 0.50], abs=5e-3)
+        assert maximum.tolist() == pytest.approx([2788.09, 3005.04, 0.50], abs=5e-3)
+        assert mean.tolist() == pytest.approx([1596.25, 1710.47, 0.50], abs=5e-3)
