@@ -418,6 +418,7 @@ def test_dispersion_gridscan(dials_data, tmp_path):
         assert maximum.tolist() == pytest.approx([4147.50, 4361.50, 0.50], abs=5e-3)
         assert mean.tolist() == pytest.approx([2070.02, 2141.43, 0.50], abs=5e-3)
 
+
 def test_dispersion_extended_32bit(dials_data, tmp_path):
     """
     An extended test to test the spotfinder on 32bit image data.
