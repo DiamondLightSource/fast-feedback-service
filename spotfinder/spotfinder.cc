@@ -424,8 +424,8 @@ int main(int argc, char **argv) {
     uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
                                                    : reader.get_number_of_images();
 
-    ushort height = reader.image_shape()[0];
-    ushort width = reader.image_shape()[1];
+    uint32_t height = reader.image_shape()[0];
+    uint32_t width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
 
     detector_geometry detector;

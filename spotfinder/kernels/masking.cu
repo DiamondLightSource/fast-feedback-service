@@ -98,8 +98,8 @@ __device__ float get_resolution(float wavelength,
  */
 __global__ void apply_resolution_mask(uint8_t *mask_ptr,
                                       size_t mask_pitch,
-                                      int width,
-                                      int height,
+                                      uint32_t width,
+                                      uint32_t height,
                                       float wavelength,
                                       float distance_to_detector,
                                       float beam_center_x,
@@ -111,7 +111,7 @@ __global__ void apply_resolution_mask(uint8_t *mask_ptr,
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (x > width || y > height) return;  // Out of bounds
+    if (!in_bounds(x, y, width, height)) return;  // Out of bounds
 
     // Create pitched array for data access
     PitchedArray2D<uint8_t> mask(mask_ptr, &mask_pitch);

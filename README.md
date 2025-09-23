@@ -18,9 +18,9 @@ In order to create a development environment and compile the service, you need t
 - pytest
 - dials-data
 
-For example, you can create a conda/mamba environment with the following command:
+You can create a conda/mamba environment using the provided `environment.yml` file:
 ```bash
-mamba create -c conda-forge -p ./ENV boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers bitshuffle spdlog gemmi pytest dials-data
+mamba env create -f environment.yml -p ./ENV
 ```
 
 ### Initialising submodules
@@ -83,6 +83,8 @@ zocalo.service -s GPUPerImageAnalysis
 
 ## Running the program tests
 To run the tests, you need to have pytest and dials-data available in your environment and be on a machine with an NVIDIA GPU and the CUDA toolkit installed.
+(These tests assume you have built the spotfinder in a folder called `build`. For the 32bit data tests, it is assumed that there is also
+a build folder called `build_32bit` which was built with the `PIXEL_DATA_32BIT` cmake flag.)
 Run:
 ```bash
 python -m pytest tests/ -v --regression
