@@ -11,7 +11,7 @@ using Eigen::Vector3i;
 
 class DetectorParameterisation {
   public:
-    DetectorParameterisation(const Panel& panel,
+    DetectorParameterisation(const Panel &panel,
                              bool fix_dist,
                              bool fix_shift1,
                              bool fix_shift2,
@@ -149,7 +149,7 @@ void DetectorParameterisation::compose() {
                  .transpose();
 }
 
-DetectorParameterisation::DetectorParameterisation(const Panel& p,
+DetectorParameterisation::DetectorParameterisation(const Panel &p,
                                                    bool fix_dist = false,
                                                    bool fix_shift1 = false,
                                                    bool fix_shift2 = false,

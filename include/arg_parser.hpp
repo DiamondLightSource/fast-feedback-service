@@ -70,7 +70,7 @@ class FFSArgumentParser : public argparse::ArgumentParser {
      * @param argv Array of command-line argument strings
      * @return FFSArguments Structure containing parsed argument values
      */
-    auto parse_args(int argc, char** argv) -> FFSArguments;
+    auto parse_args(int argc, char **argv) -> FFSArguments;
 
   protected:
     /**

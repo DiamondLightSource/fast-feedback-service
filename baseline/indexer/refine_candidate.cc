@@ -13,9 +13,9 @@
 #include "target.cc"
 
 struct RefineFunctor {
-    Target& target;
+    Target &target;
 
-    int operator()(const Eigen::VectorXd& x, Eigen::VectorXd& fvec) {
+    int operator()(const Eigen::VectorXd &x, Eigen::VectorXd &fvec) {
         // x has dimensions of the number of parameters (i.e. nx1)
         // fvec has dimensions of the number of observations i.e. mx1)
         // i.e. fvec is what DIALS would call the residuals vector.
@@ -31,7 +31,7 @@ struct RefineFunctor {
         return 0;
     }
 
-    int df(const Eigen::VectorXd& x, Eigen::MatrixXd& fjac) const {
+    int df(const Eigen::VectorXd &x, Eigen::MatrixXd &fjac) const {
         // x has dimensions of the number of parameters (i.e. nx1)
         // fjac has dimensions m x n i.e. the gradients vector with respect to
         // parameter i will be set in the column fjac(i,:).
@@ -51,11 +51,11 @@ struct RefineFunctor {
     }  // values is the number of residuals, (x,y,z for each refl here).
 };
 
-double refine_indexing_candidate(Crystal& crystal,
-                                 const Goniometer& gonio,
-                                 MonochromaticBeam& beam,
-                                 Panel& panel,
-                                 ReflectionTable& sel_obs) {
+double refine_indexing_candidate(Crystal &crystal,
+                                 const Goniometer &gonio,
+                                 MonochromaticBeam &beam,
+                                 Panel &panel,
+                                 ReflectionTable &sel_obs) {
     Target target(crystal, gonio, beam, panel, sel_obs);
     Eigen::VectorXd x(target.nparams());
     BeamParameterisation beam_param = target.beam_parameterisation();

@@ -14,7 +14,7 @@ class StandaloneSpotfinder {
     // PIMPL-wrap the internals so that we don't need to include the algorithm here
     class StandaloneSpotfinderImpl;
     struct StandaloneSpotfinderImplDeleter {
-        void operator()(StandaloneSpotfinderImpl*) const;
+        void operator()(StandaloneSpotfinderImpl *) const;
     };
     std::unique_ptr<StandaloneSpotfinderImpl, StandaloneSpotfinderImplDeleter> impl;
 

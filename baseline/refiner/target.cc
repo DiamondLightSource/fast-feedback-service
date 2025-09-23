@@ -21,11 +21,11 @@ using Eigen::Vector3i;
 
 class Target {
   public:
-    Target(Crystal& crystal,
-           const Goniometer& goniometer,
-           MonochromaticBeam& beam,
-           Panel& panel,
-           ReflectionTable& obs);
+    Target(Crystal &crystal,
+           const Goniometer &goniometer,
+           MonochromaticBeam &beam,
+           Panel &panel,
+           ReflectionTable &obs);
     std::vector<std::vector<double>> gradients() const;
     std::vector<double> residuals(std::vector<double> x);
     int nref() const;
@@ -40,8 +40,8 @@ class Target {
     Crystal crystal;
     Goniometer goniometer;
     MonochromaticBeam beam;
-    Panel& panel_;
-    ReflectionTable& obs;
+    Panel &panel_;
+    ReflectionTable &obs;
     CellParameterisation cellparam;
     OrientationParameterisation orientationparam;
     DetectorParameterisation detectorparam;
@@ -52,11 +52,11 @@ class Target {
     std::vector<double> rmsds_ = {0.0, 0.0, 0.0};
 };
 
-Target::Target(Crystal& crystal,
-               const Goniometer& goniometer,
-               MonochromaticBeam& beam,
-               Panel& panel,
-               ReflectionTable& obs)
+Target::Target(Crystal &crystal,
+               const Goniometer &goniometer,
+               MonochromaticBeam &beam,
+               Panel &panel,
+               ReflectionTable &obs)
     : crystal(crystal),
       goniometer(goniometer),
       beam(beam),
@@ -68,7 +68,7 @@ Target::Target(Crystal& crystal,
       beamparam(beam, goniometer),
       calculator(orientationparam, cellparam, goniometer, beamparam, detectorparam) {
     auto s1_ = obs.column<double>("s1");
-    const auto& s1 = s1_.value();
+    const auto &s1 = s1_.value();
     n_ref = s1.extent(0);
     n_params = beamparam.get_params().size() + orientationparam.get_params().size()
                + cellparam.get_params().size() + detectorparam.get_params().size();
@@ -119,9 +119,9 @@ std::vector<double> Target::residuals(std::vector<double> x) {
     Matrix3d A = orientationparam.get_state() * B;
     simple_reflection_predictor(beam, goniometer, A, panel_, obs);
     auto xyzobs_ = obs.column<double>("xyzobs.mm.value");
-    const auto& xyzobs_mm = xyzobs_.value();
+    const auto &xyzobs_mm = xyzobs_.value();
     auto xyzcal_ = obs.column<double>("xyzcal.mm");
-    const auto& xyzcal_mm = xyzcal_.value();
+    const auto &xyzcal_mm = xyzcal_.value();
     std::vector<double> residuals(
       xyzobs_mm.size());  // residuals vector is all dx then dy then dz
     int n = xyzobs_mm.extent(0);

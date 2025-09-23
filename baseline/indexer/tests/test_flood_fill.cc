@@ -19,10 +19,10 @@ TEST(BaselineIndexer, flood_fill_test) {
     std::vector<int> channel{
       {12, 37, 38, 39, 42, 43, 62, 63, 67, 112}};  // a channel with a break
     // channel: fractional coords along z: 1 at 0, 5 at 0.2, 3 at 0.4, 1 at 0.8 (==-0.2)
-    for (auto& i : corner_cube) {
+    for (auto &i : corner_cube) {
         grid[i] = 100;
     }
-    for (auto& i : channel) {
+    for (auto &i : channel) {
         grid[i] = 100;
     }
     // now add a weak point (next to the corner), which should get filtered out by the rmsd cutoff filter.
