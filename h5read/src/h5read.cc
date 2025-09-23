@@ -5,9 +5,9 @@
 
 using namespace std;
 
-auto h5read_freeer = [](h5read_handle* h) { h5read_free(h); };
-auto h5read_image_freeer = [](image_t* h) { h5read_free_image(h); };
-auto h5read_image_modules_freeer = [](image_modules_t* h) {
+auto h5read_freeer = [](h5read_handle *h) { h5read_free(h); };
+auto h5read_image_freeer = [](image_t *h) { h5read_free_image(h); };
+auto h5read_image_modules_freeer = [](image_modules_t *h) {
     h5read_free_image_modules(h);
 };
 
@@ -15,7 +15,7 @@ H5Read::H5Read() {
     _handle = std::shared_ptr<h5read_handle>(h5read_generate_samples(), h5read_freeer);
 }
 
-H5Read::H5Read(const std::string& filename) {
+H5Read::H5Read(const std::string &filename) {
 #ifdef HAVE_HDF5
     auto obj = h5read_open(filename.c_str());
     if (obj == nullptr) throw std::runtime_error("Could not open Nexus file");
@@ -26,7 +26,7 @@ H5Read::H5Read(const std::string& filename) {
 #endif
 }
 
-H5Read::H5Read(int argc, char** argv) noexcept {
+H5Read::H5Read(int argc, char **argv) noexcept {
     _handle = std::shared_ptr<h5read_handle>(h5read_parse_standard_args(argc, argv),
                                              h5read_freeer);
 }

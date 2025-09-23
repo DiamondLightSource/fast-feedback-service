@@ -133,9 +133,9 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
  * @param n_sig_b Background noise significance level.
  * @param n_sig_s Signal significance level.
  */
-__global__ void dispersion(pixel_t __restrict__* image_ptr,
-                           uint8_t __restrict__* mask_ptr,
-                           uint8_t __restrict__* result_mask_ptr) {
+__global__ void dispersion(pixel_t __restrict__ *image_ptr,
+                           uint8_t __restrict__ *mask_ptr,
+                           uint8_t __restrict__ *result_mask_ptr) {
     // Move pointers to the correct slice
     image_ptr =
       image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
@@ -160,11 +160,11 @@ __global__ void dispersion(pixel_t __restrict__* image_ptr,
     // Allocate shared memory for the image data
     extern __shared__ uint8_t shared_mem[];
     // Partition shared memory for image and mask data
-    uint8_t* shared_mask_ptr = shared_mem;
+    uint8_t *shared_mask_ptr = shared_mem;
     size_t shared_partition_size =
       (blockDim.x + KERNEL_RADIUS * 2) * (blockDim.y + KERNEL_RADIUS * 2);
-    pixel_t* shared_image_ptr =
-      reinterpret_cast<pixel_t*>(&shared_mask_ptr[shared_partition_size]);
+    pixel_t *shared_image_ptr =
+      reinterpret_cast<pixel_t *>(&shared_mask_ptr[shared_partition_size]);
 
     // Create pitched arrays for shared memory access
     size_t shared_pitch = blockDim.x + KERNEL_RADIUS * 2;
@@ -239,9 +239,9 @@ __global__ void dispersion(pixel_t __restrict__* image_ptr,
  * @param n_sig_b Background noise significance level.
  * @param n_sig_s Signal significance level.
  */
-__global__ void dispersion_extended_first_pass(pixel_t __restrict__* image_ptr,
-                                               uint8_t __restrict__* mask_ptr,
-                                               uint8_t __restrict__* result_mask_ptr) {
+__global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
+                                               uint8_t __restrict__ *mask_ptr,
+                                               uint8_t __restrict__ *result_mask_ptr) {
     // Move pointers to the correct slice
     image_ptr =
       image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
@@ -266,11 +266,11 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__* image_ptr,
     // Allocate shared memory for the image data
     extern __shared__ uint8_t shared_mem[];
     // Partition shared memory for image and mask data
-    uint8_t* shared_mask_ptr = shared_mem;
+    uint8_t *shared_mask_ptr = shared_mem;
     size_t shared_partition_size =
       (blockDim.x + KERNEL_RADIUS * 2) * (blockDim.y + KERNEL_RADIUS * 2);
-    pixel_t* shared_image_ptr =
-      reinterpret_cast<pixel_t*>(&shared_mask_ptr[shared_partition_size]);
+    pixel_t *shared_image_ptr =
+      reinterpret_cast<pixel_t *>(&shared_mask_ptr[shared_partition_size]);
 
     // Create pitched arrays for shared memory access
     size_t shared_pitch = blockDim.x + KERNEL_RADIUS * 2;
@@ -345,10 +345,10 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__* image_ptr,
  * @param threshold Global threshold for the intensity.
  */
 __global__ void dispersion_extended_second_pass(
-  pixel_t __restrict__* image_ptr,
-  uint8_t __restrict__* mask_ptr,
-  uint8_t __restrict__* dispersion_mask_ptr,
-  uint8_t __restrict__* result_mask_ptr,
+  pixel_t __restrict__ *image_ptr,
+  uint8_t __restrict__ *mask_ptr,
+  uint8_t __restrict__ *dispersion_mask_ptr,
+  uint8_t __restrict__ *result_mask_ptr,
   size_t dispersion_mask_pitch) {
     // Move pointers to the correct slice
     image_ptr =
@@ -376,12 +376,12 @@ __global__ void dispersion_extended_second_pass(
     // Allocate shared memory for the image data
     extern __shared__ uint8_t shared_mem[];
     // Partition shared memory for image, mask and dispersion mask data
-    uint8_t* shared_mask_ptr = shared_mem;
+    uint8_t *shared_mask_ptr = shared_mem;
     size_t shared_partition_size = (blockDim.x + KERNEL_RADIUS_EXTENDED * 2)
                                    * (blockDim.y + KERNEL_RADIUS_EXTENDED * 2);
-    uint8_t* shared_dispersion_mask_ptr = &shared_mask_ptr[shared_partition_size];
-    pixel_t* shared_image_ptr =
-      reinterpret_cast<pixel_t*>(&shared_dispersion_mask_ptr[shared_partition_size]);
+    uint8_t *shared_dispersion_mask_ptr = &shared_mask_ptr[shared_partition_size];
+    pixel_t *shared_image_ptr =
+      reinterpret_cast<pixel_t *>(&shared_dispersion_mask_ptr[shared_partition_size]);
 
     // Create pitched arrays for shared memory access
     size_t shared_pitch = blockDim.x + KERNEL_RADIUS_EXTENDED * 2;

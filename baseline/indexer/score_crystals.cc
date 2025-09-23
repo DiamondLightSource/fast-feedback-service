@@ -57,7 +57,7 @@ std::map<int, score_and_crystal> results_map;
  * @param n The candidate number, starting at 1.
  */
 void evaluate_crystal(Crystal crystal,
-                      ReflectionTable const& obs,
+                      ReflectionTable const &obs,
                       Goniometer gonio,
                       MonochromaticBeam beam,
                       Panel panel,
@@ -69,9 +69,9 @@ void evaluate_crystal(Crystal crystal,
 
     // First assign miller indices to the data using the crystal model.
     auto rlp_ = obs.column<double>("rlp");
-    const mdspan_type<double>& rlp = rlp_.value();
+    const mdspan_type<double> &rlp = rlp_.value();
     auto xyzobs_mm_ = obs.column<double>("xyzobs.mm.value");
-    const mdspan_type<double>& xyzobs_mm = xyzobs_mm_.value();
+    const mdspan_type<double> &xyzobs_mm = xyzobs_mm_.value();
     assign_indices_results results =
       assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
     auto t2 = std::chrono::system_clock::now();
@@ -116,7 +116,7 @@ void evaluate_crystal(Crystal crystal,
  * @brief Determine a relative score for all solutions.
  * @param results_map A map of the candidate number to its score_and_crystal struct.
  */
-void score_solutions(std::map<int, score_and_crystal>& results_map) {
+void score_solutions(std::map<int, score_and_crystal> &results_map) {
     // Score the refined models.
     // Score is defined as volume_score + rmsd_score + fraction_indexed_score
     int length = results_map.size();

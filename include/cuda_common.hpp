@@ -30,11 +30,11 @@ class cuda_error : public std::runtime_error {
 };
 
 inline auto cuda_error_string(cudaError_t err) {
-    const char* err_name = cudaGetErrorName(err);
-    const char* err_str = cudaGetErrorString(err);
+    const char *err_name = cudaGetErrorName(err);
+    const char *err_str = cudaGetErrorString(err);
     return fmt::format("{}: {}", std::string{err_name}, std::string{err_str});
 }
-inline auto _cuda_check_error(cudaError_t err, const char* file, int line_num) {
+inline auto _cuda_check_error(cudaError_t err, const char *file, int line_num) {
     if (err != cudaSuccess) {
         throw cuda_error(
           fmt::format("{}:{}: {}", file, line_num, cuda_error_string(err)));
@@ -54,27 +54,27 @@ inline auto cuda_throw_error() -> void {
 template <typename T>
 auto make_cuda_malloc(size_t num_items = 1) {
     using Tb = typename std::remove_extent<T>::type;
-    Tb* obj = nullptr;
+    Tb *obj = nullptr;
     auto err = cudaMalloc(&obj, sizeof(Tb) * num_items);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
           fmt::format("Error in make_cuda_malloc: {}", cuda_error_string(err)));
     }
-    auto deleter = [](Tb* ptr) { cudaFree(ptr); };
+    auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
 
 template <typename T>
 auto make_cuda_managed_malloc(size_t num_items) {
     using Tb = typename std::remove_extent<T>::type;
-    Tb* obj = nullptr;
+    Tb *obj = nullptr;
     auto err = cudaMallocManaged(&obj, sizeof(Tb) * num_items);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
           fmt::format("Error in make_cuda_managed_malloc: {}", cuda_error_string(err)));
     }
 
-    auto deleter = [](Tb* ptr) { cudaFree(ptr); };
+    auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
 
@@ -82,13 +82,13 @@ auto make_cuda_managed_malloc(size_t num_items) {
 template <typename T>
 auto make_cuda_pinned_malloc(size_t num_items = 1) {
     using Tb = typename std::remove_extent<T>::type;
-    Tb* obj = nullptr;
+    Tb *obj = nullptr;
     auto err = cudaMallocHost(&obj, sizeof(Tb) * num_items);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
           fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
     }
-    auto deleter = [](Tb* ptr) { cudaFreeHost(ptr); };
+    auto deleter = [](Tb *ptr) { cudaFreeHost(ptr); };
     return std::shared_ptr<T[]>{obj, deleter};
 }
 
@@ -97,14 +97,14 @@ auto make_cuda_pitched_malloc(size_t width, size_t height) {
     static_assert(!std::is_unbounded_array_v<T>,
                   "T automatically returns unbounded array pointer");
     size_t pitch = 0;
-    T* obj = nullptr;
+    T *obj = nullptr;
     auto err = cudaMallocPitch(&obj, &pitch, width * sizeof(T), height);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
           fmt::format("Error in make_cuda_pitched_malloc: {}", cuda_error_string(err)));
     }
 
-    auto deleter = [](T* ptr) { cudaFree(ptr); };
+    auto deleter = [](T *ptr) { cudaFree(ptr); };
 
     return std::make_pair(std::shared_ptr<T[]>(obj, deleter), pitch / sizeof(T));
 }
@@ -180,7 +180,7 @@ class CudaEvent {
         }
     }
     /// Elapsed Event time, in milliseconds
-    float elapsed_time(CudaEvent& since) {
+    float elapsed_time(CudaEvent &since) {
         float elapsed_time = 0.0f;
         if (cudaEventElapsedTime(&elapsed_time, since.event, event) != cudaSuccess) {
             cuda_throw_error();
@@ -208,12 +208,12 @@ class CudaEvent {
  * @param transform_func The pixel transformation function (e.g., to invert pixel values).
  */
 template <typename PixelType, typename TransformFunc>
-void save_device_data_to_png(PixelType* device_ptr,
+void save_device_data_to_png(PixelType *device_ptr,
                              size_t device_pitch,
                              int width,
                              int height,
                              cudaStream_t stream,
-                             const std::string& output_filename,
+                             const std::string &output_filename,
                              TransformFunc transform_func) {
     // Allocate host vector to hold the copied data
     std::vector<PixelType> host_data(width * height);
@@ -232,13 +232,13 @@ void save_device_data_to_png(PixelType* device_ptr,
     cudaStreamSynchronize(stream);
 
     // Apply the transformation function to each pixel
-    for (auto& pixel : host_data) {
+    for (auto &pixel : host_data) {
         pixel = transform_func(pixel);
     }
 
     // Encode and save the image as a PNG file
     lodepng::encode(fmt::format("{}.png", output_filename),
-                    reinterpret_cast<const unsigned char*>(host_data.data()),
+                    reinterpret_cast<const unsigned char *>(host_data.data()),
                     width,
                     height,
                     LCT_GREY);
@@ -258,12 +258,12 @@ void save_device_data_to_png(PixelType* device_ptr,
  * @param condition_func The condition function that returns true for pixels to be logged.
  */
 template <typename PixelType, typename ConditionFunc>
-void save_device_data_to_txt(PixelType* device_ptr,
+void save_device_data_to_txt(PixelType *device_ptr,
                              size_t device_pitch,
                              int width,
                              int height,
                              cudaStream_t stream,
-                             const std::string& output_filename,
+                             const std::string &output_filename,
                              ConditionFunc condition_func) {
     // Allocate host vector to hold the copied data
     std::vector<PixelType> host_data(width * height);

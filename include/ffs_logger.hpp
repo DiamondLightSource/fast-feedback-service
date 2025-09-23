@@ -25,7 +25,7 @@ class FFSLogger {
      * instance. This ensures a single point of access throughout the
      * application without requiring manual setup.
      */
-    static spdlog::logger& getInstance() {
+    static spdlog::logger &getInstance() {
         if (!logger_) {
             initialiseLogger();
         }
@@ -86,7 +86,7 @@ class FFSLogger {
             );
 
             // Get logging level from environment variable (if set)
-            const char* logLevelEnv = std::getenv("LOG_LEVEL");
+            const char *logLevelEnv = std::getenv("LOG_LEVEL");
             if (logLevelEnv) {
                 logger_->set_level(spdlog::level::from_str(logLevelEnv));
             } else {
@@ -95,7 +95,7 @@ class FFSLogger {
 
             // Register the logger globally
             spdlog::register_logger(logger_);
-        } catch (const spdlog::spdlog_ex& ex) {
+        } catch (const spdlog::spdlog_ex &ex) {
             throw std::runtime_error(std::string("Logger initialization failed: ")
                                      + ex.what());
         }
@@ -103,4 +103,4 @@ class FFSLogger {
 };
 
 // Global static access to the logger
-inline auto& logger = FFSLogger::getInstance();
+inline auto &logger = FFSLogger::getInstance();

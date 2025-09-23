@@ -10,14 +10,14 @@
 #include "h5read.h"
 #include "standalone.h"
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     auto reader = H5Read(argc, argv);
     size_t n_images = reader.get_number_of_images();
 
     auto [image_slow, image_fast] = reader.image_shape();
 
-    bool* strong_spotfinder = nullptr;
-    auto* spotfinder = spotfinder_create(image_fast, image_slow);
+    bool *strong_spotfinder = nullptr;
+    auto *spotfinder = spotfinder_create(image_fast, image_slow);
     auto standalone_spotfinder = StandaloneSpotfinder(image_fast, image_slow);
 
     auto mask = reader.get_mask().value_or(span<uint8_t>{});
@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
           spotfinder_standard_dispersion(spotfinder, &c_image, &strong_spotfinder);
         image_double.assign(image.data.begin(), image.data.end());
         auto standalone_strong_pixels = standalone_spotfinder.standard_dispersion(
-          image_double, {reinterpret_cast<bool*>(mask.data()), mask.size()});
+          image_double, {reinterpret_cast<bool *>(mask.data()), mask.size()});
 
         size_t zero = 0;
         size_t n_strong = count_nonzero(strong_spotfinder, image_fast, image_slow);

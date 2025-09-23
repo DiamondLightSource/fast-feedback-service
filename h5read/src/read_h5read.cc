@@ -5,7 +5,7 @@
 
 #include "h5read.h"
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     auto reader = H5Read(argc, argv);
 
     size_t n_images = reader.get_number_of_images();

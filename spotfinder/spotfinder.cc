@@ -57,7 +57,7 @@ bool are_close(float a, float b, float tolerance) {
 
 /// Copy the mask from a reader into a pitched GPU area
 template <typename T>
-auto upload_mask(T& reader) -> PitchedMalloc<uint8_t> {
+auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
     size_t height = reader.image_shape()[0];
     size_t width = reader.image_shape()[1];
 
@@ -134,8 +134,8 @@ void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
     CUDA_CHECK(cudaStreamSynchronize(stream));
 }
 
-void wait_for_ready_for_read(const std::string& path,
-                             std::function<bool(const std::string&)> checker,
+void wait_for_ready_for_read(const std::string &path,
+                             std::function<bool(const std::string &)> checker,
                              float timeout = 120.0f) {
     if (!checker(path)) {
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -229,7 +229,7 @@ class PipeHandler {
      * @brief Sends data through the pipe in a thread-safe manner.
      * @param json_data A json object containing the data to be sent.
      */
-    void sendData(const json& json_data) {
+    void sendData(const json &json_data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
         // This unlocks the mutex when the function returns
         std::lock_guard<std::mutex> lock(mtx);
@@ -359,7 +359,7 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
 #pragma endregion
 
 #pragma region Application Entry
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     logger.info("Spotfinder version: {}", FFS_VERSION);
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader
@@ -397,7 +397,7 @@ int main(int argc, char** argv) {
     if (!std::filesystem::exists(args.file)) {
         wait_for_ready_for_read(
           args.file,
-          [](const std::string& s) { return std::filesystem::exists(s); },
+          [](const std::string &s) { return std::filesystem::exists(s); },
           wait_timeout);
     }
     if (std::filesystem::is_directory(args.file)) {
@@ -417,7 +417,7 @@ int main(int argc, char** argv) {
                                        : std::make_unique<H5Read>(args.file);
     }
     // Bind this as a reference
-    Reader& reader = *reader_ptr;
+    Reader &reader = *reader_ptr;
 
     auto reader_mutex = std::mutex{};
 
@@ -586,7 +586,7 @@ int main(int argc, char** argv) {
             }
         }
         lodepng::encode("mask_source.png",
-                        reinterpret_cast<uint8_t*>(image_mask.data()),
+                        reinterpret_cast<uint8_t *>(image_mask.data()),
                         width,
                         height,
                         LCT_RGB);
@@ -620,7 +620,7 @@ int main(int argc, char** argv) {
                 }
             }
             lodepng::encode("mask_calculated.png",
-                            reinterpret_cast<uint8_t*>(image_mask.data()),
+                            reinterpret_cast<uint8_t *>(image_mask.data()),
                             width,
                             height,
                             LCT_RGB);
@@ -872,7 +872,7 @@ int main(int argc, char** argv) {
                     std::vector<Reflection3D> reflections =
                       connected_components_2d->find_2d_components(
                         min_spot_size, max_peak_centroid_separation);
-                    for (const auto& r : reflections) {
+                    for (const auto &r : reflections) {
                         auto [x, y, z] = r.center_of_mass();
                         centers_of_mass.push_back(x);
                         centers_of_mass.push_back(y);
@@ -904,7 +904,7 @@ int main(int argc, char** argv) {
                     // Go over each shoebox and write a square
                     // for (auto box : boxes) {
                     for (int i = 0; i < boxes.size(); ++i) {
-                        auto& box = boxes[i];
+                        auto &box = boxes[i];
                         constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
 
                         // edgeMin/edgeMax define how thick the border is
@@ -929,7 +929,7 @@ int main(int argc, char** argv) {
                         }
                     }
                     lodepng::encode(fmt::format("image_{:05d}.png", image_num),
-                                    reinterpret_cast<uint8_t*>(buffer.data()),
+                                    reinterpret_cast<uint8_t *>(buffer.data()),
                                     width,
                                     height,
                                     LCT_RGB);
@@ -1044,7 +1044,7 @@ int main(int argc, char** argv) {
         });
     }
     // For now, just wait on all threads to finish
-    for (auto& thread : threads) {
+    for (auto &thread : threads) {
         thread.join();
     }
 
@@ -1055,7 +1055,7 @@ int main(int argc, char** argv) {
 
         // Step 1: Convert rotation_slices map to a vector
         std::vector<std::unique_ptr<ConnectedComponents>> slices;
-        for (auto& [image_num, connected_components] : *rotation_slices) {
+        for (auto &[image_num, connected_components] : *rotation_slices) {
             slices.push_back(std::move(connected_components));
         }
 
@@ -1069,7 +1069,7 @@ int main(int argc, char** argv) {
 
         if (do_writeout) {
             std::ofstream out("3d_reflections.txt");
-            for (const auto& reflection : reflections_3d) {
+            for (const auto &reflection : reflections_3d) {
                 auto [x, y, z] = reflection.center_of_mass();
 
                 std::string reflection_info =
@@ -1109,7 +1109,7 @@ int main(int argc, char** argv) {
                 std::vector<double> flat_coms;
                 flat_coms.reserve(reflections_3d.size() * 3);
 
-                for (const auto& refl : reflections_3d) {
+                for (const auto &refl : reflections_3d) {
                     auto [x, y, z] = refl.center_of_mass();
                     flat_coms.push_back(x);
                     flat_coms.push_back(y);
@@ -1128,7 +1128,7 @@ int main(int argc, char** argv) {
                 // Write the table to an HDF5 file
                 table.write("results_ffs.h5", "dials/processing/group_0");
                 logger.info("Successfully wrote 3D reflections to HDF5 file");
-            } catch (const std::exception& e) {
+            } catch (const std::exception &e) {
                 logger.error("Error writing data to HDF5 file: {}", e.what());
             } catch (...) {
                 logger.error("Unknown error writing data to HDF5 file");
@@ -1144,7 +1144,7 @@ int main(int argc, char** argv) {
             std::vector<double> flat_coms;
             std::vector<int> ids;
             std::vector<int> centers_map_keys;
-            for (const auto& pair : *reflection_centers_2d) {
+            for (const auto &pair : *reflection_centers_2d) {
                 centers_map_keys.push_back(pair.first);
             }
             std::sort(centers_map_keys.begin(), centers_map_keys.end());
@@ -1176,7 +1176,7 @@ int main(int argc, char** argv) {
             table.write("results_ffs.h5", "dials/processing/group_0");
             logger.info("Successfully wrote {} 2D reflections to HDF5 file",
                         ids.size());
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
             logger.error("Error writing data to HDF5 file: {}", e.what());
         } catch (...) {
             logger.error("Unknown error writing data to HDF5 file");

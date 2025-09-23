@@ -138,24 +138,24 @@ class DispersionThreshold {
                 double x = 0;
                 double y = 0;
                 if (i0 >= 0 && j0 >= 0) {
-                    const Data& d00 = table[k0 + i0];
-                    const Data& d10 = table[k1 + i0];
-                    const Data& d01 = table[k0 + i1];
+                    const Data &d00 = table[k0 + i0];
+                    const Data &d10 = table[k1 + i0];
+                    const Data &d01 = table[k0 + i1];
                     m += d00.m - (d10.m + d01.m);
                     x += d00.x - (d10.x + d01.x);
                     y += d00.y - (d10.y + d01.y);
                 } else if (i0 >= 0) {
-                    const Data& d10 = table[k1 + i0];
+                    const Data &d10 = table[k1 + i0];
                     m -= d10.m;
                     x -= d10.x;
                     y -= d10.y;
                 } else if (j0 >= 0) {
-                    const Data& d01 = table[k0 + i1];
+                    const Data &d01 = table[k0 + i1];
                     m -= d01.m;
                     x -= d01.x;
                     y -= d01.y;
                 }
-                const Data& d11 = table[k1 + i1];
+                const Data &d11 = table[k1 + i1];
                 m += d11.m;
                 x += d11.x;
                 y += d11.y;
@@ -212,7 +212,7 @@ template class StandaloneSpotfinder<double>;
 
 template <typename T>
 void StandaloneSpotfinder<T>::StandaloneSpotfinderImplDeleter::operator()(
-  StandaloneSpotfinderImpl* ptr) const {
+  StandaloneSpotfinderImpl *ptr) const {
     delete ptr;
 }
 
@@ -249,7 +249,7 @@ auto StandaloneSpotfinder<T>::standard_dispersion(const span<const T> image,
                                                   const span<const bool> mask)
   -> span<const bool> {
     auto results =
-      span<bool>{reinterpret_cast<bool*>(impl->results.data()), impl->results.size()};
+      span<bool>{reinterpret_cast<bool *>(impl->results.data()), impl->results.size()};
 
     impl->algorithm.threshold(image, mask, results);
 
@@ -260,10 +260,10 @@ auto StandaloneSpotfinder<T>::standard_dispersion(const span<const T> image,
                                                   const span<const uint8_t> mask)
   -> span<const bool> {
     auto results =
-      span<bool>{reinterpret_cast<bool*>(impl->results.data()), impl->results.size()};
+      span<bool>{reinterpret_cast<bool *>(impl->results.data()), impl->results.size()};
 
     auto c_mask =
-      span<const bool>{reinterpret_cast<const bool*>(mask.data()), mask.size()};
+      span<const bool>{reinterpret_cast<const bool *>(mask.data()), mask.size()};
     impl->algorithm.threshold(image, c_mask, results);
 
     return results;

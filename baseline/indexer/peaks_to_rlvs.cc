@@ -35,10 +35,10 @@ struct SiteData {
     double length;
     int volume;
 };
-bool compare_site_data(const SiteData& a, const SiteData& b) {
+bool compare_site_data(const SiteData &a, const SiteData &b) {
     return a.length < b.length;
 }
-bool compare_site_data_volume(const SiteData& a, const SiteData& b) {
+bool compare_site_data_volume(const SiteData &a, const SiteData &b) {
     return a.volume > b.volume;
 }
 
@@ -81,10 +81,10 @@ std::vector<Vector3d> peaks_to_rlvs(std::vector<Vector3d> centres_of_mass_frac,
     // Calculate the scaling between the FFT grid and reciprocal space.
     double fft_cell_length = n_points * d_min / 2.0;
     // Use 'sites_mod_short' and convert to cartesian (but keep in same array)
-    for (Vector3d& vec : centres_of_mass_frac) {
+    for (Vector3d &vec : centres_of_mass_frac) {
         // Apply the scaling across the vector
         std::transform(
-          vec.begin(), vec.end(), vec.begin(), [fft_cell_length](double& val) {
+          vec.begin(), vec.end(), vec.begin(), [fft_cell_length](double &val) {
               if (val > 0.5) val -= 1.0;
               return val * fft_cell_length;
           });
@@ -105,9 +105,9 @@ std::vector<Vector3d> peaks_to_rlvs(std::vector<Vector3d> centres_of_mass_frac,
     double relative_length_tolerance = 0.1;
     double angular_tolerance = 5.0;
     std::vector<VectorGroup> vector_groups{};
-    for (const SiteData& data : filtered_data) {
+    for (const SiteData &data : filtered_data) {
         bool matched_group = false;
-        for (VectorGroup& group : vector_groups) {
+        for (VectorGroup &group : vector_groups) {
             Vector3d mean_v = group.mean();
             double mean_v_length = mean_v.norm();
             if ((std::abs(mean_v_length - data.length)
@@ -135,7 +135,7 @@ std::vector<Vector3d> peaks_to_rlvs(std::vector<Vector3d> centres_of_mass_frac,
 
     // Create "site"s based on the data from the groups.
     std::vector<SiteData> grouped_data;
-    for (const VectorGroup& group : vector_groups) {
+    for (const VectorGroup &group : vector_groups) {
         Vector3d site = group.mean();
         int max = *std::max_element(group.weights.begin(), group.weights.end());
         grouped_data.push_back({site, site.norm(), max});
@@ -148,10 +148,10 @@ std::vector<Vector3d> peaks_to_rlvs(std::vector<Vector3d> centres_of_mass_frac,
 
     // Now check if any sites are integer multiples of other sites.
     std::vector<SiteData> unique_sites;
-    for (const SiteData& data : grouped_data) {
+    for (const SiteData &data : grouped_data) {
         bool is_unique = true;
-        const Vector3d& v = data.site;
-        for (const SiteData& unique_site : unique_sites) {
+        const Vector3d &v = data.site;
+        for (const SiteData &unique_site : unique_sites) {
             // If the volume of the unique site is less than the current site, skip
             if (unique_site.volume <= data.volume) {
                 continue;

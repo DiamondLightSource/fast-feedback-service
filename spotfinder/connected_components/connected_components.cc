@@ -14,8 +14,8 @@
 #include "h5read.h"
 
 #pragma region Connected Components
-ConnectedComponents::ConnectedComponents(const uint8_t* result_image,
-                                         const pixel_t* original_image,
+ConnectedComponents::ConnectedComponents(const uint8_t *result_image,
+                                         const pixel_t *original_image,
                                          const ushort width,
                                          const ushort height,
                                          const uint min_spot_size)
@@ -48,7 +48,7 @@ void ConnectedComponents::build_graph(const ushort width, const ushort height) {
     size_t vertex_id = 0;
 
     // First, add vertices to the graph
-    for (const auto& [linear_index, signal] : signals) {
+    for (const auto &[linear_index, signal] : signals) {
         // Store the mappings for the linear index to vertex ID and vice versa
         index_to_vertex[linear_index] = vertex_id;
         vertex_to_index[vertex_id] = linear_index;
@@ -58,7 +58,7 @@ void ConnectedComponents::build_graph(const ushort width, const ushort height) {
     }
 
     // Add edges by checking neighbors
-    for (const auto& [linear_index, signal] : signals) {
+    for (const auto &[linear_index, signal] : signals) {
         size_t right_linear_index = linear_index + 1;      // Pixel to the right
         size_t below_linear_index = linear_index + width;  // Pixel below
 
@@ -94,7 +94,7 @@ void ConnectedComponents::generate_boxes(const ushort width,
     boxes = std::vector<Reflection>(num_labels, {width, height, 0, 0});
 
     // Iterate over the signals and update the bounding boxes
-    for (const auto& [linear_index, signal] : signals) {
+    for (const auto &[linear_index, signal] : signals) {
         // Retrieve the vertex index for this linear_index (linear_index -> vertex_id in build_graph)
         auto vertex_it = index_to_vertex.find(linear_index);
 
@@ -107,7 +107,7 @@ void ConnectedComponents::generate_boxes(const ushort width,
 
         int label = labels[vertex_id];  // Label assigned to this vertex
 
-        auto& box = boxes[label];
+        auto &box = boxes[label];
         box.l = std::min(box.l, signal.x);
         box.r = std::max(box.r, signal.x);
         box.t = std::min(box.t, signal.y);
@@ -121,7 +121,7 @@ void ConnectedComponents::generate_boxes(const ushort width,
     // Filter boxes based on the minimum spot size
     if (min_spot_size > 0) {
         std::vector<Reflection> filtered_boxes;
-        for (auto& box : boxes) {
+        for (auto &box : boxes) {
             if (box.num_pixels >= min_spot_size) {
                 filtered_boxes.emplace_back(box);
                 num_strong_pixels_filtered += box.num_pixels;
@@ -140,8 +140,8 @@ void ConnectedComponents::generate_boxes(const ushort width,
 #pragma endregion Connected Components
 
 #pragma region Reflection3D
-bool Reflection3D::is_signal_preferred(const Signal& candidate,
-                                       const Signal& current) const {
+bool Reflection3D::is_signal_preferred(const Signal &candidate,
+                                       const Signal &current) const {
     // Compare z-coordinates first
     if (candidate.z.value() != current.z.value()) {
         return candidate.z.value() < current.z.value();
@@ -158,7 +158,7 @@ bool Reflection3D::is_signal_preferred(const Signal& candidate,
 #pragma endregion Reflection3D
 
 #pragma region 2D Connected Components
-std::tuple<int, int> filter_reflections(std::vector<Reflection3D>& reflections,
+std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
                                         const uint min_spot_size,
                                         const float max_peak_centroid_separation) {
     int n_filtered_by_spot_size;
@@ -167,7 +167,7 @@ std::tuple<int, int> filter_reflections(std::vector<Reflection3D>& reflections,
     if (min_spot_size > 0) {
         reflections.erase(std::remove_if(reflections.begin(),
                                          reflections.end(),
-                                         [min_spot_size](const auto& reflection) {
+                                         [min_spot_size](const auto &reflection) {
                                              return reflection.get_num_pixels()
                                                     < min_spot_size;
                                          }),
@@ -179,7 +179,7 @@ std::tuple<int, int> filter_reflections(std::vector<Reflection3D>& reflections,
         reflections.erase(
           std::remove_if(reflections.begin(),
                          reflections.end(),
-                         [max_peak_centroid_separation](const auto& reflection) {
+                         [max_peak_centroid_separation](const auto &reflection) {
                              return reflection.peak_centroid_distance()
                                     > max_peak_centroid_separation;
                          }),
@@ -197,10 +197,10 @@ std::vector<Reflection3D> ConnectedComponents::find_2d_components(
 
     std::vector<Reflection3D> reflections(num_labels);
     auto z_index = 0;
-    for (auto& [linear_index, signal] : signals) {
+    for (auto &[linear_index, signal] : signals) {
         size_t vertex_id = index_to_vertex.at(linear_index);
         int label = labels[vertex_id];
-        auto& reflection = reflections[label];
+        auto &reflection = reflections[label];
         signal.z = std::make_optional(z_index);
         reflection.add_signal(signal);
     }
@@ -222,7 +222,7 @@ std::vector<Reflection3D> ConnectedComponents::find_2d_components(
 
 #pragma region 3D Connected Components
 std::vector<Reflection3D> ConnectedComponents::find_3d_components(
-  const std::vector<std::unique_ptr<ConnectedComponents>>& slices,
+  const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
   const ushort width,
   const ushort height,
   const uint min_spot_size,
@@ -243,16 +243,16 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      * from each slice's graph into the global 3D graph.
      */
     logger.debug("Building 3D graph");
-    for (const auto& slice : slices) {
+    for (const auto &slice : slices) {
         // Get the slice's graph and vertex map
-        const auto& graph = slice->get_graph();
-        const auto& signals = slice->get_signals();
+        const auto &graph = slice->get_graph();
+        const auto &signals = slice->get_signals();
 
         // 2D linear_index -> global_vertex_id map for this slice
         std::unordered_map<size_t, size_t> local_to_global;
 
         // Add each vertex from the slice's graph to the global graph
-        for (const auto& [linear_index, signal] : signals) {
+        for (const auto &[linear_index, signal] : signals) {
             // Add the vertex to the global graph
             local_to_global[linear_index] = global_vertex_id++;
             boost::add_vertex(graph_3d);
@@ -269,14 +269,14 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
     // Iterate over each slice and copy the edges to the 3D graph
     for (int i = 0; i < slices.size(); ++i) {
         // Current slice's 2d graph
-        const auto& graph_2d = slices[i]->get_graph();
+        const auto &graph_2d = slices[i]->get_graph();
         // Current slice's vertex id -> linear index map
-        const auto& vertex_to_index = slices[i]->get_vertex_to_index();
+        const auto &vertex_to_index = slices[i]->get_vertex_to_index();
 
         // logger.trace("Copying edges from slice {}", i);
 
         // Iterate over the edges in the slice's graph
-        for (const auto& edge : boost::make_iterator_range(boost::edges(graph_2d))) {
+        for (const auto &edge : boost::make_iterator_range(boost::edges(graph_2d))) {
             // Get the source and target vertices for the edge
             auto source_vertex = boost::source(edge, graph_2d);
             auto target_vertex = boost::target(edge, graph_2d);
@@ -304,12 +304,12 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
     logger.debug("Adding inter-slice connectivity");
     // Loop through all slices except the last one
     for (size_t i = 0; i < slices.size() - 1; ++i) {
-        const auto& current_vertex_map =
+        const auto &current_vertex_map =
           local_to_global_vertex_maps[i];  // Current slice
-        const auto& next_vertex_map = local_to_global_vertex_maps[i + 1];  // Next slice
+        const auto &next_vertex_map = local_to_global_vertex_maps[i + 1];  // Next slice
 
         // Iterate over the vertices in the current slice
-        for (const auto& [current_linear_index, current_global_id] :
+        for (const auto &[current_linear_index, current_global_id] :
              current_vertex_map) {
             // Check if the corresponding vertex exists in the next slice
             auto iterated_vertex = next_vertex_map.find(current_linear_index);
@@ -362,19 +362,19 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      */
     for (int z = 0; z < slices.size(); ++z) {
         // Current working slice
-        const auto& slice = slices[z];
+        const auto &slice = slices[z];
         // All signals in the slice
-        auto& signals = slice->get_signals();  // Not const because we need to update z
+        auto &signals = slice->get_signals();  // Not const because we need to update z
         // Slice index to vertex mapping
-        const auto& index_to_vertex = slice->get_index_to_vertex();
+        const auto &index_to_vertex = slice->get_index_to_vertex();
 
         /*
          * Iterate through each signal in the slice and update its 3D
          * reflection with the corresponding label from the 3D connected
          * components analysis.
          */
-        for (auto& [linear_index, signal] : signals) {
-            const auto& local_to_global_vertex_map = local_to_global_vertex_maps[z];
+        for (auto &[linear_index, signal] : signals) {
+            const auto &local_to_global_vertex_map = local_to_global_vertex_maps[z];
             // Retrieve the vertex ID for this linear index
             auto vertex_it = local_to_global_vertex_map.find(linear_index);
 
@@ -389,7 +389,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
             int label = labels[vertex_id];
 
             // Get the reflection for this label
-            auto& reflection = reflections_3d[label];
+            auto &reflection = reflections_3d[label];
 
             // Add z-index to the signal
             signal.z = std::make_optional(z);

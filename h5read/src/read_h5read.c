@@ -6,8 +6,8 @@
 
 #include "h5read.h"
 
-int main(int argc, char** argv) {
-    h5read_handle* obj = h5read_parse_standard_args(argc, argv);
+int main(int argc, char **argv) {
+    h5read_handle *obj = h5read_parse_standard_args(argc, argv);
 
     if (obj == NULL) {
         fprintf(stderr, "Error: Failed to open %s\n", argv[1]);
@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     size_t n_images = h5read_get_number_of_images(obj);
 
     // A buffer we own, to check reading image data into a preallocated buffer
-    image_t_type* buffer = malloc(h5read_get_image_fast(obj)
+    image_t_type *buffer = malloc(h5read_get_image_fast(obj)
                                   * h5read_get_image_slow(obj) * sizeof(image_t_type));
 
     image_t_type max, min;
@@ -25,8 +25,8 @@ int main(int argc, char** argv) {
     printf("Trusted pixel inclusive range: %hu → %hu\n", min, max);
     printf("               %8s / %s\n", "Image", "Module");
     for (size_t j = 0; j < n_images; j++) {
-        image_t* image = h5read_get_image(obj, j);
-        image_modules_t* modules = h5read_get_image_modules(obj, j);
+        image_t *image = h5read_get_image(obj, j);
+        image_modules_t *modules = h5read_get_image_modules(obj, j);
         h5read_get_image_into(obj, j, buffer);
         size_t zero = 0, zero_invalid = 0;
         for (size_t i = 0; i < (image->fast * image->slow); i++) {
@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
                 zero_m++;
             }
         }
-        char* colour = "\033[31m";
+        char *colour = "\033[31m";
         if (zero == zero_m) {
             colour = "\033[32m";
         }

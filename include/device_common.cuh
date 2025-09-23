@@ -63,13 +63,13 @@ extern __constant__ KernelConstants kernel_constants;
  */
 template <typename T>
 struct PitchedArray2D {
-    T* array;
-    const size_t* pitch;
+    T *array;
+    const size_t *pitch;
 
     /**
      * @brief Construct a new PitchedArray2D object
      */
-    __device__ PitchedArray2D(T* array, const size_t* pitch)
+    __device__ PitchedArray2D(T *array, const size_t *pitch)
         : array(array), pitch(pitch) {}
 
     /**
@@ -82,7 +82,7 @@ struct PitchedArray2D {
     /**
      * @brief Access the element at the given coordinates
      */
-    __device__ T& operator()(uint x, uint y) {
+    __device__ T &operator()(uint x, uint y) {
         return array[(y * (*pitch)) + x];
     }
 
@@ -189,8 +189,8 @@ __device__ void load_halo(const cooperative_groups::thread_block block,
      * and uses structured binding to extract the source and
      * destination objects from the tuple.
      */
-    auto load_pixel = [&](auto& mapped_pair, int offset_x, int offset_y) {
-        auto& [src, dst] = mapped_pair;  // Destucture the mapped pair tuple
+    auto load_pixel = [&](auto &mapped_pair, int offset_x, int offset_y) {
+        auto &[src, dst] = mapped_pair;  // Destucture the mapped pair tuple
         dst(local_x + offset_x, local_y + offset_y) = src(x + offset_x, y + offset_y);
     };
 

@@ -96,7 +96,7 @@ __device__ float get_resolution(float wavelength,
  * @param dmin The minimum resolution (d-spacing) threshold.
  * @param dmax The maximum resolution (d-spacing) threshold.
  */
-__global__ void apply_resolution_mask(uint8_t* mask_ptr,
+__global__ void apply_resolution_mask(uint8_t *mask_ptr,
                                       size_t mask_pitch,
                                       int width,
                                       int height,
@@ -166,7 +166,7 @@ void call_apply_resolution_mask(dim3 blocks,
                                 dim3 threads,
                                 size_t shared_memory,
                                 cudaStream_t stream,
-                                uint8_t* mask,
+                                uint8_t *mask,
                                 ResolutionMaskParams params) {
     // Launch the kernel
     apply_resolution_mask<<<blocks, threads, shared_memory, stream>>>(

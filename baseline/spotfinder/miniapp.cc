@@ -8,18 +8,18 @@
 #include "baseline.h"
 #include "h5read.h"
 
-int main(int argc, char** argv) {
-    h5read_handle* obj = h5read_parse_standard_args(argc, argv);
+int main(int argc, char **argv) {
+    h5read_handle *obj = h5read_parse_standard_args(argc, argv);
     size_t n_images = h5read_get_number_of_images(obj);
 
     uint16_t image_slow = h5read_get_image_slow(obj);
     uint16_t image_fast = h5read_get_image_fast(obj);
-    void* spotfinder = spotfinder_create(image_fast, image_slow);
+    void *spotfinder = spotfinder_create(image_fast, image_slow);
 
     bool failed = false;
     for (size_t j = 0; j < n_images; j++) {
-        image_t* image = h5read_get_image(obj, j);
-        image_modules_t* modules = h5read_get_image_modules(obj, j);
+        image_t *image = h5read_get_image(obj, j);
+        image_modules_t *modules = h5read_get_image_modules(obj, j);
 
         uint32_t strong_pixels = spotfinder_standard_dispersion(spotfinder, image);
 
