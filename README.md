@@ -83,6 +83,8 @@ zocalo.service -s GPUPerImageAnalysis
 
 ## Running the program tests
 To run the tests, you need to have pytest and dials-data available in your environment and be on a machine with an NVIDIA GPU and the CUDA toolkit installed.
+(These tests assume you have built the spotfinder in a folder called `build`. For the 32bit data tests, it is assumed that there is also
+a build folder called `build_32bit` which was built with the `PIXEL_DATA_32BIT` cmake flag.)
 Run:
 ```bash
 python -m pytest tests/ -v --regression
