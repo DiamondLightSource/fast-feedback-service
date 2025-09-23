@@ -24,6 +24,8 @@ ContinuationIndentWidth: 2
 # case: line up with the switch rather than being indented
 IndentCaseLabels: false
 NamespaceIndentation: Inner
+# Align pointer to the right (int *ptr instead of int* ptr)
+PointerAlignment: Right
 SortIncludes: true
 ReflowComments: false
 ---
