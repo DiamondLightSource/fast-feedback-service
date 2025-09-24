@@ -16,6 +16,7 @@
 #include <csignal>
 #include <dx2/reflection.hpp>
 #include <dx2/detector.hpp>
+#include <dx2/scan.hpp>
 #include <iostream>
 #include <memory>
 #include <ranges>
@@ -1101,7 +1102,9 @@ int main(int argc, char **argv) {
             }
             logger.flush();  // Flush to ensure all messages printed before continuing
         }
-        // Calculate sigma_b
+
+        // Calculate sigma_b and sigma_m for each spot, so that we have this value for
+        // integration without needing to reload data.
         std::array<int, 2> image_size{{4148,4362}};
         Panel panel(
           detector.distance,
@@ -1109,13 +1112,42 @@ int main(int argc, char **argv) {
           {detector.pixel_size_x, detector.pixel_size_y}, image_size);
         Vector3d s0 = {0.0,0.0,-1.0/wavelength};
         std::vector<double> sigma_bs;
+        std::vector<double> sigma_ms;
+        std::vector<int> bbox_depths;
+        Scan scan({1,100}, {0,0.1});
+        int image_range_0 = scan.get_image_range()[0];
+        double oscillation_width = scan.get_oscillation()[1];
+        double oscillation_start = scan.get_oscillation()[0];
+        Vector3d m2 = {1.0,0.0,0.0};
+        double sum_sigma_b = 0.0;
+        double sum_sigma_m = 0.0;
+        int min_bbox_width = 4;
+        int n_sigma_m = 0;
         for (const auto &refl : reflections_3d){
           auto [x, y, z] = refl.center_of_mass();
           auto [xmm, ymm] = panel.px_to_mm(x,y);
           Vector3d s1 = panel.get_lab_coord(xmm, ymm);
-          double sigma_b = refl.kabsch_covariance(s1, panel, s0);
+          double phi = (oscillation_start + (z - image_range_0) * oscillation_width) * M_PI / 180.0;
+          double sigma_b; 
+          double sigma_m;
+          int bbox_depth;
+          std::tie(sigma_b, sigma_m, bbox_depth) = refl.kabsch_covariance(s1, panel, s0, m2, scan, phi);
           sigma_bs.push_back(sigma_b);
+          sigma_ms.push_back(sigma_m);
+          bbox_depths.push_back(bbox_depth);
+          sum_sigma_b += sigma_b;
+          if (bbox_depth >= min_bbox_width){
+            sum_sigma_m += sigma_m;
+            n_sigma_m++;
+          }
         }
+        // Print out the estimated average values. This is only an estimate at this stage,
+        // as it will include spots that don't get indexed and which will therefore be
+        // excluded when this calculation is repeated in integration.
+        double est_sigma_b = std::sqrt(sum_sigma_b / reflections_3d.size()) * 180 / M_PI;
+        double est_sigma_m = std::sqrt(sum_sigma_m / n_sigma_m) * 180 / M_PI;
+        logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
+        logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots", est_sigma_m, n_sigma_m);
 
         if (save_to_h5) {
             // Step 4: Write the 3D reflections to a `.h5` file using ReflectionTable
@@ -1141,6 +1173,8 @@ int main(int argc, char **argv) {
                                     table.get_experiment_ids()[0]);
                 table.add_column("id", reflections_3d.size(), 1, id);
                 table.add_column("sigma_b", sigma_bs.size(), 1, sigma_bs);
+                table.add_column("sigma_m", sigma_ms.size(), 1, sigma_ms);
+                table.add_column("bbox_depth", bbox_depths.size(), 1, bbox_depths);
 
                 // Write the table to an HDF5 file
                 table.write("results_ffs.h5", "dials/processing/group_0");

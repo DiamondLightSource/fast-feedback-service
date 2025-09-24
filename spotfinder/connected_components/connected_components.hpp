@@ -10,6 +10,7 @@
 #include <tuple>
 #include <vector>
 #include <dx2/detector.hpp>
+#include <dx2/scan.hpp>
 
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
@@ -62,7 +63,8 @@ class Reflection3D {
         ++num_pixels_;  // Increment the number of pixels in the reflection
     }
 
-    double kabsch_covariance(Vector3d& s1, Panel& panel, Vector3d& s0) const {
+    std::tuple<double, double, int> kabsch_covariance(Vector3d& s1, Panel& panel, Vector3d& s0,
+    Vector3d& m2, Scan& scan, double phi) const {
         Vector3d e1 = s1.cross(s0);
         e1.normalize();
         Vector3d e2 = s1.cross(e1);
@@ -70,21 +72,33 @@ class Reflection3D {
         double mags1 = std::sqrt(s1.dot(s1));
         double varx = 0;
         double vary = 0;
+        double varz = 0;
         double total_intensity = 0;
+        double zeta = m2.dot(e1);
+        int image_range_0 = scan.get_image_range()[0];
+        double oscillation_width = scan.get_oscillation()[1];
+        double oscillation_start = scan.get_oscillation()[0];
         for (const auto &signal : signals_) {
             double x = static_cast<double>(signal.x) + 0.5;
             double y = static_cast<double>(signal.y) + 0.5;
+            double z = static_cast<double>(signal.z.value()) + 0.5;
             auto [xmm, ymm] = panel.px_to_mm(x,y);
-            Vector3d delta_s1 = panel.get_lab_coord(xmm, ymm) - s1;
+            Vector3d s1p = panel.get_lab_coord(xmm, ymm);
+            Vector3d delta_s1 = s1p - s1;
             double eps1 = e1.dot(delta_s1) / mags1;
             double eps2 = e2.dot(delta_s1) / mags1;
+            double phi_dash = (oscillation_start + (z - image_range_0) * oscillation_width)  * M_PI / 180.0;
+            double eps3 = (phi_dash - phi) * zeta;
             varx += signal.intensity * eps1 * eps1;
             vary += signal.intensity * eps2 * eps2;
+            varz += signal.intensity * eps3 * eps3;
             total_intensity += signal.intensity;
         }
         varx = varx / total_intensity;
         vary = vary / total_intensity;
-        return (varx + vary) / 2.0 ;
+        varz = varz / total_intensity;
+        // Reason for dividing by two below, see https://github.com/dials/dials/issues/2851#issuecomment-2657018707
+        return std::make_tuple((varx + vary) / 2.0, varz, z_max_ - z_min_);
     }
 
     /**
