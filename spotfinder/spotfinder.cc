@@ -15,6 +15,7 @@
 #include <cmath>
 #include <csignal>
 #include <dx2/reflection.hpp>
+#include <dx2/detector.hpp>
 #include <iostream>
 #include <memory>
 #include <ranges>
@@ -1100,6 +1101,21 @@ int main(int argc, char **argv) {
             }
             logger.flush();  // Flush to ensure all messages printed before continuing
         }
+        // Calculate sigma_b
+        std::array<int, 2> image_size{{4148,4362}};
+        Panel panel(
+          detector.distance,
+          {detector.beam_center_x, detector.beam_center_y},
+          {detector.pixel_size_x, detector.pixel_size_y}, image_size);
+        Vector3d s0 = {0.0,0.0,-1.0/wavelength};
+        std::vector<double> sigma_bs;
+        for (const auto &refl : reflections_3d){
+          auto [x, y, z] = refl.center_of_mass();
+          auto [xmm, ymm] = panel.px_to_mm(x,y);
+          Vector3d s1 = panel.get_lab_coord(xmm, ymm);
+          double sigma_b = refl.kabsch_covariance(s1, panel, s0);
+          sigma_bs.push_back(sigma_b);
+        }
 
         if (save_to_h5) {
             // Step 4: Write the 3D reflections to a `.h5` file using ReflectionTable
@@ -1124,6 +1140,7 @@ int main(int argc, char **argv) {
                 std::vector<int> id(reflections_3d.size(),
                                     table.get_experiment_ids()[0]);
                 table.add_column("id", reflections_3d.size(), 1, id);
+                table.add_column("sigma_b", sigma_bs.size(), 1, sigma_bs);
 
                 // Write the table to an HDF5 file
                 table.write("results_ffs.h5", "dials/processing/group_0");
