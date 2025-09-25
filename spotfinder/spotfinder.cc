@@ -1105,6 +1105,10 @@ int main(int argc, char **argv) {
 
         // Calculate sigma_b and sigma_m for each spot, so that we have this value for
         // integration without needing to reload data.
+        // Key new metadata needed
+        //  - image size (x,y),
+        //  - oscillation width,
+        //  - rotation axis (default +x?)
         std::array<int, 2> image_size{{4148,4362}};
         Panel panel(
           detector.distance,
