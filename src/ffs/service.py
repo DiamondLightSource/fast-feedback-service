@@ -18,7 +18,7 @@ import numpy as np
 import workflows.recipe
 from pydantic import BaseModel, ValidationError
 from rich.logging import RichHandler
-from ssx_index import GPUIndexer
+from ffs.ssx_index import GPUIndexer
 from workflows.services.common_service import CommonService
 
 import ffs.index
@@ -229,10 +229,11 @@ class GPUPerImageAnalysis(CommonService):
             self.indexer.cell = np.reshape(
                 np.array(cell.orth.mat, dtype="float32"), (3, 3)
             )  ## Cell as an orthogonalisation matrix
+            ## convert beam centre to correct units (given in mm, want in px).
             self.indexer.panel = ffs.index.make_panel(
                 detector_geometry.distance,
-                detector_geometry.beam_center_x,
-                detector_geometry.beam_center_y,
+                detector_geometry.beam_center_x/detector_geometry.pixel_size_x,
+                detector_geometry.beam_center_y/detector_geometry.pixel_size_y,
                 detector_geometry.pixel_size_x,
                 detector_geometry.pixel_size_y,
                 detector_geometry.image_size_x,
