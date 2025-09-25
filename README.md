@@ -23,14 +23,65 @@ You can create a conda/mamba environment using the provided `environment.yml` fi
 mamba env create -f environment.yml -p ./ENV
 ```
 
-### Initialising submodules
-This repository uses submodules for the `dx2` dependency. To initialise the submodules, run the following in the root of the repository:
+### Building the project
+
+#### Using the build script (recommended)
+This repository includes a convenient build script that handles submodule initialization, build configuration, and compilation. The build script supports both 16/32-bit pixel data formats and provides both development and production build modes.
+
+**Quick start:**
+```bash
+mamba activate ENV/         # Activate your environment
+cd fast-feedback-service/   # Go to the root of the repository
+./build.sh                  # Build both 16-bit and 32-bit versions for development
+```
+
+**Build script options:**
+```bash
+./build.sh [OPTIONS]
+
+OPTIONS:
+    -p, --production       Build for production (single build directory)
+    -3, --32bit            Use 32-bit pixel data (only with --production)
+    -c, --clean            Clean build directories before building
+    -j, --jobs N           Number of parallel jobs (default: auto-detected)
+    -h, --help             Show help message
+```
+
+**Build modes:**
+
+*Development Build (default):*
+- Creates both `build/` (16-bit) and `build_32bit/` (32-bit) directories for 16/32-bit pixel data
+- Uses `RelWithDebInfo` configuration for debugging with optimizations
+- Builds both configurations for comprehensive testing
+
+*Production Build:*
+- Creates only `build/` directory with specified configuration
+- Uses `Release` configuration for maximum performance
+- Removes `build_32bit/` if it exists to avoid confusion
+
+**Examples:**
+```bash
+./build.sh                              # Development build (both 16-bit and 32-bit)
+./build.sh --production                 # Production build with 16-bit
+./build.sh --production --32bit         # Production build with 32-bit
+./build.sh --clean                      # Clean and rebuild development builds
+./build.sh --production --clean --32bit # Clean production build with 32-bit
+```
+
+The build script automatically:
+- Initializes git submodules if needed
+- Detects and uses Ninja build system if available (faster than Make)
+- Creates the `spotfinder` executable in `build/bin/` (and `build_32bit/bin/` for development builds)
+
+#### Manual building
+If you prefer to build manually or need more control over the build process:
+
+**Initialising submodules:**
 ```bash
 git submodule update --init --recursive
 ```
 
-### Compiling the CUDA code
-To compile the CUDA code, you need to run the following:
+**Compiling the CUDA code:**
 ```bash
 mamba activate ENV/         # Activate your environment
 cd fast-feedback-service/   # Go to the root of the repository
@@ -41,10 +92,10 @@ make                        # Compile the code
 ```
 This will create the executable `spotfinder` in the [`build/bin/`] directory.
 
-### Configuring pixel data precision
+**Configuring pixel data precision:**
 By default, the service is compiled to handle 16-bit pixel data. For detectors that produce 32-bit pixel data, you can enable 32-bit support using the `PIXEL_DATA_32BIT` option.
 
-**Using ccmake (recommended):**
+*Using ccmake (recommended):*
 ```bash
 cd build
 ccmake ..                   # Opens an interactive configuration interface
@@ -53,7 +104,7 @@ ccmake ..                   # Opens an interactive configuration interface
 make                        # Compile with the new settings
 ```
 
-**Using cmake command line:**
+*Using cmake command line:*
 ```bash
 cd build
 cmake -DPIXEL_DATA_32BIT=ON ..  # Enable 32-bit pixel data support
