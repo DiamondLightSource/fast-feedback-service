@@ -7,7 +7,7 @@ dependencies:
   - boost-cpp=1.85.0
   - cmake=4.1.1
   - compilers=1.10.0
-  - dials-data=2.4.132
+  - dials-data=2.4.134
   - fmt=11.2.0
   - gemmi=0.7.3
   - gtest=1.17.0
