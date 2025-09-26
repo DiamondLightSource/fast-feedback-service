@@ -22,11 +22,11 @@ inline int mod_positive(int x, int y) {
     return x;
 }
 
-std::vector<int> absence_test(const std::vector<Vector3i>& hkl,
-                              const int& mod,
+std::vector<int> absence_test(const std::vector<Vector3i> &hkl,
+                              const int &mod,
                               Vector3i vecrep) {
     std::vector<int> cumulative(mod, 0);
-    for (const Vector3i& millerindex : hkl) {
+    for (const Vector3i &millerindex : hkl) {
         int pattern_sum = millerindex.dot(vecrep);
         cumulative[mod_positive(pattern_sum, mod)]++;
     }
@@ -73,13 +73,13 @@ std::vector<reindex_transforms> generate_reindex_transformations() {
 
     Vector3i zero = {0, 0, 0};
     std::vector<Vector3i> representatives;
-    for (const Vector3i& point : points) {
+    for (const Vector3i &point : points) {
         if (point.dot(point) > 6) {
             break;
         }
         // see if collinear with any existing;
         bool is_collinear = false;
-        for (const Vector3i& repr : representatives) {
+        for (const Vector3i &repr : representatives) {
             if (point.cross(repr) == zero) {
                 is_collinear = true;
                 break;
@@ -92,10 +92,10 @@ std::vector<reindex_transforms> generate_reindex_transformations() {
 
     // Now generate reindex matrices
     std::vector<reindex_transforms> reindex;
-    for (const Vector3i& repr : representatives) {
-        for (const int& modularity : modularities) {
+    for (const Vector3i &repr : representatives) {
+        for (const int &modularity : modularities) {
             std::vector<Vector3i> candidate_points;
-            for (const Vector3i& point : points) {
+            for (const Vector3i &point : points) {
                 if ((point.dot(repr) % modularity) == 0) {
                     candidate_points.push_back(point);
                 }
@@ -155,8 +155,8 @@ Matrix3d null{};
  * @param threshold A threshold for positive identification of an absence.
  * @returns A transformation matrix to reindex and remove the absence.
  */
-Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold = 0.9) {
-    for (const reindex_transforms& transform : transforms) {
+Matrix3d detect(const std::vector<Vector3i> &hkl, double threshold = 0.9) {
+    for (const reindex_transforms &transform : transforms) {
         std::vector<int> cumulative =
           absence_test(hkl, transform.modularity, transform.vector);
         for (int i = 0; i < transform.modularity; ++i) {
@@ -185,10 +185,10 @@ Matrix3d detect(const std::vector<Vector3i>& hkl, double threshold = 0.9) {
  * @param threshold A threshold for positive identification of an absence.
  * @returns The number of rlps that are indexed after application of this function.
  */
-int correct(std::vector<int>& hkl,
-            Crystal& crystal,
-            mdspan_type<double> const& rlp,
-            mdspan_type<double> const& xyzobs_mm,
+int correct(std::vector<int> &hkl,
+            Crystal &crystal,
+            mdspan_type<double> const &rlp,
+            mdspan_type<double> const &xyzobs_mm,
             double threshold = 0.9) {
     Vector3i null_miller = {0, 0, 0};
     int count;  // num indexed

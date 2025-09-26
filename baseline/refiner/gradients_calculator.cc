@@ -14,26 +14,26 @@ using Eigen::Vector3i;
 
 class GradientsCalculator {
   public:
-    GradientsCalculator(OrientationParameterisation& uparam,
-                        CellParameterisation& bparam,
-                        const Goniometer& goniometer,
-                        BeamParameterisation& beamparam,
-                        DetectorParameterisation& Dparam);
-    std::vector<std::vector<double>> get_gradients(const ReflectionTable& obs) const;
+    GradientsCalculator(OrientationParameterisation &uparam,
+                        CellParameterisation &bparam,
+                        const Goniometer &goniometer,
+                        BeamParameterisation &beamparam,
+                        DetectorParameterisation &Dparam);
+    std::vector<std::vector<double>> get_gradients(const ReflectionTable &obs) const;
 
   private:
     OrientationParameterisation uparam;
     CellParameterisation bparam;
     Goniometer goniometer;
     BeamParameterisation beamparam;
-    DetectorParameterisation& Dparam;
+    DetectorParameterisation &Dparam;
 };
 
-GradientsCalculator::GradientsCalculator(OrientationParameterisation& uparam,
-                                         CellParameterisation& bparam,
-                                         const Goniometer& goniometer,
-                                         BeamParameterisation& beamparam,
-                                         DetectorParameterisation& Dparam)
+GradientsCalculator::GradientsCalculator(OrientationParameterisation &uparam,
+                                         CellParameterisation &bparam,
+                                         const Goniometer &goniometer,
+                                         BeamParameterisation &beamparam,
+                                         DetectorParameterisation &Dparam)
     : uparam(uparam),
       bparam(bparam),
       goniometer(goniometer),
@@ -41,9 +41,9 @@ GradientsCalculator::GradientsCalculator(OrientationParameterisation& uparam,
       Dparam(Dparam) {};
 
 std::vector<std::vector<double>> GradientsCalculator::get_gradients(
-  const ReflectionTable& obs) const {
+  const ReflectionTable &obs) const {
     auto s1_ = obs.column<double>("s1");
-    const auto& s1 = s1_.value();
+    const auto &s1 = s1_.value();
     int n_ref = s1.extent(0);
     // assume one panel detector for now
     // Some templating to handle multi-panel/single panel detectors? will need a function to pass in a panel array
@@ -60,9 +60,9 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(
     Matrix3d UB = U * B;
 
     auto xyz_ = obs.column<double>("xyzcal.mm");
-    const auto& xyz = xyz_.value();
+    const auto &xyz = xyz_.value();
     auto hkl_ = obs.column<int>("miller_index");
-    const auto& hkl = hkl_.value();
+    const auto &hkl = hkl_.value();
     std::vector<Vector3d> r(n_ref);
     std::vector<Vector3d> pv(n_ref);
     std::vector<Vector3d> e_X_r(n_ref);

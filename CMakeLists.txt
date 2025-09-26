@@ -35,13 +35,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nanobind)
 FetchContent_Declare(
-    fmt
-    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG        11.2.0
-    FIND_PACKAGE_ARGS
-)
-FetchContent_MakeAvailable(fmt)
-FetchContent_Declare(
     nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG        v3.11.3
@@ -54,13 +47,9 @@ FetchContent_Declare(
     GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
 )
 FetchContent_MakeAvailable(argparse)
-FetchContent_Declare(
-    spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog
-    GIT_TAG        v1.15.3
-    FIND_PACKAGE_ARGS
-)
-FetchContent_MakeAvailable(spdlog)
+
+find_package(fmt REQUIRED)
+find_package(spdlog REQUIRED)
 
 # Handle inclusion of dx2 dependency using git submodule
 set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
