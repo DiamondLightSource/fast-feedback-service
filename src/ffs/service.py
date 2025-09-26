@@ -18,10 +18,10 @@ import numpy as np
 import workflows.recipe
 from pydantic import BaseModel, ValidationError
 from rich.logging import RichHandler
-from ffs.ssx_index import GPUIndexer
 from workflows.services.common_service import CommonService
 
 import ffs.index
+from ffs.ssx_index import GPUIndexer
 
 logger = logging.getLogger(__name__)
 logger.level = logging.DEBUG
@@ -232,8 +232,8 @@ class GPUPerImageAnalysis(CommonService):
             ## convert beam centre to correct units (given in mm, want in px).
             self.indexer.panel = ffs.index.make_panel(
                 detector_geometry.distance,
-                detector_geometry.beam_center_x/detector_geometry.pixel_size_x,
-                detector_geometry.beam_center_y/detector_geometry.pixel_size_y,
+                detector_geometry.beam_center_x / detector_geometry.pixel_size_x,
+                detector_geometry.beam_center_y / detector_geometry.pixel_size_y,
                 detector_geometry.pixel_size_x,
                 detector_geometry.pixel_size_y,
                 detector_geometry.image_size_x,

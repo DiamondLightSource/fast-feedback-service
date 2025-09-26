@@ -32,7 +32,7 @@ Panel make_panel(double distance,
 }
 
 std::tuple<int, std::vector<double>, std::vector<double>, std::vector<int>>
-index_from_ssx_cells(const std::vector<double>& crystal_vectors,
+index_from_ssx_cells(const std::vector<double> &crystal_vectors,
                      std::vector<double> rlp,
                      std::vector<double> xyzobs_mm) {
     // Note, xyzobs_mm is only used in assign_indices_global, and only the z-component
