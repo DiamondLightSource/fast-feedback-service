@@ -175,6 +175,8 @@ std::tuple<double, double, int> Reflection3D::variances_in_kabsch_space(const Ve
     int image_range_0 = scan.get_image_range()[0];
     double oscillation_width = scan.get_oscillation()[1];
     double oscillation_start = scan.get_oscillation()[0];
+    constexpr double deg_to_rad = M_PI / 180.0;
+
     for (const auto &signal : signals_) {
         double x = static_cast<double>(signal.x) + 0.5;
         double y = static_cast<double>(signal.y) + 0.5;
@@ -184,7 +186,7 @@ std::tuple<double, double, int> Reflection3D::variances_in_kabsch_space(const Ve
         Vector3d delta_s1 = s1p - s1;
         double eps1 = e1.dot(delta_s1) / mags1;
         double eps2 = e2.dot(delta_s1) / mags1;
-        double phi_dash = (oscillation_start + (z - image_range_0) * oscillation_width)  * M_PI / 180.0;
+        double phi_dash = (oscillation_start + (z - image_range_0) * oscillation_width)  * deg_to_rad;
         double eps3 = (phi_dash - phi) * zeta;
         varx += signal.intensity * eps1 * eps1;
         vary += signal.intensity * eps2 * eps2;

@@ -1131,7 +1131,7 @@ int main(int argc, char **argv) {
         double sum_sigma_m = 0.0;
         int min_bbox_width = 4;
         int n_sigma_m = 0;
-        
+
 	      for (const auto &refl : reflections_3d){
           auto [x, y, z] = refl.center_of_mass();
           auto [xmm, ymm] = panel.px_to_mm(x,y);
