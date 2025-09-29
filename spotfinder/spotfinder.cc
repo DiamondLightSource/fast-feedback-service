@@ -1129,7 +1129,7 @@ int main(int argc, char **argv) {
         // Variables for outputting estimated global values.
 	      double sum_sigma_b_variance = 0.0;
         double sum_sigma_m_variance = 0.0;
-        int min_bbox_width = 4;
+        int min_bbox_width = 5;
         int n_sigma_m = 0;
 
 	      for (const auto &refl : reflections_3d){
