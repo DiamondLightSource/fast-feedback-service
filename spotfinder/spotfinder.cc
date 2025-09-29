@@ -1113,30 +1113,31 @@ int main(int argc, char **argv) {
           {detector.beam_center_x, detector.beam_center_y},
           {detector.pixel_size_x, detector.pixel_size_y}, image_size);
         Vector3d s0 = {0.0,0.0,-1.0/wavelength};
-
-	std::vector<double> sigma_bs;
-	std::vector<double> sigma_ms;
-	std::vector<int> bbox_depths;
-	sigma_bs.reserve(reflections_3d.size());
-	sigma_ms.reserve(reflections_3d.size());
-	bbox_depths.reserve(reflections_3d.size());
-
-	Scan scan({1,static_cast<int>(num_images)}, {oscillation_start, oscillation_width});
+        Scan scan({1,static_cast<int>(num_images)}, {oscillation_start, oscillation_width});
         int image_range_0 = scan.get_image_range()[0];
         Vector3d m2 = {1.0,0.0,0.0}; // The rotation axis, assumed to be +x.
+        constexpr double deg_to_rad = M_PI / 180.0;
 
-	double sum_sigma_b = 0.0;
+        // Data vectors for output.
+        std::vector<double> sigma_bs;
+        std::vector<double> sigma_ms;
+        std::vector<int> bbox_depths;
+        sigma_bs.reserve(reflections_3d.size());
+        sigma_ms.reserve(reflections_3d.size());
+        bbox_depths.reserve(reflections_3d.size());
+
+        // Variables for outputting estimated global values.
+	      double sum_sigma_b = 0.0;
         double sum_sigma_m = 0.0;
         int min_bbox_width = 4;
         int n_sigma_m = 0;
-        constexpr double deg_to_rad = M_PI / 180.0;
-
-	for (const auto &refl : reflections_3d){
+        
+	      for (const auto &refl : reflections_3d){
           auto [x, y, z] = refl.center_of_mass();
           auto [xmm, ymm] = panel.px_to_mm(x,y);
           Vector3d s1 = panel.get_lab_coord(xmm, ymm);
           double phi = (oscillation_start + (z - image_range_0) * oscillation_width) * deg_to_rad;
-          auto [sigma_b, sigma_m, bbox_depth] = refl.kabsch_covariance(s1, panel, s0, m2, scan, phi);
+          auto [sigma_b, sigma_m, bbox_depth] = refl.variances_in_kabsch_space(s1, s0, m2, panel, scan, phi);
           sigma_bs.push_back(sigma_b);
           sigma_ms.push_back(sigma_m);
           bbox_depths.push_back(bbox_depth);

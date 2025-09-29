@@ -63,44 +63,6 @@ class Reflection3D {
         ++num_pixels_;  // Increment the number of pixels in the reflection
     }
 
-    std::tuple<double, double, int> kabsch_covariance(Vector3d& s1, Panel& panel, Vector3d& s0,
-    Vector3d& m2, Scan& scan, double phi) const {
-        Vector3d e1 = s1.cross(s0);
-        e1.normalize();
-        Vector3d e2 = s1.cross(e1);
-        e2.normalize();
-        double mags1 = std::sqrt(s1.dot(s1));
-        double varx = 0;
-        double vary = 0;
-        double varz = 0;
-        double total_intensity = 0;
-        double zeta = m2.dot(e1);
-        int image_range_0 = scan.get_image_range()[0];
-        double oscillation_width = scan.get_oscillation()[1];
-        double oscillation_start = scan.get_oscillation()[0];
-        for (const auto &signal : signals_) {
-            double x = static_cast<double>(signal.x) + 0.5;
-            double y = static_cast<double>(signal.y) + 0.5;
-            double z = static_cast<double>(signal.z.value()) + 0.5;
-            auto [xmm, ymm] = panel.px_to_mm(x,y);
-            Vector3d s1p = panel.get_lab_coord(xmm, ymm);
-            Vector3d delta_s1 = s1p - s1;
-            double eps1 = e1.dot(delta_s1) / mags1;
-            double eps2 = e2.dot(delta_s1) / mags1;
-            double phi_dash = (oscillation_start + (z - image_range_0) * oscillation_width)  * M_PI / 180.0;
-            double eps3 = (phi_dash - phi) * zeta;
-            varx += signal.intensity * eps1 * eps1;
-            vary += signal.intensity * eps2 * eps2;
-            varz += signal.intensity * eps3 * eps3;
-            total_intensity += signal.intensity;
-        }
-        varx = varx / total_intensity;
-        vary = vary / total_intensity;
-        varz = varz / total_intensity;
-        // Reason for dividing by two below, see https://github.com/dials/dials/issues/2851#issuecomment-2657018707
-        return std::make_tuple((varx + vary) / 2.0, varz, z_max_ - z_min_);
-    }
-
     /**
      * @brief Calculate or retrieve cached center of mass of the 3D reflection.
      * 
@@ -242,6 +204,23 @@ class Reflection3D {
 
         return distance;
     }
+
+    /**
+     * @brief Calculate the spot variances.
+     *
+     * This function calculates the two variances that describe the spot in the
+     * kabsch coordinate frame; the e1-e2 plane variance and the variance along e3.
+     * Also returned is the number of frames over which the e3 variance was calculated.
+     * These quantities are needed to determine the extent of spots during integration
+     *
+     * @return Tuple containing two variances and the number of frames used.
+     */
+    std::tuple<double, double, int> variances_in_kabsch_space(const Vector3d& s1,
+                                                              const Vector3d& s0,
+                                                              const Vector3d& m2,
+                                                              const Panel& panel,
+                                                              const Scan& scan,
+                                                              const double phi) const;
 
     // Getters for bounding box
     inline uint32_t get_x_min() const {
