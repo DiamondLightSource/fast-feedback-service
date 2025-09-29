@@ -1119,16 +1119,16 @@ int main(int argc, char **argv) {
         constexpr double deg_to_rad = M_PI / 180.0;
 
         // Data vectors for output.
-        std::vector<double> sigma_bs;
-        std::vector<double> sigma_ms;
+        std::vector<double> sigma_b_variances;
+        std::vector<double> sigma_m_variances;
         std::vector<int> bbox_depths;
-        sigma_bs.reserve(reflections_3d.size());
-        sigma_ms.reserve(reflections_3d.size());
+        sigma_b_variances.reserve(reflections_3d.size());
+        sigma_m_variances.reserve(reflections_3d.size());
         bbox_depths.reserve(reflections_3d.size());
 
         // Variables for outputting estimated global values.
-	      double sum_sigma_b = 0.0;
-        double sum_sigma_m = 0.0;
+	      double sum_sigma_b_variance = 0.0;
+        double sum_sigma_m_variance = 0.0;
         int min_bbox_width = 4;
         int n_sigma_m = 0;
 
@@ -1137,21 +1137,21 @@ int main(int argc, char **argv) {
           auto [xmm, ymm] = panel.px_to_mm(x,y);
           Vector3d s1 = panel.get_lab_coord(xmm, ymm);
           double phi = (oscillation_start + (z - image_range_0) * oscillation_width) * deg_to_rad;
-          auto [sigma_b, sigma_m, bbox_depth] = refl.variances_in_kabsch_space(s1, s0, m2, panel, scan, phi);
-          sigma_bs.push_back(sigma_b);
-          sigma_ms.push_back(sigma_m);
+          auto [sigma_b_variance, sigma_m_variance, bbox_depth] = refl.variances_in_kabsch_space(s1, s0, m2, panel, scan, phi);
+          sigma_b_variances.push_back(sigma_b_variance);
+          sigma_m_variances.push_back(sigma_m_variance);
           bbox_depths.push_back(bbox_depth);
-          sum_sigma_b += sigma_b;
+          sum_sigma_b_variance += sigma_b_variance;
           if (bbox_depth >= min_bbox_width){
-            sum_sigma_m += sigma_m;
+            sum_sigma_m_variance += sigma_m_variance;
             n_sigma_m++;
           }
         }
         // Print out the estimated average values. This is only an estimate at this stage,
         // as it will include spots that don't get indexed and which will therefore be
         // excluded when this calculation is repeated in integration.
-        double est_sigma_b = std::sqrt(sum_sigma_b / reflections_3d.size()) * 180 / M_PI;
-        double est_sigma_m = std::sqrt(sum_sigma_m / n_sigma_m) * 180 / M_PI;
+        double est_sigma_b = std::sqrt(sum_sigma_b_variance / reflections_3d.size()) * 180 / M_PI;
+        double est_sigma_m = std::sqrt(sum_sigma_m_variance / n_sigma_m) * 180 / M_PI;
         logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
         logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots", est_sigma_m, n_sigma_m);
 
@@ -1178,9 +1178,9 @@ int main(int argc, char **argv) {
                 std::vector<int> id(reflections_3d.size(),
                                     table.get_experiment_ids()[0]);
                 table.add_column("id", reflections_3d.size(), 1, id);
-                table.add_column("sigma_b", sigma_bs.size(), 1, sigma_bs);
-                table.add_column("sigma_m", sigma_ms.size(), 1, sigma_ms);
-                table.add_column("bbox_depth", bbox_depths.size(), 1, bbox_depths);
+                table.add_column("sigma_b_variance", sigma_b_variances.size(), 1, sigma_b_variances);
+                table.add_column("sigma_m_variance", sigma_m_variances.size(), 1, sigma_m_variances);
+                table.add_column("spot_extent_z", bbox_depths.size(), 1, bbox_depths);
 
                 // Write the table to an HDF5 file
                 table.write("results_ffs.h5", "dials/processing/group_0");

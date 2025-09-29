@@ -197,7 +197,7 @@ std::tuple<double, double, int> Reflection3D::variances_in_kabsch_space(const Ve
     vary = vary / total_intensity;
     varz = varz / total_intensity;
     // Reason for dividing by two below, see https://github.com/dials/dials/issues/2851#issuecomment-2657018707
-    return std::make_tuple((varx + vary) / 2.0, varz, z_max_ - z_min_);
+    return std::make_tuple((varx + vary) / 2.0, varz, z_max_ - z_min_+1);
 }
 #pragma endregion Reflection3D
 
