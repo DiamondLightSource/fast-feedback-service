@@ -1106,36 +1106,37 @@ int main(int argc, char **argv) {
         // Calculate sigma_b and sigma_m for each spot, so that we have this value for
         // integration without needing to reload data.
         // Key new metadata needed
-        //  - image size (x,y),
-        //  - oscillation width,
         //  - rotation axis (default +x?)
-        std::array<int, 2> image_size{{4148,4362}};
+        std::array<int, 2> image_size = {static_cast<int>(width), static_cast<int>(height)};
         Panel panel(
           detector.distance,
           {detector.beam_center_x, detector.beam_center_y},
           {detector.pixel_size_x, detector.pixel_size_y}, image_size);
         Vector3d s0 = {0.0,0.0,-1.0/wavelength};
-        std::vector<double> sigma_bs;
-        std::vector<double> sigma_ms;
-        std::vector<int> bbox_depths;
-        Scan scan({1,100}, {0,0.1});
+
+	std::vector<double> sigma_bs;
+	std::vector<double> sigma_ms;
+	std::vector<int> bbox_depths;
+	sigma_bs.reserve(reflections_3d.size());
+	sigma_ms.reserve(reflections_3d.size());
+	bbox_depths.reserve(reflections_3d.size());
+
+	Scan scan({1,static_cast<int>(num_images)}, {oscillation_start, oscillation_width});
         int image_range_0 = scan.get_image_range()[0];
-        double oscillation_width = scan.get_oscillation()[1];
-        double oscillation_start = scan.get_oscillation()[0];
-        Vector3d m2 = {1.0,0.0,0.0};
-        double sum_sigma_b = 0.0;
+        Vector3d m2 = {1.0,0.0,0.0}; // The rotation axis, assumed to be +x.
+
+	double sum_sigma_b = 0.0;
         double sum_sigma_m = 0.0;
         int min_bbox_width = 4;
         int n_sigma_m = 0;
-        for (const auto &refl : reflections_3d){
+        constexpr double deg_to_rad = M_PI / 180.0;
+
+	for (const auto &refl : reflections_3d){
           auto [x, y, z] = refl.center_of_mass();
           auto [xmm, ymm] = panel.px_to_mm(x,y);
           Vector3d s1 = panel.get_lab_coord(xmm, ymm);
-          double phi = (oscillation_start + (z - image_range_0) * oscillation_width) * M_PI / 180.0;
-          double sigma_b; 
-          double sigma_m;
-          int bbox_depth;
-          std::tie(sigma_b, sigma_m, bbox_depth) = refl.kabsch_covariance(s1, panel, s0, m2, scan, phi);
+          double phi = (oscillation_start + (z - image_range_0) * oscillation_width) * deg_to_rad;
+          auto [sigma_b, sigma_m, bbox_depth] = refl.kabsch_covariance(s1, panel, s0, m2, scan, phi);
           sigma_bs.push_back(sigma_b);
           sigma_ms.push_back(sigma_m);
           bbox_depths.push_back(bbox_depth);
