@@ -110,8 +110,8 @@ def test_dispersion(dials_data, tmp_path):
         assert np.max(spot_extent) == 10.0
         sigma_b_variance = file["/dials/processing/group_0/sigma_b_variance"]
         sigma_m_variance = file["/dials/processing/group_0/sigma_m_variance"]
-        assert np.mean(sigma_b_variance) == pytest.approx(4.105648E-8, rel=1e-4)
-        assert np.mean(sigma_m_variance) == pytest.approx(8.60468E-7, rel=1e-4)
+        assert np.mean(sigma_b_variance) == pytest.approx(4.105648e-8, rel=1e-4)
+        assert np.mean(sigma_m_variance) == pytest.approx(8.60468e-7, rel=1e-4)
 
 
 def test_dispersion_dmin(dials_data, tmp_path):
