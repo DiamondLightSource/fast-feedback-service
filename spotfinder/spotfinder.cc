@@ -781,15 +781,10 @@ int main(int argc, char **argv) {
                                          0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
-                    // decompress_byte_offset<pixel_t>(buffer,
-                    //                                 {host_image.get(), width * height});
                     decompress_byte_offset<pixel_t>(
                       buffer,
                       {host_image.get(),
-                       static_cast<std::span<short unsigned int>::size_type>(
-                         width * height)});
-                    // std::copy(buffer.begin(), buffer.end(), host_image.get());
-                    // std::exit(1);
+                       static_cast<std::span<pixel_t>::size_type>(width * height)});
                     break;
                 }
 
