@@ -16,7 +16,7 @@ import numpy as np
 from pydantic import BaseModel, NonNegativeInt
 
 import ffs.index
-
+from pathlib import Path
 
 class IndexedLatticeResult(BaseModel):
     unit_cell: tuple[float, float, float, float, float, float]
@@ -156,16 +156,17 @@ def run(args):
         metavar=("a", "b", "c", "alpha", "beta", "gamma"),
         help="Unit cell parameters: a b c alpha beta gamma",
     )
+    parser.add_argument("--test", action="store_true", help="Run in test mode")
 
     parsed = parser.parse_args(args)
     if not parsed.experiments:
         print("No imported experiment list provided.")
         return
     with open(parsed.experiments, "r") as f:
-        expt = json.load(f)
-    wavelength = expt["beam"][0]["wavelength"]
-    detector_dict = expt["detector"][0]["hierarchy"]
-    panel_dict = expt["detector"][0]["panels"][
+        expts = json.load(f)
+    wavelength = expts["beam"][0]["wavelength"]
+    detector_dict = expts["detector"][0]["hierarchy"]
+    panel_dict = expts["detector"][0]["panels"][
         0
     ]  # only single panel detectors for now.
     detector = {
@@ -249,6 +250,8 @@ def run(args):
     image_nos_output = []
     output_id = 0
     new_id_to_old_id = {}
+    output_crystals_list = []
+    output_crystals_id_nos = []
 
     for t, i in zip(tables, id_values):
         data = t.flatten()
@@ -269,6 +272,22 @@ def run(args):
                 "U_matrix": lattice.U_matrix,
                 "n_indexed": lattice.n_indexed,
             }
+            this_cell = gemmi.UnitCell(*lattice.unit_cell)
+            B = np.reshape(
+                np.array(this_cell.frac.mat, dtype="float64"), (3, 3)
+            )
+            U = np.reshape(
+                np.array(lattice.U_matrix, dtype="float64"), (3, 3)
+            )
+            A_inv = np.linalg.inv(np.matmul(U, B))
+            output_crystals_list.append(
+                {"__id__": "crystal",
+                "real_space_a": [A_inv[0,0], A_inv[0,1], A_inv[0,2]],
+                "real_space_b": [A_inv[1,0], A_inv[1,1], A_inv[1,2]],
+                "real_space_c": [A_inv[2,0], A_inv[2,1], A_inv[2,2]],
+                "space_group_hall_symbol": "P 1"}
+            )
+            output_crystals_id_nos.append(i)
             # now save stuff for output
             miller_indices_output.append(lattice.miller_indices)
             xyzobs_output.append(lattice.xyzobs_px)
@@ -289,17 +308,25 @@ def run(args):
     print(f"Indexed {n_indexed_images}/{n_total} non-empty images")
 
     # ideally would generate an indexed.expt type file...
-    with open("indexed_crystals.json", "w") as f:
-        json.dump(output_crystals, f, indent=2)
+    # ok say we have in imported.expt, need to add crystals to indexed images
+    if parsed.test:
+        with open("indexed_crystals.json", "w") as f:
+            json.dump(output_crystals, f, indent=2)
+    else:
+        expts["crystal"] = output_crystals_list
+        for i, id_ in enumerate(output_crystals_id_nos):
+            expts["experiment"][id_]["crystal"] = i
+        with open("indexed.expt", "w") as f:
+            json.dump(expts, f, indent=2)
 
-    from pathlib import Path
 
     # output in standard dials format so that can be understood by dials.
     output_refl = h5py.File(Path.cwd() / "indexed.refl", "w")
     output_refl.create_group("dials")
     output_refl["dials"].create_group("processing")
     output_refl["dials"]["processing"].create_group("group_0")
-    output_refl["dials"]["processing"]["group_0"]["id"] = np.concatenate(ids_output)
+    ids_array = np.concatenate(ids_output)
+    output_refl["dials"]["processing"]["group_0"]["id"] = ids_array
     output_refl["dials"]["processing"]["group_0"]["image"] = np.concatenate(
         image_nos_output
     )
@@ -314,6 +341,8 @@ def run(args):
     identifiers = [identifiers_map[new_id_to_old_id[i]] for i in sorted_ids]
     output_refl["dials"]["processing"]["group_0"].attrs["identifiers"] = identifiers
 
+    output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(ids_array)
+    #output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"]
     ## extra potential data to output to enable further processing:
     ## rlp, panel, flags, s1, xyzcal, xyzobs.mm.value
 
