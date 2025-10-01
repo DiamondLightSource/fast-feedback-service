@@ -27,9 +27,16 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
 
     uint8_t bit_depth_image = data["bit_depth_image"].template get<uint8_t>();
 
-    if (bit_depth_image != 16) {
+    // Validate that compile-time type matches runtime data
+#ifdef PIXEL_DATA_32BIT
+    constexpr uint8_t expected_bits = 32;
+#else
+    constexpr uint8_t expected_bits = 16;
+#endif
+
+    if (bit_depth_image != expected_bits) {
         throw std::runtime_error(fmt::format(
-          "Can not read image with bit_depth_image={}, only 16", bit_depth_image));
+          "Data is {}-bit but compiled for {}-bit", bit_depth_image, expected_bits));
     }
     _trusted_range = {
       0, data["countrate_correction_count_cutoff"].template get<image_t_type>()};

@@ -6,6 +6,8 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 #include <cstdint>
+#include <dx2/detector.hpp>
+#include <dx2/scan.hpp>
 #include <map>
 #include <tuple>
 #include <vector>
@@ -202,6 +204,23 @@ class Reflection3D {
 
         return distance;
     }
+
+    /**
+     * @brief Calculate the spot variances.
+     *
+     * This function calculates the two variances that describe the spot in the
+     * kabsch coordinate frame; the e1-e2 plane variance and the variance along e3.
+     * Also returned is the number of frames over which the e3 variance was calculated.
+     * These quantities are needed to determine the extent of spots during integration
+     *
+     * @return Tuple containing two variances and the number of frames used.
+     */
+    std::tuple<double, double, int> variances_in_kabsch_space(const Vector3d &s1,
+                                                              const Vector3d &s0,
+                                                              const Vector3d &m2,
+                                                              const Panel &panel,
+                                                              const Scan &scan,
+                                                              const double phi) const;
 
     // Getters for bounding box
     inline uint32_t get_x_min() const {

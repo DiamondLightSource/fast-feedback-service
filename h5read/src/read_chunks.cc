@@ -12,7 +12,7 @@ int main(int argc, char **argv) {
     size_t n_images = reader.get_number_of_images();
     size_t num_pixels = reader.get_image_slow() * reader.get_image_fast();
 
-    auto buffer = std::vector<uint8_t>(num_pixels * 2);
+    auto buffer = std::vector<uint8_t>(num_pixels * sizeof(image_t_type));
     auto image = std::vector<H5Read::image_type>(num_pixels);
 
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -20,7 +20,8 @@ int main(int argc, char **argv) {
         auto data = reader.get_raw_chunk(j, buffer);
 
         // Decompress this
-        bshuf_decompress_lz4(buffer.data() + 12, image.data(), num_pixels, 2, 0);
+        bshuf_decompress_lz4(
+          buffer.data() + 12, image.data(), num_pixels, sizeof(image_t_type), 0);
 
         printf("Read Image %d chunk of %zu KBytes\n", j, data.size() / 1024);
     }
