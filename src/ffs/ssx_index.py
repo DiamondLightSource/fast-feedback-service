@@ -9,6 +9,7 @@ import argparse
 import json
 import sys
 import time
+from pathlib import Path
 
 import gemmi
 import h5py
@@ -16,7 +17,7 @@ import numpy as np
 from pydantic import BaseModel, NonNegativeInt
 
 import ffs.index
-from pathlib import Path
+
 
 class IndexedLatticeResult(BaseModel):
     unit_cell: tuple[float, float, float, float, float, float]
@@ -273,19 +274,17 @@ def run(args):
                 "n_indexed": lattice.n_indexed,
             }
             this_cell = gemmi.UnitCell(*lattice.unit_cell)
-            B = np.reshape(
-                np.array(this_cell.frac.mat, dtype="float64"), (3, 3)
-            )
-            U = np.reshape(
-                np.array(lattice.U_matrix, dtype="float64"), (3, 3)
-            )
+            B = np.reshape(np.array(this_cell.frac.mat, dtype="float64"), (3, 3))
+            U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3))
             A_inv = np.linalg.inv(np.matmul(U, B))
             output_crystals_list.append(
-                {"__id__": "crystal",
-                "real_space_a": [A_inv[0,0], A_inv[0,1], A_inv[0,2]],
-                "real_space_b": [A_inv[1,0], A_inv[1,1], A_inv[1,2]],
-                "real_space_c": [A_inv[2,0], A_inv[2,1], A_inv[2,2]],
-                "space_group_hall_symbol": "P 1"}
+                {
+                    "__id__": "crystal",
+                    "real_space_a": [A_inv[0, 0], A_inv[0, 1], A_inv[0, 2]],
+                    "real_space_b": [A_inv[1, 0], A_inv[1, 1], A_inv[1, 2]],
+                    "real_space_c": [A_inv[2, 0], A_inv[2, 1], A_inv[2, 2]],
+                    "space_group_hall_symbol": "P 1",
+                }
             )
             output_crystals_id_nos.append(i)
             # now save stuff for output
@@ -319,7 +318,6 @@ def run(args):
         with open("indexed.expt", "w") as f:
             json.dump(expts, f, indent=2)
 
-
     # output in standard dials format so that can be understood by dials.
     output_refl = h5py.File(Path.cwd() / "indexed.refl", "w")
     output_refl.create_group("dials")
@@ -342,7 +340,7 @@ def run(args):
     output_refl["dials"]["processing"]["group_0"].attrs["identifiers"] = identifiers
 
     output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(ids_array)
-    #output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"]
+    # output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"]
     ## extra potential data to output to enable further processing:
     ## rlp, panel, flags, s1, xyzcal, xyzobs.mm.value
 

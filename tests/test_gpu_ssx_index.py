@@ -83,7 +83,7 @@ def test_gpu_ssx_index(dials_data, tmp_path):
             "results_ffs.h5",
             "-e",
             tmp_path / "tmp.expt",
-            "--test", # can't output correct indexed.expt from non-real input imported.expt
+            "--test",  # can't output correct indexed.expt from non-real input imported.expt
             "-c",
             "79",
             "79",
