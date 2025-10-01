@@ -2,7 +2,7 @@
 A program to run standalone indexing of strong spots from still shot images,
 the equivalent of the indexing part of the ffs service.
 
-Usage: python src/ffs/ssx_index.py -r strong.refl --detector detector.json --cell 78 78 38 90 90 90 --wavelength 0.976
+Usage: python src/ffs/ssx_index.py -r strong.refl -e imported.expt --cell 79 79 38 90 90 90
 """
 
 import argparse
@@ -146,7 +146,8 @@ def run(args):
         description="Runs standalone indexing of serial data using the GPU fast-feedback-indexer",
         epilog="Text at the bottom of help",
     )
-    parser.add_argument("-r", "--reflections")
+    parser.add_argument("-r", "--reflections", help="Path to the strong spots h5 file")
+    parser.add_argument("-e", "--experiments", help="Path to the imported.expt json")
     parser.add_argument(
         "-c",
         "--cell",
@@ -155,18 +156,36 @@ def run(args):
         metavar=("a", "b", "c", "alpha", "beta", "gamma"),
         help="Unit cell parameters: a b c alpha beta gamma",
     )
-    parser.add_argument("-w", "-λ", "--wavelength", type=float)
-    parser.add_argument("--detector", help="Path to the detector model json")
+
     parsed = parser.parse_args(args)
+    if not parsed.experiments:
+        print("No imported experiment list provided.")
+        return
+    with open(parsed.experiments, "r") as f:
+        expt = json.load(f)
+    wavelength = expt["beam"][0]["wavelength"]
+    detector_dict = expt["detector"][0]["hierarchy"]
+    panel_dict = expt["detector"][0]["panels"][0] # only single panel detectors for now.
+    detector = {
+        "distance" : -1.0 * (detector_dict["origin"][2]+ panel_dict["origin"][2]),
+        "beam_center_x": -1.0 * (detector_dict["origin"][0] + panel_dict["origin"][0]) / panel_dict["pixel_size"][0],
+        "beam_center_y": (detector_dict["origin"][1] + panel_dict["origin"][1])/ panel_dict["pixel_size"][1],
+        "pixel_size_x": panel_dict["pixel_size"][0],
+        "pixel_size_y": panel_dict["pixel_size"][1],
+        "image_size_x": panel_dict["image_size"][0],
+        "image_size_y": panel_dict["image_size"][1],
+        "thickness": panel_dict["thickness"],
+        "mu": panel_dict["mu"],
+    }
 
     cell = gemmi.UnitCell(*parsed.cell)
     input_cell = np.reshape(
         np.array(cell.orth.mat, dtype="float32"), (3, 3)
     )  ## As an orthogonalisation matrix.
-    wavelength = parsed.wavelength
-    with open(parsed.detector, "r") as f:
-        detector = json.load(f)
 
+    if not parsed.reflections:
+        print("No strong reflections h5 file provided.")
+        return
     try:
         r = h5py.File(parsed.reflections)
         xyzs = r["dials"]["processing"]["group_0"]["xyzobs.px.value"]
@@ -216,6 +235,7 @@ def run(args):
 
     n_indexed_images = 0
     n_total = len(tables)
+    n_considered = 0
 
     # items to aggregate for output.
     miller_indices_output = []
@@ -229,6 +249,7 @@ def run(args):
         data = t.flatten()
         if t.shape[0] < 10:
             continue
+        n_considered += 1
         data = t.flatten()
         result = indexer.index(data)
         if result.lattices:
@@ -257,7 +278,9 @@ def run(args):
             new_id_to_old_id[output_id] = i
             output_id += 1
 
-    print(f"Indexed {n_indexed_images}/{n_total} images")
+    print(f"Indexing attempted on {n_considered}/{n_total} non-empty images with >= 10 spots")
+    print(f"Indexed {n_indexed_images}/{n_total} non-empty images")
+
     # ideally would generate an indexed.expt type file...
     with open("indexed_crystals.json", "w") as f:
         json.dump(output_crystals, f, indent=2)
