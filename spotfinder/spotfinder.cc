@@ -1098,6 +1098,7 @@ int main(int argc, char **argv) {
             logger.flush();  // Flush to ensure all messages printed before continuing
         }
 
+#pragma Calculate spot variances
         // Calculate sigma_b and sigma_m for each spot, so that we have this value for
         // integration without needing to reload data.
         // Key new metadata needed
@@ -1114,6 +1115,7 @@ int main(int argc, char **argv) {
         int image_range_0 = scan.get_image_range()[0];
         Vector3d m2 = {1.0, 0.0, 0.0};  // The rotation axis, assumed to be +x.
         constexpr double deg_to_rad = M_PI / 180.0;
+        constexpr double rad_to_deg = 180.0 / M_PI;
 
         // Data vectors for output.
         std::vector<double> sigma_b_variances;
@@ -1126,7 +1128,7 @@ int main(int argc, char **argv) {
         // Variables for outputting estimated global values.
         double sum_sigma_b_variance = 0.0;
         double sum_sigma_m_variance = 0.0;
-        int min_bbox_width = 5;
+        constexpr int min_bbox_depth = 5;
         int n_sigma_m = 0;
 
         for (const auto &refl : reflections_3d) {
@@ -1141,7 +1143,7 @@ int main(int argc, char **argv) {
             sigma_m_variances.push_back(sigma_m_variance);
             bbox_depths.push_back(bbox_depth);
             sum_sigma_b_variance += sigma_b_variance;
-            if (bbox_depth >= min_bbox_width) {
+            if (bbox_depth >= min_bbox_depth) {
                 sum_sigma_m_variance += sigma_m_variance;
                 n_sigma_m++;
             }
@@ -1149,13 +1151,17 @@ int main(int argc, char **argv) {
         // Print out the estimated average values. This is only an estimate at this stage,
         // as it will include spots that don't get indexed and which will therefore be
         // excluded when this calculation is repeated in integration.
-        double est_sigma_b =
-          std::sqrt(sum_sigma_b_variance / reflections_3d.size()) * 180 / M_PI;
-        double est_sigma_m = std::sqrt(sum_sigma_m_variance / n_sigma_m) * 180 / M_PI;
-        logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
-        logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots",
-                    est_sigma_m,
-                    n_sigma_m);
+        if (reflections_3d.size()){
+          double est_sigma_b = std::sqrt(sum_sigma_b_variance / reflections_3d.size()) * rad_to_deg;
+          logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
+        }
+        if (n_sigma_m){
+          double est_sigma_m = std::sqrt(sum_sigma_m_variance / n_sigma_m) * rad_to_deg;
+          logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots",
+                      est_sigma_m,
+                      n_sigma_m);
+        }
+#pragma endregion Calculate spot variances
 
         if (save_to_h5) {
             // Step 4: Write the 3D reflections to a `.h5` file using ReflectionTable
