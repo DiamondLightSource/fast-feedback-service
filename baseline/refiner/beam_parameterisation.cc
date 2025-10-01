@@ -11,8 +11,8 @@ using Eigen::Vector3i;
 
 class BeamParameterisation {
   public:
-    BeamParameterisation(const MonochromaticBeam& beam,
-                         const Goniometer& goniometer,
+    BeamParameterisation(const MonochromaticBeam &beam,
+                         const Goniometer &goniometer,
                          bool fix_in_spindle_plane,
                          bool fix_out_spindle_plane,
                          bool fix_wavelength);
@@ -70,8 +70,8 @@ void BeamParameterisation::compose() {
     dS_dp[2] = s0_new_dir;
 }
 
-BeamParameterisation::BeamParameterisation(const MonochromaticBeam& beam,
-                                           const Goniometer& goniometer,
+BeamParameterisation::BeamParameterisation(const MonochromaticBeam &beam,
+                                           const Goniometer &goniometer,
                                            bool fix_in_spindle_plane = true,
                                            bool fix_out_spindle_plane = false,
                                            bool fix_wavelength = true)

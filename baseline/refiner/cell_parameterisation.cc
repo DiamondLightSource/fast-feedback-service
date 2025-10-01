@@ -35,7 +35,7 @@ struct BG {
     double phi, psi, theta;  //in radians
     Matrix3d B, C, D, F;
     gemmi::SMat33<double> G;
-    void forward(Matrix3d const& ori) {
+    void forward(Matrix3d const &ori) {
         orientation = ori;
         Matrix3d A(ori);  // i.e. B matrix (unhelpfully called A here)
         phi = std::atan2(A(0, 2), -A(2, 2));
@@ -57,7 +57,7 @@ struct BG {
         Matrix3d G9(A.transpose() * A);  //3x3 form of metrical matrix
         G = {G9(0, 0), G9(1, 1), G9(2, 2), G9(0, 1), G9(0, 2), G9(1, 2)};
     }
-    void validate_and_setG(gemmi::SMat33<double> const& g) {
+    void validate_and_setG(gemmi::SMat33<double> const &g) {
         // skip validation
         G = {g.u11, g.u22, g.u33, g.u12, g.u13, g.u23};
     }
@@ -256,7 +256,7 @@ std::vector<Matrix3d> SymmetrizeReduceEnlarge::forward_gradients() {
 
 class CellParameterisation {
   public:
-    CellParameterisation(const Crystal& crystal);
+    CellParameterisation(const Crystal &crystal);
     std::vector<double> get_params() const;
     void set_params(std::vector<double>);
     Matrix3d get_state() const;
@@ -288,7 +288,7 @@ void CellParameterisation::compose() {
     }
 }
 
-CellParameterisation::CellParameterisation(const Crystal& crystal)
+CellParameterisation::CellParameterisation(const Crystal &crystal)
     : B_(crystal.get_B_matrix()), SRE() {
     SRE.set_orientation(B_);
     std::vector<double> X = SRE.forward_independent_parameters();

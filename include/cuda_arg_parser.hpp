@@ -62,7 +62,7 @@ class CUDAArgumentParser : public FFSArgumentParser {
      * @return CUDAArguments Structure containing all parsed argument
      * values
      */
-    auto parse_args(int argc, char** argv) -> CUDAArguments;
+    auto parse_args(int argc, char **argv) -> CUDAArguments;
 
   protected:
     /**

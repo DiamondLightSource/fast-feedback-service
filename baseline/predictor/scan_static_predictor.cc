@@ -42,19 +42,19 @@ Vector3d unit_rotate_around_origin(Vector3d vec, Vector3d unit, double angle) {
 void simple_reflection_predictor(const MonochromaticBeam beam,
                                  const Goniometer gonio,
                                  const Matrix3d UB,
-                                 const Panel& panel,
-                                 ReflectionTable& reflections) {
+                                 const Panel &panel,
+                                 ReflectionTable &reflections) {
     // actually a repredictor as assumes all successful.
     auto flags_ = reflections.column<std::size_t>("flags");
-    auto& flags = flags_.value();
+    auto &flags = flags_.value();
     auto s1_ = reflections.column<double>("s1");
-    auto& s1 = s1_.value();
+    auto &s1 = s1_.value();
     auto xyzobs_ = reflections.column<double>("xyzobs.mm.value");
-    const auto& xyzobs_mm = xyzobs_.value();
+    const auto &xyzobs_mm = xyzobs_.value();
     auto entering_ = reflections.column<ReflectionTable::BoolEnum>("entering");
-    const auto& entering = entering_.value();
+    const auto &entering = entering_.value();
     auto hkl_ = reflections.column<int>("miller_index");
-    const auto& hkl = hkl_.value();
+    const auto &hkl = hkl_.value();
 
     std::vector<double> xyzcal_mm_data(xyzobs_mm.size(), 0.0);
     mdspan_type<double> xyzcal_mm;

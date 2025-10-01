@@ -43,7 +43,7 @@ constexpr double RAD2DEG = 180.0 / M_PI;
 constexpr size_t indexed_flag = (1 << 2);  // 4
 constexpr size_t strong_flag = (1 << 5);   // 32
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     // The purpose of an indexer is to determine the lattice model that best
     // explains the positions of the strong spots found during spot-finding.
     // The lattice model is a set of three vectors that define the crystal
@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
     json elist_json_obj;
     try {
         elist_json_obj = json::parse(f);
-    } catch (json::parse_error& ex) {
+    } catch (json::parse_error &ex) {
         logger.error("Unable to read {}; json parse error at byte {}",
                      imported_expt.c_str(),
                      ex.byte);
@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
     Experiment<MonochromaticBeam> expt;
     try {
         expt = Experiment<MonochromaticBeam>(elist_json_obj);
-    } catch (std::invalid_argument const& ex) {
+    } catch (std::invalid_argument const &ex) {
         logger.error("Unable to create MonochromaticBeam experiment: {}", ex.what());
         std::exit(1);
     }
@@ -299,7 +299,7 @@ int main(int argc, char** argv) {
                 break;
             }
         }
-        for (auto& t : threads) {
+        for (auto &t : threads) {
             t.join();
         }
     }
@@ -309,14 +309,14 @@ int main(int argc, char** argv) {
     std::vector<std::pair<int, score_and_crystal>> results_vector(results_map.begin(),
                                                                   results_map.end());
     std::sort(
-      results_vector.begin(), results_vector.end(), [](const auto& a, const auto& b) {
+      results_vector.begin(), results_vector.end(), [](const auto &a, const auto &b) {
           return a.second.score < b.second.score;  // Ascending order by score
       });
     logger.info("Candidate solutions:");
     logger.info(
       "| Unit cell                                 | volume & score | #indexed % & "
       "score | rmsd_xy & score | overall score |");
-    for (const auto& result : results_vector) {
+    for (const auto &result : results_vector) {
         gemmi::UnitCell cell = result.second.crystal.get_unit_cell();
         logger.info(
           "| {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} | {:>8.0f}  {:.2f} "
@@ -436,7 +436,7 @@ int main(int argc, char** argv) {
               xyzobs_mm_var_data.data(), xyzobs_mm_var_data.size() / 3, 3);
             auto xyzobs_px_var_ =
               final_reflections.column<double>("xyzobs.px.variance");
-            const auto& xyzobs_px_variance = xyzobs_px_var_.value();
+            const auto &xyzobs_px_variance = xyzobs_px_var_.value();
             px_to_mm(xyzobs_px_variance, xyzobs_mm_variance, scan, best_panel);
             final_reflections.add_column("xyzobs.mm.variance",
                                          xyzobs_mm_variance.extent(0),

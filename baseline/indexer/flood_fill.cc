@@ -29,7 +29,7 @@ int modulo(int i, int n) {
  * @returns A tuple of grid points per peak and centres of mass of the peaks in fractional coordinates.
  */
 std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
-  std::vector<double> const& grid,
+  std::vector<double> const &grid,
   double rmsd_cutoff = 15.0,
   int n_points = 256) {
     auto start = std::chrono::system_clock::now();
@@ -38,7 +38,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     double sumg = std::accumulate(grid.begin(), grid.end(), 0.0);
     double meang = sumg / grid.size();
     double sum_delta_sq = std::accumulate(
-      grid.begin(), grid.end(), 0.0, [meang](double total, const double& val) {
+      grid.begin(), grid.end(), 0.0, [meang](double total, const double &val) {
           return total + std::pow(val - meang, 2);
       });
     double rmsd = std::pow(sum_delta_sq / grid.size(), 0.5);
@@ -72,7 +72,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
     int n_sq = n_points * n_points;
     int n_sq_minus_n = n_points * (n_points - 1);
     int nn_sq_minus_n = n_points * n_points * (n_points - 1);
-    for (auto& it : grid_binary) {
+    for (auto &it : grid_binary) {
         if (it.second == target) {
             // Convert the array index into xyz coordinates.
             // Store xyz coordinates on the stack, but index the array with 1D index.
@@ -106,7 +106,7 @@ std::tuple<std::vector<int>, std::vector<Vector3d>> flood_fill(
                 int mody = modulo(this_xyz[1], n_points) * n_points;
                 int modz = modulo(this_xyz[2], n_points) * n_sq;
 
-                for (const Vector3i& offset : neighbors) {
+                for (const Vector3i &offset : neighbors) {
                     // Compute the neighbor position
                     Vector3i neighbor = this_xyz + offset;
                     // Compute the flattened 1D array index for the neighbor

@@ -21,7 +21,7 @@ constexpr double min_angle = 20.0;
 
 class CandidateOrientationMatrices {
   public:
-    CandidateOrientationMatrices(const std::vector<Vector3d>& basis_vectors,
+    CandidateOrientationMatrices(const std::vector<Vector3d> &basis_vectors,
                                  int max_combinations = -1)
         : max_combinations(max_combinations), index(0) {
         n = basis_vectors.size();
