@@ -25,8 +25,10 @@ ENV PATH=/opt/ffs/bin:/opt/build_env/bin:/opt/bin:$PATH
 
 # Create build environment (compilers + C++ compile-time deps)
 RUN micromamba create -y -c conda-forge -p /opt/build_env \
-    gcc=11 \
-    gxx=11 \
+    gcc=13.4 \
+    gxx=13.4 \
+    fmt=11.2.0 \
+    spdlog=1.15.3 \
     benchmark \
     gtest \
     cmake \
@@ -37,6 +39,7 @@ RUN micromamba create -y -c conda-forge -p /opt/build_env \
 RUN micromamba create -y -c conda-forge -p /opt/ffs \
     boost-cpp \
     python \
+    fmt=11.2.0 \
     pip \
     hdf5 \
     hdf5-external-filter-plugins \
