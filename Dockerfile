@@ -19,31 +19,14 @@ RUN curl -sL micro.mamba.pm/install.sh | BIN_FOLDER=/opt/bin INIT_YES=no bash
 # Setup paths we use
 ENV PATH=/opt/ffs/bin:/opt/build_env/bin:/opt/bin:$PATH
 
-# Create build environment (compilers + C++ compile-time deps)
-RUN micromamba create -y -c conda-forge -p /opt/build_env \
-    gcc=13.4 \
-    gxx=13.4 \
-    fmt=11.2.0 \
-    spdlog=1.15.3 \
-    benchmark \
-    gtest \
-    cmake \
-    bitshuffle \
-    ninja
+# Copy environment files
+COPY environment.yml runtime-environment.yml /opt/
 
-# Create the runtime environment to install into
-RUN micromamba create -y -c conda-forge -p /opt/ffs \
-    boost-cpp \
-    python \
-    fmt=11.2.0 \
-    pip \
-    hdf5 \
-    hdf5-external-filter-plugins \
-    gemmi \
-    zocalo \
-    workflows \
-    pydantic \
-    rich
+# Create build environment from environment.yml
+RUN micromamba create -y -f /opt/environment.yml -p /opt/build_env ninja
+
+# Create the runtime environment from runtime-environment.yml
+RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
 
 # Copy source
 COPY . /opt/ffs_src
@@ -56,13 +39,13 @@ RUN cmake --build . --target spotfinder
 RUN cmake --install . --component Runtime
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
 
-
 # Now copy this into an isolated runtime container
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04
 COPY --from=build /opt/ffs /opt/ffs
 
 # Set environment variables for the service
-# ENV SPOTFINDER=/service/docker_build/spotfinder
+ENV PATH=/opt/ffs/bin:$PATH
+ENV SPOTFINDER=/opt/ffs/bin/spotfinder
 # ENV ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
 
 # # Start the service
