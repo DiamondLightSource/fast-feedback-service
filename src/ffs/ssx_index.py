@@ -165,11 +165,16 @@ def run(args):
         expt = json.load(f)
     wavelength = expt["beam"][0]["wavelength"]
     detector_dict = expt["detector"][0]["hierarchy"]
-    panel_dict = expt["detector"][0]["panels"][0] # only single panel detectors for now.
+    panel_dict = expt["detector"][0]["panels"][
+        0
+    ]  # only single panel detectors for now.
     detector = {
-        "distance" : -1.0 * (detector_dict["origin"][2]+ panel_dict["origin"][2]),
-        "beam_center_x": -1.0 * (detector_dict["origin"][0] + panel_dict["origin"][0]) / panel_dict["pixel_size"][0],
-        "beam_center_y": (detector_dict["origin"][1] + panel_dict["origin"][1])/ panel_dict["pixel_size"][1],
+        "distance": -1.0 * (detector_dict["origin"][2] + panel_dict["origin"][2]),
+        "beam_center_x": -1.0
+        * (detector_dict["origin"][0] + panel_dict["origin"][0])
+        / panel_dict["pixel_size"][0],
+        "beam_center_y": (detector_dict["origin"][1] + panel_dict["origin"][1])
+        / panel_dict["pixel_size"][1],
         "pixel_size_x": panel_dict["pixel_size"][0],
         "pixel_size_y": panel_dict["pixel_size"][1],
         "image_size_x": panel_dict["image_size"][0],
@@ -278,7 +283,9 @@ def run(args):
             new_id_to_old_id[output_id] = i
             output_id += 1
 
-    print(f"Indexing attempted on {n_considered}/{n_total} non-empty images with >= 10 spots")
+    print(
+        f"Indexing attempted on {n_considered}/{n_total} non-empty images with >= 10 spots"
+    )
     print(f"Indexed {n_indexed_images}/{n_total} non-empty images")
 
     # ideally would generate an indexed.expt type file...
