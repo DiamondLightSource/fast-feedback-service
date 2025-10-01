@@ -1151,15 +1151,17 @@ int main(int argc, char **argv) {
         // Print out the estimated average values. This is only an estimate at this stage,
         // as it will include spots that don't get indexed and which will therefore be
         // excluded when this calculation is repeated in integration.
-        if (reflections_3d.size()){
-          double est_sigma_b = std::sqrt(sum_sigma_b_variance / reflections_3d.size()) * rad_to_deg;
-          logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
+        if (reflections_3d.size()) {
+            double est_sigma_b =
+              std::sqrt(sum_sigma_b_variance / reflections_3d.size()) * rad_to_deg;
+            logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
         }
-        if (n_sigma_m){
-          double est_sigma_m = std::sqrt(sum_sigma_m_variance / n_sigma_m) * rad_to_deg;
-          logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots",
-                      est_sigma_m,
-                      n_sigma_m);
+        if (n_sigma_m) {
+            double est_sigma_m =
+              std::sqrt(sum_sigma_m_variance / n_sigma_m) * rad_to_deg;
+            logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots",
+                        est_sigma_m,
+                        n_sigma_m);
         }
 #pragma endregion Calculate spot variances
 
