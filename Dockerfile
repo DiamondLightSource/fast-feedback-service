@@ -8,10 +8,6 @@ ARG CUDA_VERSION=12.6.3
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS build
 
-# Explicitly set CUDA environment variables
-#ENV CUDA_HOME=/usr/local/cuda
-#ENV PATH=${CUDA_HOME}/bin:/opt/bin:${PATH}
-#ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 # Install dependencies
 RUN DEBIAN_FRONTEND=noninteractive \
     apt-get update && \
