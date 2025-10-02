@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fast-feedback-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fast-feedback-service
+  strategy: {}
+  template:
+    metadata:
+      name: fast-feedback-service
+      labels:
+        app: fast-feedback-service
+    spec:
+      containers:
+        - image: ghcr.io/diamondlightsource/fast-feedback-service:latest
+          imagePullPolicy: Always
+          name: fast-feedback-service
+          env:
+            - name: ZOCALO_CONFIG
+              value: "/dls_sw/apps/zocalo/live/configuration.yaml"
+            - name: SPOTFINDER
+              value: "/opt/ffs/bin/spotfinder"
+            - name: FFS_QUEUE
+              value: "per_image_analysis.i24"
+          volumeMounts:
+            - mountPath: /dls
+              name: dls
+              mountPropagation: HostToContainer
+            - mountPath: /dls_sw
+              name: dlssw
+              mountPropagation: HostToContainer
+      securityContext:
+        runAsGroup: null #ID
+        runAsUser: null #ID
+      volumes:
+        - name: dls
+          hostPath:
+            path: /dls
+            type: Directory
+        - name: dlssw
+          hostPath:
+            path: /dls_sw
+            type: Directory
