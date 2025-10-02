@@ -1,9 +1,3 @@
-LABEL org.opencontainers.image.title="fast-feedback-service" \
-      org.opencontainers.image.description="GPU-accelerated fast-feedback X-ray diffraction analysis service" \
-      org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitrios Vlachos <dimitrios.vlachos@diamond.ac.uk>" \
-      org.opencontainers.image.source="https://github.com/DiamondLightSource/fast-feedback-service" \
-      org.opencontainers.image.licenses="BSD-3-Clause"
-
 ARG CUDA_VERSION=12.6.3
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS build
@@ -41,6 +35,13 @@ RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ff
 
 # Now copy this into an isolated runtime container
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04
+
+LABEL org.opencontainers.image.title="fast-feedback-service" \
+      org.opencontainers.image.description="GPU-accelerated fast-feedback X-ray diffraction analysis service" \
+      org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitrios Vlachos <dimitrios.vlachos@diamond.ac.uk>" \
+      org.opencontainers.image.source="https://github.com/DiamondLightSource/fast-feedback-service" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+
 COPY --from=build /opt/ffs /opt/ffs
 
 # Set environment variables for the service
