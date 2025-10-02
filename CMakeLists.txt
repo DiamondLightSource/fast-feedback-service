@@ -127,3 +127,5 @@ enable_testing()
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
+
+configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx_index COPYONLY)

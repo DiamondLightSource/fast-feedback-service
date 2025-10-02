@@ -26,6 +26,7 @@ class IndexedLatticeResult(BaseModel):
     n_indexed: NonNegativeInt
     miller_indices: list[int] | None = None
     xyzobs_px: list[float] | None = None
+    xyzcal_mm: list[float] | None = None
 
 
 class IndexingResult(BaseModel):
@@ -124,6 +125,15 @@ class GPUIndexer:
             n_indexed, cell, orientation, miller_indices = (
                 ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px)
             )
+            this_cell = gemmi.UnitCell(*cell)
+            B = np.reshape(np.array(this_cell.frac.mat, dtype="float64"), (3, 3))
+            UB = np.matmul(np.array(orientation).reshape(3,3), B)
+            s1, xyzcal = ffs.index.ssx_predict(
+                miller_indices,
+                np.asarray([0.0,0.0,-1.0/self.wavelength], dtype=np.float64),
+                UB,
+                self.panel
+            )
             n_unindexed = int(xyzobs_px.size / 3) - n_indexed
             indexing_result = IndexingResult(
                 lattices=[
@@ -134,6 +144,7 @@ class GPUIndexer:
                         U_matrix=list(orientation),
                         miller_indices=miller_indices,
                         xyzobs_px=xyzobs_px,
+                        xyzcal_mm=xyzcal,
                     )
                 ],
                 n_unindexed=n_unindexed,
@@ -247,6 +258,7 @@ def run(args):
     # items to aggregate for output.
     miller_indices_output = []
     xyzobs_output = []
+    xyzcal_mm_output = []
     ids_output = []
     image_nos_output = []
     output_id = 0
@@ -267,7 +279,7 @@ def run(args):
             print(
                 f"Indexed {lattice.n_indexed}/{int(data.size / 3)} spots on image {i + 1}"
             )
-            print(f"Image {i + 1} results: {result.model_dump()}")
+            #print(f"Image {i + 1} results: {result.model_dump()}")
             output_crystals[identifiers_map[int(i)]] = {
                 "cell": lattice.unit_cell,
                 "U_matrix": lattice.U_matrix,
@@ -290,6 +302,7 @@ def run(args):
             # now save stuff for output
             miller_indices_output.append(lattice.miller_indices)
             xyzobs_output.append(lattice.xyzobs_px)
+            xyzcal_mm_output.append(lattice.xyzcal_mm)
             ids_output.append(
                 np.array(
                     [output_id] * int(len(lattice.miller_indices) / 3), dtype=np.int32
@@ -300,6 +313,8 @@ def run(args):
             )
             new_id_to_old_id[output_id] = i
             output_id += 1
+        else:
+            print(f"No indexing solution for image {i + 1}")
 
     print(
         f"Indexing attempted on {n_considered}/{n_total} non-empty images with >= 10 spots"
@@ -330,6 +345,9 @@ def run(args):
     )
     output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = np.concatenate(
         xyzobs_output
+    ).reshape(-1, 3)
+    output_refl["dials"]["processing"]["group_0"]["xyzcal.mm.value"] = np.concatenate(
+        xyzcal_mm_output
     ).reshape(-1, 3)
     output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
         miller_indices_output, dtype=np.int32

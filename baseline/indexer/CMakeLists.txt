@@ -59,6 +59,7 @@ target_link_libraries(baseline_indexer
 
 # Create Python module
 nanobind_add_module(index index_module.cpp)
+target_include_directories(index PRIVATE ${CMAKE_SOURCE_DIR}/baseline/predictor)
 target_link_libraries(index PRIVATE Eigen3::Eigen dx2 ${Python3_LIBRARIES})
 
 set(PYTHON_MODULE_DIR ${CMAKE_SOURCE_DIR}/src/ffs)

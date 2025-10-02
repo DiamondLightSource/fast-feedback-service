@@ -2,15 +2,18 @@
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
+#include <nanobind/eigen/dense.h>
 
-#include <Eigen/Dense>
+//#include <Eigen/Dense>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
+#include <dx2/reflection.hpp>
 #include <experimental/mdspan>
 #include <tuple>
 
 #include "assign_indices.cc"
 #include "xyz_to_rlp.cc"
+#include "stills_predictor.cc"
 
 namespace nb = nanobind;
 
@@ -29,6 +32,26 @@ Panel make_panel(double distance,
     Panel panel(
       distance, beam_center, pixel_size, image_size, "x", "-y", thickness, mu);
     return panel;
+}
+
+std::tuple<std::vector<double>, std::vector<double>> ssx_predict(
+  std::vector<int> miller_index,
+  Eigen::Vector3d s0,
+  Eigen::Matrix3d UB,
+  Panel panel
+){
+  ReflectionTable refls;
+  refls.add_column("miller_index", miller_index.size() / 3, 3, miller_index);
+  simple_still_reflection_predictor(s0, UB, panel, refls);
+  auto s1_ = refls.column<double>("s1");
+  auto &s1 = s1_.value();
+  auto xyzcal_mm_ = refls.column<double>("xyzcal.mm");
+  auto &xyzcal_mm = xyzcal_mm_.value();
+  // Convert mdspan to std::vector
+  std::vector<double> s1_vec(s1.data_handle(), s1.data_handle() + s1.size());
+  std::vector<double> xyzcal_mm_vec(xyzcal_mm.data_handle(), xyzcal_mm.data_handle() + xyzcal_mm.size());
+
+  return std::make_tuple(std::move(s1_vec), std::move(xyzcal_mm_vec));
 }
 
 std::tuple<int, std::vector<double>, std::vector<double>, std::vector<int>>
@@ -105,4 +128,11 @@ NB_MODULE(index, m) {
           nb::arg("xyzobs_mm"),
           "Return the maximum number of indexed reflections and cell parameters and "
           "miller indices");
+    m.def("ssx_predict",
+          &ssx_predict,
+          nb::arg("miller_index"),
+          nb::arg("s0"),
+          nb::arg("UB"),
+          nb::arg("panel"),
+          "Predict xyzcal");
 }
