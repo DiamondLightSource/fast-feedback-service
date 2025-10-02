@@ -27,4 +27,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/DiamondLightSource/fast-feedback-service:latest
+          tags: ghcr.io/diamondlightsource/fast-feedback-service:latest
