@@ -27,4 +27,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ffs:latest
+          tags: DiamondLightSource/fast-feedback-service:latest
