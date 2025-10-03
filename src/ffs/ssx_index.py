@@ -22,11 +22,12 @@ import ffs.index
 class IndexedLatticeResult(BaseModel):
     unit_cell: tuple[float, float, float, float, float, float]
     U_matrix: tuple[float, float, float, float, float, float, float, float, float]
+    B_matrix: tuple[float, float, float, float, float, float, float, float, float]
     space_group: str
     n_indexed: NonNegativeInt
     miller_indices: list[int] | None = None
     xyzobs_px: list[float] | None = None
-    xyzcal_mm: list[float] | None = None
+    #xyzcal_mm: list[float] | None = None
 
 
 class IndexingResult(BaseModel):
@@ -81,6 +82,7 @@ class GPUIndexer:
                 n_unindexed=int(xyzobs_px.size / 3),
             )
             return indexing_result
+
         rlp_ = ffs.index.ssx_xyz_to_rlp(xyzobs_px, self.wavelength, self.panel)
         rlp = np.array(rlp_, dtype="float32").reshape(-1, 3)
         rlp = rlp.transpose().copy()
@@ -119,21 +121,26 @@ class GPUIndexer:
                 real_a = output_cells[:, j]
                 real_b = output_cells[:, j + 1]
                 real_c = output_cells[:, j + 2]
+                #print(real_a)
+                #print(real_b)
+                #print(real_c)
                 cells = np.concatenate((cells, real_a, real_b, real_c), axis=None)
             ## For now, just determines the cell with the highest number of indexed spots.
             ## here, we could do a stills reflection prediction to calculate rmsds.
-            n_indexed, cell, orientation, miller_indices = (
+            #print(cells)
+            #assert 0
+            n_indexed, cell, orientation, B_matrix, miller_indices = (
                 ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px)
             )
+            #print(orientation)
+            #print(B_matrix)
             this_cell = gemmi.UnitCell(*cell)
-            B = np.reshape(np.array(this_cell.frac.mat, dtype="float64"), (3, 3))
-            UB = np.matmul(np.array(orientation).reshape(3,3), B)
-            s1, xyzcal = ffs.index.ssx_predict(
-                miller_indices,
-                np.asarray([0.0,0.0,-1.0/self.wavelength], dtype=np.float64),
-                UB,
-                self.panel
-            )
+            B = np.reshape(np.array(B_matrix, dtype="float64"), (3, 3)).transpose()
+            U = np.reshape(np.array(orientation, dtype="float64"), (3, 3)).transpose()
+            A = np.matmul(U, B)
+            #print("Amatrix")
+            #print(A)
+            
             n_unindexed = int(xyzobs_px.size / 3) - n_indexed
             indexing_result = IndexingResult(
                 lattices=[
@@ -142,9 +149,9 @@ class GPUIndexer:
                         space_group="P1",
                         n_indexed=n_indexed,
                         U_matrix=list(orientation),
+                        B_matrix=list(B_matrix),
                         miller_indices=miller_indices,
                         xyzobs_px=xyzobs_px,
-                        xyzcal_mm=xyzcal,
                     )
                 ],
                 n_unindexed=n_unindexed,
@@ -258,7 +265,8 @@ def run(args):
     # items to aggregate for output.
     miller_indices_output = []
     xyzobs_output = []
-    xyzcal_mm_output = []
+    xyzcal_px_output = []
+    delpsical_output = []
     ids_output = []
     image_nos_output = []
     output_id = 0
@@ -276,18 +284,15 @@ def run(args):
         if result.lattices:
             n_indexed_images += 1
             lattice = result.lattices[0]
-            print(
-                f"Indexed {lattice.n_indexed}/{int(data.size / 3)} spots on image {i + 1}"
-            )
             #print(f"Image {i + 1} results: {result.model_dump()}")
             output_crystals[identifiers_map[int(i)]] = {
                 "cell": lattice.unit_cell,
                 "U_matrix": lattice.U_matrix,
                 "n_indexed": lattice.n_indexed,
             }
-            this_cell = gemmi.UnitCell(*lattice.unit_cell)
-            B = np.reshape(np.array(this_cell.frac.mat, dtype="float64"), (3, 3))
-            U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3))
+            #this_cell = gemmi.UnitCell(*lattice.unit_cell)
+            B = np.reshape(np.array(lattice.B_matrix, dtype="float64"), (3, 3)).transpose()
+            U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3)).transpose()
             A_inv = np.linalg.inv(np.matmul(U, B))
             output_crystals_list.append(
                 {
@@ -299,10 +304,44 @@ def run(args):
                 }
             )
             output_crystals_id_nos.append(i)
+            UB = np.matmul(U, B)
+            #print(UB)
+            s1, xyzcal_px, delpsical = ffs.index.ssx_predict(
+                lattice.miller_indices,
+                np.asarray([0.0,0.0,-1.0/wavelength], dtype=np.float64),
+                UB,
+                panel
+            )
+            midx = np.array(lattice.miller_indices).reshape(-1,3)
+            xyzobs = np.array(lattice.xyzobs_px).reshape(-1,3)
+            xyzcal = np.array(xyzcal_px).reshape(-1,3)
+            s1_reshape = np.array(s1).reshape(-1,3)
+            rlp_reshape = np.array(data).reshape(-1,3)
+            n = 0
+            rmsdx = 0
+            rmsdy = 0
+            rmsd_psi = 0
+            for m, obs, cal, dpsi,s, r in zip(midx, xyzobs, xyzcal, delpsical, s1_reshape, rlp_reshape):
+                if m.any():
+                    n += 1
+                    #print(f"{m}, {obs}, {cal}, {dpsi}, {s}, {r}")
+                    rmsdx += (obs[0] - cal[0])**2
+                    rmsdy += (obs[1] - cal[1])**2
+                    rmsd_psi = dpsi**2
+            if n:
+                rmsdx = (rmsdx / n)**0.5
+                rmsdy = (rmsdy / n)**0.5
+                rmsd_psi = (rmsd_psi / n)**0.5
+
+            print(
+                f"Indexed {lattice.n_indexed}/{int(data.size / 3)} spots on image {i + 1}, RMSDs (px,px,rad): {rmsdx:.4f}, {rmsdy:.4f}, {rmsd_psi:.4f}"
+            )
+
             # now save stuff for output
             miller_indices_output.append(lattice.miller_indices)
             xyzobs_output.append(lattice.xyzobs_px)
-            xyzcal_mm_output.append(lattice.xyzcal_mm)
+            xyzcal_px_output.append(xyzcal_px)
+            delpsical_output.append(delpsical)
             ids_output.append(
                 np.array(
                     [output_id] * int(len(lattice.miller_indices) / 3), dtype=np.int32
@@ -346,9 +385,10 @@ def run(args):
     output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = np.concatenate(
         xyzobs_output
     ).reshape(-1, 3)
-    output_refl["dials"]["processing"]["group_0"]["xyzcal.mm.value"] = np.concatenate(
-        xyzcal_mm_output
+    output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = np.concatenate(
+        xyzcal_px_output
     ).reshape(-1, 3)
+    output_refl["dials"]["processing"]["group_0"]["delpsical"] = np.concatenate(delpsical_output)
     output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
         miller_indices_output, dtype=np.int32
     ).reshape(-1, 3)
