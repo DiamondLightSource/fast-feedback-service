@@ -104,6 +104,14 @@ def test_dispersion(dials_data, tmp_path):
         assert minimum.tolist() == pytest.approx([388.14, 208.50, 0.50], abs=5e-3)
         assert maximum.tolist() == pytest.approx([4071.50, 4297.79, 9.50], abs=5e-3)
         assert mean.tolist() == pytest.approx([2074.33, 2117.60, 4.79], abs=5e-3)
+        ## Test that the spot variance quantities are output.
+        spot_extent = file["/dials/processing/group_0/spot_extent_z"]
+        assert np.min(spot_extent) == 1.0
+        assert np.max(spot_extent) == 10.0
+        sigma_b_variance = file["/dials/processing/group_0/sigma_b_variance"]
+        sigma_m_variance = file["/dials/processing/group_0/sigma_m_variance"]
+        assert np.mean(sigma_b_variance) == pytest.approx(4.105648e-8, rel=1e-4)
+        assert np.mean(sigma_m_variance) == pytest.approx(8.60468e-7, rel=1e-4)
 
 
 def test_dispersion_dmin(dials_data, tmp_path):

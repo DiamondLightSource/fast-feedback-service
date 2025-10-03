@@ -14,7 +14,9 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <dx2/detector.hpp>
 #include <dx2/reflection.hpp>
+#include <dx2/scan.hpp>
 #include <iostream>
 #include <memory>
 #include <ranges>
@@ -810,15 +812,10 @@ int main(int argc, char **argv) {
                                          0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
-                    // decompress_byte_offset<pixel_t>(buffer,
-                    //                                 {host_image.get(), width * height});
                     decompress_byte_offset<pixel_t>(
                       buffer,
                       {host_image.get(),
-                       static_cast<std::span<short unsigned int>::size_type>(
-                         width * height)});
-                    // std::copy(buffer.begin(), buffer.end(), host_image.get());
-                    // std::exit(1);
+                       static_cast<std::span<pixel_t>::size_type>(width * height)});
                     break;
                 }
 
@@ -1130,6 +1127,73 @@ int main(int argc, char **argv) {
             logger.flush();  // Flush to ensure all messages printed before continuing
         }
 
+#pragma Calculate spot variances
+        // Calculate sigma_b and sigma_m for each spot, so that we have this value for
+        // integration without needing to reload data.
+        // Key new metadata needed
+        //  - rotation axis (default +x?)
+        std::array<int, 2> image_size = {static_cast<int>(width),
+                                         static_cast<int>(height)};
+        Panel panel(detector.distance,
+                    {detector.beam_center_x, detector.beam_center_y},
+                    {detector.pixel_size_x, detector.pixel_size_y},
+                    image_size);
+        Vector3d s0 = {0.0, 0.0, -1.0 / wavelength};
+        Scan scan({1, static_cast<int>(num_images)},
+                  {oscillation_start, oscillation_width});
+        int image_range_0 = scan.get_image_range()[0];
+        Vector3d m2 = {1.0, 0.0, 0.0};  // The rotation axis, assumed to be +x.
+        constexpr double deg_to_rad = M_PI / 180.0;
+        constexpr double rad_to_deg = 180.0 / M_PI;
+
+        // Data vectors for output.
+        std::vector<double> sigma_b_variances;
+        std::vector<double> sigma_m_variances;
+        std::vector<int> bbox_depths;
+        sigma_b_variances.reserve(reflections_3d.size());
+        sigma_m_variances.reserve(reflections_3d.size());
+        bbox_depths.reserve(reflections_3d.size());
+
+        // Variables for outputting estimated global values.
+        double sum_sigma_b_variance = 0.0;
+        double sum_sigma_m_variance = 0.0;
+        constexpr int min_bbox_depth = 5;
+        int n_sigma_m = 0;
+
+        for (const auto &refl : reflections_3d) {
+            auto [x, y, z] = refl.center_of_mass();
+            auto [xmm, ymm] = panel.px_to_mm(x, y);
+            Vector3d s1 = panel.get_lab_coord(xmm, ymm);
+            double phi = (oscillation_start + (z - image_range_0) * oscillation_width)
+                         * deg_to_rad;
+            auto [sigma_b_variance, sigma_m_variance, bbox_depth] =
+              refl.variances_in_kabsch_space(s1, s0, m2, panel, scan, phi);
+            sigma_b_variances.push_back(sigma_b_variance);
+            sigma_m_variances.push_back(sigma_m_variance);
+            bbox_depths.push_back(bbox_depth);
+            sum_sigma_b_variance += sigma_b_variance;
+            if (bbox_depth >= min_bbox_depth) {
+                sum_sigma_m_variance += sigma_m_variance;
+                n_sigma_m++;
+            }
+        }
+        // Print out the estimated average values. This is only an estimate at this stage,
+        // as it will include spots that don't get indexed and which will therefore be
+        // excluded when this calculation is repeated in integration.
+        if (reflections_3d.size()) {
+            double est_sigma_b =
+              std::sqrt(sum_sigma_b_variance / reflections_3d.size()) * rad_to_deg;
+            logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
+        }
+        if (n_sigma_m) {
+            double est_sigma_m =
+              std::sqrt(sum_sigma_m_variance / n_sigma_m) * rad_to_deg;
+            logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots",
+                        est_sigma_m,
+                        n_sigma_m);
+        }
+#pragma endregion Calculate spot variances
+
         if (save_to_h5) {
             // Step 4: Write the 3D reflections to a `.h5` file using ReflectionTable
             logger.debug("Writing 3D reflections to HDF5 file");
@@ -1153,6 +1217,11 @@ int main(int argc, char **argv) {
                 std::vector<int> id(reflections_3d.size(),
                                     table.get_experiment_ids()[0]);
                 table.add_column("id", reflections_3d.size(), 1, id);
+                table.add_column(
+                  "sigma_b_variance", sigma_b_variances.size(), 1, sigma_b_variances);
+                table.add_column(
+                  "sigma_m_variance", sigma_m_variances.size(), 1, sigma_m_variances);
+                table.add_column("spot_extent_z", bbox_depths.size(), 1, bbox_depths);
 
                 // Write the table to an HDF5 file
                 table.write("results_ffs.h5", "dials/processing/group_0");
@@ -1237,5 +1306,4 @@ int main(int argc, char **argv) {
                    time_waiting_for_images);
     }
 }
-#pragma endregion Application Entry
 #pragma endregion Application Entry
