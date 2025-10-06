@@ -49,12 +49,13 @@ class FFSArgumentParser : public argparse::ArgumentParser {
     virtual ~FFSArgumentParser() = default;
 
     /**
-     * @brief Adds HDF5 file reading specific arguments to the parser.
+     * @brief Adds application-specific file reading arguments to the parser.
      *
-     * This method adds arguments commonly used when reading HDF5 files,
-     * such as image number selection and file path specification.
+     * This pure virtual method must be implemented by derived classes to
+     * define their specific file input argument patterns (e.g., single file,
+     * reflection + experiment files, etc.).
      */
-    virtual void add_h5read_arguments();
+    virtual void add_h5read_arguments() = 0;
 
     /**
      * @brief Parses command-line arguments and returns structured
