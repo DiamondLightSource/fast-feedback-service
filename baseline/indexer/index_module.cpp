@@ -90,6 +90,7 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
                       crystal_vectors[start + 7],
                       crystal_vectors[start + 8]};
         Crystal crystal(a, b, c, *gemmi::find_spacegroup_by_name("P1"));
+        // Note xyzobs not actually needed for stills assignment.
         assign_indices_results results =
           assign_indices_global(crystal.get_A_matrix(), rlp_span, xyzobs_mm_span);
         n_indexed.push_back(results.number_indexed);
@@ -106,7 +107,6 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
         B_matrices.push_back(B_matrix);
         miller_indices.push_back(results.miller_indices_data);
     }
-    std::cout << "N candidates: " << n_indexed.size() << std::endl;
     auto max_iter = std::max_element(n_indexed.begin(), n_indexed.end());
     int max_index = std::distance(n_indexed.begin(), max_iter);
     return std::make_tuple(n_indexed[max_index],

@@ -321,34 +321,36 @@ def run(args):
             rmsdx = 0
             rmsdy = 0
             rmsd_psi = 0
-            for m, obs, cal, dpsi,s, r in zip(midx, xyzobs, xyzcal, delpsical, s1_reshape, rlp_reshape):
+            sel = np.array([False] * rlp_reshape.shape[0])
+            for i, (m, obs, cal, dpsi) in enumerate(zip(midx, xyzobs, xyzcal, delpsical)):
                 if m.any():
-                    n += 1
-                    #print(f"{m}, {obs}, {cal}, {dpsi}, {s}, {r}")
-                    rmsdx += (obs[0] - cal[0])**2
-                    rmsdy += (obs[1] - cal[1])**2
-                    rmsd_psi = dpsi**2
+                    delta_r = ((obs[0] - cal[0])**2 + (obs[1] - cal[1])**2)**0.5
+                    if delta_r < 2: # very crude outlier rejection for a starting point
+                        n += 1
+                        rmsdx += (obs[0] - cal[0])**2
+                        rmsdy += (obs[1] - cal[1])**2
+                        rmsd_psi = dpsi**2
+                        sel[i] = True
             if n:
                 rmsdx = (rmsdx / n)**0.5
                 rmsdy = (rmsdy / n)**0.5
                 rmsd_psi = (rmsd_psi / n)**0.5
 
             print(
-                f"Indexed {lattice.n_indexed}/{int(data.size / 3)} spots on image {i + 1}, RMSDs (px,px,rad): {rmsdx:.4f}, {rmsdy:.4f}, {rmsd_psi:.4f}"
+                f"Indexed {(n)}/{int(data.size / 3)} spots on image {i + 1}, RMSDs (px,px,rad): {rmsdx:.4f}, {rmsdy:.4f}, {rmsd_psi:.6f}"
             )
-
             # now save stuff for output
-            miller_indices_output.append(lattice.miller_indices)
-            xyzobs_output.append(lattice.xyzobs_px)
-            xyzcal_px_output.append(xyzcal_px)
-            delpsical_output.append(delpsical)
+            miller_indices_output.append(midx[sel,:])
+            xyzobs_output.append(xyzobs[sel,:])
+            xyzcal_px_output.append(xyzcal[sel,:])
+            delpsical_output.append(np.array(delpsical)[sel])
             ids_output.append(
                 np.array(
-                    [output_id] * int(len(lattice.miller_indices) / 3), dtype=np.int32
+                    [output_id] * n, dtype=np.int32
                 )
             )
             image_nos_output.append(
-                np.array([i] * int(len(lattice.miller_indices) / 3), dtype=np.int32)
+                np.array([i] * n, dtype=np.int32)
             )
             new_id_to_old_id[output_id] = i
             output_id += 1
@@ -384,20 +386,20 @@ def run(args):
     )
     output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = np.concatenate(
         xyzobs_output
-    ).reshape(-1, 3)
+    )#.reshape(-1, 3)
     output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = np.concatenate(
         xyzcal_px_output
-    ).reshape(-1, 3)
+    )#.reshape(-1, 3)
     output_refl["dials"]["processing"]["group_0"]["delpsical"] = np.concatenate(delpsical_output)
     output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
         miller_indices_output, dtype=np.int32
-    ).reshape(-1, 3)
+    )#.reshape(-1, 3)
     sorted_ids = sorted(list(set(np.uint(i) for i in new_id_to_old_id.keys())))
     output_refl["dials"]["processing"]["group_0"].attrs["experiment_ids"] = sorted_ids
     identifiers = [identifiers_map[new_id_to_old_id[i]] for i in sorted_ids]
     output_refl["dials"]["processing"]["group_0"].attrs["identifiers"] = identifiers
 
-    output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(ids_array)
+    output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(ids_array, dtype=np.uint)
     # output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"]
     ## extra potential data to output to enable further processing:
     ## rlp, panel, flags, s1, xyzcal, xyzobs.mm.value
