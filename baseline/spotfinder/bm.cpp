@@ -40,7 +40,7 @@ class ImageSource {
 
     auto mask_data() const -> const std::span<const bool> {
         static_assert(sizeof(uint8_t) == sizeof(bool));
-        return {reinterpret_cast<const bool*>(reader.get_mask().value().data()),
+        return {reinterpret_cast<const bool *>(reader.get_mask().value().data()),
                 reader.get_image_fast() * reader.get_image_slow()};
     };
     auto result_buffer() -> std::span<uint8_t> {
@@ -59,8 +59,8 @@ class ImageSource {
         static_assert(std::is_same<T, H5Read::image_type>::value,
                       "Cannot convert non-uint16_t buffers to image_t");
         return {
-          .data = const_cast<H5Read::image_type*>(image_data().data()),
-          .mask = reinterpret_cast<uint8_t*>(const_cast<bool*>(mask_data().data())),
+          .data = const_cast<H5Read::image_type *>(image_data().data()),
+          .mask = reinterpret_cast<uint8_t *>(const_cast<bool *>(mask_data().data())),
           .slow = slow(),
           .fast = fast(),
         };
@@ -72,10 +72,11 @@ class ImageSource {
                                                af::c_grid<2>(fast(), slow()));
     }
     auto mask_data_ref() const -> af::const_ref<bool, af::c_grid<2>> {
-        return {const_cast<bool*>(mask_data().data()), af::c_grid<2>(fast(), slow())};
+        return {const_cast<bool *>(mask_data().data()), af::c_grid<2>(fast(), slow())};
     }
     auto result_buffer_ref() -> af::ref<bool, af::c_grid<2>> {
-        return {reinterpret_cast<bool*>(_result.data()), af::c_grid<2>(fast(), slow())};
+        return {reinterpret_cast<bool *>(_result.data()),
+                af::c_grid<2>(fast(), slow())};
     };
 #endif
   private:
@@ -85,7 +86,7 @@ class ImageSource {
 
 #ifdef HAVE_DIALS
 template <class T>
-static void BM_standard_dispersion(benchmark::State& state) {
+static void BM_standard_dispersion(benchmark::State &state) {
     ImageSource<T> src;
     // BeginTask task("dials.dispersion.benchmark", "dispersion");
     auto algo =
@@ -114,7 +115,7 @@ static void BM_standard_dispersion(benchmark::State& state) {
 BENCHMARK_TEMPLATE(BM_standard_dispersion, double)->Unit(benchmark::kMillisecond);
 BENCHMARK_TEMPLATE(BM_standard_dispersion, float)->Unit(benchmark::kMillisecond);
 
-static void BM_C_API_dispersion(benchmark::State& state) {
+static void BM_C_API_dispersion(benchmark::State &state) {
     ImageSource<H5Read::image_type> src;
     auto image = src.h5read_image();
 
@@ -130,7 +131,7 @@ BENCHMARK(BM_C_API_dispersion)->Unit(benchmark::kMillisecond);
 
 #endif
 
-static void BM_Standalone_dispersion_w_convert(benchmark::State& state) {
+static void BM_Standalone_dispersion_w_convert(benchmark::State &state) {
     ImageSource<uint16_t> src;
     auto image = src.h5read_image();
     auto finder = StandaloneSpotfinder<double>(src.fast(), src.slow());
@@ -143,7 +144,7 @@ static void BM_Standalone_dispersion_w_convert(benchmark::State& state) {
 }
 BENCHMARK(BM_Standalone_dispersion_w_convert)->Unit(benchmark::kMillisecond);
 
-static void BM_Standalone_dispersion(benchmark::State& state) {
+static void BM_Standalone_dispersion(benchmark::State &state) {
     ImageSource<uint16_t> src;
     auto image = src.h5read_image();
     auto finder = StandaloneSpotfinder<double>(src.fast(), src.slow());

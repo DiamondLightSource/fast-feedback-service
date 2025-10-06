@@ -14,7 +14,9 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <dx2/detector.hpp>
 #include <dx2/reflection.hpp>
+#include <dx2/scan.hpp>
 #include <iostream>
 #include <memory>
 #include <ranges>
@@ -25,6 +27,7 @@
 #include "cbfread.hpp"
 #include "common.hpp"
 #include "connected_components/connected_components.hpp"
+#include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
@@ -251,79 +254,118 @@ class PipeHandler {
     }
 };
 
+#pragma region Argument Parser
+class SpotfinderArgumentParser : public CUDAArgumentParser {
+  public:
+    SpotfinderArgumentParser(std::string version) : CUDAArgumentParser(version) {
+        add_spotfinder_arguments();
+    }
+
+    void add_spotfinder_arguments() {
+        add_argument("-n", "--threads")
+          .help("Number of parallel reader threads")
+          .default_value<uint32_t>(1)
+          .metavar("NUM")
+          .scan<'u', uint32_t>();
+
+        add_argument("--validate")
+          .help("Run DIALS standalone validation")
+          .default_value(false)
+          .implicit_value(true);
+
+        add_argument("--images")
+          .help("Maximum number of images to process")
+          .metavar("NUM")
+          .scan<'u', uint32_t>();
+
+        add_argument("--writeout")
+          .help("Write diagnostic output images")
+          .default_value(false)
+          .implicit_value(true);
+
+        add_argument("--min-spot-size")
+          .help("2D Reflections with a pixel count below this will be discarded.")
+          .metavar("N")
+          .default_value<uint32_t>(3)
+          .scan<'u', uint32_t>();
+
+        add_argument("--min-spot-size-3d")
+          .help("3D Reflections with a pixel count below this will be discarded.")
+          .metavar("N")
+          .default_value<uint32_t>(3)
+          .scan<'u', uint32_t>();
+
+        add_argument("--max-peak-centroid-separation")
+          .help(
+            "Reflections with a peak-centroid difference greater than this will be "
+            "filtered during output.")
+          .metavar("N")
+          .default_value<float>(2.0)
+          .scan<'f', float>();
+
+        add_argument("--start-index")
+          .help(
+            "Index of first image. Only used for CBF reading, and can only be 0 or 1.")
+          .metavar("N")
+          .default_value<uint32_t>(0)
+          .scan<'u', uint32_t>();
+
+        add_argument("-t", "--timeout")
+          .help("Amount of time (in seconds) to wait for new images before failing.")
+          .metavar("S")
+          .default_value<float>(30)
+          .scan<'f', float>();
+
+        add_argument("-fd", "--pipe_fd")
+          .help("File descriptor for the pipe to output data through")
+          .metavar("FD")
+          .default_value<int>(-1)
+          .scan<'i', int>();
+
+        add_argument("-a", "--algorithm")
+          .help("Dispersion algorithm to use")
+          .metavar("ALGO")
+          .default_value<std::string>("dispersion");
+
+        add_argument("--dmin")
+          .help("Minimum resolution (Å)")
+          .metavar("MIN D")
+          .default_value<float>(-1.f)
+          .scan<'f', float>();
+
+        add_argument("--dmax")
+          .help("Maximum resolution (Å)")
+          .metavar("MAX D")
+          .default_value<float>(-1.f)
+          .scan<'f', float>();
+
+        add_argument("-w", "-λ", "--wavelength")
+          .help("Wavelength of the X-ray beam (Å)")
+          .metavar("λ")
+          .scan<'f', float>();
+
+        add_argument("--detector").help("Detector geometry JSON").metavar("JSON");
+
+        add_argument("-h5", "--save-h5")
+          .help("Save the output to an HDF5 file")
+          .metavar("FILE")
+          .default_value(false)
+          .implicit_value(true);
+
+        add_argument("--output-for-index")
+          .help("Pipe spot centroids from 2D images to enable indexing")
+          .default_value(false)
+          .implicit_value(true);
+    }
+};
+#pragma endregion
+
+#pragma region Application Entry
 int main(int argc, char **argv) {
     logger.info("Spotfinder version: {}", FFS_VERSION);
-
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader
-    auto parser = CUDAArgumentParser(FFS_VERSION);
-    parser.add_h5read_arguments();
-    parser.add_argument("-n", "--threads")
-      .help("Number of parallel reader threads")
-      .default_value<uint32_t>(1)
-      .metavar("NUM")
-      .scan<'u', uint32_t>();
-    parser.add_argument("--validate")
-      .help("Run DIALS standalone validation")
-      .default_value(false)
-      .implicit_value(true);
-    parser.add_argument("--images")
-      .help("Maximum number of images to process")
-      .metavar("NUM")
-      .scan<'u', uint32_t>();
-    parser.add_argument("--writeout")
-      .help("Write diagnostic output images")
-      .default_value(false)
-      .implicit_value(true);
-    parser.add_argument("--min-spot-size")
-      .help("2D Reflections with a pixel count below this will be discarded.")
-      .metavar("N")
-      .default_value<uint32_t>(3)
-      .scan<'u', uint32_t>();
-    parser.add_argument("--min-spot-size-3d")
-      .help("3D Reflections with a pixel count below this will be discarded.")
-      .metavar("N")
-      .default_value<uint32_t>(3)
-      .scan<'u', uint32_t>();
-    parser.add_argument("--start-index")
-      .help("Index of first image. Only used for CBF reading, and can only be 0 or 1.")
-      .metavar("N")
-      .default_value<uint32_t>(0)
-      .scan<'u', uint32_t>();
-    parser.add_argument("-t", "--timeout")
-      .help("Amount of time (in seconds) to wait for new images before failing.")
-      .metavar("S")
-      .default_value<float>(30)
-      .scan<'f', float>();
-    parser.add_argument("-fd", "--pipe_fd")
-      .help("File descriptor for the pipe to output data through")
-      .metavar("FD")
-      .default_value<int>(-1)
-      .scan<'i', int>();
-    parser.add_argument("-a", "--algorithm")
-      .help("Dispersion algorithm to use")
-      .metavar("ALGO")
-      .default_value<std::string>("dispersion");
-    parser.add_argument("--dmin")
-      .help("Minimum resolution (Å)")
-      .metavar("MIN D")
-      .default_value<float>(-1.f)
-      .scan<'f', float>();
-    parser.add_argument("--dmax")
-      .help("Maximum resolution (Å)")
-      .metavar("MAX D")
-      .default_value<float>(-1.f)
-      .scan<'f', float>();
-    parser.add_argument("-w", "-λ", "--wavelength")
-      .help("Wavelength of the X-ray beam (Å)")
-      .metavar("λ")
-      .scan<'f', float>();
-    parser.add_argument("--detector").help("Detector geometry JSON").metavar("JSON");
-    parser.add_argument("-h5", "--save-h5")
-      .help("Save the output to an HDF5 file")
-      .metavar("FILE")
-      .default_value(false)
-      .implicit_value(true);
+    SpotfinderArgumentParser parser(FFS_VERSION);
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -331,6 +373,7 @@ int main(int argc, char **argv) {
     int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
     bool save_to_h5 = parser.get<bool>("save-h5");
+    bool output_for_index = parser.get<bool>("output-for-index");
 
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
@@ -346,6 +389,8 @@ int main(int argc, char **argv) {
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
     uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
+    float max_peak_centroid_separation =
+      parser.get<float>("max-peak-centroid-separation");
 
     std::unique_ptr<Reader> reader_ptr;
 
@@ -381,8 +426,8 @@ int main(int argc, char **argv) {
     uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
                                                    : reader.get_number_of_images();
 
-    ushort height = reader.image_shape()[0];
-    ushort width = reader.image_shape()[1];
+    uint32_t height = reader.image_shape()[0];
+    uint32_t width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
 
     detector_geometry detector;
@@ -603,16 +648,26 @@ int main(int argc, char **argv) {
     }
 
     // Create a unique pointer to store the image slices if this is a rotation dataset
-    std::unique_ptr<std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>
+    std::unique_ptr<std::map<int, std::unique_ptr<ConnectedComponents>>>
       rotation_slices = nullptr;
     std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
+    // Create a unique pointer to store the reflection centres if we want to save 2D spot data.
+    std::unique_ptr<std::map<int, std::vector<float>>> reflection_centers_2d = nullptr;
+    std::mutex
+      reflection_centers_2d_mutex;  // Mutex to protect the reflection centers 2d map
+
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
+        rotation_slices =
+          std::make_unique<std::map<int, std::unique_ptr<ConnectedComponents>>>();
         fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
-        rotation_slices = std::make_unique<
-          std::unordered_map<int, std::unique_ptr<ConnectedComponents>>>();
     } else {
         fmt::print("Dataset type: {}\n", fmt::styled("Still set", fmt_magenta));
+        if (save_to_h5) {
+            // A map we will use to save results as we go.
+            reflection_centers_2d =
+              std::make_unique<std::map<int, std::vector<float>>>();
+        }
     }
 
     // Spawn the reader threads
@@ -721,21 +776,20 @@ int main(int argc, char **argv) {
                 // the decompression
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4:
-                    bshuf_decompress_lz4(
-                      buffer.data() + 12, host_image.get(), width * height, 2, 0);
+                    bshuf_decompress_lz4(buffer.data() + 12,
+                                         host_image.get(),
+                                         width * height,
+                                         sizeof(pixel_t),
+                                         0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
-                    // decompress_byte_offset<pixel_t>(buffer,
-                    //                                 {host_image.get(), width * height});
                     decompress_byte_offset<pixel_t>(
                       buffer,
                       {host_image.get(),
-                       static_cast<std::span<short unsigned int>::size_type>(
-                         width * height)});
-                    // std::copy(buffer.begin(), buffer.end(), host_image.get());
-                    // std::exit(1);
+                       static_cast<std::span<pixel_t>::size_type>(width * height)});
                     break;
                 }
+
                 start.record(stream);
                 // Copy the image to GPU
                 CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
@@ -803,13 +857,28 @@ int main(int argc, char **argv) {
                 size_t num_strong_pixels_filtered =
                   connected_components_2d->get_num_strong_pixels_filtered();
 
+                std::vector<float> centers_of_mass;
                 // If this is a rotation dataset, store the connected component slice
-                if (rotation_slices) {
+                if (oscillation_width) {
                     // Lock the mutex to protect the map
                     std::lock_guard<std::mutex> lock(rotation_slices_mutex);
                     // Store the connected components slice in the map
                     (*rotation_slices)[offset_image_num] =
                       std::move(connected_components_2d);
+                } else if (save_to_h5 | output_for_index) {
+                    std::vector<Reflection3D> reflections =
+                      connected_components_2d->find_2d_components(
+                        min_spot_size, max_peak_centroid_separation);
+                    for (const auto &r : reflections) {
+                        auto [x, y, z] = r.center_of_mass();
+                        centers_of_mass.push_back(x);
+                        centers_of_mass.push_back(y);
+                        centers_of_mass.push_back(z);
+                    }
+                    if (save_to_h5) {
+                        std::lock_guard<std::mutex> lock(reflection_centers_2d_mutex);
+                        (*reflection_centers_2d)[offset_image_num] = centers_of_mass;
+                    }
                 }
 
                 end.record(stream);
@@ -880,6 +949,9 @@ int main(int argc, char **argv) {
                                       {"file", args.file},
                                       {"file-number", image_num},
                                       {"n_spots_total", boxes.size()}};
+                    if (output_for_index) {
+                        json_data["spot_centers"] = centers_of_mass;
+                    }
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
@@ -975,7 +1047,7 @@ int main(int argc, char **argv) {
 
 #pragma region 3D Connected Components
     // After all threads have finished processing slices
-    if (rotation_slices) {
+    if (oscillation_width) {
         logger.info("Processing 3D spots");
 
         // Step 1: Convert rotation_slices map to a vector
@@ -985,7 +1057,6 @@ int main(int argc, char **argv) {
         }
 
         // Step 2: Call find_3d_components
-        constexpr uint max_peak_centroid_separation = 2;  // Hardcoded for now
         auto reflections_3d = ConnectedComponents::find_3d_components(
           slices, width, height, min_spot_size_3d, max_peak_centroid_separation);
 
@@ -1027,6 +1098,73 @@ int main(int argc, char **argv) {
             logger.flush();  // Flush to ensure all messages printed before continuing
         }
 
+#pragma Calculate spot variances
+        // Calculate sigma_b and sigma_m for each spot, so that we have this value for
+        // integration without needing to reload data.
+        // Key new metadata needed
+        //  - rotation axis (default +x?)
+        std::array<int, 2> image_size = {static_cast<int>(width),
+                                         static_cast<int>(height)};
+        Panel panel(detector.distance,
+                    {detector.beam_center_x, detector.beam_center_y},
+                    {detector.pixel_size_x, detector.pixel_size_y},
+                    image_size);
+        Vector3d s0 = {0.0, 0.0, -1.0 / wavelength};
+        Scan scan({1, static_cast<int>(num_images)},
+                  {oscillation_start, oscillation_width});
+        int image_range_0 = scan.get_image_range()[0];
+        Vector3d m2 = {1.0, 0.0, 0.0};  // The rotation axis, assumed to be +x.
+        constexpr double deg_to_rad = M_PI / 180.0;
+        constexpr double rad_to_deg = 180.0 / M_PI;
+
+        // Data vectors for output.
+        std::vector<double> sigma_b_variances;
+        std::vector<double> sigma_m_variances;
+        std::vector<int> bbox_depths;
+        sigma_b_variances.reserve(reflections_3d.size());
+        sigma_m_variances.reserve(reflections_3d.size());
+        bbox_depths.reserve(reflections_3d.size());
+
+        // Variables for outputting estimated global values.
+        double sum_sigma_b_variance = 0.0;
+        double sum_sigma_m_variance = 0.0;
+        constexpr int min_bbox_depth = 5;
+        int n_sigma_m = 0;
+
+        for (const auto &refl : reflections_3d) {
+            auto [x, y, z] = refl.center_of_mass();
+            auto [xmm, ymm] = panel.px_to_mm(x, y);
+            Vector3d s1 = panel.get_lab_coord(xmm, ymm);
+            double phi = (oscillation_start + (z - image_range_0) * oscillation_width)
+                         * deg_to_rad;
+            auto [sigma_b_variance, sigma_m_variance, bbox_depth] =
+              refl.variances_in_kabsch_space(s1, s0, m2, panel, scan, phi);
+            sigma_b_variances.push_back(sigma_b_variance);
+            sigma_m_variances.push_back(sigma_m_variance);
+            bbox_depths.push_back(bbox_depth);
+            sum_sigma_b_variance += sigma_b_variance;
+            if (bbox_depth >= min_bbox_depth) {
+                sum_sigma_m_variance += sigma_m_variance;
+                n_sigma_m++;
+            }
+        }
+        // Print out the estimated average values. This is only an estimate at this stage,
+        // as it will include spots that don't get indexed and which will therefore be
+        // excluded when this calculation is repeated in integration.
+        if (reflections_3d.size()) {
+            double est_sigma_b =
+              std::sqrt(sum_sigma_b_variance / reflections_3d.size()) * rad_to_deg;
+            logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
+        }
+        if (n_sigma_m) {
+            double est_sigma_m =
+              std::sqrt(sum_sigma_m_variance / n_sigma_m) * rad_to_deg;
+            logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots",
+                        est_sigma_m,
+                        n_sigma_m);
+        }
+#pragma endregion Calculate spot variances
+
         if (save_to_h5) {
             // Step 4: Write the 3D reflections to a `.h5` file using ReflectionTable
             logger.debug("Writing 3D reflections to HDF5 file");
@@ -1050,10 +1188,15 @@ int main(int argc, char **argv) {
                 std::vector<int> id(reflections_3d.size(),
                                     table.get_experiment_ids()[0]);
                 table.add_column("id", reflections_3d.size(), 1, id);
+                table.add_column(
+                  "sigma_b_variance", sigma_b_variances.size(), 1, sigma_b_variances);
+                table.add_column(
+                  "sigma_m_variance", sigma_m_variances.size(), 1, sigma_m_variances);
+                table.add_column("spot_extent_z", bbox_depths.size(), 1, bbox_depths);
 
                 // Write the table to an HDF5 file
                 table.write("results_ffs.h5", "dials/processing/group_0");
-                logger.info("Succesfully wrote 3D reflections to HDF5 file");
+                logger.info("Successfully wrote 3D reflections to HDF5 file");
             } catch (const std::exception &e) {
                 logger.error("Error writing data to HDF5 file: {}", e.what());
             } catch (...) {
@@ -1062,6 +1205,52 @@ int main(int argc, char **argv) {
         }
 
         logger.info("3D spot analysis complete");
+    } else if (save_to_h5) {  // i.e. not rotation, but want to save results to disk.
+        logger.info("Processing 2D spots");
+        logger.debug("Writing 2D reflections to HDF5 file");
+
+        try {
+            std::vector<double> flat_coms;
+            std::vector<int> ids;
+            std::vector<int> centers_map_keys;
+            for (const auto &pair : *reflection_centers_2d) {
+                centers_map_keys.push_back(pair.first);
+            }
+            std::sort(centers_map_keys.begin(), centers_map_keys.end());
+            int id = 0;
+            for (int imageno : centers_map_keys) {
+                std::vector<float> flat_coms_this = (*reflection_centers_2d)[imageno];
+                int n_refls = flat_coms_this.size() / 3;
+                for (auto com : flat_coms_this) {
+                    flat_coms.push_back(static_cast<double>(com));
+                }
+                for (int i = 0; i < n_refls; ++i) {
+                    ids.push_back(id);
+                }
+                id += 1;
+            }
+
+            // Make the reflection table with correctly assigned IDS.
+            ReflectionTable table;
+            for (int i = 0; i < id - 1; ++i) {
+                // Currently no other way to trigger generating UUIDs from here.
+                table.generate_new_attributes();
+            }
+            // Add the reflection centroids to the table
+            table.add_column("xyzobs.px.value", flat_coms.size() / 3, 3, flat_coms);
+            // Map each reflection to the generated experiment ID
+            table.add_column("id", ids.size(), 1, ids);
+
+            // Write the table to an HDF5 file
+            table.write("results_ffs.h5", "dials/processing/group_0");
+            logger.info("Successfully wrote {} 2D reflections to HDF5 file",
+                        ids.size());
+        } catch (const std::exception &e) {
+            logger.error("Error writing data to HDF5 file: {}", e.what());
+        } catch (...) {
+            logger.error("Unknown error writing data to HDF5 file");
+        }
+        logger.info("2D spot analysis complete");
     }
 #pragma endregion 3D Connected Components
 
@@ -1088,3 +1277,4 @@ int main(int argc, char **argv) {
                    time_waiting_for_images);
     }
 }
+#pragma endregion Application Entry

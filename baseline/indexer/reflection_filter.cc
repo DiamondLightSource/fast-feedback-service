@@ -126,14 +126,14 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid,
  * @param ReflectionTable The reflection table.
  * @returns A reflection table that is a subset of the input table.
  */
-ReflectionTable outlier_filter(ReflectionTable& reflections) {
+ReflectionTable outlier_filter(ReflectionTable &reflections) {
     // First make sure the reflections have the predicted flag.
     auto flags_ = reflections.column<std::size_t>("flags");
-    auto& flags = flags_.value();
-    auto xyzobs_ = reflections.column<double>("xyzobs_mm");
-    const auto& xyzobs_mm = xyzobs_.value();
-    auto xyzcal_ = reflections.column<double>("xyzcal_mm");
-    const auto& xyzcal_mm = xyzcal_.value();
+    auto &flags = flags_.value();
+    auto xyzobs_ = reflections.column<double>("xyzobs.mm.value");
+    const auto &xyzobs_mm = xyzobs_.value();
+    auto xyzcal_ = reflections.column<double>("xyzcal.mm");
+    const auto &xyzcal_mm = xyzcal_.value();
 
     std::vector<double> x_resid(flags.size(), 0.0);
     std::vector<double> y_resid(flags.size(), 0.0);
@@ -164,7 +164,7 @@ ReflectionTable outlier_filter(ReflectionTable& reflections) {
       simple_tukey(x_resid_sel, y_resid_sel, phi_resid_sel);
     // get indices of good, then loop over good indics from first.
     std::vector<bool> good_sel(x_resid_sel.size(), true);
-    for (const size_t& isel : outlier_isel) {
+    for (const size_t &isel : outlier_isel) {
         good_sel[isel] = false;
     }
     std::vector<std::size_t> final_sel{};
@@ -177,7 +177,7 @@ ReflectionTable outlier_filter(ReflectionTable& reflections) {
     ReflectionTable subrefls = reflections.select(final_sel);
 
     auto subflags_ = subrefls.column<std::size_t>("flags");
-    auto& subflags = subflags_.value();
+    auto &subflags = subflags_.value();
 
     for (int i = 0; i < subflags.extent(0); ++i) {
         subflags(i, 0) |= used_in_refinement_value;
@@ -196,17 +196,17 @@ ReflectionTable outlier_filter(ReflectionTable& reflections) {
  * @param close_to_spindle_cutoff The cutoff threshold for removing reflection for being close to the rotation axis.
  * @returns A subset of the input reflection table.
  */
-ReflectionTable initial_filter(const ReflectionTable& reflections,
-                               const mdspan_type<int>& hkl,
+ReflectionTable initial_filter(const ReflectionTable &reflections,
+                               const mdspan_type<int> &hkl,
                                const Goniometer gonio,
                                const MonochromaticBeam beam,
                                const double close_to_spindle_cutoff) {
     auto flags_ = reflections.column<std::size_t>("flags");
-    const auto& flags = flags_.value();
+    const auto &flags = flags_.value();
     auto s1_ = reflections.column<double>("s1");
-    const auto& s1 = s1_.value();
-    auto xyzobs_ = reflections.column<double>("xyzobs_mm");
-    const auto& xyzobs = xyzobs_.value();
+    const auto &s1 = s1_.value();
+    auto xyzobs_ = reflections.column<double>("xyzobs.mm.value");
+    const auto &xyzobs = xyzobs_.value();
     Vector3d axis = gonio.get_rotation_axis();
     Vector3d s0 = beam.get_s0();
 
@@ -239,7 +239,7 @@ ReflectionTable initial_filter(const ReflectionTable& reflections,
     }
     subrefls.add_column("miller_index", filtered_hkl.size() / 3, 3, filtered_hkl);
     auto subflags_ = subrefls.column<std::size_t>("flags");
-    auto& subflags = subflags_.value();
+    auto &subflags = subflags_.value();
     for (int i = 0; i < subflags.extent(0); ++i) {
         subflags(i, 0) &= ~used_in_refinement_value;  //unset the flag
     }
@@ -256,13 +256,13 @@ ReflectionTable initial_filter(const ReflectionTable& reflections,
  * @param max_sample_size The maximum sample size to return.
  * @returns A subset of the input reflection table.
  */
-std::optional<ReflectionTable> select_sample(ReflectionTable& obs,
+std::optional<ReflectionTable> select_sample(ReflectionTable &obs,
                                              int nref_per_degree,
                                              double scan_width_degrees,
                                              int min_sample_size,
                                              int max_sample_size) {
     auto flags_ = obs.column<std::size_t>("flags");
-    auto& flags = flags_.value();
+    auto &flags = flags_.value();
     int nrefs = flags.size();
     int sample_size =
       (nref_per_degree * std::max(std::round(scan_width_degrees), 1.0)) / 1;
@@ -294,12 +294,12 @@ std::optional<ReflectionTable> select_sample(ReflectionTable& obs,
  * @param max_sample_size The maximum sample size to return.
  * @returns A filtered subset of the input reflection table.
  */
-ReflectionTable reflection_filter_preevaluation(const ReflectionTable& obs,
-                                                const mdspan_type<int>& miller_indices,
-                                                const Goniometer& gonio,
-                                                const Crystal& crystal,
-                                                const MonochromaticBeam& beam,
-                                                const Panel& panel,
+ReflectionTable reflection_filter_preevaluation(const ReflectionTable &obs,
+                                                const mdspan_type<int> &miller_indices,
+                                                const Goniometer &gonio,
+                                                const Crystal &crystal,
+                                                const MonochromaticBeam &beam,
+                                                const Panel &panel,
                                                 double scan_width_degrees,
                                                 int n_ref_per_degree = 100,
                                                 double close_to_spindle_cutoff = 0.02,
@@ -319,7 +319,7 @@ ReflectionTable reflection_filter_preevaluation(const ReflectionTable& obs,
                                 min_sample_size,
                                 max_sample_size);
     if (result.has_value()) {
-        ReflectionTable& sel_obs = result.value();
+        ReflectionTable &sel_obs = result.value();
         return std::move(sel_obs);
     }
     return outlier_filter_obs;

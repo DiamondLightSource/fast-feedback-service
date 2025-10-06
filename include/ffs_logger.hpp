@@ -25,7 +25,7 @@ class FFSLogger {
      * instance. This ensures a single point of access throughout the
      * application without requiring manual setup.
      */
-    static spdlog::logger& getInstance() {
+    static spdlog::logger &getInstance() {
         if (!logger_) {
             initialiseLogger();
         }
@@ -65,18 +65,18 @@ class FFSLogger {
             spdlog::init_thread_pool(queue_size, 1);
 
             // Create a rotating file sink (max 5MB per file, 3 rotated files)
-            // auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-            //   "ffs_log.txt", 5 * 1024 * 1024, 3);
-            // file_sink->set_pattern(
-            //   "[%Y-%m-%d %H:%M:%S] [PID:%P Thread:%t] [%^%l%$] [%s:%#] %v");
+            auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+              "ffs_log.txt", 5 * 1024 * 1024, 3);
+            file_sink->set_pattern(
+              "[%Y-%m-%d %H:%M:%S] [PID:%P Thread:%t] [%^%l%$] [%s:%#] %v");
 
             // Create a colored console sink
             auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
             console_sink->set_pattern("[%Y-%m-%d %H:%M:%S] [thread %t] [%^%l%$] %v");
 
             // Combine sinks into one asynchronous logger
-            // std::vector<spdlog::sink_ptr> sinks{console_sink, file_sink};
-            std::vector<spdlog::sink_ptr> sinks{console_sink};
+            std::vector<spdlog::sink_ptr> sinks{console_sink, file_sink};
+            // std::vector<spdlog::sink_ptr> sinks{console_sink};
             logger_ = std::make_shared<spdlog::async_logger>(
               "FFSLogger",
               sinks.begin(),
@@ -86,7 +86,7 @@ class FFSLogger {
             );
 
             // Get logging level from environment variable (if set)
-            const char* logLevelEnv = std::getenv("LOG_LEVEL");
+            const char *logLevelEnv = std::getenv("LOG_LEVEL");
             if (logLevelEnv) {
                 logger_->set_level(spdlog::level::from_str(logLevelEnv));
             } else {
@@ -95,7 +95,7 @@ class FFSLogger {
 
             // Register the logger globally
             spdlog::register_logger(logger_);
-        } catch (const spdlog::spdlog_ex& ex) {
+        } catch (const spdlog::spdlog_ex &ex) {
             throw std::runtime_error(std::string("Logger initialization failed: ")
                                      + ex.what());
         }
@@ -103,4 +103,4 @@ class FFSLogger {
 };
 
 // Global static access to the logger
-inline auto& logger = FFSLogger::getInstance();
+inline auto &logger = FFSLogger::getInstance();

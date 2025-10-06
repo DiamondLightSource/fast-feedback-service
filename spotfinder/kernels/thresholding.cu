@@ -63,8 +63,10 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
   pixel_t this_pixel,
   int local_x,
   int local_y,
-  ushort width,
-  ushort height,
+  int global_x,
+  int global_y,
+  uint32_t width,
+  uint32_t height,
   uint8_t kernel_radius,
   uint8_t min_count,
   float n_sig_b,
@@ -78,6 +80,13 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
     for (int i = -kernel_radius; i <= kernel_radius; ++i) {
 #pragma unroll
         for (int j = -kernel_radius; j <= kernel_radius; ++j) {
+            // Guard against out-of-bounds access
+            int gx = global_x + j;
+            int gy = global_y + i;
+            if (!in_bounds(gx, gy, width, height)) {
+                continue;
+            }
+
             // Calculate the local coordinates
             int lx = local_x + j;
             int ly = local_y + i;
@@ -212,6 +221,8 @@ __global__ void dispersion(pixel_t __restrict__ *image_ptr,
                                  this_pixel,
                                  local_x,
                                  local_y,
+                                 global_x,
+                                 global_y,
                                  kernel_constants.width,
                                  kernel_constants.height,
                                  KERNEL_RADIUS,
@@ -318,6 +329,8 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
                                  this_pixel,
                                  local_x,
                                  local_y,
+                                 global_x,
+                                 global_y,
                                  kernel_constants.width,
                                  kernel_constants.height,
                                  KERNEL_RADIUS,
@@ -427,6 +440,13 @@ __global__ void dispersion_extended_second_pass(
     for (int i = -KERNEL_RADIUS_EXTENDED; i <= KERNEL_RADIUS_EXTENDED; ++i) {
 #pragma unroll
         for (int j = -KERNEL_RADIUS_EXTENDED; j <= KERNEL_RADIUS_EXTENDED; ++j) {
+            // Guard against out-of-bounds access
+            int gx = global_x + j;
+            int gy = global_y + i;
+            if (!in_bounds(gx, gy, kernel_constants.width, kernel_constants.height)) {
+                continue;
+            }
+
             // Calculate the local coordinates
             int lx = local_x + j;
             int ly = local_y + i;

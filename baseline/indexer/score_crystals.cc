@@ -1,6 +1,3 @@
-#ifndef SCORE_CRYSTALS_H
-#define SCORE_CRYSTALS_H
-
 #include <chrono>
 #include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
@@ -15,6 +12,7 @@
 #include "assign_indices.cc"
 #include "ffs_logger.hpp"
 #include "non_primitive_basis.cc"
+#include "refine_candidate.cc"
 #include "reflection_filter.cc"
 
 std::mutex score_and_crystal_mtx;
@@ -23,6 +21,8 @@ std::mutex score_and_crystal_mtx;
 struct score_and_crystal {
     double score;
     Crystal crystal;
+    MonochromaticBeam beam;
+    Panel panel;
     double num_indexed;
     double rmsdxy;
     double fraction_indexed;
@@ -57,7 +57,7 @@ std::map<int, score_and_crystal> results_map;
  * @param n The candidate number, starting at 1.
  */
 void evaluate_crystal(Crystal crystal,
-                      ReflectionTable const& obs,
+                      ReflectionTable const &obs,
                       Goniometer gonio,
                       MonochromaticBeam beam,
                       Panel panel,
@@ -69,9 +69,9 @@ void evaluate_crystal(Crystal crystal,
 
     // First assign miller indices to the data using the crystal model.
     auto rlp_ = obs.column<double>("rlp");
-    const mdspan_type<double>& rlp = rlp_.value();
-    auto xyzobs_mm_ = obs.column<double>("xyzobs_mm");
-    const mdspan_type<double>& xyzobs_mm = xyzobs_mm_.value();
+    const mdspan_type<double> &rlp = rlp_.value();
+    auto xyzobs_mm_ = obs.column<double>("xyzobs.mm.value");
+    const mdspan_type<double> &xyzobs_mm = xyzobs_mm_.value();
     assign_indices_results results =
       assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
     auto t2 = std::chrono::system_clock::now();
@@ -92,31 +92,17 @@ void evaluate_crystal(Crystal crystal,
     std::chrono::duration<double> elapsed_timefilter = postfilter - t3;
     logger.debug("Time for reflection_filter: {:.5f}s", elapsed_timefilter.count());
 
-    // Refinement will go here in future.
-
-    // Calculate rmsds
-    double xsum = 0;
-    double ysum = 0;
-    double zsum = 0;
-    auto flags_ = sel_obs.column<std::size_t>("flags");
-    auto& flags = flags_.value();
-    auto xyzobs_ = sel_obs.column<double>("xyzobs_mm");
-    const auto& xyzobs_mm_sel = xyzobs_.value();
-    auto xyzcal_ = sel_obs.column<double>("xyzcal_mm");
-    const auto& xyzcal_mm_sel = xyzcal_.value();
-    for (int i = 0; i < flags.size(); i++) {
-        xsum += std::pow(xyzobs_mm_sel(i, 0) - xyzcal_mm_sel(i, 0), 2);
-        ysum += std::pow(xyzobs_mm_sel(i, 1) - xyzcal_mm_sel(i, 1), 2);
-        zsum += std::pow(xyzobs_mm_sel(i, 2) - xyzcal_mm_sel(i, 2), 2);
-    }
-    double rmsdx = std::sqrt(xsum / xyzobs_mm_sel.extent(0));
-    double rmsdy = std::sqrt(ysum / xyzobs_mm_sel.extent(0));
-    double rmsdz = std::sqrt(zsum / xyzobs_mm_sel.extent(0));
-    double xyrmsd = std::sqrt(rmsdx * rmsdx + rmsdy * rmsdy);
+    auto t4 = std::chrono::system_clock::now();
+    double xyrmsd = refine_indexing_candidate(crystal, gonio, beam, panel, sel_obs);
+    std::chrono::duration<double> elapsed_time_refine =
+      std::chrono::system_clock::now() - t4;
+    logger.debug("Time for candidate refinement: {:.5f}s", elapsed_time_refine.count());
 
     // Write some data to the results map
     score_and_crystal sac;
     sac.crystal = crystal;
+    sac.beam = beam;
+    sac.panel = panel;
     sac.num_indexed = count;
     sac.rmsdxy = xyrmsd;
     sac.fraction_indexed = static_cast<double>(count) / rlp.extent(0);
@@ -130,7 +116,7 @@ void evaluate_crystal(Crystal crystal,
  * @brief Determine a relative score for all solutions.
  * @param results_map A map of the candidate number to its score_and_crystal struct.
  */
-void score_solutions(std::map<int, score_and_crystal>& results_map) {
+void score_solutions(std::map<int, score_and_crystal> &results_map) {
     // Score the refined models.
     // Score is defined as volume_score + rmsd_score + fraction_indexed_score
     int length = results_map.size();
@@ -165,5 +151,3 @@ void score_solutions(std::map<int, score_and_crystal>& results_map) {
           rmsd_scores[i] + fraction_indexed_scores[i] + volume_scores[i];
     }
 }
-
-#endif

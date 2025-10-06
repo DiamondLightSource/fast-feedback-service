@@ -6,6 +6,10 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 #include <cstdint>
+#include <dx2/detector.hpp>
+#include <dx2/scan.hpp>
+#include <map>
+#include <tuple>
 #include <vector>
 
 #include "cuda_common.hpp"
@@ -13,24 +17,24 @@
 #include "h5read.h"
 
 struct Signal {
-    int x, y;              // Coordinates of the pixel
+    uint32_t x, y;         // Coordinates of the pixel
     std::optional<int> z;  // Optional z-index used in 3DCC
     pixel_t intensity;     // Pixel intensity
     size_t linear_index;   // Linear index of the pixel
 };
 
 struct Reflection {
-    int l, t, r, b;  // Bounding box: left, top, right, bottom
+    uint32_t l, t, r, b;  // Bounding box: left, top, right, bottom
     int num_pixels = 0;
 };
 
 class Reflection3D {
   public:
     Reflection3D()
-        : x_min_(std::numeric_limits<int>::max()),
-          x_max_(std::numeric_limits<int>::min()),
-          y_min_(std::numeric_limits<int>::max()),
-          y_max_(std::numeric_limits<int>::min()),
+        : x_min_(std::numeric_limits<uint32_t>::max()),
+          x_max_(std::numeric_limits<uint32_t>::min()),
+          y_min_(std::numeric_limits<uint32_t>::max()),
+          y_max_(std::numeric_limits<uint32_t>::min()),
           z_min_(std::numeric_limits<int>::max()),
           z_max_(std::numeric_limits<int>::min()),
           num_pixels_(0),
@@ -78,8 +82,8 @@ class Reflection3D {
         double total_intensity = 0;
 
         for (const auto &signal : signals_) {
-            weighted_sum_x += (signal.x + 0.5) * signal.intensity;
-            weighted_sum_y += (signal.y + 0.5) * signal.intensity;
+            weighted_sum_x += (static_cast<double>(signal.x) + 0.5) * signal.intensity;
+            weighted_sum_y += (static_cast<double>(signal.y) + 0.5) * signal.intensity;
             weighted_sum_z += (signal.z.value() + 0.5) * signal.intensity;
             total_intensity += signal.intensity;
         }
@@ -110,13 +114,59 @@ class Reflection3D {
             throw std::runtime_error("No pixels in 3D reflection");
         }
 
+        // logger.debug("Finding peak signal for reflection with {} pixels",
+        //              signals_.size());
+
         // Find the signal with the highest intensity
         const Signal *peak_signal = nullptr;
         double max_intensity = std::numeric_limits<double>::min();
+        int candidates_with_max_intensity = 0;
 
         for (const auto &signal : signals_) {
+            // Guard: Skip if intensity is lower than current max
+            if (signal.intensity < max_intensity) {
+                continue;
+            }
+
+            // Handle new maximum intensity
             if (signal.intensity > max_intensity) {
                 max_intensity = signal.intensity;
+                peak_signal = &signal;
+                candidates_with_max_intensity = 1;
+                // logger.trace(
+                //   "New max intensity found: {} at ({}, {}, {}) linear_index: {}",
+                //   signal.intensity,
+                //   signal.x,
+                //   signal.y,
+                //   signal.z.has_value() ? signal.z.value() : -1,
+                //   signal.linear_index);
+                continue;
+            }
+
+            // At this point, signal.intensity == max_intensity
+            candidates_with_max_intensity++;
+
+            // Guard: Skip tie-breaking if no current peak (shouldn't happen, but safety)
+            if (peak_signal == nullptr) {
+                continue;
+            }
+
+            // Deterministic tie-breaking using coordinate comparison
+            bool should_update_tie = is_signal_preferred(signal, *peak_signal);
+
+            // logger.trace(
+            //   "Tie at intensity {}: current ({}, {}, {}) vs peak ({}, {}, {}), "
+            //   "should_update: {}",
+            //   signal.intensity,
+            //   signal.x,
+            //   signal.y,
+            //   signal.z.value(),
+            //   peak_signal->x,
+            //   peak_signal->y,
+            //   peak_signal->z.value(),
+            //   should_update_tie);
+
+            if (should_update_tie) {
                 peak_signal = &signal;
             }
         }
@@ -126,28 +176,63 @@ class Reflection3D {
             throw std::runtime_error("Failed to find peak intensity signal");
         }
 
+        // logger.debug(
+        //   "Selected peak signal: intensity={}, position=({}, {}, {}), linear_index={}, "
+        //   "candidates_with_max_intensity={}",
+        //   peak_signal->intensity,
+        //   peak_signal->x,
+        //   peak_signal->y,
+        //   peak_signal->z.has_value() ? peak_signal->z.value() : -1,
+        //   peak_signal->linear_index,
+        //   candidates_with_max_intensity);
+
         // Get the cached or computed center of mass
         auto [com_x, com_y, com_z] = center_of_mass();
+        // logger.debug("Center of mass: ({:.3f}, {:.3f}, {:.3f})", com_x, com_y, com_z);
 
         // Calculate the Euclidean distance
-        float dx = (peak_signal->x + 0.5f) - com_x;
-        float dy = (peak_signal->y + 0.5f) - com_y;
+        float dx = (static_cast<float>(peak_signal->x) + 0.5f) - com_x;
+        float dy = (static_cast<float>(peak_signal->y) + 0.5f) - com_y;
         float dz = (peak_signal->z.value() + 0.5f) - com_z;
 
-        return std::sqrt(dx * dx + dy * dy + dz * dz);
+        float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        // logger.debug("Peak-centroid distance: {:.3f} (dx={:.3f}, dy={:.3f}, dz={:.3f})",
+        //              distance,
+        //              dx,
+        //              dy,
+        //              dz);
+
+        return distance;
     }
 
+    /**
+     * @brief Calculate the spot variances.
+     *
+     * This function calculates the two variances that describe the spot in the
+     * kabsch coordinate frame; the e1-e2 plane variance and the variance along e3.
+     * Also returned is the number of frames over which the e3 variance was calculated.
+     * These quantities are needed to determine the extent of spots during integration
+     *
+     * @return Tuple containing two variances and the number of frames used.
+     */
+    std::tuple<double, double, int> variances_in_kabsch_space(const Vector3d &s1,
+                                                              const Vector3d &s0,
+                                                              const Vector3d &m2,
+                                                              const Panel &panel,
+                                                              const Scan &scan,
+                                                              const double phi) const;
+
     // Getters for bounding box
-    inline int get_x_min() const {
+    inline uint32_t get_x_min() const {
         return x_min_;
     }
-    inline int get_x_max() const {
+    inline uint32_t get_x_max() const {
         return x_max_;
     }
-    inline int get_y_min() const {
+    inline uint32_t get_y_min() const {
         return y_min_;
     }
-    inline int get_y_max() const {
+    inline uint32_t get_y_max() const {
         return y_max_;
     }
     inline int get_z_min() const {
@@ -162,15 +247,36 @@ class Reflection3D {
 
   private:
     std::vector<Signal> signals_;
-    int x_min_, x_max_;
-    int y_min_, y_max_;
+    uint32_t x_min_, x_max_;
+    uint32_t y_min_, y_max_;
     int z_min_, z_max_;
     int num_pixels_;
 
     // com cache for lazy evaluation
     mutable bool com_cached_;
     mutable std::tuple<float, float, float> com_cache_;
+
+    /**
+     * @brief Determines if the first signal should be preferred over the second
+     *        in case of intensity ties using coordinate-based tie-breaking.
+     * 
+     * @param candidate The signal to compare
+     * @param current The current preferred signal
+     * @return true if candidate should be preferred over current
+     */
+    bool is_signal_preferred(const Signal &candidate, const Signal &current) const;
 };
+
+/**
+* @brief Filters reflections based on a minimum spot size and peak-centroid separation.
+*
+* The `min_spot_size` is the minimum number of pixels needed for a spot to pass the filter.
+* The `max_peak_centroid_separation` is the maximum allow difference (in pixels) between
+* the spot's centre of mass and the location of the peak intensity pixel.
+*/
+std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
+                                        const uint min_spot_size,
+                                        const float max_peak_centroid_separation);
 
 /**
  * @brief Class to find connected components in a 2D image
@@ -194,8 +300,8 @@ class ConnectedComponents {
   public:
     ConnectedComponents(const uint8_t *result_image,
                         const pixel_t *original_image,
-                        const ushort width,
-                        const ushort height,
+                        const uint32_t width,
+                        const uint32_t height,
                         const uint min_spot_size);
 
     uint get_num_strong_pixels() const {
@@ -216,7 +322,7 @@ class ConnectedComponents {
         return boxes;
     }
 
-    std::unordered_map<size_t, Signal> &get_signals() {
+    std::map<size_t, Signal> &get_signals() {
         return signals;
     }
 
@@ -248,21 +354,25 @@ class ConnectedComponents {
    */
     static std::vector<Reflection3D> find_3d_components(
       const std::vector<std::unique_ptr<ConnectedComponents>> &slices,
-      const ushort width,
-      const ushort height,
+      const uint32_t width,
+      const uint32_t height,
       const uint min_spot_size,
-      const uint max_peak_centroid_separation);
+      const float max_peak_centroid_separation);
+
+    std::vector<Reflection3D> find_2d_components(
+      const uint min_spot_size,
+      const float max_peak_centroid_separation);
 
   private:
     uint num_strong_pixels;           // Number of strong pixels
     uint num_strong_pixels_filtered;  // Number of strong pixels after filtering
     std::vector<Reflection> boxes;    // Bounding boxes
     // Maps pixel linear index -> Signal (used to store signal pixels)
-    std::unordered_map<size_t, Signal> signals;
+    std::map<size_t, Signal> signals;
     // Maps graph linear index -> vertex ID
-    std::unordered_map<size_t, size_t> index_to_vertex;
+    std::map<size_t, size_t> index_to_vertex;
     // Maps graph vertex ID -> linear index
-    std::unordered_map<size_t, size_t> vertex_to_index;
+    std::map<size_t, size_t> vertex_to_index;
     // 2D graph representing the connected components
     boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS> graph;
 
@@ -273,7 +383,7 @@ class ConnectedComponents {
      * This function uses the `signals` map to find neighboring pixels efficiently.
      * The `index_to_vertex` is used to map linear indices (from `signals`) to graph vertex IDs.
      */
-    void build_graph(const ushort width, const ushort height);
+    void build_graph(const uint32_t width, const uint32_t height);
 
     /**
      * @brief Generates bounding boxes for connected components using the graph labels.
@@ -281,8 +391,8 @@ class ConnectedComponents {
      * The `labels` vector maps each graph vertex to its connected component ID.
      * The `index_to_vertex` map is used to map linear indices to graph vertex IDs.
      */
-    void generate_boxes(const ushort width,
-                        const ushort height,
+    void generate_boxes(const uint32_t width,
+                        const uint32_t height,
                         const uint32_t min_spot_size);
 };
 
