@@ -37,6 +37,14 @@ FetchContent_Declare(
     GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
 )
 FetchContent_MakeAvailable(argparse)
+FetchContent_Declare(
+    Eigen3
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG 3.4.0
+    EXCLUDE_FROM_ALL
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(Eigen3)
 
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
