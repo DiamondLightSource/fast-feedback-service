@@ -162,6 +162,106 @@ class GPUIndexer:
             )
         return indexing_result
 
+class OutputAggregator:
+
+    """
+    Helper class to aggregate per-image indexing to output as as reflection table and
+    an experiment list.
+    """
+
+    def __init__(self, identifiers_map):
+        # Lists of numpy data arrays to be concatenated.
+        self.miller_indices_output = []
+        self.xyzobs_output = []
+        self.xyzcal_px_output = []
+        self.delpsical_output = []
+        self.ids_output = []
+        self.s1_output = []
+        self.image_nos_output = []
+        # crystal data to output.
+        self.output_id = 0
+        self.new_id_to_old_id = {}
+        self.output_crystals_list = []
+        self.output_crystals_id_nos = []
+        self.output_crystals = {}
+        self.identifiers_map = identifiers_map
+
+    def add_result(self, lattice, i):
+        self.output_crystals[self.identifiers_map[int(i)]] = {
+            "cell": lattice.unit_cell,
+            "U_matrix": lattice.U_matrix,
+            "n_indexed": lattice.n_indexed,
+        }
+        B = np.reshape(np.array(lattice.B_matrix, dtype="float64"), (3, 3))
+        U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3))
+        A_inv = np.linalg.inv(np.matmul(U, B))
+        self.output_crystals_list.append(
+            {
+                "__id__": "crystal",
+                "real_space_a": [A_inv[0, 0], A_inv[0, 1], A_inv[0, 2]],
+                "real_space_b": [A_inv[1, 0], A_inv[1, 1], A_inv[1, 2]],
+                "real_space_c": [A_inv[2, 0], A_inv[2, 1], A_inv[2, 2]],
+                "space_group_hall_symbol": "P 1",
+            }
+        )
+        self.output_crystals_id_nos.append(i)
+        midx = np.array(lattice.miller_indices, dtype=int).reshape(-1,3)
+        xyzobs = np.array(lattice.xyzobs_px).reshape(-1,3)
+        xyzcal = np.array(lattice.xyzcal_px).reshape(-1,3)
+        s1_reshape = np.array(lattice.s1).reshape(-1,3)
+        delpsi = np.array(lattice.delpsi)
+        rmsdx, rmsdy, rmsd_psi = lattice.rmsds
+
+        n = xyzcal.shape[0]
+
+        # now save stuff for output
+        self.miller_indices_output.append(midx)
+        self.xyzobs_output.append(xyzobs)
+        self.xyzcal_px_output.append(xyzcal)
+        self.delpsical_output.append(np.array(delpsi))
+        self.s1_output.append(s1_reshape)
+        self.ids_output.append(
+            np.full(n, self.output_id, dtype=np.int32
+            )
+        )
+        self.image_nos_output.append(
+            np.full(n, i, dtype=np.int32)
+        )
+        self.new_id_to_old_id[self.output_id] = i
+        self.output_id += 1
+
+    def write_table(self, filename):
+        output_refl = h5py.File(Path.cwd() / filename, "w")
+        output_refl.create_group("dials")
+        output_refl["dials"].create_group("processing")
+        output_refl["dials"]["processing"].create_group("group_0")
+        ids_array = np.concatenate(self.ids_output)
+        output_refl["dials"]["processing"]["group_0"]["id"] = ids_array
+        output_refl["dials"]["processing"]["group_0"]["image"] = np.concatenate(
+            self.image_nos_output
+        )
+        output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = np.concatenate(
+            self.xyzobs_output
+        )
+        output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = np.concatenate(
+            self.xyzcal_px_output
+        )
+        output_refl["dials"]["processing"]["group_0"]["s1"] = np.concatenate(
+            self.s1_output
+        )
+        output_refl["dials"]["processing"]["group_0"]["delpsical.rad"] = np.concatenate(
+            self.delpsical_output)
+        output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
+            self.miller_indices_output, dtype=np.int32
+        )
+        sorted_ids = sorted(list(set(np.uint(i) for i in self.new_id_to_old_id.keys())))
+        output_refl["dials"]["processing"]["group_0"].attrs["experiment_ids"] = sorted_ids
+        identifiers = [self.identifiers_map[self.new_id_to_old_id[i]] for i in sorted_ids]
+        output_refl["dials"]["processing"]["group_0"].attrs["identifiers"] = identifiers
+
+        output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(ids_array, dtype=np.uint)
+        ## extra potential data to output to enable further processing:
+        ## rlp, panel, flags, s1, xyzcal, xyzobs.mm.value
 
 def run(args):
     st = time.time()
@@ -190,9 +290,8 @@ def run(args):
         expts = json.load(f)
     wavelength = expts["beam"][0]["wavelength"]
     detector_dict = expts["detector"][0]["hierarchy"]
-    panel_dict = expts["detector"][0]["panels"][
-        0
-    ]  # only single panel detectors for now.
+    # only single panel detectors for now.
+    panel_dict = expts["detector"][0]["panels"][0]  
     detector = {
         "distance": -1.0 * (detector_dict["origin"][2] + panel_dict["origin"][2]),
         "beam_center_x": -1.0
@@ -251,9 +350,9 @@ def run(args):
     ## Note this can be relatively slow (~0.5s for 1000 images) - 
     ## ideally port to c++ and use knowledge that data is in increasing order of
     ## id.
+    output_aggregator = OutputAggregator(identifiers_map)
     tables = []
     id_values = []
-    output_crystals = {}
     for id_ in sorted(set(ids)):
         sel = ids == id_
         xyzs_this = xyzs[sel]
@@ -267,26 +366,11 @@ def run(args):
     indexer.cell = input_cell
     indexer.wavelength = wavelength
 
+    # Quantities to log for log output
     n_indexed_images = 0
     n_total = len(tables)
     n_considered = 0
 
-    # items to aggregate for output.
-    miller_indices_output = []
-    xyzobs_output = []
-    xyzcal_px_output = []
-    delpsical_output = []
-    ids_output = []
-    s1_output = []
-
-    # temporary, remove once sorted out experiment list
-    # data structures to link identifiers to images
-    image_nos_output = []
-
-    output_id = 0
-    new_id_to_old_id = {}
-    output_crystals_list = []
-    output_crystals_id_nos = []
     t1 = time.time()
 
     for t, i in zip(tables, id_values):
@@ -299,50 +383,16 @@ def run(args):
         if result.lattices:
             n_indexed_images += 1
             lattice = result.lattices[0]
-            output_crystals[identifiers_map[int(i)]] = {
-                "cell": lattice.unit_cell,
-                "U_matrix": lattice.U_matrix,
-                "n_indexed": lattice.n_indexed,
-            }
-            B = np.reshape(np.array(lattice.B_matrix, dtype="float64"), (3, 3))
-            U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3))
-            A_inv = np.linalg.inv(np.matmul(U, B))
-            output_crystals_list.append(
-                {
-                    "__id__": "crystal",
-                    "real_space_a": [A_inv[0, 0], A_inv[0, 1], A_inv[0, 2]],
-                    "real_space_b": [A_inv[1, 0], A_inv[1, 1], A_inv[1, 2]],
-                    "real_space_c": [A_inv[2, 0], A_inv[2, 1], A_inv[2, 2]],
-                    "space_group_hall_symbol": "P 1",
-                }
-            )
-            output_crystals_id_nos.append(i)
-            midx = np.array(lattice.miller_indices, dtype=int).reshape(-1,3)
-            xyzobs = np.array(lattice.xyzobs_px).reshape(-1,3)
-            xyzcal = np.array(lattice.xyzcal_px).reshape(-1,3)
-            s1_reshape = np.array(lattice.s1).reshape(-1,3)
-            delpsi = np.array(lattice.delpsi)
-            rmsdx, rmsdy, rmsd_psi = lattice.rmsds
-
-            n = xyzcal.shape[0]
-            print(
-                f"Indexed {(n)}/{int(data.size / 3)} spots on image {i + 1}, RMSDs (px,px,rad): {rmsdx:.4f}, {rmsdy:.4f}, {rmsd_psi:.6f}"
-            )
             # now save stuff for output
-            miller_indices_output.append(midx)
-            xyzobs_output.append(xyzobs)
-            xyzcal_px_output.append(xyzcal)
-            delpsical_output.append(np.array(delpsi))
-            s1_output.append(s1_reshape)
-            ids_output.append(
-                np.full(n, output_id, dtype=np.int32
-                )
+            output_aggregator.add_result(lattice, i)
+            # print number of spots indexed and rmsds
+            rmsdx, rmsdy, rmsd_psi = lattice.rmsds
+            cell_str= ", ".join(f"{i:.3f}" for i in lattice.unit_cell)
+            print(
+                f"Indexed {(lattice.n_indexed)}/{int(data.size / 3)} spots on image {i + 1}:\n" + 
+                f"  cell: {cell_str}\n" +
+                f"  RMSDs: (x(px), y(px), psi(rad)): {rmsdx:.3f}, {rmsdy:.3f}, {rmsd_psi:.5f}"
             )
-            image_nos_output.append(
-                np.full(n, i, dtype=np.int32)
-            )
-            new_id_to_old_id[output_id] = i
-            output_id += 1
         else:
             print(f"No indexing solution for image {i + 1}")
 
@@ -356,52 +406,19 @@ def run(args):
     # ok say we have in imported.expt, need to add crystals to indexed images
     if parsed.test:
         with open("indexed_crystals.json", "w") as f:
-            json.dump(output_crystals_list, f, indent=2)
+            json.dump(output_aggregator.output_crystals_list, f, indent=2)
     else:
-        expts["crystal"] = output_crystals_list
-        for i, id_ in enumerate(output_crystals_id_nos):
+        expts["crystal"] = output_aggregator.output_crystals_list
+        for i, id_ in enumerate(output_aggregator.output_crystals_id_nos):
             expts["experiment"][id_]["crystal"] = i
         with open("indexed.expt", "w") as f:
             json.dump(expts, f, indent=2)
 
     # output in standard dials format so that can be understood by dials.
-    if not ids_output:
+    if not output_aggregator.ids_output:
         print("No images successfully indexed, no reflection output will be written.")
-        t3 = time.time()
-        print(f"Setup time: {t1-st:.6f}s, index time {t2-t1:.6f}s, write time {t3-t2:.6f}s")
-        return
-
-    output_refl = h5py.File(Path.cwd() / "indexed.refl", "w")
-    output_refl.create_group("dials")
-    output_refl["dials"].create_group("processing")
-    output_refl["dials"]["processing"].create_group("group_0")
-    ids_array = np.concatenate(ids_output)
-    output_refl["dials"]["processing"]["group_0"]["id"] = ids_array
-    output_refl["dials"]["processing"]["group_0"]["image"] = np.concatenate(
-        image_nos_output
-    )
-    output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = np.concatenate(
-        xyzobs_output
-    )
-    output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = np.concatenate(
-        xyzcal_px_output
-    )
-    output_refl["dials"]["processing"]["group_0"]["s1"] = np.concatenate(
-        s1_output
-    )
-    output_refl["dials"]["processing"]["group_0"]["delpsical.rad"] = np.concatenate(delpsical_output)
-    output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
-        miller_indices_output, dtype=np.int32
-    )
-    sorted_ids = sorted(list(set(np.uint(i) for i in new_id_to_old_id.keys())))
-    output_refl["dials"]["processing"]["group_0"].attrs["experiment_ids"] = sorted_ids
-    identifiers = [identifiers_map[new_id_to_old_id[i]] for i in sorted_ids]
-    output_refl["dials"]["processing"]["group_0"].attrs["identifiers"] = identifiers
-
-    output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(ids_array, dtype=np.uint)
-    # output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"]
-    ## extra potential data to output to enable further processing:
-    ## rlp, panel, flags, s1, xyzcal, xyzobs.mm.value
+    else:
+        output_aggregator.write_table("indexed.refl")
     t3 = time.time()
     print(f"Setup time: {t1-st:.6f}s, index time {t2-t1:.6f}s, write time {t3-t2:.6f}s")
 
