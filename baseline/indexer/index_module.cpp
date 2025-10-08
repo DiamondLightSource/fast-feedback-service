@@ -114,7 +114,7 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
         std::vector<std::size_t> selection;
         for (std::size_t j = 0; j < results.miller_indices.extent(0); j++) {
           const Eigen::Map<Vector3i> hkl_j(&results.miller_indices(j, 0));
-          if (hkl_j[0] != 0 || hkl_j[1] != 0 || hkl_j[2] != 0){
+          if ((hkl_j[0] != 0) || (hkl_j[1] != 0) || (hkl_j[2] != 0)){
             nonzero_miller_indices.push_back(hkl_j[0]);
             nonzero_miller_indices.push_back(hkl_j[1]);
             nonzero_miller_indices.push_back(hkl_j[2]);
@@ -150,11 +150,12 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
       xyzobs_px_indexed.data(), xyzobs_px_indexed.size() / 3, 3);
 
 
-    std::vector<bool> sel(rlp.size() / 3, false);
+    std::vector<bool> sel_on_original(rlp.size() / 3, false);
+    std::vector<bool> sel_for_indexed(n_indexed[max_index], false);
     double rmsd_x = 0;
     double rmsd_y = 0;
     double rmsd_psi = 0;
-    for (int i = 0; i < n_indexed[max_index]; i++) {
+    for (std::size_t i = 0; i < n_indexed[max_index]; i++) {
       double dx = std::pow(xyzobs_px_indexed_span(i,0) - xyzcal_px(i,0), 2);
       double dy = std::pow(xyzobs_px_indexed_span(i,1) - xyzcal_px(i,1), 2);
       double delta_r = std::sqrt(dx + dy);
@@ -162,11 +163,12 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
         rmsd_x += dx;
         rmsd_y += dy;
         rmsd_psi += std::pow(delpsi(i,0),2);
-        sel[selection[i]] = true;
+        sel_on_original[selection[i]] = true;
+        sel_for_indexed[i] = true;
       }
     }
     // select on the reflection table.
-    ReflectionTable filtered = refls.select(sel);
+    ReflectionTable filtered = refls.select(sel_for_indexed);
 
     // Convert mdspan to std::vector
     delpsi_ = filtered.column<double>("delpsical.rad");
@@ -202,7 +204,7 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
       std::move(xyzcal_px_vec),
       std::move(s1_vec),
       std::move(delpsi_vec),
-      std::move(sel),
+      std::move(sel_on_original),
       rmsds);
 
     /*return std::make_tuple(n_indexed[max_index],

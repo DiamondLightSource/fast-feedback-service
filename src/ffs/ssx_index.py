@@ -240,7 +240,7 @@ def run(args):
             detector["image_size_y"],
             detector["thickness"],
             detector["mu"],
-        )
+    )
     except Exception as e:
         print(
             f"Unable to compose a detector panel model from the detector json.\n Error: {e}"
@@ -303,8 +303,8 @@ def run(args):
                 "U_matrix": lattice.U_matrix,
                 "n_indexed": lattice.n_indexed,
             }
-            B = np.reshape(np.array(lattice.B_matrix, dtype="float64"), (3, 3))#.transpose()
-            U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3))#.transpose()
+            B = np.reshape(np.array(lattice.B_matrix, dtype="float64"), (3, 3))
+            U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3))
             A_inv = np.linalg.inv(np.matmul(U, B))
             output_crystals_list.append(
                 {
@@ -316,8 +316,7 @@ def run(args):
                 }
             )
             output_crystals_id_nos.append(i)
-
-            midx = np.array(lattice.miller_indices).reshape(-1,3)
+            midx = np.array(lattice.miller_indices, dtype=int).reshape(-1,3)
             xyzobs = np.array(lattice.xyzobs_px).reshape(-1,3)
             xyzcal = np.array(lattice.xyzcal_px).reshape(-1,3)
             s1_reshape = np.array(lattice.s1).reshape(-1,3)
@@ -356,15 +355,21 @@ def run(args):
     # ok say we have in imported.expt, need to add crystals to indexed images
     if parsed.test:
         with open("indexed_crystals.json", "w") as f:
-            json.dump(output_crystals, f, indent=2)
+            json.dump(output_crystals_list, f, indent=2)
     else:
         expts["crystal"] = output_crystals_list
-        for i, id_ in enumerate(output_crystals_id_nos):
+        for i, id_ in enumerate(outpuøt_crystals_id_nos):
             expts["experiment"][id_]["crystal"] = i
         with open("indexed.expt", "w") as f:
             json.dump(expts, f, indent=2)
 
     # output in standard dials format so that can be understood by dials.
+    if not ids_output:
+        print("No images successfully indexed, no reflection output will be written.")
+        t3 = time.time()
+        print(f"Setup time: {t1-st:.6f}s, index time {t2-t1:.6f}s, write time {t3-t2:.6f}s")
+        return
+
     output_refl = h5py.File(Path.cwd() / "indexed.refl", "w")
     output_refl.create_group("dials")
     output_refl["dials"].create_group("processing")
@@ -380,7 +385,7 @@ def run(args):
     output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = np.concatenate(
         xyzcal_px_output
     )
-    output_refl["dials"]["processing"]["group_0"]["delpsical"] = np.concatenate(delpsical_output)
+    output_refl["dials"]["processing"]["group_0"]["delpsical.rad"] = np.concatenate(delpsical_output)
     output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
         miller_indices_output, dtype=np.int32
     )
