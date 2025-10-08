@@ -4,6 +4,7 @@ the equivalent of the indexing part of the ffs service.
 
 Usage: python src/ffs/ssx_index.py -r strong.refl -e imported.expt --cell 79 79 38 90 90 90
 """
+# ruff: noqa: C901
 
 import argparse
 import json
@@ -75,14 +76,14 @@ class GPUIndexer:
     def wavelength(self):
         return self._wavelength
 
-    @property
-    def s0(self):
-        return self._s0
-
     @wavelength.setter
     def wavelength(self, new_wavelength):
         self._wavelength = new_wavelength
         self._s0 = np.asarray([0.0,0.0,-1.0/self._wavelength], dtype=np.float64)
+
+    @property
+    def s0(self):
+        return self._s0
 
     def index(self, xyzobs_px : np.array) -> IndexingResult:
         n_initial = int(xyzobs_px.size / 3)
