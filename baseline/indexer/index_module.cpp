@@ -60,10 +60,13 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> ssx_pr
   return std::make_tuple(std::move(s1_vec), std::move(xyzcal_px_vec), std::move(delpsical_vec));
 }
 
-std::tuple<int, std::vector<double>, std::vector<double>, std::vector<double>,std::vector<int>>
+std::tuple<int, std::vector<double>, Eigen::Matrix3d, Eigen::Matrix3d,
+  std::vector<int>, std::vector<double>, std::vector<double>, std::vector<double>>
 index_from_ssx_cells(const std::vector<double> &crystal_vectors,
                      std::vector<double> rlp,
-                     std::vector<double> xyzobs_mm) {
+                     std::vector<double> xyzobs_mm,
+                     Eigen::Vector3d s0,
+                     Panel panel) {
     // Note, xyzobs_mm is only used in assign_indices_global, and only the z-component
     // is used to test a condition. Given that all the z's are zero for ssx data, whether
     // in px or mm, we can safely provide xyzobs_px as input to avoid additional conversion
@@ -71,8 +74,8 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
     std::vector<double> n_indexed{};
     std::vector<double> n_unindexed{};
     std::vector<std::vector<double>> cells{};
-    std::vector<std::vector<double>> orientations{};
-    std::vector<std::vector<double>> B_matrices{};
+    std::vector<Matrix3d> orientations{};
+    std::vector<Matrix3d> B_matrices{};
     std::vector<std::vector<int>> miller_indices{};
     mdspan_type<double> xyzobs_mm_span =
       mdspan_type<double>(xyzobs_mm.data(), xyzobs_mm.size() / 3, 3);
@@ -101,19 +104,48 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
         cells.push_back(cell_parameters);
         Matrix3d U = crystal.get_U_matrix();
         Matrix3d B = crystal.get_B_matrix();
-        std::vector<double> orientation(U.data(), U.data() + U.size());
-        std::vector<double> B_matrix(B.data(), B.data() + B.size());
-        orientations.push_back(orientation);
-        B_matrices.push_back(B_matrix);
+        //std::vector<double> orientation(U.data(), U.data() + U.size());
+        //std::vector<double> B_matrix(B.data(), B.data() + B.size());
+        orientations.push_back(U);
+        B_matrices.push_back(B);
         miller_indices.push_back(results.miller_indices_data);
     }
     auto max_iter = std::max_element(n_indexed.begin(), n_indexed.end());
     int max_index = std::distance(n_indexed.begin(), max_iter);
-    return std::make_tuple(n_indexed[max_index],
-                           cells[max_index],
-                           orientations[max_index],
-                           B_matrices[max_index],
-                           miller_indices[max_index]);
+
+    // Now take the most indexed and predict.
+    ReflectionTable refls;
+    refls.add_column("miller_index", miller_indices[max_index].size() / 3, 3, miller_indices[max_index]);
+    Matrix3d UB = orientations[max_index] * B_matrices[max_index]
+    simple_still_reflection_predictor(s0, UB, panel, refls);
+    auto s1_ = refls.column<double>("s1");
+    auto &s1 = s1_.value();
+    //auto xyzcal_mm_ = refls.column<double>("xyzcal.mm");
+    //auto &xyzcal_mm = xyzcal_mm_.value();
+    auto delpsical_ = refls.column<double>("delpsical.rad");
+    auto &delpsical = delpsical_.value();
+    auto xyzcal_px_ = refls.column<double>("xyzcal.px");
+    auto &xyzcal_px = xyzcal_px_.value();
+    // Convert mdspan to std::vector
+    std::vector<double> s1_vec(s1.data_handle(), s1.data_handle() + s1.size());
+    std::vector<double> xyzcal_px_vec(xyzcal_px.data_handle(), xyzcal_px.data_handle() + xyzcal_px.size());
+    std::vector<double> delpsical_vec(delpsical.data_handle(), delpsical.data_handle() + delpsical.size());
+    
+    return std::make_tuple(
+      n_indexed[max_index],
+      cells[max_index],
+      orientations[max_index],
+      B_matrices[max_index],
+      std::move(miller_indices[max_index]),
+      std::move(xyzcal_px_vec),
+      std::move(s1_vec),
+      std::move(delpsical_vec));
+
+    /*return std::make_tuple(n_indexed[max_index],
+                            cells[max_index],
+                            orientations[max_index],
+                            B_matrices[max_index],
+                            miller_indices[max_index]);*/
 }
 
 NB_MODULE(index, m) {
@@ -138,6 +170,8 @@ NB_MODULE(index, m) {
           nb::arg("crystal_vectors"),
           nb::arg("rlp"),
           nb::arg("xyzobs_mm"),
+          nb::arg("s0"),
+          nb::arg("panel"),
           "Return the maximum number of indexed reflections and cell parameters and "
           "miller indices");
     m.def("ssx_predict",

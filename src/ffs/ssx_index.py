@@ -27,7 +27,7 @@ class IndexedLatticeResult(BaseModel):
     n_indexed: NonNegativeInt
     miller_indices: list[int] | None = None
     xyzobs_px: list[float] | None = None
-    #xyzcal_mm: list[float] | None = None
+    xyzcal_px: list[float] | None = None
 
 
 class IndexingResult(BaseModel):
@@ -75,7 +75,7 @@ class GPUIndexer:
     def wavelength(self, new_wavelength):
         self._wavelength = new_wavelength
 
-    def index(self, xyzobs_px):
+    def index(self, xyzobs_px : np.array) -> IndexingResult:
         if xyzobs_px.size < 30:
             indexing_result = IndexingResult(
                 lattices=[],
@@ -121,25 +121,52 @@ class GPUIndexer:
                 real_a = output_cells[:, j]
                 real_b = output_cells[:, j + 1]
                 real_c = output_cells[:, j + 2]
-                #print(real_a)
-                #print(real_b)
-                #print(real_c)
                 cells = np.concatenate((cells, real_a, real_b, real_c), axis=None)
             ## For now, just determines the cell with the highest number of indexed spots.
             ## here, we could do a stills reflection prediction to calculate rmsds.
-            #print(cells)
-            #assert 0
-            n_indexed, cell, orientation, B_matrix, miller_indices = (
-                ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px)
+
+            n_indexed, cell, orientation, B_matrix, miller_indices, s1, xyzcal_px, delpsi = (
+                ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px, np.asarray([0.0,0.0,-1.0/self.wavelength], dtype=np.float64),
+                self.panel)
             )
-            #print(orientation)
-            #print(B_matrix)
+
             this_cell = gemmi.UnitCell(*cell)
-            B = np.reshape(np.array(B_matrix, dtype="float64"), (3, 3)).transpose()
-            U = np.reshape(np.array(orientation, dtype="float64"), (3, 3)).transpose()
+            B = np.reshape(np.array(B_matrix, dtype="float64"), (3, 3))#.transpose()
+            U = np.reshape(np.array(orientation, dtype="float64"), (3, 3))#.transpose()
             A = np.matmul(U, B)
-            #print("Amatrix")
-            #print(A)
+            
+            midx = np.array(miller_indices).reshape(-1,3)
+            xyzobs = np.array(xyzobs_px).reshape(-1,3)
+            xyzcal = np.array(xyzcal_px).reshape(-1,3)
+            s1_reshape = np.array(s1).reshape(-1,3)
+            rlp_reshape = np.array(rlp_).reshape(-1,3)
+            n = 0
+            rmsdx = 0
+            rmsdy = 0
+            rmsd_psi = 0
+            print(rlp_reshape.shape[0])
+            print(list(xyzcal_px))
+            print(list(xyzobs_px))
+            sel = np.array([False] * rlp_reshape.shape[0])
+            for i, (m, obs, cal, dpsi) in enumerate(zip(midx, xyzobs, xyzcal, delpsi)):
+                if m.any():
+                    delta_r = ((obs[0] - cal[0])**2 + (obs[1] - cal[1])**2)**0.5
+                    if delta_r < 2: # very crude outlier rejection for a starting point
+                        n += 1
+                        rmsdx += (obs[0] - cal[0])**2
+                        rmsdy += (obs[1] - cal[1])**2
+                        rmsd_psi = dpsi**2
+                        sel[i] = True
+            if n:
+                rmsdx = (rmsdx / n)**0.5
+                rmsdy = (rmsdy / n)**0.5
+                rmsd_psi = (rmsd_psi / n)**0.5
+
+            print(
+                f"Indexed {(n)}/{len(rlp_) / 3} spots on image {i + 1}, RMSDs (px,px,rad): {rmsdx:.4f}, {rmsdy:.4f}, {rmsd_psi:.6f}"
+            )
+            print(A)
+            assert 0
             
             n_unindexed = int(xyzobs_px.size / 3) - n_indexed
             indexing_result = IndexingResult(
