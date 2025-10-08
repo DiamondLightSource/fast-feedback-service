@@ -277,6 +277,7 @@ def run(args):
     xyzcal_px_output = []
     delpsical_output = []
     ids_output = []
+    s1_output = []
 
     # temporary, remove once sorted out experiment list
     # data structures to link identifiers to images
@@ -320,7 +321,6 @@ def run(args):
             xyzobs = np.array(lattice.xyzobs_px).reshape(-1,3)
             xyzcal = np.array(lattice.xyzcal_px).reshape(-1,3)
             s1_reshape = np.array(lattice.s1).reshape(-1,3)
-            rlp_reshape = np.array(data).reshape(-1,3)
             delpsi = np.array(lattice.delpsi)
             rmsdx, rmsdy, rmsd_psi = lattice.rmsds
 
@@ -333,6 +333,7 @@ def run(args):
             xyzobs_output.append(xyzobs)
             xyzcal_px_output.append(xyzcal)
             delpsical_output.append(np.array(delpsi))
+            s1_output.append(s1_reshape)
             ids_output.append(
                 np.full(n, output_id, dtype=np.int32
                 )
@@ -358,7 +359,7 @@ def run(args):
             json.dump(output_crystals_list, f, indent=2)
     else:
         expts["crystal"] = output_crystals_list
-        for i, id_ in enumerate(outpuøt_crystals_id_nos):
+        for i, id_ in enumerate(output_crystals_id_nos):
             expts["experiment"][id_]["crystal"] = i
         with open("indexed.expt", "w") as f:
             json.dump(expts, f, indent=2)
@@ -384,6 +385,9 @@ def run(args):
     )
     output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = np.concatenate(
         xyzcal_px_output
+    )
+    output_refl["dials"]["processing"]["group_0"]["s1"] = np.concatenate(
+        s1_output
     )
     output_refl["dials"]["processing"]["group_0"]["delpsical.rad"] = np.concatenate(delpsical_output)
     output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
