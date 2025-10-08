@@ -30,6 +30,7 @@ class IndexedLatticeResult(BaseModel):
     xyzcal_px: list[float] | None = None
     s1: list[float] | None = None
     delpsi: list[float] | None = None
+    rmsds: list[float] | None = None
 
 
 class IndexingResult(BaseModel):
@@ -78,6 +79,7 @@ class GPUIndexer:
         self._wavelength = new_wavelength
 
     def index(self, xyzobs_px : np.array) -> IndexingResult:
+        n_initial = int(xyzobs_px.size / 3)
         if xyzobs_px.size < 30:
             indexing_result = IndexingResult(
                 lattices=[],
@@ -127,10 +129,12 @@ class GPUIndexer:
             ## For now, just determines the cell with the highest number of indexed spots.
             ## here, we could do a stills reflection prediction to calculate rmsds.
 
-            n_indexed, cell, orientation, B_matrix, miller_indices, xyzcal_px, s1, delpsi = (
+            n_indexed, cell, orientation, B_matrix, miller_indices, xyzcal_px, s1, delpsi, sel, rmsds = (
                 ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px, np.asarray([0.0,0.0,-1.0/self.wavelength], dtype=np.float64),
                 self.panel)
             )
+            xyzobs_px = np.array(xyzobs_px, dtype="float32").reshape(-1, 3)
+            xyzobs_px = xyzobs_px[sel,:]
 
             #this_cell = gemmi.UnitCell(*cell)
             '''B = np.reshape(np.array(B_matrix, dtype="float64"), (3, 3))#.transpose()
@@ -167,8 +171,7 @@ class GPUIndexer:
             print(
                 f"Indexed {(n)}/{len(rlp_) / 3} spots on image , RMSDs (px,px,rad): {rmsdx:.4f}, {rmsdy:.4f}, {rmsd_psi:.6f}"
             )'''
-            
-            n_unindexed = int(xyzobs_px.size / 3) - n_indexed
+            n_unindexed = n_initial - n_indexed
             indexing_result = IndexingResult(
                 lattices=[
                     IndexedLatticeResult(
@@ -178,10 +181,11 @@ class GPUIndexer:
                         U_matrix=orientation.flatten(),
                         B_matrix=B_matrix.flatten(),
                         miller_indices=miller_indices,
-                        xyzobs_px=xyzobs_px,
+                        xyzobs_px=xyzobs_px.flatten(),
                         xyzcal_px=xyzcal_px,
                         s1=s1,
-                        delpsi=delpsi
+                        delpsi=delpsi,
+                        rmsds=rmsds
                     )
                 ],
                 n_unindexed=n_unindexed,
@@ -303,7 +307,11 @@ def run(args):
     xyzcal_px_output = []
     delpsical_output = []
     ids_output = []
+
+    # temporary, remove once sorted out experiment list
+    # data structures to link identifiers to images
     image_nos_output = []
+
     output_id = 0
     new_id_to_old_id = {}
     output_crystals_list = []
@@ -340,21 +348,15 @@ def run(args):
                 }
             )
             output_crystals_id_nos.append(i)
-            '''UB = np.matmul(U, B)
-            #print(UB)
-            s1, xyzcal_px, delpsical = ffs.index.ssx_predict(
-                lattice.miller_indices,
-                np.asarray([0.0,0.0,-1.0/wavelength], dtype=np.float64),
-                UB,
-                panel
-            )'''
+
             midx = np.array(lattice.miller_indices).reshape(-1,3)
             xyzobs = np.array(lattice.xyzobs_px).reshape(-1,3)
             xyzcal = np.array(lattice.xyzcal_px).reshape(-1,3)
             s1_reshape = np.array(lattice.s1).reshape(-1,3)
             rlp_reshape = np.array(data).reshape(-1,3)
             delpsi = np.array(lattice.delpsi)
-            n = 0
+            rmsdx, rmsdy, rmsd_psi = lattice.rmsds
+            '''n = 0
             rmsdx = 0
             rmsdy = 0
             rmsd_psi = 0
@@ -371,16 +373,16 @@ def run(args):
             if n:
                 rmsdx = (rmsdx / n)**0.5
                 rmsdy = (rmsdy / n)**0.5
-                rmsd_psi = (rmsd_psi / n)**0.5
-
+                rmsd_psi = (rmsd_psi / n)**0.5'''
+            n = xyzcal.shape[0]
             print(
                 f"Indexed {(n)}/{int(data.size / 3)} spots on image {i + 1}, RMSDs (px,px,rad): {rmsdx:.4f}, {rmsdy:.4f}, {rmsd_psi:.6f}"
             )
             # now save stuff for output
-            miller_indices_output.append(midx[sel,:])
-            xyzobs_output.append(xyzobs[sel,:])
-            xyzcal_px_output.append(xyzcal[sel,:])
-            delpsical_output.append(np.array(delpsi)[sel])
+            miller_indices_output.append(midx)#[sel,:])
+            xyzobs_output.append(xyzobs)#[sel,:])
+            xyzcal_px_output.append(xyzcal)#[sel,:])
+            delpsical_output.append(np.array(delpsi))#[sel])
             ids_output.append(
                 np.array(
                     [output_id] * n, dtype=np.int32
