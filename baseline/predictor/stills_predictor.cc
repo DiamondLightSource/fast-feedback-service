@@ -46,13 +46,14 @@ void simple_still_reflection_predictor(const Vector3d s0,
         auto xyzcal_ = reflections.column<double>("xyzcal.mm");
         xyzcal_mm = xyzcal_.value();
     }*/
-    std::vector<double> xyzcal_px_data(3 * n_refl, 0.0);
+    
     mdspan_type<double> xyzcal_px;
     //mdspan_type<double> xyzcal_mm(xyzcal_mm_data.data(), xyzcal_mm_data.size() / 3, 3);
     auto xyzcalpx_ = reflections.column<double>("xyzcal.px");
     if (xyzcalpx_.has_value()) {
         xyzcal_px = xyzcalpx_.value();
     } else {
+        std::vector<double> xyzcal_px_data(3 * n_refl, 0.0);
         reflections.add_column("xyzcal.px", n_refl, 3, xyzcal_px_data);
         auto xyzcalpx_ = reflections.column<double>("xyzcal.px");
         xyzcal_px = xyzcalpx_.value();

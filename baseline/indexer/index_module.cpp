@@ -116,7 +116,7 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
     // Now take the most indexed and predict.
     ReflectionTable refls;
     refls.add_column("miller_index", miller_indices[max_index].size() / 3, 3, miller_indices[max_index]);
-    Matrix3d UB = orientations[max_index] * B_matrices[max_index]
+    Matrix3d UB = orientations[max_index] * B_matrices[max_index];
     simple_still_reflection_predictor(s0, UB, panel, refls);
     auto s1_ = refls.column<double>("s1");
     auto &s1 = s1_.value();

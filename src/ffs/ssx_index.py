@@ -28,6 +28,8 @@ class IndexedLatticeResult(BaseModel):
     miller_indices: list[int] | None = None
     xyzobs_px: list[float] | None = None
     xyzcal_px: list[float] | None = None
+    s1: list[float] | None = None
+    delpsi: list[float] | None = None
 
 
 class IndexingResult(BaseModel):
@@ -125,17 +127,19 @@ class GPUIndexer:
             ## For now, just determines the cell with the highest number of indexed spots.
             ## here, we could do a stills reflection prediction to calculate rmsds.
 
-            n_indexed, cell, orientation, B_matrix, miller_indices, s1, xyzcal_px, delpsi = (
+            n_indexed, cell, orientation, B_matrix, miller_indices, xyzcal_px, s1, delpsi = (
                 ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px, np.asarray([0.0,0.0,-1.0/self.wavelength], dtype=np.float64),
                 self.panel)
             )
 
-            this_cell = gemmi.UnitCell(*cell)
-            B = np.reshape(np.array(B_matrix, dtype="float64"), (3, 3))#.transpose()
+            #this_cell = gemmi.UnitCell(*cell)
+            '''B = np.reshape(np.array(B_matrix, dtype="float64"), (3, 3))#.transpose()
             U = np.reshape(np.array(orientation, dtype="float64"), (3, 3))#.transpose()
             A = np.matmul(U, B)
             
-            midx = np.array(miller_indices).reshape(-1,3)
+            print(A)
+            assert 0'''
+            '''midx = np.array(miller_indices).reshape(-1,3)
             xyzobs = np.array(xyzobs_px).reshape(-1,3)
             xyzcal = np.array(xyzcal_px).reshape(-1,3)
             s1_reshape = np.array(s1).reshape(-1,3)
@@ -144,11 +148,9 @@ class GPUIndexer:
             rmsdx = 0
             rmsdy = 0
             rmsd_psi = 0
-            print(rlp_reshape.shape[0])
-            print(list(xyzcal_px))
-            print(list(xyzobs_px))
+
             sel = np.array([False] * rlp_reshape.shape[0])
-            for i, (m, obs, cal, dpsi) in enumerate(zip(midx, xyzobs, xyzcal, delpsi)):
+            for j, (m, obs, cal, dpsi) in enumerate(zip(midx, xyzobs, xyzcal, delpsi)):
                 if m.any():
                     delta_r = ((obs[0] - cal[0])**2 + (obs[1] - cal[1])**2)**0.5
                     if delta_r < 2: # very crude outlier rejection for a starting point
@@ -156,17 +158,15 @@ class GPUIndexer:
                         rmsdx += (obs[0] - cal[0])**2
                         rmsdy += (obs[1] - cal[1])**2
                         rmsd_psi = dpsi**2
-                        sel[i] = True
+                        sel[j] = True
             if n:
                 rmsdx = (rmsdx / n)**0.5
                 rmsdy = (rmsdy / n)**0.5
                 rmsd_psi = (rmsd_psi / n)**0.5
 
             print(
-                f"Indexed {(n)}/{len(rlp_) / 3} spots on image {i + 1}, RMSDs (px,px,rad): {rmsdx:.4f}, {rmsdy:.4f}, {rmsd_psi:.6f}"
-            )
-            print(A)
-            assert 0
+                f"Indexed {(n)}/{len(rlp_) / 3} spots on image , RMSDs (px,px,rad): {rmsdx:.4f}, {rmsdy:.4f}, {rmsd_psi:.6f}"
+            )'''
             
             n_unindexed = int(xyzobs_px.size / 3) - n_indexed
             indexing_result = IndexingResult(
@@ -175,10 +175,13 @@ class GPUIndexer:
                         unit_cell=list(cell),
                         space_group="P1",
                         n_indexed=n_indexed,
-                        U_matrix=list(orientation),
-                        B_matrix=list(B_matrix),
+                        U_matrix=orientation.flatten(),
+                        B_matrix=B_matrix.flatten(),
                         miller_indices=miller_indices,
                         xyzobs_px=xyzobs_px,
+                        xyzcal_px=xyzcal_px,
+                        s1=s1,
+                        delpsi=delpsi
                     )
                 ],
                 n_unindexed=n_unindexed,
@@ -187,6 +190,7 @@ class GPUIndexer:
 
 
 def run(args):
+    st = time.time()
     parser = argparse.ArgumentParser(
         prog="index",
         description="Runs standalone indexing of serial data using the GPU fast-feedback-indexer",
@@ -270,6 +274,9 @@ def run(args):
         return
 
     ## Split the data array into image number
+    ## Note this can be relatively slow (~0.5s for 1000 images) - 
+    ## ideally port to c++ and use knowledge that data is in increasing order of
+    ## id.
     tables = []
     id_values = []
     output_crystals = {}
@@ -280,6 +287,7 @@ def run(args):
             tables.append(xyzs_this)
             id_values.append(id_)
 
+    ## Initialise the GPU indexer.
     indexer = GPUIndexer()
     indexer.panel = panel
     indexer.cell = input_cell
@@ -300,6 +308,7 @@ def run(args):
     new_id_to_old_id = {}
     output_crystals_list = []
     output_crystals_id_nos = []
+    t1 = time.time()
 
     for t, i in zip(tables, id_values):
         data = t.flatten()
@@ -318,8 +327,8 @@ def run(args):
                 "n_indexed": lattice.n_indexed,
             }
             #this_cell = gemmi.UnitCell(*lattice.unit_cell)
-            B = np.reshape(np.array(lattice.B_matrix, dtype="float64"), (3, 3)).transpose()
-            U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3)).transpose()
+            B = np.reshape(np.array(lattice.B_matrix, dtype="float64"), (3, 3))#.transpose()
+            U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3))#.transpose()
             A_inv = np.linalg.inv(np.matmul(U, B))
             output_crystals_list.append(
                 {
@@ -331,25 +340,26 @@ def run(args):
                 }
             )
             output_crystals_id_nos.append(i)
-            UB = np.matmul(U, B)
+            '''UB = np.matmul(U, B)
             #print(UB)
             s1, xyzcal_px, delpsical = ffs.index.ssx_predict(
                 lattice.miller_indices,
                 np.asarray([0.0,0.0,-1.0/wavelength], dtype=np.float64),
                 UB,
                 panel
-            )
+            )'''
             midx = np.array(lattice.miller_indices).reshape(-1,3)
             xyzobs = np.array(lattice.xyzobs_px).reshape(-1,3)
-            xyzcal = np.array(xyzcal_px).reshape(-1,3)
-            s1_reshape = np.array(s1).reshape(-1,3)
+            xyzcal = np.array(lattice.xyzcal_px).reshape(-1,3)
+            s1_reshape = np.array(lattice.s1).reshape(-1,3)
             rlp_reshape = np.array(data).reshape(-1,3)
+            delpsi = np.array(lattice.delpsi)
             n = 0
             rmsdx = 0
             rmsdy = 0
             rmsd_psi = 0
             sel = np.array([False] * rlp_reshape.shape[0])
-            for i, (m, obs, cal, dpsi) in enumerate(zip(midx, xyzobs, xyzcal, delpsical)):
+            for j, (m, obs, cal, dpsi) in enumerate(zip(midx, xyzobs, xyzcal, delpsi)):
                 if m.any():
                     delta_r = ((obs[0] - cal[0])**2 + (obs[1] - cal[1])**2)**0.5
                     if delta_r < 2: # very crude outlier rejection for a starting point
@@ -357,7 +367,7 @@ def run(args):
                         rmsdx += (obs[0] - cal[0])**2
                         rmsdy += (obs[1] - cal[1])**2
                         rmsd_psi = dpsi**2
-                        sel[i] = True
+                        sel[j] = True
             if n:
                 rmsdx = (rmsdx / n)**0.5
                 rmsdy = (rmsdy / n)**0.5
@@ -370,7 +380,7 @@ def run(args):
             miller_indices_output.append(midx[sel,:])
             xyzobs_output.append(xyzobs[sel,:])
             xyzcal_px_output.append(xyzcal[sel,:])
-            delpsical_output.append(np.array(delpsical)[sel])
+            delpsical_output.append(np.array(delpsi)[sel])
             ids_output.append(
                 np.array(
                     [output_id] * n, dtype=np.int32
@@ -384,11 +394,12 @@ def run(args):
         else:
             print(f"No indexing solution for image {i + 1}")
 
+    t2 = time.time()
     print(
         f"Indexing attempted on {n_considered}/{n_total} non-empty images with >= 10 spots"
     )
-    print(f"Indexed {n_indexed_images}/{n_total} non-empty images")
-
+    print(f"Indexed {n_indexed_images}/{n_total} non-empty images in {t2-t1:.6f}s")
+    
     # ideally would generate an indexed.expt type file...
     # ok say we have in imported.expt, need to add crystals to indexed images
     if parsed.test:
@@ -430,6 +441,8 @@ def run(args):
     # output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"]
     ## extra potential data to output to enable further processing:
     ## rlp, panel, flags, s1, xyzcal, xyzobs.mm.value
+    t3 = time.time()
+    print(f"Setup time: {t1-st:.6f}s, index time {t2-t1:.6f}s, write time {t3-t2:.6f}s")
 
 
 if __name__ == "__main__":
