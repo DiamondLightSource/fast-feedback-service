@@ -28,3 +28,4 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/diamondlightsource/fast-feedback-service:latest
+        if: github.event_name != 'push' && github.ref == 'refs/heads/main'
