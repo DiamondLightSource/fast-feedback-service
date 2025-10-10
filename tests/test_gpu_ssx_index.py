@@ -209,6 +209,12 @@ def test_gpu_ssx_index(dials_data, tmp_path):
     )
     assert not proc.stderr
 
+    # check that the ids are in sorted order, as this is assumed in the indexer
+    r = h5py.File(tmp_path / "results_ffs.h5")
+    ids = r["dials"]["processing"]["group_0"]["id"]
+    is_sorted = np.all(ids[:-1] <= ids[1:])
+    assert is_sorted
+
     # Now run the indexer
     # Note, if you run dials equivalent procesing using dials.find_spots, the z component of
     # xyzobs.px increments with image number, which results in a different orientation matrix

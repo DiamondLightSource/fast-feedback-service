@@ -344,9 +344,13 @@ def run(args):
     output_aggregator = OutputAggregator(identifiers_map)
     tables = []
     id_values = []
-    for id_ in sorted(set(ids)):
-        sel = ids == id_
-        xyzs_this = xyzs[sel]
+
+    ## Note this assumes ids are in ascending order, which is the
+    ## expected form of the output from spotfinding.
+    unique_ids, start_indices = np.unique(ids, return_index=True)
+    end_indices = np.append(start_indices[1:], len(ids))
+    for id_, start, end in zip(unique_ids, start_indices, end_indices):
+        xyzs_this = xyzs[start:end]
         if xyzs_this.any():
             tables.append(xyzs_this)
             id_values.append(id_)
