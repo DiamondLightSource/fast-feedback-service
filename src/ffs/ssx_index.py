@@ -205,7 +205,7 @@ class OutputAggregator:
 
         n = xyzcal.shape[0]
 
-        # now save stuff for output
+        # now save for output
         self.miller_indices_output.append(midx)
         self.xyzobs_output.append(xyzobs)
         self.xyzcal_px_output.append(xyzcal)
@@ -252,7 +252,7 @@ class OutputAggregator:
 
         output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(ids_array, dtype=np.uint)
         ## extra potential data to output to enable further processing:
-        ## rlp, panel, flags, s1, xyzcal, xyzobs.mm.value
+        ## rlp, flags, xyzobs.mm.value
 
 def run(args):
     st = time.time()
@@ -337,10 +337,6 @@ def run(args):
         )
         return
 
-    ## Split the data array into image number
-    ## Note this can be relatively slow (~0.5s for 1000 images) - 
-    ## ideally port to c++ and use knowledge that data is in increasing order of
-    ## id.
     output_aggregator = OutputAggregator(identifiers_map)
     tables = []
     id_values = []
