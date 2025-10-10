@@ -22,8 +22,7 @@ import ffs.index
 
 class IndexedLatticeResult(BaseModel):
     unit_cell: tuple[float, float, float, float, float, float]
-    U_matrix: tuple[float, float, float, float, float, float, float, float, float]
-    B_matrix: tuple[float, float, float, float, float, float, float, float, float]
+    A_matrix: tuple[float, float, float, float, float, float, float, float, float]
     space_group: str
     n_indexed: NonNegativeInt
     miller_indices: list[int] | None = None
@@ -136,11 +135,10 @@ class GPUIndexer:
             ## For now, just determines the cell with the highest number of indexed spots.
             ## here, we could do a stills reflection prediction to calculate rmsds.
 
-            n_indexed, cell, orientation, B_matrix, miller_indices, xyzcal_px, s1, delpsi, sel, rmsds = (
+            cell, A_matrix, miller_indices, xyzobs_px_indexed, xyzcal_px, s1, delpsi, rmsds = (
                 ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px, self.s0, self.panel)
             )
-            xyzobs_px = np.array(xyzobs_px, dtype="float32").reshape(-1, 3)
-            xyzobs_px = xyzobs_px[sel,:]
+            n_indexed = len(delpsi)
 
             n_unindexed = n_initial - n_indexed
             indexing_result = IndexingResult(
@@ -149,10 +147,9 @@ class GPUIndexer:
                         unit_cell=list(cell),
                         space_group="P1",
                         n_indexed=n_indexed,
-                        U_matrix=orientation.flatten(),
-                        B_matrix=B_matrix.flatten(),
+                        A_matrix=A_matrix.flatten(),
                         miller_indices=miller_indices,
-                        xyzobs_px=xyzobs_px.flatten(),
+                        xyzobs_px=xyzobs_px_indexed,
                         xyzcal_px=xyzcal_px,
                         s1=s1,
                         delpsi=delpsi,
@@ -184,18 +181,11 @@ class OutputAggregator:
         self.new_id_to_old_id = {}
         self.output_crystals_list = []
         self.output_crystals_id_nos = []
-        self.output_crystals = {}
         self.identifiers_map = identifiers_map
 
     def add_result(self, lattice, i):
-        self.output_crystals[self.identifiers_map[int(i)]] = {
-            "cell": lattice.unit_cell,
-            "U_matrix": lattice.U_matrix,
-            "n_indexed": lattice.n_indexed,
-        }
-        B = np.reshape(np.array(lattice.B_matrix, dtype="float64"), (3, 3))
-        U = np.reshape(np.array(lattice.U_matrix, dtype="float64"), (3, 3))
-        A_inv = np.linalg.inv(np.matmul(U, B))
+        A = np.reshape(np.array(lattice.A_matrix, dtype="float64"), (3, 3))
+        A_inv = np.linalg.inv(A)
         self.output_crystals_list.append(
             {
                 "__id__": "crystal",
