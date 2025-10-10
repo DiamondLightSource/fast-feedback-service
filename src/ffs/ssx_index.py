@@ -78,13 +78,13 @@ class GPUIndexer:
     @wavelength.setter
     def wavelength(self, new_wavelength):
         self._wavelength = new_wavelength
-        self._s0 = np.asarray([0.0,0.0,-1.0/self._wavelength], dtype=np.float64)
+        self._s0 = np.asarray([0.0, 0.0, -1.0 / self._wavelength], dtype=np.float64)
 
     @property
     def s0(self):
         return self._s0
 
-    def index(self, xyzobs_px : np.array) -> IndexingResult:
+    def index(self, xyzobs_px: np.array) -> IndexingResult:
         n_initial = int(xyzobs_px.size / 3)
         if xyzobs_px.size < (self.min_spots * 3):
             indexing_result = IndexingResult(
@@ -104,7 +104,7 @@ class GPUIndexer:
             dist3=0.15,
             num_halfsphere_points=32768,
             max_dist=0.00075,
-            min_spots=max(6, self.min_spots-2), # dials default
+            min_spots=max(6, self.min_spots - 2),  # dials default
             n_output_cells=32,
             method="ifssr",
             triml=0.001,
@@ -116,7 +116,7 @@ class GPUIndexer:
             rlp,
             scores,
             threshold=0.00075,
-            min_spots=max(6, self.min_spots-2), # dials default
+            min_spots=max(6, self.min_spots - 2),  # dials default
             method="ifssr",
         )
         if cell_indices is None:
@@ -135,8 +135,17 @@ class GPUIndexer:
             ## For now, just determines the cell with the highest number of indexed spots.
             ## here, we could do a stills reflection prediction to calculate rmsds.
 
-            cell, A_matrix, miller_indices, xyzobs_px_indexed, xyzcal_px, s1, delpsi, rmsds = (
-                ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px, self.s0, self.panel)
+            (
+                cell,
+                A_matrix,
+                miller_indices,
+                xyzobs_px_indexed,
+                xyzcal_px,
+                s1,
+                delpsi,
+                rmsds,
+            ) = ffs.index.index_from_ssx_cells(
+                cells, rlp_, xyzobs_px, self.s0, self.panel
             )
             n_indexed = len(delpsi)
 
@@ -153,15 +162,15 @@ class GPUIndexer:
                         xyzcal_px=xyzcal_px,
                         s1=s1,
                         delpsi=delpsi,
-                        rmsds=rmsds
+                        rmsds=rmsds,
                     )
                 ],
                 n_unindexed=n_unindexed,
             )
         return indexing_result
 
-class OutputAggregator:
 
+class OutputAggregator:
     """
     Helper class to aggregate per-image indexing to output as as reflection table and
     an experiment list.
@@ -196,10 +205,10 @@ class OutputAggregator:
             }
         )
         self.output_crystals_id_nos.append(i)
-        midx = np.array(lattice.miller_indices, dtype=int).reshape(-1,3)
-        xyzobs = np.array(lattice.xyzobs_px).reshape(-1,3)
-        xyzcal = np.array(lattice.xyzcal_px).reshape(-1,3)
-        s1_reshape = np.array(lattice.s1).reshape(-1,3)
+        midx = np.array(lattice.miller_indices, dtype=int).reshape(-1, 3)
+        xyzobs = np.array(lattice.xyzobs_px).reshape(-1, 3)
+        xyzcal = np.array(lattice.xyzcal_px).reshape(-1, 3)
+        s1_reshape = np.array(lattice.s1).reshape(-1, 3)
         delpsi = np.array(lattice.delpsi)
         rmsdx, rmsdy, rmsd_psi = lattice.rmsds
 
@@ -211,13 +220,8 @@ class OutputAggregator:
         self.xyzcal_px_output.append(xyzcal)
         self.delpsical_output.append(np.array(delpsi))
         self.s1_output.append(s1_reshape)
-        self.ids_output.append(
-            np.full(n, self.output_id, dtype=np.int32
-            )
-        )
-        self.image_nos_output.append(
-            np.full(n, i, dtype=np.int32)
-        )
+        self.ids_output.append(np.full(n, self.output_id, dtype=np.int32))
+        self.image_nos_output.append(np.full(n, i, dtype=np.int32))
         self.new_id_to_old_id[self.output_id] = i
         self.output_id += 1
 
@@ -231,8 +235,8 @@ class OutputAggregator:
         output_refl["dials"]["processing"]["group_0"]["image"] = np.concatenate(
             self.image_nos_output
         )
-        output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = np.concatenate(
-            self.xyzobs_output
+        output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = (
+            np.concatenate(self.xyzobs_output)
         )
         output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = np.concatenate(
             self.xyzcal_px_output
@@ -241,18 +245,26 @@ class OutputAggregator:
             self.s1_output
         )
         output_refl["dials"]["processing"]["group_0"]["delpsical.rad"] = np.concatenate(
-            self.delpsical_output)
+            self.delpsical_output
+        )
         output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
             self.miller_indices_output, dtype=np.int32
         )
         sorted_ids = sorted(list(set(np.uint(i) for i in self.new_id_to_old_id.keys())))
-        output_refl["dials"]["processing"]["group_0"].attrs["experiment_ids"] = sorted_ids
-        identifiers = [self.identifiers_map[self.new_id_to_old_id[i]] for i in sorted_ids]
+        output_refl["dials"]["processing"]["group_0"].attrs["experiment_ids"] = (
+            sorted_ids
+        )
+        identifiers = [
+            self.identifiers_map[self.new_id_to_old_id[i]] for i in sorted_ids
+        ]
         output_refl["dials"]["processing"]["group_0"].attrs["identifiers"] = identifiers
 
-        output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(ids_array, dtype=np.uint)
+        output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(
+            ids_array, dtype=np.uint
+        )
         ## extra potential data to output to enable further processing:
         ## rlp, flags, xyzobs.mm.value
+
 
 def run(args):
     st = time.time()
@@ -271,7 +283,9 @@ def run(args):
         metavar=("a", "b", "c", "alpha", "beta", "gamma"),
         help="Unit cell parameters: a b c alpha beta gamma",
     )
-    parser.add_argument("--min-spots", type=int, default=10, help="Only attempt indexing on")
+    parser.add_argument(
+        "--min-spots", type=int, default=10, help="Only attempt indexing on"
+    )
     parser.add_argument("--test", action="store_true", help="Run in test mode")
 
     parsed = parser.parse_args(args)
@@ -284,7 +298,7 @@ def run(args):
     wavelength = expts["beam"][0]["wavelength"]
     detector_dict = expts["detector"][0]["hierarchy"]
     # only single panel detectors for now.
-    panel_dict = expts["detector"][0]["panels"][0]  
+    panel_dict = expts["detector"][0]["panels"][0]
     detector = {
         "distance": -1.0 * (detector_dict["origin"][2] + panel_dict["origin"][2]),
         "beam_center_x": -1.0
@@ -332,13 +346,12 @@ def run(args):
             detector["image_size_y"],
             detector["thickness"],
             detector["mu"],
-    )
+        )
     except Exception as e:
         print(
             f"Unable to compose a detector panel model from the detector json.\n Error: {e}"
         )
         return
-
 
     output_aggregator = OutputAggregator(identifiers_map)
     tables = []
@@ -357,13 +370,17 @@ def run(args):
     ## Initialise the GPU indexer.
     try:
         indexer = GPUIndexer()
-    except ModuleNotFoundError as e: # if ffbidx not sourced
+    except ModuleNotFoundError as e:  # if ffbidx not sourced
         print(f"ModuleNotFoundError: {e}")
-        print("ffbidx not found, has the fast-feedback-indexer module been built and sourced?")
+        print(
+            "ffbidx not found, has the fast-feedback-indexer module been built and sourced?"
+        )
         return
     except ImportError as e:
         print(f"ImportError: {e}")
-        print("Potential source of this error: has the CUDA Runtime Library been loaded?")
+        print(
+            "Potential source of this error: has the CUDA Runtime Library been loaded?"
+        )
         return
     indexer.panel = panel
     indexer.cell = input_cell
@@ -390,11 +407,11 @@ def run(args):
             output_aggregator.add_result(lattice, i)
             # print number of spots indexed and rmsds
             rmsdx, rmsdy, rmsd_psi = lattice.rmsds
-            cell_str= ", ".join(f"{i:.3f}" for i in lattice.unit_cell)
+            cell_str = ", ".join(f"{i:.3f}" for i in lattice.unit_cell)
             print(
-                f"Indexed {(lattice.n_indexed)}/{int(data.size / 3)} spots on image {i + 1}:\n" + 
-                f"  cell: {cell_str}\n" +
-                f"  RMSDs: (x(px), y(px), psi(rad)): {rmsdx:.3f}, {rmsdy:.3f}, {rmsd_psi:.5f}"
+                f"Indexed {(lattice.n_indexed)}/{int(data.size / 3)} spots on image {i + 1}:\n"
+                + f"  cell: {cell_str}\n"
+                + f"  RMSDs: (x(px), y(px), psi(rad)): {rmsdx:.3f}, {rmsdy:.3f}, {rmsd_psi:.5f}"
             )
         else:
             print(f"No indexing solution for image {i + 1}")
@@ -403,8 +420,8 @@ def run(args):
     print(
         f"Indexing attempted on {n_considered}/{n_total} non-empty images with >= {min_spots} spots"
     )
-    print(f"Indexed {n_indexed_images}/{n_total} non-empty images in {t2-t1:.3f}s")
-    
+    print(f"Indexed {n_indexed_images}/{n_total} non-empty images in {t2 - t1:.3f}s")
+
     # ideally would generate an indexed.expt type file...
     # ok say we have in imported.expt, need to add crystals to indexed images
     if parsed.test:
@@ -423,7 +440,9 @@ def run(args):
     else:
         output_aggregator.write_table("indexed.refl")
     t3 = time.time()
-    print(f"Setup time: {t1-st:.3f}s, index time {t2-t1:.3f}s, write time {t3-t2:.3f}s")
+    print(
+        f"Setup time: {t1 - st:.3f}s, index time {t2 - t1:.3f}s, write time {t3 - t2:.3f}s"
+    )
 
 
 if __name__ == "__main__":

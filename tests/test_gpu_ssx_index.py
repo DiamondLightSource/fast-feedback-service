@@ -4,144 +4,61 @@ import subprocess
 from pathlib import Path
 
 import h5py
-import pytest
 import numpy as np
+import pytest
 
 expected_output_crystals = [
-  {
-    "__id__": "crystal",
-    "real_space_a": [
-      -73.3657913208008,
-      -0.9755071997642522,
-      -29.385274887084968
-    ],
-    "real_space_b": [
-      -1.410078525543213,
-      -78.96023559570315,
-      4.7539267539978045
-    ],
-    "real_space_c": [
-      -14.323430061340332,
-      3.0948548316955575,
-      35.46766662597657
-    ],
-    "space_group_hall_symbol": "P 1"
-  },
-  {
-    "__id__": "crystal",
-    "real_space_a": [
-      -48.313030242919915,
-      -38.71310806274415,
-      -47.89557266235352
-    ],
-    "real_space_b": [
-      56.415370941162124,
-      -54.083133697509766,
-      -14.067997932434073
-    ],
-    "real_space_c": [
-      -13.226760864257818,
-      -20.67352104187012,
-      29.483562469482422
-    ],
-    "space_group_hall_symbol": "P 1"
-  },
-  {
-    "__id__": "crystal",
-    "real_space_a": [
-      56.055877685546854,
-      -12.154879570007328,
-      53.15177536010743
-    ],
-    "real_space_b": [
-      -15.600127220153817,
-      70.9559555053711,
-      32.53805160522461
-    ],
-    "real_space_c": [
-      -25.86274528503418,
-      -16.022525787353516,
-      23.559381484985348
-    ],
-    "space_group_hall_symbol": "P 1"
-  },
-  {
-    "__id__": "crystal",
-    "real_space_a": [
-      26.21974182128906,
-      73.18634033203125,
-      14.546281814575199
-    ],
-    "real_space_b": [
-      -13.889213562011712,
-      20.628921508789062,
-      -74.7467575073242
-    ],
-    "real_space_c": [
-      -35.432971954345696,
-      10.647741317749022,
-      10.097808837890623
-    ],
-    "space_group_hall_symbol": "P 1"
-  },
-  {
-    "__id__": "crystal",
-    "real_space_a": [
-      33.06575012207031,
-      -63.21855545043945,
-      33.94499206542969
-    ],
-    "real_space_b": [
-      -36.75036239624024,
-      17.65143585205078,
-      68.35107421875001
-    ],
-    "real_space_c": [
-      -29.752025604248047,
-      -21.311590194702152,
-      -10.15173053741455
-    ],
-    "space_group_hall_symbol": "P 1"
-  },
-  {
-    "__id__": "crystal",
-    "real_space_a": [
-      -56.92699432373046,
-      26.57844924926757,
-      49.20372390747069
-    ],
-    "real_space_b": [
-      -1.6878218650817849,
-      68.55046844482425,
-      -39.88540649414063
-    ],
-    "real_space_c": [
-      -26.45606422424316,
-      -14.229729652404787,
-      -22.834901809692386
-    ],
-    "space_group_hall_symbol": "P 1"
-  },
-  {
-    "__id__": "crystal",
-    "real_space_a": [
-      -20.259445190429684,
-      9.534605979919434,
-      -75.90452575683594
-    ],
-    "real_space_b": [
-      -74.32333374023438,
-      -21.109268188476562,
-      16.741840362548825
-    ],
-    "real_space_c": [
-      -8.774566650390625,
-      36.43461227416992,
-      7.592679500579832
-    ],
-    "space_group_hall_symbol": "P 1"
-  }
+    {
+        "__id__": "crystal",
+        "real_space_a": [-73.3657913208008, -0.9755071997642522, -29.385274887084968],
+        "real_space_b": [-1.410078525543213, -78.96023559570315, 4.7539267539978045],
+        "real_space_c": [-14.323430061340332, 3.0948548316955575, 35.46766662597657],
+        "space_group_hall_symbol": "P 1",
+    },
+    {
+        "__id__": "crystal",
+        "real_space_a": [-48.313030242919915, -38.71310806274415, -47.89557266235352],
+        "real_space_b": [56.415370941162124, -54.083133697509766, -14.067997932434073],
+        "real_space_c": [-13.226760864257818, -20.67352104187012, 29.483562469482422],
+        "space_group_hall_symbol": "P 1",
+    },
+    {
+        "__id__": "crystal",
+        "real_space_a": [56.055877685546854, -12.154879570007328, 53.15177536010743],
+        "real_space_b": [-15.600127220153817, 70.9559555053711, 32.53805160522461],
+        "real_space_c": [-25.86274528503418, -16.022525787353516, 23.559381484985348],
+        "space_group_hall_symbol": "P 1",
+    },
+    {
+        "__id__": "crystal",
+        "real_space_a": [26.21974182128906, 73.18634033203125, 14.546281814575199],
+        "real_space_b": [-13.889213562011712, 20.628921508789062, -74.7467575073242],
+        "real_space_c": [-35.432971954345696, 10.647741317749022, 10.097808837890623],
+        "space_group_hall_symbol": "P 1",
+    },
+    {
+        "__id__": "crystal",
+        "real_space_a": [33.06575012207031, -63.21855545043945, 33.94499206542969],
+        "real_space_b": [-36.75036239624024, 17.65143585205078, 68.35107421875001],
+        "real_space_c": [-29.752025604248047, -21.311590194702152, -10.15173053741455],
+        "space_group_hall_symbol": "P 1",
+    },
+    {
+        "__id__": "crystal",
+        "real_space_a": [-56.92699432373046, 26.57844924926757, 49.20372390747069],
+        "real_space_b": [-1.6878218650817849, 68.55046844482425, -39.88540649414063],
+        "real_space_c": [-26.45606422424316, -14.229729652404787, -22.834901809692386],
+        "space_group_hall_symbol": "P 1",
+    },
+    {
+        "__id__": "crystal",
+        "real_space_a": [-20.259445190429684, 9.534605979919434, -75.90452575683594],
+        "real_space_b": [-74.32333374023438, -21.109268188476562, 16.741840362548825],
+        "real_space_c": [-8.774566650390625, 36.43461227416992, 7.592679500579832],
+        "space_group_hall_symbol": "P 1",
+    },
 ]
+
 
 def test_gpu_ssx_index(dials_data, tmp_path):
     """
@@ -244,11 +161,19 @@ def test_gpu_ssx_index(dials_data, tmp_path):
     assert tmp_path / "indexed_crystals.json"
     with open(tmp_path / "indexed_crystals.json", "r") as f:
         crystals = json.load(f)
-        for i, (crystal, expected) in enumerate(zip(crystals, expected_output_crystals)):
-            print(f"Comparing crystal {i+i}")
-            assert crystal["real_space_a"] == pytest.approx(expected["real_space_a"], abs=1e-9)
-            assert crystal["real_space_b"] == pytest.approx(expected["real_space_b"], abs=1e-9)
-            assert crystal["real_space_c"] == pytest.approx(expected["real_space_c"], abs=1e-9)
+        for i, (crystal, expected) in enumerate(
+            zip(crystals, expected_output_crystals)
+        ):
+            print(f"Comparing crystal {i + i}")
+            assert crystal["real_space_a"] == pytest.approx(
+                expected["real_space_a"], abs=1e-9
+            )
+            assert crystal["real_space_b"] == pytest.approx(
+                expected["real_space_b"], abs=1e-9
+            )
+            assert crystal["real_space_c"] == pytest.approx(
+                expected["real_space_c"], abs=1e-9
+            )
 
     with h5py.File(tmp_path / "indexed.refl", "r") as file:
         ids = file["/dials/processing/group_0/id"]
@@ -273,9 +198,9 @@ def test_gpu_ssx_index(dials_data, tmp_path):
         assert maximum.tolist() == pytest.approx([2788.09, 2672.50, 0.50], abs=5e-3)
         assert mean.tolist() == pytest.approx([1684.60, 1714.56, 0.50], abs=5e-3)
 
-        assert np.min(miller_index, axis=0).tolist() == [-19,-30,-17]
-        assert np.max(miller_index, axis=0).tolist() == [25,21,10]
-        assert [int(i) for i in np.mean(miller_index, axis=0).tolist()] == [1,-1,0]
+        assert np.min(miller_index, axis=0).tolist() == [-19, -30, -17]
+        assert np.max(miller_index, axis=0).tolist() == [25, 21, 10]
+        assert [int(i) for i in np.mean(miller_index, axis=0).tolist()] == [1, -1, 0]
 
         assert np.min(delpsi) == pytest.approx(-0.0018911, abs=1e-6)
         assert np.max(delpsi) == pytest.approx(0.0138742, abs=1e-6)

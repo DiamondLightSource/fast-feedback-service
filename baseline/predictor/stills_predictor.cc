@@ -8,27 +8,26 @@ using Eigen::Vector3d;
 using Eigen::Vector3i;
 
 void simple_still_reflection_predictor(const Vector3d s0,
-                                 const Matrix3d UB,
-                                 const Panel &panel,
-                                 ReflectionTable &reflections) {
+                                       const Matrix3d UB,
+                                       const Panel &panel,
+                                       ReflectionTable &reflections) {
     // actually a repredictor as assumes all successful.
     auto hkl_ = reflections.column<int>("miller_index");
     const auto &hkl = hkl_.value();
     int n_refl = hkl.extent(0);
-    
+
     // Make data arrays for s1, xyzcal.px and delpsi.
     mdspan_type<double> s1;
     auto s1_ = reflections.column<double>("s1");
-    if (s1_.has_value()){
+    if (s1_.has_value()) {
         s1 = s1_.value();
-    }
-    else {
+    } else {
         std::vector<double> s1_data(3 * n_refl, 0.0);
         reflections.add_column("s1", n_refl, 3, s1_data);
         auto s1_ = reflections.column<double>("s1");
         s1 = s1_.value();
     }
-    
+
     mdspan_type<double> xyzcal_px;
     auto xyzcalpx_ = reflections.column<double>("xyzcal.px");
     if (xyzcalpx_.has_value()) {
@@ -39,7 +38,7 @@ void simple_still_reflection_predictor(const Vector3d s0,
         auto xyzcalpx_ = reflections.column<double>("xyzcal.px");
         xyzcal_px = xyzcalpx_.value();
     }
-    
+
     mdspan_type<double> delpsical;
     auto delpsical_ = reflections.column<double>("delpsical.rad");
     if (delpsical_.has_value()) {
@@ -50,16 +49,16 @@ void simple_still_reflection_predictor(const Vector3d s0,
         auto delpsical_ = reflections.column<double>("delpsical.rad");
         delpsical = delpsical_.value();
     }
-    
+
     double s0_length = s0.norm();
     Vector3d unit_s0_ = s0 / s0_length;
     double lambda = 1. / s0_length;
     for (int i = 0; i < hkl.extent(0); i++) {
         const Eigen::Map<Vector3i> hkl_i(&hkl(i, 0));
-        if (hkl_i[0] != 0 || hkl_i[1] != 0 || hkl_i[2] != 0){
+        if (hkl_i[0] != 0 || hkl_i[1] != 0 || hkl_i[2] != 0) {
             const Vector3d hf{static_cast<double>(hkl_i[0]),
-                            static_cast<double>(hkl_i[1]),
-                            static_cast<double>(hkl_i[2])};
+                              static_cast<double>(hkl_i[1]),
+                              static_cast<double>(hkl_i[2])};
             Vector3d q = UB * hf;
             Vector3d e1 = q.cross(unit_s0_);
             e1.normalize();
@@ -78,9 +77,9 @@ void simple_still_reflection_predictor(const Vector3d s0,
             Vector3d v = s0 + r;
             v.normalize();
             Vector3d s1_this = v * s0_length;
-            delpsical(i,0) = delpsi_;
+            delpsical(i, 0) = delpsi_;
             // now get ray intersection.
-            std::array<double, 2> xymm  = panel.get_ray_intersection(s1_this);
+            std::array<double, 2> xymm = panel.get_ray_intersection(s1_this);
             std::array<double, 2> xypx = panel.mm_to_px(xymm[0], xymm[1]);
             xyzcal_px(i, 0) = xypx[0];
             xyzcal_px(i, 1) = xypx[1];

@@ -1,8 +1,8 @@
+#include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
-#include <nanobind/eigen/dense.h>
 
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
@@ -11,8 +11,8 @@
 #include <tuple>
 
 #include "assign_indices.cc"
-#include "xyz_to_rlp.cc"
 #include "stills_predictor.cc"
+#include "xyz_to_rlp.cc"
 
 namespace nb = nanobind;
 
@@ -33,9 +33,14 @@ Panel make_panel(double distance,
     return panel;
 }
 
-std::tuple<std::vector<double>, Eigen::Matrix3d,
-  std::vector<int>, std::vector<double>, std::vector<double>, std::vector<double>,
-  std::vector<double>, std::vector<double>>
+std::tuple<std::vector<double>,
+           Eigen::Matrix3d,
+           std::vector<int>,
+           std::vector<double>,
+           std::vector<double>,
+           std::vector<double>,
+           std::vector<double>,
+           std::vector<double>>
 index_from_ssx_cells(const std::vector<double> &crystal_vectors,
                      std::vector<double> rlp_data,
                      std::vector<double> xyzobs_px_data,
@@ -44,23 +49,24 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
     // Convert the raw input data arrays to spans
     mdspan_type<double> xyzobs_px =
       mdspan_type<double>(xyzobs_px_data.data(), xyzobs_px_data.size() / 3, 3);
-    mdspan_type<double> rlp = mdspan_type<double>(rlp_data.data(), rlp_data.size() / 3, 3);
-  
+    mdspan_type<double> rlp =
+      mdspan_type<double>(rlp_data.data(), rlp_data.size() / 3, 3);
+
     // first convert the cells vector to crystals
-    std::vector<Crystal> crystals {};
+    std::vector<Crystal> crystals{};
     for (int i = 0; i < crystal_vectors.size() / 9; ++i) {
-      int start = i * 9;
-      Vector3d a = {crystal_vectors[start],
-                    crystal_vectors[start + 1],
-                    crystal_vectors[start + 2]};
-      Vector3d b = {crystal_vectors[start + 3],
-                    crystal_vectors[start + 4],
-                    crystal_vectors[start + 5]};
-      Vector3d c = {crystal_vectors[start + 6],
-                    crystal_vectors[start + 7],
-                    crystal_vectors[start + 8]};
-      Crystal crystal(a, b, c, *gemmi::find_spacegroup_by_name("P1"));
-      crystals.push_back(crystal);
+        int start = i * 9;
+        Vector3d a = {crystal_vectors[start],
+                      crystal_vectors[start + 1],
+                      crystal_vectors[start + 2]};
+        Vector3d b = {crystal_vectors[start + 3],
+                      crystal_vectors[start + 4],
+                      crystal_vectors[start + 5]};
+        Vector3d c = {crystal_vectors[start + 6],
+                      crystal_vectors[start + 7],
+                      crystal_vectors[start + 8]};
+        Crystal crystal(a, b, c, *gemmi::find_spacegroup_by_name("P1"));
+        crystals.push_back(crystal);
     }
 
     // Choose the best crystal based on number of indexed.
@@ -70,31 +76,31 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
     std::vector<std::vector<int>> miller_indices{};
     std::vector<std::vector<std::size_t>> selections{};
 
-    for (auto &crystal : crystals){
-      // Note xyzobs not actually needed for stills assignment.
-      assign_indices_results results =
-        assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_px);
-      n_indexed.push_back(results.number_indexed);
-      gemmi::UnitCell cell = crystal.get_unit_cell();
-      std::vector<double> cell_parameters = {
-        cell.a, cell.b, cell.c, cell.alpha, cell.beta, cell.gamma};
-      cells.push_back(cell_parameters);
-      Matrix3d U = crystal.get_U_matrix();
-      Matrix3d B = crystal.get_B_matrix();
-      A_matrices.push_back(U*B);
-      std::vector<int> nonzero_miller_indices;
-      std::vector<std::size_t> selection;
-      for (std::size_t j = 0; j < results.miller_indices.extent(0); j++) {
-        const Eigen::Map<Vector3i> hkl_j(&results.miller_indices(j, 0));
-        if ((hkl_j[0] != 0) || (hkl_j[1] != 0) || (hkl_j[2] != 0)){
-          nonzero_miller_indices.push_back(hkl_j[0]);
-          nonzero_miller_indices.push_back(hkl_j[1]);
-          nonzero_miller_indices.push_back(hkl_j[2]);
-          selection.push_back(j);
+    for (auto &crystal : crystals) {
+        // Note xyzobs not actually needed for stills assignment.
+        assign_indices_results results =
+          assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_px);
+        n_indexed.push_back(results.number_indexed);
+        gemmi::UnitCell cell = crystal.get_unit_cell();
+        std::vector<double> cell_parameters = {
+          cell.a, cell.b, cell.c, cell.alpha, cell.beta, cell.gamma};
+        cells.push_back(cell_parameters);
+        Matrix3d U = crystal.get_U_matrix();
+        Matrix3d B = crystal.get_B_matrix();
+        A_matrices.push_back(U * B);
+        std::vector<int> nonzero_miller_indices;
+        std::vector<std::size_t> selection;
+        for (std::size_t j = 0; j < results.miller_indices.extent(0); j++) {
+            const Eigen::Map<Vector3i> hkl_j(&results.miller_indices(j, 0));
+            if ((hkl_j[0] != 0) || (hkl_j[1] != 0) || (hkl_j[2] != 0)) {
+                nonzero_miller_indices.push_back(hkl_j[0]);
+                nonzero_miller_indices.push_back(hkl_j[1]);
+                nonzero_miller_indices.push_back(hkl_j[2]);
+                selection.push_back(j);
+            }
         }
-      }
-      miller_indices.push_back(nonzero_miller_indices);
-      selections.push_back(selection);
+        miller_indices.push_back(nonzero_miller_indices);
+        selections.push_back(selection);
     }
     auto max_iter = std::max_element(n_indexed.begin(), n_indexed.end());
     int max_index = std::distance(n_indexed.begin(), max_iter);
@@ -105,19 +111,20 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
 
     // Select on the input xyzobs_px to get the values for only indexed reflections
     std::vector<double> xyzobs_px_indexed_data;
-    for (auto &i : selection){
-      xyzobs_px_indexed_data.push_back(xyzobs_px(i,0));
-      xyzobs_px_indexed_data.push_back(xyzobs_px(i,1));
-      xyzobs_px_indexed_data.push_back(xyzobs_px(i,2));
+    for (auto &i : selection) {
+        xyzobs_px_indexed_data.push_back(xyzobs_px(i, 0));
+        xyzobs_px_indexed_data.push_back(xyzobs_px(i, 1));
+        xyzobs_px_indexed_data.push_back(xyzobs_px(i, 2));
     }
     mdspan_type<double> xyzobs_px_indexed = mdspan_type<double>(
       xyzobs_px_indexed_data.data(), xyzobs_px_indexed_data.size() / 3, 3);
 
     // Now predict (generates xyzcal.px and delpsi).
     ReflectionTable refls;
-    refls.add_column("miller_index", best_miller_indices.size() / 3, 3, best_miller_indices);
+    refls.add_column(
+      "miller_index", best_miller_indices.size() / 3, 3, best_miller_indices);
     simple_still_reflection_predictor(s0, A, panel, refls);
-    
+
     // now do some outlier rejection and return only the good data
     auto delpsi_ = refls.column<double>("delpsical.rad");
     auto &delpsi = delpsi_.value();
@@ -130,29 +137,30 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
     double rmsd_psi = 0;
     int n = 0;
     for (std::size_t i = 0; i < best_n_indexed; i++) {
-      double dx = std::pow(xyzobs_px_indexed(i,0) - xyzcal_px(i,0), 2);
-      double dy = std::pow(xyzobs_px_indexed(i,1) - xyzcal_px(i,1), 2);
-      double delta_r = std::sqrt(dx + dy);
-      if (delta_r < 2.0){ // crude filter for now.
-        rmsd_x += dx;
-        rmsd_y += dy;
-        rmsd_psi += std::pow(delpsi(i,0), 2);
-        sel_for_indexed[i] = true;
-        n += 1;
-      }
+        double dx = std::pow(xyzobs_px_indexed(i, 0) - xyzcal_px(i, 0), 2);
+        double dy = std::pow(xyzobs_px_indexed(i, 1) - xyzcal_px(i, 1), 2);
+        double delta_r = std::sqrt(dx + dy);
+        if (delta_r < 2.0) {  // crude filter for now.
+            rmsd_x += dx;
+            rmsd_y += dy;
+            rmsd_psi += std::pow(delpsi(i, 0), 2);
+            sel_for_indexed[i] = true;
+            n += 1;
+        }
     }
     std::vector<double> rmsds;
-    if (n > 0){
-      rmsd_x = std::sqrt(rmsd_x / n);
-      rmsd_y = std::sqrt(rmsd_y / n);
-      rmsd_psi = std::sqrt(rmsd_psi / n);
-      rmsds.push_back(rmsd_x);
-      rmsds.push_back(rmsd_y);
-      rmsds.push_back(rmsd_psi);
+    if (n > 0) {
+        rmsd_x = std::sqrt(rmsd_x / n);
+        rmsd_y = std::sqrt(rmsd_y / n);
+        rmsd_psi = std::sqrt(rmsd_psi / n);
+        rmsds.push_back(rmsd_x);
+        rmsds.push_back(rmsd_y);
+        rmsds.push_back(rmsd_psi);
     }
 
     // select on the reflection table.
-    refls.add_column("xyzobs.px.value", xyzobs_px_indexed.extent(0), 3, xyzobs_px_indexed_data);
+    refls.add_column(
+      "xyzobs.px.value", xyzobs_px_indexed.extent(0), 3, xyzobs_px_indexed_data);
     ReflectionTable filtered = refls.select(sel_for_indexed);
 
     // Get the data arrays to return.
@@ -166,21 +174,25 @@ index_from_ssx_cells(const std::vector<double> &crystal_vectors,
     auto &s1 = s1_.value();
     auto midx_ = filtered.column<int>("miller_index");
     auto &midx = midx_.value();
-    std::vector<int> miller_index_vec(midx.data_handle(), midx.data_handle() + midx.size());
+    std::vector<int> miller_index_vec(midx.data_handle(),
+                                      midx.data_handle() + midx.size());
     std::vector<double> s1_vec(s1.data_handle(), s1.data_handle() + s1.size());
-    std::vector<double> xyzcal_px_vec(xyzcal_px.data_handle(), xyzcal_px.data_handle() + xyzcal_px.size());
-    std::vector<double> xyzobs_px_vec(xyzobs_px_filtered.data_handle(), xyzobs_px_filtered.data_handle() + xyzobs_px_filtered.size());
-    std::vector<double> delpsi_vec(delpsi.data_handle(), delpsi.data_handle() + delpsi.size());
-    
-    return std::make_tuple(
-      cells[max_index],
-      A,
-      std::move(miller_index_vec),
-      std::move(xyzobs_px_vec),
-      std::move(xyzcal_px_vec),
-      std::move(s1_vec),
-      std::move(delpsi_vec),
-      rmsds);
+    std::vector<double> xyzcal_px_vec(xyzcal_px.data_handle(),
+                                      xyzcal_px.data_handle() + xyzcal_px.size());
+    std::vector<double> xyzobs_px_vec(
+      xyzobs_px_filtered.data_handle(),
+      xyzobs_px_filtered.data_handle() + xyzobs_px_filtered.size());
+    std::vector<double> delpsi_vec(delpsi.data_handle(),
+                                   delpsi.data_handle() + delpsi.size());
+
+    return std::make_tuple(cells[max_index],
+                           A,
+                           std::move(miller_index_vec),
+                           std::move(xyzobs_px_vec),
+                           std::move(xyzcal_px_vec),
+                           std::move(s1_vec),
+                           std::move(delpsi_vec),
+                           rmsds);
 }
 
 NB_MODULE(index, m) {
@@ -207,5 +219,6 @@ NB_MODULE(index, m) {
           nb::arg("xyzobs_px"),
           nb::arg("s0"),
           nb::arg("panel"),
-          "Assign miller indices to the best crystal, predict reflections and calculate rnmsds");
+          "Assign miller indices to the best crystal, predict reflections and "
+          "calculate rnmsds");
 }
