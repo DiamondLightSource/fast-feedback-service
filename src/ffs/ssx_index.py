@@ -355,7 +355,16 @@ def run(args):
             id_values.append(id_)
 
     ## Initialise the GPU indexer.
-    indexer = GPUIndexer()
+    try:
+        indexer = GPUIndexer()
+    except ModuleNotFoundError as e: # if ffbidx not sourced
+        print(f"ModuleNotFoundError: {e}")
+        print("ffbidx not found, has the fast-feedback-indexer module been built and sourced?")
+        return
+    except ImportError as e:
+        print(f"ImportError: {e}")
+        print("Potential source of this error: has the CUDA Runtime Library been loaded?")
+        return
     indexer.panel = panel
     indexer.cell = input_cell
     indexer.wavelength = wavelength
