@@ -1,8 +1,7 @@
 """
-A program to run standalone indexing of strong spots from still shot images,
-the equivalent of the indexing part of the ffs service.
+A program to run standalone indexing of strong spots from still shot images.
 
-Usage: python src/ffs/ssx_index.py -r strong.refl -e imported.expt --cell 79 79 38 90 90 90
+Usage: ./build/bin/ssx_index -r results_ffs.h5 -e imported.expt -c 79 79 38 90 90 90
 """
 # ruff: noqa: C901
 
