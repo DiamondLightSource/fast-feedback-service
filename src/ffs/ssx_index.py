@@ -38,7 +38,7 @@ class IndexingResult(BaseModel):
 
 
 class GPUIndexer:
-    def __init__(self):
+    def __init__(self, min_spots=10):
         import ffbidx  # Delay import to here, so that the fast
         # feedback service does not need this available to run.
 
@@ -53,6 +53,7 @@ class GPUIndexer:
         self._cell = None
         self._wavelength = None
         self._s0 = None
+        self.min_spots = min_spots
 
     @property
     def cell(self):
@@ -85,7 +86,7 @@ class GPUIndexer:
 
     def index(self, xyzobs_px : np.array) -> IndexingResult:
         n_initial = int(xyzobs_px.size / 3)
-        if xyzobs_px.size < 30:
+        if xyzobs_px.size < (self.min_spots * 3):
             indexing_result = IndexingResult(
                 lattices=[],
                 n_unindexed=n_initial,
@@ -103,7 +104,7 @@ class GPUIndexer:
             dist3=0.15,
             num_halfsphere_points=32768,
             max_dist=0.00075,
-            min_spots=8,
+            min_spots=max(6, self.min_spots-2), # dials default
             n_output_cells=32,
             method="ifssr",
             triml=0.001,
@@ -115,7 +116,7 @@ class GPUIndexer:
             rlp,
             scores,
             threshold=0.00075,
-            min_spots=8,
+            min_spots=max(6, self.min_spots-2), # dials default
             method="ifssr",
         )
         if cell_indices is None:
@@ -270,9 +271,11 @@ def run(args):
         metavar=("a", "b", "c", "alpha", "beta", "gamma"),
         help="Unit cell parameters: a b c alpha beta gamma",
     )
+    parser.add_argument("--min-spots", type=int, default=10, help="Only attempt indexing on")
     parser.add_argument("--test", action="store_true", help="Run in test mode")
 
     parsed = parser.parse_args(args)
+    min_spots = parsed.min_spots
     if not parsed.experiments:
         print("No imported experiment list provided.")
         return
@@ -336,6 +339,7 @@ def run(args):
         )
         return
 
+
     output_aggregator = OutputAggregator(identifiers_map)
     tables = []
     id_values = []
@@ -365,7 +369,7 @@ def run(args):
 
     for t, i in zip(tables, id_values):
         data = t.flatten()
-        if t.shape[0] < 10:
+        if t.shape[0] < min_spots:
             continue
         n_considered += 1
         data = t.flatten()
@@ -388,9 +392,9 @@ def run(args):
 
     t2 = time.time()
     print(
-        f"Indexing attempted on {n_considered}/{n_total} non-empty images with >= 10 spots"
+        f"Indexing attempted on {n_considered}/{n_total} non-empty images with >= {min_spots} spots"
     )
-    print(f"Indexed {n_indexed_images}/{n_total} non-empty images in {t2-t1:.6f}s")
+    print(f"Indexed {n_indexed_images}/{n_total} non-empty images in {t2-t1:.3f}s")
     
     # ideally would generate an indexed.expt type file...
     # ok say we have in imported.expt, need to add crystals to indexed images
@@ -410,10 +414,10 @@ def run(args):
     else:
         output_aggregator.write_table("indexed.refl")
     t3 = time.time()
-    print(f"Setup time: {t1-st:.6f}s, index time {t2-t1:.6f}s, write time {t3-t2:.6f}s")
+    print(f"Setup time: {t1-st:.3f}s, index time {t2-t1:.3f}s, write time {t3-t2:.3f}s")
 
 
 if __name__ == "__main__":
     st = time.time()
     run(sys.argv[1:])
-    print(f"Program time: {time.time() - st:.6f}s")
+    print(f"Program time: {time.time() - st:.3f}s")
