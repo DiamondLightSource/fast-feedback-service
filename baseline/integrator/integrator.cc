@@ -42,12 +42,12 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
         add_argument("reflection")
           .metavar("strong.refl")
           .help("Input reflection table")
-          .action([&](const std::string& value) { _reflection_filepath = value; });
+          .action([&](const std::string &value) { _reflection_filepath = value; });
 
         add_argument("experiment")
           .metavar("experiments.expt")
           .help("Input experiment list")
-          .action([&](const std::string& value) { _experiment_filepath = value; });
+          .action([&](const std::string &value) { _experiment_filepath = value; });
     }
 
     auto const reflections() const -> std::string {
@@ -88,7 +88,7 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
 #pragma endregion Argument Parsing
 
 #pragma region Application Entry
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     logger.info("Baseline Integrator Version: {}", FFS_VERSION);
 
     // Parse arguments
@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
 
     // Display column names for debugging
     std::string column_names_str;
-    for (const auto& name : reflections.get_column_names()) {
+    for (const auto &name : reflections.get_column_names()) {
         column_names_str += "\n\t- " + name;
     }
     logger.info("Available columns: {}", column_names_str);
@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
     json elist_json_obj;
     try {
         elist_json_obj = json::parse(f);
-    } catch (json::parse_error& ex) {
+    } catch (json::parse_error &ex) {
         logger.error("Failed to parse experiment file '{}': byte {}, {}",
                      experiment_file,
                      ex.byte,
@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
     Experiment<MonochromaticBeam> expt;
     try {
         expt = Experiment<MonochromaticBeam>(elist_json_obj);
-    } catch (const std::invalid_argument& ex) {
+    } catch (const std::invalid_argument &ex) {
         logger.error(
           "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
         return 1;
@@ -174,8 +174,8 @@ int main(int argc, char** argv) {
     // Extract experimental components
     MonochromaticBeam beam = expt.beam();
     Goniometer gonio = expt.goniometer();
-    const Panel& panel = expt.detector().panels()[0];  // Assuming single panel detector
-    const Scan& scan = expt.scan();
+    const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
+    const Scan &scan = expt.scan();
 
     // Extract vectors and parameters
     Eigen::Vector3d s0 = beam.get_s0();
@@ -214,7 +214,7 @@ int main(int argc, char** argv) {
     // Convert to reflection table format
     std::vector<double> computed_bbox_data;
     computed_bbox_data.reserve(num_reflections * 6);
-    for (const auto& bbox : computed_bounding_boxes) {
+    for (const auto &bbox : computed_bounding_boxes) {
         computed_bbox_data.insert(computed_bbox_data.end(),
                                   {bbox.x_min,
                                    bbox.x_max,
@@ -227,7 +227,7 @@ int main(int argc, char** argv) {
     // Display some sample results
     logger.info("Sample bounding box results (first 5 reflections):");
     for (size_t i = 0; i < std::min<size_t>(5, num_reflections); ++i) {
-        const auto& bbox = computed_bounding_boxes[i];
+        const auto &bbox = computed_bounding_boxes[i];
         logger.info("  bbox[{}]: x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
                     i,
                     bbox.x_min,
@@ -254,7 +254,7 @@ int main(int argc, char** argv) {
                 max_reflections_to_process);
 
     for (size_t refl_id = 0; refl_id < max_reflections_to_process; ++refl_id) {
-        const auto& bbox = computed_bounding_boxes[refl_id];
+        const auto &bbox = computed_bounding_boxes[refl_id];
 
         // Get reflection centroid data
         Eigen::Vector3d s1_c(

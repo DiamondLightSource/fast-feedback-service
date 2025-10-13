@@ -67,16 +67,16 @@ struct BoundingBoxExtents {
  * @return Vector of BoundingBoxExtents structures, one per reflection
  */
 std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
-  const Eigen::Vector3d& s0,
-  const Eigen::Vector3d& rot_axis,
-  const mdspan_2d& s1_vectors,
-  const mdspan_2d& phi_positions,
+  const Eigen::Vector3d &s0,
+  const Eigen::Vector3d &rot_axis,
+  const mdspan_2d &s1_vectors,
+  const mdspan_2d &phi_positions,
   const size_t num_reflections,
   const double sigma_b,                     // σb from arguments
   const double sigma_m,                     // σm from arguments
-  const Panel& panel,                       // Panel for coordinate transformations
-  const Scan& scan,                         // Scan for oscillation and image range data
-  const MonochromaticBeam& beam,            // Beam for wavelength
+  const Panel &panel,                       // Panel for coordinate transformations
+  const Scan &scan,                         // Scan for oscillation and image range data
+  const MonochromaticBeam &beam,            // Beam for wavelength
   const double n_sigma = 3.0,               // Number of standard deviations
   const double sigma_b_multiplier = 2.0) {  // m parameter from DIALS
 
@@ -176,7 +176,7 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
 
         // Transform s′ vectors back to detector coordinates using Panel's get_ray_intersection
         std::vector<std::pair<double, double>> detector_coords;
-        for (const auto& s_prime : s_prime_vectors) {
+        for (const auto &s_prime : s_prime_vectors) {
             // Direct conversion from s′ vector to detector coordinates
             // get_ray_intersection returns coordinates in mm
             std::array<double, 2> xy_mm = panel.get_ray_intersection(s_prime);
@@ -192,11 +192,11 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
         auto [min_x_it, max_x_it] = std::minmax_element(
           detector_coords.begin(),
           detector_coords.end(),
-          [](const auto& a, const auto& b) { return a.first < b.first; });
+          [](const auto &a, const auto &b) { return a.first < b.first; });
         auto [min_y_it, max_y_it] = std::minmax_element(
           detector_coords.begin(),
           detector_coords.end(),
-          [](const auto& a, const auto& b) { return a.second < b.second; });
+          [](const auto &a, const auto &b) { return a.second < b.second; });
 
         BoundingBoxExtents bbox;
         // Use floor/ceil as specified in the paper: xmin = floor(min([x1,x2,x3,x4]))

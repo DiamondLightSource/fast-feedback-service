@@ -56,12 +56,12 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
         add_argument("reflection")
           .metavar("strong.refl")
           .help("Input reflection table")
-          .action([&](const std::string& value) { _reflection_filepath = value; });
+          .action([&](const std::string &value) { _reflection_filepath = value; });
 
         add_argument("experiment")
           .metavar("experiments.expt")
           .help("Input experiment list")
-          .action([&](const std::string& value) { _experiment_filepath = value; });
+          .action([&](const std::string &value) { _experiment_filepath = value; });
 
         _activated_h5read = true;
     }
@@ -99,7 +99,7 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
 #pragma endregion Argument Parsing
 
 #pragma region Application Entry
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     logger.info("Version: {}", FFS_VERSION);
 
     // Parse arguments
@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
 
     // Display column names
     std::string column_names_str;
-    for (const auto& name : reflections.get_column_names()) {
+    for (const auto &name : reflections.get_column_names()) {
         column_names_str += "\n\t- " + name;
     }
     logger.info("Column names: {}", column_names_str);
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
     json elist_json_obj;
     try {
         elist_json_obj = json::parse(f);
-    } catch (json::parse_error& ex) {
+    } catch (json::parse_error &ex) {
         logger.error("Failed to parse experiment file '{}': byte {}, {}",
                      experiment_file,
                      ex.byte,
@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
     Experiment<MonochromaticBeam> expt;
     try {
         expt = Experiment<MonochromaticBeam>(elist_json_obj);
-    } catch (const std::invalid_argument& ex) {
+    } catch (const std::invalid_argument &ex) {
         logger.error(
           "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
         return 1;
@@ -182,8 +182,8 @@ int main(int argc, char** argv) {
     // Extract experimental components
     MonochromaticBeam beam = expt.beam();
     Goniometer gonio = expt.goniometer();
-    const Panel& panel = expt.detector().panels()[0];  // Assuming single panel detector
-    const Scan& scan = expt.scan();
+    const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
+    const Scan &scan = expt.scan();
 
     // Extract vectors and parameters
     Eigen::Vector3d s0 = beam.get_s0();
@@ -462,8 +462,8 @@ int main(int argc, char** argv) {
 
             // Store results
             for (size_t i = 0; i < num_voxels; ++i) {
-                const auto& [voxel_x, voxel_y, voxel_z] = batch_voxel_coords[i];
-                const auto& eps = batch_eps_results[i];
+                const auto &[voxel_x, voxel_y, voxel_z] = batch_voxel_coords[i];
+                const auto &eps = batch_eps_results[i];
 
                 voxel_kabsch_coords.insert(voxel_kabsch_coords.end(),
                                            {eps.x, eps.y, eps.z});

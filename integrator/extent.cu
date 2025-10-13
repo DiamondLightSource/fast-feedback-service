@@ -55,8 +55,8 @@ using namespace fastvec;
  * @param vec Input 3D vector to multiply
  * @return Transformed 3D vector result
  */
-__device__ Vector3D matrix_vector_multiply(const scalar_t* const matrix_flat,
-                                           const Vector3D& vec) {
+__device__ Vector3D matrix_vector_multiply(const scalar_t *const matrix_flat,
+                                           const Vector3D &vec) {
     return make_vector3d(
       matrix_flat[0] * vec.x + matrix_flat[1] * vec.y + matrix_flat[2] * vec.z,
       matrix_flat[3] * vec.x + matrix_flat[4] * vec.y + matrix_flat[5] * vec.z,
@@ -74,10 +74,10 @@ __device__ Vector3D matrix_vector_multiply(const scalar_t* const matrix_flat,
  * @param x_mm Output x-coordinate in mm (set to NaN if invalid)
  * @param y_mm Output y-coordinate in mm (set to NaN if invalid)
  */
-__device__ inline void get_ray_intersection(const Vector3D& s1,
-                                            const scalar_t* d_matrix_inv_flat,
-                                            scalar_t& x_mm,
-                                            scalar_t& y_mm) {
+__device__ inline void get_ray_intersection(const Vector3D &s1,
+                                            const scalar_t *d_matrix_inv_flat,
+                                            scalar_t &x_mm,
+                                            scalar_t &y_mm) {
     // Apply D^-1 * s1 transformation
     Vector3D v = matrix_vector_multiply(d_matrix_inv_flat, s1);
 
@@ -112,15 +112,15 @@ __device__ inline void get_ray_intersection(const Vector3D& s1,
  */
 __device__ inline void mm_to_px(scalar_t x_mm,
                                 scalar_t y_mm,
-                                const scalar_t* pixel_size,
+                                const scalar_t *pixel_size,
                                 bool parallax_correction,
                                 scalar_t mu,
                                 scalar_t thickness,
-                                const Vector3D& fast_axis,
-                                const Vector3D& slow_axis,
-                                const Vector3D& origin,
-                                scalar_t& x_px,
-                                scalar_t& y_px) {
+                                const Vector3D &fast_axis,
+                                const Vector3D &slow_axis,
+                                const Vector3D &origin,
+                                scalar_t &x_px,
+                                scalar_t &y_px) {
     if (parallax_correction) {
         // Apply parallax correction
         Vector3D s1 = origin + x_mm * fast_axis + y_mm * slow_axis;
@@ -210,8 +210,8 @@ struct BoundingBox {
  * @param bounding_boxes Output array to store computed bounding boxes
  * @param num_reflections Total number of reflections to process
  */
-__global__ void bbox_computation(const Vector3D* const __restrict__ s1_vectors,
-                                 const scalar_t* const __restrict__ phi_positions,
+__global__ void bbox_computation(const Vector3D *const __restrict__ s1_vectors,
+                                 const scalar_t *const __restrict__ phi_positions,
                                  const Vector3D s0,
                                  const Vector3D rot_axis,
                                  const scalar_t sigma_b,
@@ -223,15 +223,15 @@ __global__ void bbox_computation(const Vector3D* const __restrict__ s1_vectors,
                                  const int image_range_start,
                                  const int image_range_end,
                                  const scalar_t wavelength,
-                                 const scalar_t* const d_matrix_inv_flat,
-                                 const scalar_t* const pixel_size,
+                                 const scalar_t *const d_matrix_inv_flat,
+                                 const scalar_t *const pixel_size,
                                  const bool parallax_correction,
                                  const scalar_t mu,
                                  const scalar_t thickness,
                                  const Vector3D fast_axis,
                                  const Vector3D slow_axis,
                                  const Vector3D origin,
-                                 BoundingBox* const bounding_boxes,
+                                 BoundingBox *const bounding_boxes,
                                  const size_t num_reflections) {
     // Calculate global thread index
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -373,8 +373,8 @@ __global__ void bbox_computation(const Vector3D* const __restrict__ s1_vectors,
  * @param n_sigma Number of standard deviations for extent calculation
  * @param sigma_b_multiplier Additional scaling factor for beam divergence
  */
-void compute_bbox_extent(const Vector3D* const h_s1_vectors,
-                         const scalar_t* const h_phi_positions,
+void compute_bbox_extent(const Vector3D *const h_s1_vectors,
+                         const scalar_t *const h_phi_positions,
                          const Vector3D s0,
                          const Vector3D rot_axis,
                          const scalar_t sigma_b,
@@ -384,15 +384,15 @@ void compute_bbox_extent(const Vector3D* const h_s1_vectors,
                          const int image_range_start,
                          const int image_range_end,
                          const scalar_t wavelength,
-                         const scalar_t* const d_matrix_inv_flat,
-                         const scalar_t* const pixel_size,
+                         const scalar_t *const d_matrix_inv_flat,
+                         const scalar_t *const pixel_size,
                          const bool parallax_correction,
                          const scalar_t mu,
                          const scalar_t thickness,
                          const Vector3D fast_axis,
                          const Vector3D slow_axis,
                          const Vector3D origin,
-                         scalar_t* const h_bounding_boxes,
+                         scalar_t *const h_bounding_boxes,
                          const size_t num_reflections,
                          const scalar_t n_sigma,
                          const scalar_t sigma_b_multiplier) {

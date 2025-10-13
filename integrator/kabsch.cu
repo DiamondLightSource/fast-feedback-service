@@ -67,13 +67,13 @@ using namespace fastvec;
  * @param s1_len_out Output parameter for magnitude of s₁ᶜ (|s₁|)
  * @return Transformed coordinates in Kabsch space (ε₁, ε₂, ε₃)
  */
-__device__ Vector3D pixel_to_kabsch(const Vector3D& s0,
-                                    const Vector3D& s1_c,
+__device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
+                                    const Vector3D &s1_c,
                                     scalar_t phi_c,
-                                    const Vector3D& s_pixel,
+                                    const Vector3D &s_pixel,
                                     scalar_t phi_pixel,
-                                    const Vector3D& rot_axis,
-                                    scalar_t& s1_len_out) {
+                                    const Vector3D &rot_axis,
+                                    scalar_t &s1_len_out) {
     // Define the local Kabsch basis vectors:
 
     // e1 is perpendicular to the scattering plane
@@ -130,14 +130,14 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D& s0,
  * @param s1_len_array Output array for s1 lengths
  * @param n Number of voxels to process
  */
-__global__ void kabsch_transform(const Vector3D* __restrict__ s_pixels,
-                                 const scalar_t* __restrict__ phi_pixels,
+__global__ void kabsch_transform(const Vector3D *__restrict__ s_pixels,
+                                 const scalar_t *__restrict__ phi_pixels,
                                  Vector3D s1_c,
                                  scalar_t phi_c,
                                  Vector3D s0,
                                  Vector3D rot_axis,
-                                 Vector3D* eps_array,
-                                 scalar_t* s1_len_array,
+                                 Vector3D *eps_array,
+                                 scalar_t *s1_len_array,
                                  size_t n) {
     // Calculate global thread index
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -170,14 +170,14 @@ __global__ void kabsch_transform(const Vector3D* __restrict__ s_pixels,
  * @param h_s1_len Host array to store output s1 lengths
  * @param n Number of voxels
  */
-void compute_kabsch_transform(const Vector3D* h_s_pixels,
-                              const scalar_t* h_phi_pixels,
+void compute_kabsch_transform(const Vector3D *h_s_pixels,
+                              const scalar_t *h_phi_pixels,
                               Vector3D s1_c,
                               scalar_t phi_c,
                               Vector3D s0,
                               Vector3D rot_axis,
-                              Vector3D* h_eps,
-                              scalar_t* h_s1_len,
+                              Vector3D *h_eps,
+                              scalar_t *h_s1_len,
                               size_t n) {
     // Create RAII device buffers
     DeviceBuffer<Vector3D> d_s_pixels(n);    // Input s_pixel vectors

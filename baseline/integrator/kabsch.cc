@@ -30,13 +30,13 @@
  * @return Eigen::Vector3d The local coordinates (ε₁, ε₂, ε₃) in Kabsch
  * space
  */
-Eigen::Vector3d pixel_to_kabsch(const Eigen::Vector3d& s0,
-                                const Eigen::Vector3d& s1_c,
+Eigen::Vector3d pixel_to_kabsch(const Eigen::Vector3d &s0,
+                                const Eigen::Vector3d &s1_c,
                                 double phi_c,
-                                const Eigen::Vector3d& s_pixel,
+                                const Eigen::Vector3d &s_pixel,
                                 double phi_pixel,
-                                const Eigen::Vector3d& rot_axis,
-                                double& s1_len_out) {
+                                const Eigen::Vector3d &rot_axis,
+                                double &s1_len_out) {
     // Define the local Kabsch basis vectors:
     // e1 is perpendicular to the scattering plane
     Eigen::Vector3d e1 = s1_c.cross(s0).normalized();

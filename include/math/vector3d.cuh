@@ -92,7 +92,7 @@ __host__ __device__ inline Vector3D make_vector3d(scalar_t x, scalar_t y, scalar
  * @param b Second vector
  * @return Sum of the two vectors
  */
-__host__ __device__ inline Vector3D operator+(const Vector3D& a, const Vector3D& b) {
+__host__ __device__ inline Vector3D operator+(const Vector3D &a, const Vector3D &b) {
     return MAKE_VECTOR3D(a.x + b.x, a.y + b.y, a.z + b.z);
 }
 
@@ -103,7 +103,7 @@ __host__ __device__ inline Vector3D operator+(const Vector3D& a, const Vector3D&
  * @param b Second vector
  * @return Difference of the two vectors
  */
-__host__ __device__ inline Vector3D operator-(const Vector3D& a, const Vector3D& b) {
+__host__ __device__ inline Vector3D operator-(const Vector3D &a, const Vector3D &b) {
     return MAKE_VECTOR3D(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
@@ -114,7 +114,7 @@ __host__ __device__ inline Vector3D operator-(const Vector3D& a, const Vector3D&
  * @param scalar Scalar value to multiply by
  * @return Vector scaled by the scalar value
  */
-__host__ __device__ inline Vector3D operator*(const Vector3D& v, scalar_t scalar) {
+__host__ __device__ inline Vector3D operator*(const Vector3D &v, scalar_t scalar) {
     return MAKE_VECTOR3D(v.x * scalar, v.y * scalar, v.z * scalar);
 }
 
@@ -125,7 +125,7 @@ __host__ __device__ inline Vector3D operator*(const Vector3D& v, scalar_t scalar
  * @param v Vector to scale
  * @return Vector scaled by the scalar value
  */
-__host__ __device__ inline Vector3D operator*(scalar_t scalar, const Vector3D& v) {
+__host__ __device__ inline Vector3D operator*(scalar_t scalar, const Vector3D &v) {
     return MAKE_VECTOR3D(v.x * scalar, v.y * scalar, v.z * scalar);
 }
 
@@ -136,7 +136,7 @@ __host__ __device__ inline Vector3D operator*(scalar_t scalar, const Vector3D& v
  * @param scalar Scalar value to divide by
  * @return Vector divided by the scalar value
  */
-__host__ __device__ inline Vector3D operator/(const Vector3D& v, scalar_t scalar) {
+__host__ __device__ inline Vector3D operator/(const Vector3D &v, scalar_t scalar) {
     return MAKE_VECTOR3D(v.x / scalar, v.y / scalar, v.z / scalar);
 }
 
@@ -148,7 +148,7 @@ __host__ __device__ inline Vector3D operator/(const Vector3D& v, scalar_t scalar
  * @param b Second vector
  * @return Dot product (scalar value)
  */
-__host__ __device__ inline scalar_t dot(const Vector3D& a, const Vector3D& b) {
+__host__ __device__ inline scalar_t dot(const Vector3D &a, const Vector3D &b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
@@ -160,7 +160,7 @@ __host__ __device__ inline scalar_t dot(const Vector3D& a, const Vector3D& b) {
  * @param b Second vector
  * @return Cross product vector perpendicular to both inputs
  */
-__host__ __device__ inline Vector3D cross(const Vector3D& a, const Vector3D& b) {
+__host__ __device__ inline Vector3D cross(const Vector3D &a, const Vector3D &b) {
     return MAKE_VECTOR3D(a.y * b.z - a.z * b.y,   // i component
                          a.z * b.x - a.x * b.z,   // j component
                          a.x * b.y - a.y * b.x);  // k component
@@ -172,7 +172,7 @@ __host__ __device__ inline Vector3D cross(const Vector3D& a, const Vector3D& b) 
  * @param v Vector to compute magnitude of
  * @return Euclidean norm of the vector
  */
-__host__ __device__ inline scalar_t norm(const Vector3D& v) {
+__host__ __device__ inline scalar_t norm(const Vector3D &v) {
     return CUDA_SQRT(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
@@ -183,7 +183,7 @@ __host__ __device__ inline scalar_t norm(const Vector3D& v) {
  * @param v Vector to normalize
  * @return Unit vector in the same direction, or zero vector if norm is zero
  */
-__host__ __device__ inline Vector3D normalized(const Vector3D& v) {
+__host__ __device__ inline Vector3D normalized(const Vector3D &v) {
     scalar_t n = norm(v);
     // Handle zero-length vector case to avoid division by zero
     return n > 0.0 ? MAKE_VECTOR3D(v.x / n, v.y / n, v.z / n)
@@ -196,7 +196,7 @@ __host__ __device__ inline Vector3D normalized(const Vector3D& v) {
  * @param v Vector to get span view of
  * @return mdspan view with compile-time extent of 3
  */
-__host__ __device__ inline auto span(Vector3D& v) -> vector3d_span {
+__host__ __device__ inline auto span(Vector3D &v) -> vector3d_span {
     return vector3d_span(&v.x);
 }
 
@@ -205,7 +205,7 @@ __host__ __device__ inline auto span(Vector3D& v) -> vector3d_span {
  * @param v Vector to get const span view of
  * @return const mdspan view with compile-time extent of 3
  */
-__host__ __device__ inline auto span(const Vector3D& v) -> const_vector3d_span {
+__host__ __device__ inline auto span(const Vector3D &v) -> const_vector3d_span {
     return const_vector3d_span(&v.x);
 }
 }  // namespace fastvec
