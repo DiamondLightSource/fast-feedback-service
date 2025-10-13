@@ -53,15 +53,20 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
     }
 
     void add_h5read_arguments() override {
-        add_argument("reflection")
+        add_argument("--reflection", "-r")
           .metavar("strong.refl")
           .help("Input reflection table")
           .action([&](const std::string &value) { _reflection_filepath = value; });
 
-        add_argument("experiment")
+        add_argument("--experiment", "-e")
           .metavar("experiments.expt")
           .help("Input experiment list")
           .action([&](const std::string &value) { _experiment_filepath = value; });
+
+        add_argument("--images", "-i")
+          .metavar("images.nxs")
+          .help("Input images file")
+          .action([&](const std::string &value) { _images_filepath = value; });
 
         _activated_h5read = true;
     }
@@ -72,10 +77,14 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
     auto const experiment() const -> std::string {
         return _experiment_filepath;
     }
+    auto const images() const -> std::string {
+        return _images_filepath;
+    }
 
   private:
     std::string _reflection_filepath;
     std::string _experiment_filepath;
+    std::string _images_filepath;
 
     void add_integrator_arguments() {
         add_argument("--timeout")
@@ -84,12 +93,12 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
           .default_value<float>(30.0f)
           .scan<'f', float>();
 
-        add_argument("--sigma_m")
+        add_argument("--sigma_m", "-sm")
           .help("Sigma_m: Standard deviation of the rotation axis in reciprocal space.")
           .metavar("σm")
           .scan<'f', float>();
 
-        add_argument("--sigma_b")
+        add_argument("--sigma_b", "-sb")
           .help(
             "Sigma_b: Standard deviation of the beam direction in reciprocal space.")
           .metavar("σb")
