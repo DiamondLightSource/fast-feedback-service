@@ -25,6 +25,9 @@ spec:
               value: "/opt/ffs/bin/spotfinder"
             - name: FFS_QUEUE
               value: "per_image_analysis.i24"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
           volumeMounts:
             - mountPath: /dls
               name: dls
@@ -32,6 +35,8 @@ spec:
             - mountPath: /dls_sw
               name: dlssw
               mountPropagation: HostToContainer
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
       securityContext:
         runAsGroup: null #ID
         runAsUser: null #ID
