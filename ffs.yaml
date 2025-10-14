@@ -35,6 +35,11 @@ spec:
       securityContext:
         runAsGroup: null #ID
         runAsUser: null #ID
+      tolerations:
+        - key: nodetype
+          operator: Equal
+          value: gpu
+          effect: NoSchedule
       volumes:
         - name: dls
           hostPath:
