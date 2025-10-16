@@ -41,13 +41,9 @@ spec:
         runAsGroup: null #ID
         runAsUser: null #ID
       tolerations:
-        - key: nvidia.com/gpu
-          operator: Exists
+        - key: nodetype
+          value: gpu
           effect: NoSchedule
-        # - key: nodetype
-        #   operator: Equal
-        #   value: gpu
-        #   effect: NoSchedule
       volumes:
         - name: dls
           hostPath:
