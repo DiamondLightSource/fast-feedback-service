@@ -17,3 +17,4 @@ dependencies:
   - pytest=8.4.2
   - python=3.13.7
   - spdlog=1.15.3
+  - pydantic=2.12.3
