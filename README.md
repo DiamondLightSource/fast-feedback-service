@@ -111,6 +111,14 @@ cmake -DPIXEL_DATA_32BIT=ON ..  # Enable 32-bit pixel data support
 make                            # Compile with the new settings
 ```
 
+### Installing the python module (for indexing)
+This project defines a small python module, to provide functionality for indexing.
+To run indexing code, this needs to be installed into the python environment by
+running this command in the root directory:
+```bash
+pip install .
+```
+
 ## Usage
 ### Environment Variables
 The service uses the following environment variables:
