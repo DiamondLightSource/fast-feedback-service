@@ -132,37 +132,26 @@ class GPUIndexer:
                 real_b = output_cells[:, j + 1]
                 real_c = output_cells[:, j + 2]
                 cells = np.concatenate((cells, real_a, real_b, real_c), axis=None)
-            ## For now, just determines the cell with the highest number of indexed spots.
-            ## here, we could do a stills reflection prediction to calculate rmsds.
 
-            (
-                cell,
-                A_matrix,
-                miller_indices,
-                xyzobs_px_indexed,
-                xyzcal_px,
-                s1,
-                delpsi,
-                rmsds,
-            ) = ffs.index.index_from_ssx_cells(
-                cells, rlp_, xyzobs_px, self.s0, self.panel
+            ssx_index_result = (
+                ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px, self.s0, self.panel)
             )
-            n_indexed = len(delpsi)
+            n_indexed = len(ssx_index_result.delpsi)
 
             n_unindexed = n_initial - n_indexed
             indexing_result = IndexingResult(
                 lattices=[
                     IndexedLatticeResult(
-                        unit_cell=list(cell),
+                        unit_cell=list(ssx_index_result.cell_parameters),
                         space_group="P1",
                         n_indexed=n_indexed,
-                        A_matrix=A_matrix.flatten(),
-                        miller_indices=miller_indices,
-                        xyzobs_px=xyzobs_px_indexed,
-                        xyzcal_px=xyzcal_px,
-                        s1=s1,
-                        delpsi=delpsi,
-                        rmsds=rmsds,
+                        A_matrix=ssx_index_result.A_matrix.flatten(),
+                        miller_indices=ssx_index_result.miller_indices,
+                        xyzobs_px=ssx_index_result.xyzobs_px,
+                        xyzcal_px=ssx_index_result.xyzcal_px,
+                        s1=ssx_index_result.s1,
+                        delpsi=ssx_index_result.delpsi,
+                        rmsds=ssx_index_result.rmsds
                     )
                 ],
                 n_unindexed=n_unindexed,
@@ -226,44 +215,23 @@ class OutputAggregator:
         self.output_id += 1
 
     def write_table(self, filename):
-        output_refl = h5py.File(Path.cwd() / filename, "w")
-        output_refl.create_group("dials")
-        output_refl["dials"].create_group("processing")
-        output_refl["dials"]["processing"].create_group("group_0")
-        ids_array = np.concatenate(self.ids_output)
-        output_refl["dials"]["processing"]["group_0"]["id"] = ids_array
-        output_refl["dials"]["processing"]["group_0"]["image"] = np.concatenate(
-            self.image_nos_output
-        )
-        output_refl["dials"]["processing"]["group_0"]["xyzobs.px.value"] = (
-            np.concatenate(self.xyzobs_output)
-        )
-        output_refl["dials"]["processing"]["group_0"]["xyzcal.px"] = np.concatenate(
-            self.xyzcal_px_output
-        )
-        output_refl["dials"]["processing"]["group_0"]["s1"] = np.concatenate(
-            self.s1_output
-        )
-        output_refl["dials"]["processing"]["group_0"]["delpsical.rad"] = np.concatenate(
-            self.delpsical_output
-        )
-        output_refl["dials"]["processing"]["group_0"]["miller_index"] = np.concatenate(
-            self.miller_indices_output, dtype=np.int32
-        )
-        sorted_ids = sorted(list(set(np.uint(i) for i in self.new_id_to_old_id.keys())))
-        output_refl["dials"]["processing"]["group_0"].attrs["experiment_ids"] = (
-            sorted_ids
-        )
-        identifiers = [
-            self.identifiers_map[self.new_id_to_old_id[i]] for i in sorted_ids
-        ]
-        output_refl["dials"]["processing"]["group_0"].attrs["identifiers"] = identifiers
-
-        output_refl["dials"]["processing"]["group_0"]["panel"] = np.zeros_like(
-            ids_array, dtype=np.uint
-        )
-        ## extra potential data to output to enable further processing:
-        ## rlp, flags, xyzobs.mm.value
+        with h5py.File(Path.cwd() / filename, "w") as output_refl:
+            group = output_refl.create_group("dials/processing/group_0")
+            ids_array = np.concatenate(self.ids_output)
+            group["id"] = ids_array
+            group["image"] = np.concatenate(self.image_nos_output)
+            group["xyzobs.px.value"] = np.concatenate(self.xyzobs_output)
+            group["xyzcal.px"] = np.concatenate(self.xyzcal_px_output)
+            group["s1"] = np.concatenate(self.s1_output)
+            group["delpsical.rad"] = np.concatenate(self.delpsical_output)
+            group["miller_index"] = np.concatenate(self.miller_indices_output, dtype=np.int32)
+            sorted_ids = sorted(list(set(np.uint(i) for i in self.new_id_to_old_id.keys())))
+            group.attrs["experiment_ids"] = sorted_ids
+            identifiers = [self.identifiers_map[self.new_id_to_old_id[i]] for i in sorted_ids]
+            group.attrs["identifiers"] = identifiers
+            group["panel"] = np.zeros_like(ids_array, dtype=np.uint)
+            ## extra potential data to output to enable further processing:
+            ## rlp, flags, xyzobs.mm.value
 
 
 def run(args):
@@ -323,12 +291,13 @@ def run(args):
         print("No strong reflections h5 file provided.")
         return
     try:
-        r = h5py.File(parsed.reflections)
-        xyzs = r["dials"]["processing"]["group_0"]["xyzobs.px.value"]
-        ids = r["dials"]["processing"]["group_0"]["id"]
-        experiment_ids = r["dials"]["processing"]["group_0"].attrs["experiment_ids"]
-        identifiers = r["dials"]["processing"]["group_0"].attrs["identifiers"]
-        identifiers_map = dict(zip(experiment_ids, identifiers))
+        with h5py.File(parsed.reflections, "r") as refls:
+            processing_group = refls["dials"]["processing"]["group_0"]
+            xyzs = processing_group["xyzobs.px.value"][:]
+            ids = processing_group["id"][:]
+            experiment_ids = processing_group.attrs["experiment_ids"]
+            identifiers = processing_group.attrs["identifiers"]
+            identifiers_map = dict(zip(experiment_ids, identifiers))
     except Exception as e:
         print(
             f"Unable to interpret the reflection file - please check input.\n Error: {e}"
