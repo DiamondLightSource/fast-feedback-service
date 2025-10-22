@@ -133,8 +133,8 @@ class GPUIndexer:
                 real_c = output_cells[:, j + 2]
                 cells = np.concatenate((cells, real_a, real_b, real_c), axis=None)
 
-            ssx_index_result = (
-                ffs.index.index_from_ssx_cells(cells, rlp_, xyzobs_px, self.s0, self.panel)
+            ssx_index_result = ffs.index.index_from_ssx_cells(
+                cells, rlp_, xyzobs_px, self.s0, self.panel
             )
             n_indexed = len(ssx_index_result.delpsi)
 
@@ -151,7 +151,7 @@ class GPUIndexer:
                         xyzcal_px=ssx_index_result.xyzcal_px,
                         s1=ssx_index_result.s1,
                         delpsi=ssx_index_result.delpsi,
-                        rmsds=ssx_index_result.rmsds
+                        rmsds=ssx_index_result.rmsds,
                     )
                 ],
                 n_unindexed=n_unindexed,
@@ -224,10 +224,16 @@ class OutputAggregator:
             group["xyzcal.px"] = np.concatenate(self.xyzcal_px_output)
             group["s1"] = np.concatenate(self.s1_output)
             group["delpsical.rad"] = np.concatenate(self.delpsical_output)
-            group["miller_index"] = np.concatenate(self.miller_indices_output, dtype=np.int32)
-            sorted_ids = sorted(list(set(np.uint(i) for i in self.new_id_to_old_id.keys())))
+            group["miller_index"] = np.concatenate(
+                self.miller_indices_output, dtype=np.int32
+            )
+            sorted_ids = sorted(
+                list(set(np.uint(i) for i in self.new_id_to_old_id.keys()))
+            )
             group.attrs["experiment_ids"] = sorted_ids
-            identifiers = [self.identifiers_map[self.new_id_to_old_id[i]] for i in sorted_ids]
+            identifiers = [
+                self.identifiers_map[self.new_id_to_old_id[i]] for i in sorted_ids
+            ]
             group.attrs["identifiers"] = identifiers
             group["panel"] = np.zeros_like(ids_array, dtype=np.uint)
             ## extra potential data to output to enable further processing:

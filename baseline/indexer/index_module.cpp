@@ -34,21 +34,21 @@ Panel make_panel(double distance,
 }
 
 struct IndexingResult {
-  std::vector<double> cell_parameters;
-  Eigen::Matrix3d A_matrix;
-  std::vector<int> miller_indices;
-  std::vector<double> xyzobs_px;
-  std::vector<double> xyzcal_px;
-  std::vector<double> s1;
-  std::vector<double> delpsi;
-  std::vector<double> rmsds;
+    std::vector<double> cell_parameters;
+    Eigen::Matrix3d A_matrix;
+    std::vector<int> miller_indices;
+    std::vector<double> xyzobs_px;
+    std::vector<double> xyzcal_px;
+    std::vector<double> s1;
+    std::vector<double> delpsi;
+    std::vector<double> rmsds;
 };
 
 IndexingResult index_from_ssx_cells(const std::vector<double> &crystal_vectors,
-                     std::vector<double> rlp_data,
-                     std::vector<double> xyzobs_px_data,
-                     Eigen::Vector3d s0,
-                     Panel panel) {
+                                    std::vector<double> rlp_data,
+                                    std::vector<double> xyzobs_px_data,
+                                    Eigen::Vector3d s0,
+                                    Panel panel) {
     // Convert the raw input data arrays to spans
     mdspan_type<double> xyzobs_px =
       mdspan_type<double>(xyzobs_px_data.data(), xyzobs_px_data.size() / 3, 3);
@@ -180,19 +180,22 @@ IndexingResult index_from_ssx_cells(const std::vector<double> &crystal_vectors,
     std::vector<int> miller_index_vec(midx.data_handle(),
                                       midx.data_handle() + midx.size());
     std::vector<double> s1_vec(s1.data_handle(), s1.data_handle() + s1.size());
-    std::vector<double> xyzcal_px_vec(xyzcal_px.data_handle(), xyzcal_px.data_handle() + xyzcal_px.size());
-    std::vector<double> xyzobs_px_vec(xyzobs_px_filtered.data_handle(), xyzobs_px_filtered.data_handle() + xyzobs_px_filtered.size());
-    std::vector<double> delpsi_vec(delpsi.data_handle(), delpsi.data_handle() + delpsi.size());
-    
-    return IndexingResult(
-      cells[max_index],
-      A,
-      std::move(miller_index_vec),
-      std::move(xyzobs_px_vec),
-      std::move(xyzcal_px_vec),
-      std::move(s1_vec),
-      std::move(delpsi_vec),
-      rmsds);
+    std::vector<double> xyzcal_px_vec(xyzcal_px.data_handle(),
+                                      xyzcal_px.data_handle() + xyzcal_px.size());
+    std::vector<double> xyzobs_px_vec(
+      xyzobs_px_filtered.data_handle(),
+      xyzobs_px_filtered.data_handle() + xyzobs_px_filtered.size());
+    std::vector<double> delpsi_vec(delpsi.data_handle(),
+                                   delpsi.data_handle() + delpsi.size());
+
+    return IndexingResult(cells[max_index],
+                          A,
+                          std::move(miller_index_vec),
+                          std::move(xyzobs_px_vec),
+                          std::move(xyzcal_px_vec),
+                          std::move(s1_vec),
+                          std::move(delpsi_vec),
+                          rmsds);
 }
 
 NB_MODULE(index, m) {
@@ -206,9 +209,11 @@ NB_MODULE(index, m) {
                     double,
                     double>());
     nb::class_<IndexingResult>(m, "IndexingResult")
-      .def_prop_ro("cell_parameters", [](const IndexingResult &r) { return r.cell_parameters; })
+      .def_prop_ro("cell_parameters",
+                   [](const IndexingResult &r) { return r.cell_parameters; })
       .def_prop_ro("A_matrix", [](const IndexingResult &r) { return r.A_matrix; })
-      .def_prop_ro("miller_indices", [](const IndexingResult &r) { return r.miller_indices; })
+      .def_prop_ro("miller_indices",
+                   [](const IndexingResult &r) { return r.miller_indices; })
       .def_prop_ro("xyzobs_px", [](const IndexingResult &r) { return r.xyzobs_px; })
       .def_prop_ro("xyzcal_px", [](const IndexingResult &r) { return r.xyzcal_px; })
       .def_prop_ro("s1", [](const IndexingResult &r) { return r.s1; })
