@@ -11,13 +11,13 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Union, Literal
 import pydantic
 
 import gemmi
 import numpy as np
 import workflows.recipe
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, Field
 from rich.logging import RichHandler
 from workflows.services.common_service import CommonService
 
@@ -45,6 +45,7 @@ class PiaRequest(BaseModel):
     d_min: float | None = None
     d_max: float | None = None
     unit_cell: tuple[float, float, float, float, float, float] | None = None
+    detector: str = "Eiger16M"
 
     @pydantic.validator("unit_cell", pre=True)
     def check_unit_cell(cls, v):
@@ -52,6 +53,7 @@ class PiaRequest(BaseModel):
             return None
         orig_v = v
         if isinstance(v, str):
+
             v = v.replace(",", " ").split()
         v = [float(v) for v in v]
         try:
@@ -61,19 +63,58 @@ class PiaRequest(BaseModel):
         return v
 
 
-class DetectorGeometry(BaseModel):
+class DetectorParameters(BaseModel):
+    type: str
+    thickness: float
+    material: str
+    pixel_size_x: float
+    pixel_size_y: float
+    image_size_x: int
+    image_size_y: int
+    _mu_cache: dict = {}
+
+    class Config:
+        extra = "forbid" # Don't allow instantiation of this base class
+
+    def calculate_mu(self, wavelength: float) -> float:
+        if wavelength not in self._mu_cache:
+            self._mu_cache[wavelength] = calculate_mu_from_parameters(
+                self.thickness, self.material, wavelength
+            )
+        return self._mu_cache[wavelength]
+
+
+class Eiger16M(DetectorParameters):
+    type: Literal["Eiger16M"]
+    thickness: float = 0.45
+    material: str = "Si" # atomic no 14
     pixel_size_x: float = 0.075  # Default value for Eiger
     pixel_size_y: float = 0.075  # Default value for Eiger
     image_size_x: int = 2068  # Default value for Eiger
     image_size_y: int = 2162  # Default value for Eiger
+    mu: float = 3.9220781  # Default value for Eiger (Silicon) #FIXME replace with mu calculation
+
+
+class Eiger9M(DetectorParameters):
+    type: Literal["Eiger9M"]
+    thickness: float = 0.45
+    material: str = "Si"
+    pixel_size_x: float = 0.075  # Default value for Eiger
+    pixel_size_y: float = 0.075  # Default value for Eiger
+    image_size_x: int = 1000  # Default value for Eiger9M #FIXME
+    image_size_y: int = 1000  # Default value for Eiger9M #FIXME
+    mu: float = 3.9220781  # Default value for Eiger (Silicon) #FIXME replace with mu calculation
+
+class DetectorGeometry(BaseModel):
     distance: float
     beam_center_x: float
     beam_center_y: float
-    thickness: float = 0.45  # Default value for Eiger (Silicon)
-    mu: float = 3.9220781  # Default value for Eiger (Silicon)
+    detector: Union[Eiger9M, Eiger16M] = Field(..., discriminator="type")
 
     def to_json(self):
-        return json.dumps(self.dict(), indent=4)
+        d = self.dict()
+        d.update(self.detector.dict())
+        return json.dumps(d, indent=4)
 
 
 def _setup_rich_logging(level=logging.DEBUG):
@@ -231,6 +272,7 @@ class GPUPerImageAnalysis(CommonService):
                 distance=parameters.detector_distance,
                 beam_center_x=parameters.xBeam,
                 beam_center_y=parameters.yBeam,
+                detector={"type":parameters.detector},
             )
             self.log.debug("{detector_geometry.to_json()=}")
         except ValidationError as e:
@@ -245,16 +287,18 @@ class GPUPerImageAnalysis(CommonService):
                 np.array(cell.orth.mat, dtype="float32"), (3, 3)
             )  ## Cell as an orthogonalisation matrix
             ## convert beam centre to correct units (given in mm, want in px).
+            px_size_x = detector_geometry.detector.pixel_size_x
+            px_size_y = detector_geometry.detector.pixel_size_y
             self.indexer.panel = ffs.index.make_panel(
                 detector_geometry.distance,
-                detector_geometry.beam_center_x / detector_geometry.pixel_size_x,
-                detector_geometry.beam_center_y / detector_geometry.pixel_size_y,
-                detector_geometry.pixel_size_x,
-                detector_geometry.pixel_size_y,
-                detector_geometry.image_size_x,
-                detector_geometry.image_size_y,
-                detector_geometry.thickness,
-                detector_geometry.mu,
+                detector_geometry.beam_center_x / px_size_x,
+                detector_geometry.beam_center_y / px_size_y,
+                px_size_x,
+                px_size_y,
+                detector_geometry.detector.image_size_x,
+                detector_geometry.detector.image_size_y,
+                detector_geometry.detector.thickness,
+                detector_geometry.detector.mu,
             )
             self.indexer.wavelength = parameters.wavelength
             self.output_for_index = (
