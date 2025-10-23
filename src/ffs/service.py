@@ -11,13 +11,13 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Union, Literal
-import pydantic
+from typing import Iterator, Literal, Optional, Union
 
 import gemmi
 import numpy as np
+import pydantic
 import workflows.recipe
-from pydantic import BaseModel, ValidationError, Field
+from pydantic import BaseModel, Field, ValidationError
 from rich.logging import RichHandler
 from workflows.services.common_service import CommonService
 
@@ -53,7 +53,6 @@ class PiaRequest(BaseModel):
             return None
         orig_v = v
         if isinstance(v, str):
-
             v = v.replace(",", " ").split()
         v = [float(v) for v in v]
         try:
@@ -74,7 +73,7 @@ class DetectorParameters(BaseModel):
     _mu_cache: dict = {}
 
     class Config:
-        extra = "forbid" # Don't allow instantiation of this base class
+        extra = "forbid"  # Don't allow instantiation of this base class
 
     def calculate_mu(self, wavelength: float) -> float:
         if wavelength not in self._mu_cache:
@@ -87,7 +86,7 @@ class DetectorParameters(BaseModel):
 class Eiger16M(DetectorParameters):
     type: Literal["Eiger16M"]
     thickness: float = 0.45
-    material: str = "Si" # atomic no 14
+    material: str = "Si"  # atomic no 14
     pixel_size_x: float = 0.075  # Default value for Eiger
     pixel_size_y: float = 0.075  # Default value for Eiger
     image_size_x: int = 2068  # Default value for Eiger
@@ -104,6 +103,7 @@ class Eiger9M(DetectorParameters):
     image_size_x: int = 1000  # Default value for Eiger9M #FIXME
     image_size_y: int = 1000  # Default value for Eiger9M #FIXME
     mu: float = 3.9220781  # Default value for Eiger (Silicon) #FIXME replace with mu calculation
+
 
 class DetectorGeometry(BaseModel):
     distance: float
@@ -272,7 +272,7 @@ class GPUPerImageAnalysis(CommonService):
                 distance=parameters.detector_distance,
                 beam_center_x=parameters.xBeam,
                 beam_center_y=parameters.yBeam,
-                detector={"type":parameters.detector},
+                detector={"type": parameters.detector},
             )
             self.log.debug("{detector_geometry.to_json()=}")
         except ValidationError as e:
