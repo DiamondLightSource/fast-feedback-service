@@ -21,9 +21,19 @@ include(AlwaysColourCompilation)
 
 include_directories(include)
 
+# Find Python
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+include_directories(${Python3_INCLUDE_DIRS})
+
 # Dependency fetching
 set(FETCHCONTENT_QUIET OFF)
 include(FetchContent)
+FetchContent_Declare(
+  nanobind
+  GIT_REPOSITORY https://github.com/wjakob/nanobind.git
+  GIT_TAG        v2.8.0
+)
+FetchContent_MakeAvailable(nanobind)
 FetchContent_Declare(
     nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -117,3 +127,5 @@ enable_testing()
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
+
+configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx_index COPYONLY)

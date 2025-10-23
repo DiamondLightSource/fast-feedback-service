@@ -56,3 +56,13 @@ target_link_libraries(baseline_indexer
     ffs_common
     ${CMAKE_THREAD_LIBS_INIT}
 )
+
+# Create Python module
+nanobind_add_module(index index_module.cpp)
+target_include_directories(index PRIVATE ${CMAKE_SOURCE_DIR}/baseline/predictor)
+target_link_libraries(index PRIVATE Eigen3::Eigen dx2 ${Python3_LIBRARIES})
+
+set(PYTHON_MODULE_DIR ${CMAKE_SOURCE_DIR}/src/ffs)
+add_custom_command(TARGET index POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:index> ${PYTHON_MODULE_DIR}
+)

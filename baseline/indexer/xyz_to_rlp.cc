@@ -108,6 +108,47 @@ xyz_to_rlp_results xyz_to_rlp(const mdspan_type<double> &xyzobs_px,
     return results;  // Return the data and spans.
 }
 
+/**
+ * @brief Transform detector pixel coordinates into reciprocal space coordinates, for a simplified
+ * serial crystallogrphy experiment (perpendicular beam).
+ * @param xyzobs_px A 1D array of detector pixel coordinates from a single panel.
+ * @param wavelength The wavelength of the beam.
+ * @param panel A dx2 Panel object defining the corresponding detector panel.
+ * @returns A vector containing reciprocal space coordinates.
+ */
+std::vector<double> ssx_xyz_to_rlp(const std::vector<double> &xyzobs_px,
+                                   double wavelength,
+                                   const Panel &panel) {
+    // Input and output data arrays are 1D, i.e [x_0, y_0, z_0, x_1, y_1, z_1, ... etc]
+    double s0_z =
+      -1.0
+      / wavelength;  // s0 = {0.0,0.0,-1.0/wavelength} - but we only need the z component.
+    std::vector<double> rlp(xyzobs_px.size(), 0);
+    Matrix3d d_matrix = panel.get_d_matrix();
+    double rot_angle = 0.0;
+    for (int i = 0; i < xyzobs_px.size() / 3; ++i) {
+        int x_idx = i * 3;
+        int y_idx = i * 3 + 1;
+        int z_idx = i * 3 + 2;
+        // first convert detector pixel positions into mm
+        double x1 = xyzobs_px[x_idx];
+        double x2 = xyzobs_px[y_idx];
+        std::array<double, 2> xymm = panel.px_to_mm(x1, x2);
+
+        // calculate the s1 vector using the detector d matrix
+        Vector3d m = {xymm[0], xymm[1], 1.0};
+        Vector3d s1_i = d_matrix * m;
+        s1_i.normalize();
+        // convert into inverse ansgtroms
+        Vector3d s1_this = s1_i / wavelength;
+        // calculation is rlp_this = s1_this - s0;
+        rlp[x_idx] = s1_this[0];
+        rlp[y_idx] = s1_this[1];
+        rlp[z_idx] = s1_this[2] - s0_z;
+    }
+    return rlp;
+}
+
 void px_to_mm(const mdspan_type<double> &px_input,
               mdspan_type<double> &mm_output,
               const Scan &scan,
