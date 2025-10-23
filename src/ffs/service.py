@@ -12,6 +12,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
+import pydantic
 
 import gemmi
 import numpy as np
@@ -43,7 +44,21 @@ class PiaRequest(BaseModel):
     detector_distance: float
     d_min: float | None = None
     d_max: float | None = None
-    cell: tuple[float, float, float, float, float, float] | None = None
+    unit_cell: tuple[float, float, float, float, float, float] | None = None
+
+    @pydantic.validator("unit_cell", pre=True)
+    def check_unit_cell(cls, v):
+        if not v:
+            return None
+        orig_v = v
+        if isinstance(v, str):
+            v = v.replace(",", " ").split()
+        v = [float(v) for v in v]
+        try:
+            assert len(v) == 6
+        except Exception:
+            raise ValueError(f"Invalid unit_cell {orig_v}")
+        return v
 
 
 class DetectorGeometry(BaseModel):
@@ -223,9 +238,9 @@ class GPUPerImageAnalysis(CommonService):
                 f"Rejecting PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): Invalid detector parameters \n{e}"
             )
 
-        if self.indexer and parameters.cell and parameters.wavelength:
+        if self.indexer and parameters.unit_cell and parameters.wavelength:
             ## We have all we need to index, so make up to date models.
-            cell = gemmi.UnitCell(*parameters.cell)
+            cell = gemmi.UnitCell(*parameters.unit_cell)
             self.indexer.cell = np.reshape(
                 np.array(cell.orth.mat, dtype="float32"), (3, 3)
             )  ## Cell as an orthogonalisation matrix
