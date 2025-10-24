@@ -141,4 +141,4 @@ termination:
         erosion_mask(x, y) = !dispersion_mask(x, y);
     }
 }
-#pragma enregion Erosion kernel
+#pragma endregion Erosion kernel
