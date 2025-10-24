@@ -11,13 +11,13 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Literal, Optional, Union
+from typing import Iterator, Optional, Union, Literal
+import pydantic
 
 import gemmi
 import numpy as np
-import pydantic
 import workflows.recipe
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError, Field
 from rich.logging import RichHandler
 from workflows.services.common_service import CommonService
 
@@ -73,12 +73,12 @@ class DetectorParameters(BaseModel):
     _mu_cache: dict = {}
 
     class Config:
-        extra = "forbid"  # Don't allow instantiation of this base class
+        extra = "forbid" # Don't allow instantiation of this base class
 
     def calculate_mu(self, wavelength: float) -> float:
         if wavelength not in self._mu_cache:
-            self._mu_cache[wavelength] = calculate_mu_from_parameters(
-                self.thickness, self.material, wavelength
+            self._mu_cache[wavelength] = ffs.index.calculate_mu_for_material_at_wavelength(
+                self.material, wavelength
             )
         return self._mu_cache[wavelength]
 
@@ -86,30 +86,37 @@ class DetectorParameters(BaseModel):
 class Eiger16M(DetectorParameters):
     type: Literal["Eiger16M"]
     thickness: float = 0.45
-    material: str = "Si"  # atomic no 14
-    pixel_size_x: float = 0.075  # Default value for Eiger
-    pixel_size_y: float = 0.075  # Default value for Eiger
-    image_size_x: int = 2068  # Default value for Eiger
-    image_size_y: int = 2162  # Default value for Eiger
-    mu: float = 3.9220781  # Default value for Eiger (Silicon) #FIXME replace with mu calculation
+    material: str = "Si"
+    pixel_size_x: float = 0.075
+    pixel_size_y: float = 0.075
+    image_size_x: int = 4148
+    image_size_y: int = 4362
 
-
-class Eiger9M(DetectorParameters):
-    type: Literal["Eiger9M"]
+class Eiger4M(DetectorParameters):
+    type: Literal["Eiger4M"]
     thickness: float = 0.45
     material: str = "Si"
-    pixel_size_x: float = 0.075  # Default value for Eiger
-    pixel_size_y: float = 0.075  # Default value for Eiger
-    image_size_x: int = 1000  # Default value for Eiger9M #FIXME
-    image_size_y: int = 1000  # Default value for Eiger9M #FIXME
-    mu: float = 3.9220781  # Default value for Eiger (Silicon) #FIXME replace with mu calculation
+    pixel_size_x: float = 0.075
+    pixel_size_y: float = 0.075
+    image_size_x: int = 2068
+    image_size_y: int = 2162
+
+
+class Eiger9MCdTe(DetectorParameters):
+    type: Literal["Eiger9MCdTe"]
+    thickness: float = 0.75
+    material: str = "CdTe"
+    pixel_size_x: float = 0.075
+    pixel_size_y: float = 0.075
+    image_size_x: int = 3108
+    image_size_y: int = 3262
 
 
 class DetectorGeometry(BaseModel):
     distance: float
     beam_center_x: float
     beam_center_y: float
-    detector: Union[Eiger9M, Eiger16M] = Field(..., discriminator="type")
+    detector: Union[Eiger9MCdTe, Eiger16M, Eiger4M] = Field(..., discriminator="type")
 
     def to_json(self):
         d = self.dict()
@@ -272,7 +279,7 @@ class GPUPerImageAnalysis(CommonService):
                 distance=parameters.detector_distance,
                 beam_center_x=parameters.xBeam,
                 beam_center_y=parameters.yBeam,
-                detector={"type": parameters.detector},
+                detector={"type" : parameters.detector},
             )
             self.log.debug("{detector_geometry.to_json()=}")
         except ValidationError as e:
@@ -289,6 +296,7 @@ class GPUPerImageAnalysis(CommonService):
             ## convert beam centre to correct units (given in mm, want in px).
             px_size_x = detector_geometry.detector.pixel_size_x
             px_size_y = detector_geometry.detector.pixel_size_y
+            mu = detector_geometry.detector.calculate_mu(parameters.wavelength)
             self.indexer.panel = ffs.index.make_panel(
                 detector_geometry.distance,
                 detector_geometry.beam_center_x / px_size_x,
@@ -298,7 +306,7 @@ class GPUPerImageAnalysis(CommonService):
                 detector_geometry.detector.image_size_x,
                 detector_geometry.detector.image_size_y,
                 detector_geometry.detector.thickness,
-                detector_geometry.detector.mu,
+                mu,
             )
             self.indexer.wavelength = parameters.wavelength
             self.output_for_index = (
