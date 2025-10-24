@@ -1,0 +1,3 @@
+securityContext:
+    runAsGroup: 1225471
+    runAsUser: 1225471
