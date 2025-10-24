@@ -31,6 +31,6 @@ jobs:
           tags: ghcr.io/diamondlightsource/fast-feedback-service:latest
           # For tag-based publishing, use instead:
           # tags: ghcr.io/diamondlightsource/fast-feedback-service:${{ github.ref_name }}
-        if: github.event_name != 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         # For tag-based publishing, use instead:
         # if: github.ref_type == 'tag'
