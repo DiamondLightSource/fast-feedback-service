@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fast-feedback-service
+  name: {{ .Release.Name }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: fast-feedback-service
+      app: {{ .Release.Name }}
   strategy: {}
   template:
     metadata:
-      name: fast-feedback-service
+      name: {{ .Release.Name }}
       labels:
-        app: fast-feedback-service
+        app: {{ .Release.Name }}
     spec:
       containers:
         - image: ghcr.io/diamondlightsource/fast-feedback-service:latest
           imagePullPolicy: Always
-          name: fast-feedback-service
+          name: {{ .Release.Name }}
           env:
             - name: ZOCALO_CONFIG
               value: "/dls_sw/apps/zocalo/live/configuration.yaml"
@@ -37,9 +37,10 @@ spec:
               mountPropagation: HostToContainer
       nodeSelector:
         nvidia.com/gpu.present: "true"
+      {{- if .Values.securityContext }}
       securityContext:
-        runAsGroup: null #ID
-        runAsUser: null #ID
+{{ toYaml $.Values.securityContext | indent 8 }}
+      {{ end }}
       tolerations:
         - key: nodetype
           value: gpu
