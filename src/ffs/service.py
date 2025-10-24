@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Iterator, Optional, Union, Literal
 import pydantic
@@ -17,7 +18,7 @@ import pydantic
 import gemmi
 import numpy as np
 import workflows.recipe
-from pydantic import BaseModel, ValidationError, Field
+from pydantic import BaseModel, ValidationError, Field, PrivateAttr
 from rich.logging import RichHandler
 from workflows.services.common_service import CommonService
 
@@ -61,19 +62,37 @@ class PiaRequest(BaseModel):
             raise ValueError(f"Invalid unit_cell {orig_v}")
         return v
 
+class Material(str, Enum):
+    Si = "Si"
+    CdTe = "CdTe"
 
 class DetectorParameters(BaseModel):
-    type: str
+    """
+    Define a set of detector metadata that derived classes
+    need to provide.
+    This class is not to be instantiated directly.
+    """
+    detector_type: str
     thickness: float
-    material: str
+    material: Material
     pixel_size_x: float
     pixel_size_y: float
     image_size_x: int
     image_size_y: int
-    _mu_cache: dict = {}
+    # mu cache not serialized to dict/json, ok as mu not needed for spotfinder
+    _mu_cache: dict = PrivateAttr(default_factory=dict)
 
-    class Config:
-        extra = "forbid" # Don't allow instantiation of this base class
+    def __init_subclass__(cls, **kwargs):
+        # enforce setting of defaults for all fields in subclasses.
+        super().__init_subclass__(**kwargs)
+        missing_defaults = [
+            name for name, field in cls.__fields__.items()
+            if field.default is None and field.default_factory is None
+        ]
+        if missing_defaults:
+            raise TypeError(
+                f"{cls.__name__} must define default values for all fields: missing {missing_defaults}"
+            )
 
     def calculate_mu(self, wavelength: float) -> float:
         if wavelength not in self._mu_cache:
@@ -84,18 +103,18 @@ class DetectorParameters(BaseModel):
 
 
 class Eiger16M(DetectorParameters):
-    type: Literal["Eiger16M"]
+    detector_type: Literal["Eiger16M"]
     thickness: float = 0.45
-    material: str = "Si"
+    material : Material = Material.Si
     pixel_size_x: float = 0.075
     pixel_size_y: float = 0.075
     image_size_x: int = 4148
     image_size_y: int = 4362
 
 class Eiger4M(DetectorParameters):
-    type: Literal["Eiger4M"]
+    detector_type: Literal["Eiger4M"]
     thickness: float = 0.45
-    material: str = "Si"
+    material : Material = Material.Si
     pixel_size_x: float = 0.075
     pixel_size_y: float = 0.075
     image_size_x: int = 2068
@@ -103,9 +122,9 @@ class Eiger4M(DetectorParameters):
 
 
 class Eiger9MCdTe(DetectorParameters):
-    type: Literal["Eiger9MCdTe"]
+    detector_type: Literal["Eiger9MCdTe"]
     thickness: float = 0.75
-    material: str = "CdTe"
+    material : Material = Material.CdTe
     pixel_size_x: float = 0.075
     pixel_size_y: float = 0.075
     image_size_x: int = 3108
@@ -116,7 +135,7 @@ class DetectorGeometry(BaseModel):
     distance: float
     beam_center_x: float
     beam_center_y: float
-    detector: Union[Eiger9MCdTe, Eiger16M, Eiger4M] = Field(..., discriminator="type")
+    detector: Union[Eiger9MCdTe, Eiger16M, Eiger4M] = Field(..., discriminator="detector_type")
 
     def to_json(self):
         d = self.dict()
@@ -279,7 +298,7 @@ class GPUPerImageAnalysis(CommonService):
                 distance=parameters.detector_distance,
                 beam_center_x=parameters.xBeam,
                 beam_center_y=parameters.yBeam,
-                detector={"type" : parameters.detector},
+                detector={"detector_type" : parameters.detector},
             )
             self.log.debug("{detector_geometry.to_json()=}")
         except ValidationError as e:
