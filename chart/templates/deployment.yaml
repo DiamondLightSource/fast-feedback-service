@@ -15,16 +15,18 @@ spec:
         app: {{ .Release.Name }}
     spec:
       containers:
-        - image: ghcr.io/diamondlightsource/fast-feedback-service:latest
+        - image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           imagePullPolicy: Always
           name: {{ .Release.Name }}
           env:
             - name: ZOCALO_CONFIG
-              value: "/dls_sw/apps/zocalo/live/configuration.yaml"
-            - name: SPOTFINDER
-              value: "/opt/ffs/bin/spotfinder"
+              value: {{ .Values.zocalo.config | quote }}
             - name: FFS_QUEUE
-              value: "per_image_analysis.i24"
+              value: {{ .Values.zocalo.queue | quote }}
+            {{- range $key, $value := .Values.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
           resources:
             limits:
               nvidia.com/gpu: 1
@@ -37,6 +39,9 @@ spec:
               mountPropagation: HostToContainer
       nodeSelector:
         nvidia.com/gpu.present: "true"
+        {{- range $key, $value := .Values.nodeSelector }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
       {{- if .Values.securityContext }}
       securityContext:
 {{ toYaml $.Values.securityContext | indent 8 }}
