@@ -38,3 +38,5 @@ target_link_libraries(spotfinder
 set_property(TARGET spotfinder PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(spotfinder PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_compile_options(spotfinder PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:--generate-line-info>")
+
+install(TARGETS spotfinder RUNTIME COMPONENT Runtime)

@@ -3,16 +3,45 @@ name: Docker Image CI
 on:
   push:
     branches: ["main"]
+    # tags: ["v*"]  # Uncomment to trigger on version tags
   pull_request:
     branches: ["main"]
 
 jobs:
 
   build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - uses: actions/checkout@v4
-      - name: Build the Docker image
-        run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+        with:
+          submodules: true
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ghcr.io/diamondlightsource/fast-feedback-service:latest
+          # For tag-based publishing, use instead:
+          # tags: ghcr.io/diamondlightsource/fast-feedback-service:${{ github.ref_name }}
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # For tag-based publishing, use instead:
+        # if: github.ref_type == 'tag'

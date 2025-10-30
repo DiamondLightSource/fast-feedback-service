@@ -1,0 +1,22 @@
+# Default namespace for deployment
+namespace: i24-beamline
+
+image:
+  repository: ghcr.io/diamondlightsource/fast-feedback-service
+  tag: latest
+
+zocalo:
+  config: "/dls_sw/apps/zocalo/live/configuration.yaml"
+  queue: "per_image_analysis.i24"
+
+# Additional environment variables
+extraEnv:
+  # SPOTFINDER: "/opt/ffs/bin/spotfinder"
+
+# Additional node selector labels
+nodeSelector:
+  kubernetes.io/hostname: "cs05r-i24-k8s-serv-02.diamond.ac.uk"
+
+securityContext:
+    runAsGroup: 1225471
+    runAsUser: 1225471

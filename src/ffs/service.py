@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -21,7 +22,7 @@ from workflows.services.common_service import CommonService
 logger = logging.getLogger(__name__)
 logger.level = logging.DEBUG
 
-DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
+DEFAULT_QUEUE_NAME = os.getenv("FFS_QUEUE", "per_image_analysis.gpu")
 
 
 class PiaRequest(BaseModel):
@@ -79,9 +80,14 @@ def _find_spotfinder() -> Path:
     # Try to get the path from the environment
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
 
+    if not spotfinder_path:
+        spotfinder_path = shutil.which("spotfinder")
+
     # If environment variable is not set, check for directories
     if spotfinder_path is None:
-        logger.warning("SPOTFINDER environment variable not set")
+        logger.warning(
+            "SPOTFINDER environment variable not set, and cannot find in PATH"
+        )
 
         for path in {"build", "_build", "."}:
             if Path(path).exists():

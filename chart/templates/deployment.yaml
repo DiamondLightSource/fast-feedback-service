@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  strategy: {}
+  template:
+    metadata:
+      name: {{ .Release.Name }}
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      containers:
+        - image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: Always
+          name: {{ .Release.Name }}
+          env:
+            - name: ZOCALO_CONFIG
+              value: {{ .Values.zocalo.config | quote }}
+            - name: FFS_QUEUE
+              value: {{ .Values.zocalo.queue | quote }}
+            {{- range $key, $value := .Values.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - mountPath: /dls
+              name: dls
+              mountPropagation: HostToContainer
+            - mountPath: /dls_sw
+              name: dlssw
+              mountPropagation: HostToContainer
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+        {{- range $key, $value := .Values.nodeSelector }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+      {{- if .Values.securityContext }}
+      securityContext:
+{{ toYaml $.Values.securityContext | indent 8 }}
+      {{ end }}
+      tolerations:
+        - key: nodetype
+          value: gpu
+          effect: NoSchedule
+      volumes:
+        - name: dls
+          hostPath:
+            path: /dls
+            type: Directory
+        - name: dlssw
+          hostPath:
+            path: /dls_sw
+            type: Directory
