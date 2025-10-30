@@ -1,3 +1,6 @@
+# Default namespace for deployment
+namespace: i24-beamline
+
 image:
   repository: ghcr.io/diamondlightsource/fast-feedback-service
   tag: latest
