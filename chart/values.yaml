@@ -14,8 +14,8 @@ extraEnv:
   # SPOTFINDER: "/opt/ffs/bin/spotfinder"
 
 # Additional node selector labels
-nodeSelector: {}
-  # kubernetes.io/hostname: "specific-node-name"
+nodeSelector:
+  kubernetes.io/hostname: "cs05r-i24-k8s-serv-02.diamond.ac.uk"
 
 securityContext:
     runAsGroup: 1225471
