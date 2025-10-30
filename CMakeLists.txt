@@ -22,8 +22,13 @@ include(AlwaysColourCompilation)
 include_directories(include)
 
 # Find Python
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 include_directories(${Python3_INCLUDE_DIRS})
+
+# Make sure we can install ffbidx into correct location.
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Install path" FORCE)
+endif()
 
 # Dependency fetching
 set(FETCHCONTENT_QUIET OFF)
@@ -47,6 +52,21 @@ FetchContent_Declare(
     GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
 )
 FetchContent_MakeAvailable(argparse)
+
+# Required for Python module build of ffbidx
+set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
+set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
+set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
+
+# Override install path for ffbidx to site-packages
+set(PYTHON_MODULE_PATH ${Python3_SITEARCH} CACHE PATH "Python install path" FORCE)
+
+FetchContent_Declare(
+  ffbidx
+  GIT_REPOSITORY https://github.com/paulscherrerinstitute/fast-feedback-indexer.git
+  GIT_TAG main
+)
+FetchContent_MakeAvailable(ffbidx)
 
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
@@ -128,4 +148,13 @@ add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
 
+# define a ssx_index 'executable' that actually just runs the python code (for style consistency)
 configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx_index COPYONLY)
+
+# run 'pip install .' to install the c++ extension for ssx_index
+install(CODE "
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -m pip install .
+    WORKING_DIRECTORY \"${CMAKE_SOURCE_DIR}\"
+  )
+")
