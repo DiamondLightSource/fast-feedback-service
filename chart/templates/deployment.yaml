@@ -36,7 +36,7 @@ spec:
 {{ toYaml $.Values.securityContext | indent 12 }}
           {{- end }}
           volumeMounts:
-            - mountPath: /dls/i24
+            - mountPath: /dls/{{ .Values.beamline }}
               name: dls
               mountPropagation: HostToContainer
               readOnly: true
@@ -58,7 +58,7 @@ spec:
       volumes:
         - name: dls
           hostPath:
-            path: /dls/i24
+            path: /dls/{{ .Values.beamline }}
             type: Directory
         - name: dlssw
           hostPath:

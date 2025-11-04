@@ -2,6 +2,9 @@ image:
   repository: ghcr.io/diamondlightsource/fast-feedback-service
   tag: latest
 
+# Beamline configuration
+beamline: "i24"
+
 zocalo:
   config: "/dls_sw/apps/zocalo/live/configuration.yaml"
   queue: "per_image_analysis.i24"
