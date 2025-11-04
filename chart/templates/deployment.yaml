@@ -51,6 +51,9 @@ spec:
         - key: nodetype
           value: gpu
           effect: NoSchedule
+        - key: location
+          value: cs05r
+          effect: NoSchedule
       volumes:
         - name: dls
           hostPath:
