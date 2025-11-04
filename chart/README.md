@@ -6,23 +6,6 @@ This Helm chart deploys the Fast Feedback Service to a Kubernetes cluster.
 
 `module load {argus,pollux,k8s-i24}`
 
-## Namespace Configuration
-
-When deploying to a beamline cluster, you need to work in the correct namespace. You have two options:
-
-**Option 1: Set the namespace context once** (recommended)
-```bash
-kubectl config set-context --current --namespace=i24-beamline
-```
-
-**Option 2: Add `-n i24-beamline` to every kubectl command**
-```bash
-kubectl get pods -n i24-beamline
-kubectl logs -n i24-beamline ffs-5486c998bc-cnskz
-```
-
-The examples below assume you've set the namespace context. If you haven't, add `-n i24-beamline` to each kubectl command.
-
 ## Understanding Helm Commands
 
 - `helm template` - Preview manifests locally (doesn't deploy anything)
@@ -49,63 +32,40 @@ This will show you the Kubernetes manifests that will be generated **without act
 To install the chart and **deploy to the cluster**:
 
 ```bash
-# Using default values (values.yaml)
-helm install ffs chart/
+# Using upgrade --install (recommended - installs or upgrades as needed)
+helm -n i24-beamline upgrade --install ffs-test chart/
 
-# Using test values
-helm install ffs chart/ -f chart/values.test.yaml
-
-# Targeting a specific node (e.g., for testing on a GPU node)
-helm install ffs chart/ \
-  -f chart/values.test.yaml \
-  --set nodeSelector."kubernetes\.io/hostname"="cs05r-i24-k8s-serv-02.diamond.ac.uk"
-
-# Using custom values
-helm install ffs chart/ -f chart/{custom_values_file}.yaml
+# With custom values file
+helm -n i24-beamline upgrade --install ffs-test chart/ -f chart/values.test.yaml
 ```
+
+**Note:** The `-n i24-beamline` flag specifies the Kubernetes namespace. Always include this to deploy to the correct namespace.
 
 ## Checking the Deployment
 
-First, find your pod name, then use it for all subsequent commands:
+Verify the deployment is running:
 
 ```bash
-# List all Helm releases
-helm list
+# List all Helm releases in the namespace
+helm -n i24-beamline list
 
-# Find your pod (look for the one starting with your release name)
-kubectl get pods
-
-# Example output:
-# NAME                          READY   STATUS    RESTARTS   AGE
-# ffs-5486c998bc-cnskz          1/1     Running   0          5m
-```
-
-Once you have the pod name (e.g., `ffs-5486c998bc-cnskz`), use these commands:
-
-```bash
 # Check pod status
-kubectl get pod ffs-5486c998bc-cnskz
+kubectl -n i24-beamline get pods
 
 # Watch pod status in real-time
-kubectl get pod ffs-5486c998bc-cnskz -w
+kubectl -n i24-beamline get pods -w
 
-# View logs
-kubectl logs ffs-5486c998bc-cnskz
+# View logs from deployment
+kubectl -n i24-beamline logs deployment/ffs
 
-# Follow logs in real-time
-kubectl logs -f ffs-5486c998bc-cnskz
+# View logs from previous pod (if pod crashed/restarted)
+kubectl -n i24-beamline logs deployment/ffs --previous
 
-# View previous logs (if pod restarted)
-kubectl logs ffs-5486c998bc-cnskz --previous
+# View logs from a specific pod (get pod name from 'kubectl get pods')
+kubectl -n i24-beamline logs <pod-name>
 
 # Get detailed pod information
-kubectl describe pod ffs-5486c998bc-cnskz
-
-# Execute commands inside the pod
-kubectl exec ffs-5486c998bc-cnskz -- env | grep -E 'SPOTFINDER|ZOCALO'
-
-# Check recent cluster events
-kubectl get events --sort-by='.lastTimestamp'
+kubectl -n i24-beamline describe pod <pod-name>
 ```
 
 ## Upgrading the Chart
@@ -113,26 +73,41 @@ kubectl get events --sort-by='.lastTimestamp'
 To upgrade an existing deployment:
 
 ```bash
-# Upgrade with new values
-helm upgrade ffs chart/ -f chart/values.yaml
+# Upgrade with values (this is the same command as install)
+helm -n i24-beamline upgrade --install ffs-test chart/
+
+# With custom values file
+helm -n i24-beamline upgrade --install ffs-test chart/ -f chart/values.yaml
 
 # Force recreation of pods
-helm upgrade ffs chart/ -f chart/values.yaml --force
-
-# After upgrade, find the new pod name
-kubectl get pods
+helm -n i24-beamline upgrade --install ffs-test chart/ --force
 ```
-
-**Note:** After an upgrade, the pod name will change (new hash suffix).
 
 ## Uninstalling the Chart
 
 To **remove the deployment from the cluster**:
 
 ```bash
-helm uninstall ffs
+helm -n i24-beamline uninstall ffs-test
 
 # Verify removal
-kubectl get pods
-helm list
+kubectl -n i24-beamline get pods
+helm -n i24-beamline list
 ```
+
+## Troubleshooting
+
+### Pod won't start
+
+```bash
+# First, get the pod name
+kubectl -n i24-beamline get pods
+
+# Check pod status and events
+kubectl -n i24-beamline describe pod <pod-name>
+
+# View logs from current pod
+kubectl -n i24-beamline logs <pod-name>
+
+# View logs from previous pod (if it crashed)
+kubectl -n i24-beamline logs deployment/ffs --previous
