@@ -36,14 +36,15 @@ spec:
 {{ toYaml $.Values.securityContext | indent 12 }}
           {{- end }}
           volumeMounts:
-            - mountPath: /dls
+            - mountPath: /dls/i24
               name: dls
               mountPropagation: HostToContainer
-            - mountPath: /dls_sw
+              readOnly: true
+            - mountPath: /dls_sw/apps
               name: dlssw
               mountPropagation: HostToContainer
+              readOnly: true
       nodeSelector:
-        nvidia.com/gpu.present: "true"
         {{- range $key, $value := .Values.nodeSelector }}
         {{ $key }}: {{ $value | quote }}
         {{- end }}
@@ -57,9 +58,9 @@ spec:
       volumes:
         - name: dls
           hostPath:
-            path: /dls
+            path: /dls/i24
             type: Directory
         - name: dlssw
           hostPath:
-            path: /dls_sw
+            path: /dls_sw/apps
             type: Directory
