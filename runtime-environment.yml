@@ -13,3 +13,4 @@ dependencies:
   - workflows
   - pydantic
   - rich
+  - spdlog=1.15.3
