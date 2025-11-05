@@ -15,6 +15,10 @@ spec:
       labels:
         app: {{ .Release.Name }}
     spec:
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- end }}
       containers:
         - image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           imagePullPolicy: Always
@@ -31,9 +35,9 @@ spec:
           resources:
             limits:
               nvidia.com/gpu: 1
-          {{- if .Values.securityContext }}
+          {{- if .Values.containerSecurityContext }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           {{- end }}
           volumeMounts:
             - mountPath: /dls/{{ .Values.beamline }}

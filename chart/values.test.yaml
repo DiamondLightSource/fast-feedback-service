@@ -13,3 +13,12 @@ extraEnv:
 
 nodeSelector:
   kubernetes.io/hostname: "test-gpu-node-01"
+
+# Pod-level security context
+podSecurityContext:
+  supplementalGroups:
+    - 1225471
+
+# Container-level security context
+containerSecurityContext:
+  runAsUser: 1225471

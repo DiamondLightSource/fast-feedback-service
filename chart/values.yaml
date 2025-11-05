@@ -17,6 +17,13 @@ extraEnv:
 nodeSelector:
   kubernetes.io/hostname: "cs05r-i24-k8s-serv-02.diamond.ac.uk"
 
-securityContext:
-    runAsGroup: 1225471
-    runAsUser: 1225471
+# Pod-level security context
+podSecurityContext:
+  # dls_softinst group
+  supplementalGroups:
+    - 37910
+
+# Container-level security context
+containerSecurityContext:
+  # k8s-i24-beamline user
+  runAsUser: 36145
