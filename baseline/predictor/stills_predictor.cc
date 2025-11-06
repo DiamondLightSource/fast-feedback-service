@@ -80,8 +80,9 @@ void simple_still_reflection_predictor(const Vector3d s0,
             Vector3d s1_this = v * s0_length;
             delpsical(i, 0) = delpsi_;
             // now get ray intersection.
-            std::optional<std::array<double, 2>> intersect = panel.get_ray_intersection(s1_this);
-            if (!intersect.has_value()){
+            std::optional<std::array<double, 2>> intersect =
+              panel.get_ray_intersection(s1_this);
+            if (!intersect.has_value()) {
                 continue;
             }
             std::array<double, 2> xymm = intersect.value();

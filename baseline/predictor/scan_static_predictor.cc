@@ -3,11 +3,11 @@
 #include <Eigen/Dense>
 #include <cassert>
 #include <cmath>
-#include <optional>
 #include <dx2/beam.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/reflection.hpp>
+#include <optional>
 
 constexpr double two_pi = 2 * M_PI;
 
@@ -146,8 +146,9 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
             assert(this_entering == entering_i);
             angle = mod2pi(a2);
         }
-        std::optional<std::array<double, 2>> intersect = panel.get_ray_intersection(s1_this);
-        if (!intersect.has_value()){
+        std::optional<std::array<double, 2>> intersect =
+          panel.get_ray_intersection(s1_this);
+        if (!intersect.has_value()) {
             continue;
         }
         std::array<double, 2> mm = intersect.value();
