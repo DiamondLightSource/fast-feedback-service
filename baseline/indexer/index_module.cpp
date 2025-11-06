@@ -1,11 +1,13 @@
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/array.h>
+#include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
+#include <dx2/detector_attenuations.hpp>
 #include <dx2/reflection.hpp>
 #include <experimental/mdspan>
 #include <tuple>
@@ -220,6 +222,9 @@ NB_MODULE(index, m) {
       .def_prop_ro("delpsi", [](const IndexingResult &r) { return r.delpsi; })
       .def_prop_ro("rmsds", [](const IndexingResult &r) { return r.rmsds; });
     m.def("make_panel", &make_panel, "Create a configured Panel object");
+    m.def("calculate_mu_for_material_at_wavelength",
+          &calculate_mu_for_material_at_wavelength,
+          "Calculate the absorption coefficient from material and wavelength");
     m.def("ssx_xyz_to_rlp",
           &ssx_xyz_to_rlp,
           nb::arg("xyzobs_px"),
