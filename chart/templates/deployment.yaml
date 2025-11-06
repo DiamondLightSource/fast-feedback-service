@@ -8,7 +8,8 @@ spec:
   selector:
     matchLabels:
       app: {{ .Release.Name }}
-  strategy: {}
+  strategy:
+    type: RollingUpdate
   template:
     metadata:
       name: {{ .Release.Name }}
