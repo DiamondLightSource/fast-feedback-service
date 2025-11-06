@@ -2,6 +2,7 @@
 #include <cmath>
 #include <dx2/detector.hpp>
 #include <dx2/reflection.hpp>
+#include <optional>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
@@ -79,7 +80,11 @@ void simple_still_reflection_predictor(const Vector3d s0,
             Vector3d s1_this = v * s0_length;
             delpsical(i, 0) = delpsi_;
             // now get ray intersection.
-            std::array<double, 2> xymm = panel.get_ray_intersection(s1_this);
+            std::optional<std::array<double, 2>> intersect = panel.get_ray_intersection(s1_this);
+            if (!intersect.has_value()){
+                continue;
+            }
+            std::array<double, 2> xymm = intersect.value();
             std::array<double, 2> xypx = panel.mm_to_px(xymm[0], xymm[1]);
             xyzcal_px(i, 0) = xypx[0];
             xyzcal_px(i, 1) = xypx[1];
