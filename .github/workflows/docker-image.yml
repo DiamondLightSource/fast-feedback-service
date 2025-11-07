@@ -34,6 +34,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: tags
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "suffix=pr-${{ github.event.pull_request.number }}-${{ matrix.tag-suffix }}" >> $GITHUB_OUTPUT
+            echo "manifest-tag=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          else
+            echo "suffix=${{ matrix.tag-suffix }}" >> $GITHUB_OUTPUT
+            echo "manifest-tag=latest" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@v5
@@ -41,12 +53,11 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ghcr.io/diamondlightsource/fast-feedback-service:${{ matrix.tag-suffix }}
+          tags: ghcr.io/diamondlightsource/fast-feedback-service:${{ steps.tags.outputs.suffix }}
 
   create-manifest:
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Login to GitHub Container Registry
@@ -56,8 +67,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine tags
+        id: tags
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "manifest-tag=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+            echo "amd64-tag=pr-${{ github.event.pull_request.number }}-amd64" >> $GITHUB_OUTPUT
+            echo "arm64-tag=pr-${{ github.event.pull_request.number }}-arm64" >> $GITHUB_OUTPUT
+          else
+            echo "manifest-tag=latest" >> $GITHUB_OUTPUT
+            echo "amd64-tag=amd64" >> $GITHUB_OUTPUT
+            echo "arm64-tag=arm64" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create and push multi-arch manifest
         run: |
-          docker buildx imagetools create -t ghcr.io/diamondlightsource/fast-feedback-service:latest \
-            ghcr.io/diamondlightsource/fast-feedback-service:amd64 \
-            ghcr.io/diamondlightsource/fast-feedback-service:arm64
+          docker buildx imagetools create -t ghcr.io/diamondlightsource/fast-feedback-service:${{ steps.tags.outputs.manifest-tag }} \
+            ghcr.io/diamondlightsource/fast-feedback-service:${{ steps.tags.outputs.amd64-tag }} \
+            ghcr.io/diamondlightsource/fast-feedback-service:${{ steps.tags.outputs.arm64-tag }}
