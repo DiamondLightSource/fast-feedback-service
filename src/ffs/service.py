@@ -225,23 +225,22 @@ class GPUPerImageAnalysis(CommonService):
         if parameters.filename.is_absolute():
             data_path = parameters.filename
         else:
-            # If we don't have a base path, then assume we don't have GPU mode turned on
-            # Ideally this would be tested directly, but I need to work out how to get PV
-            # access on the gpu-epu
-            if not Path(base_path).is_dir():
+            # If we have a base path directory (e.g., /dev/shm mode), use it
+            if Path(base_path).is_dir():
+                # Form the expected path for this dataset
+                data_path = base_path / parameters.filename
+            else:
+                # Otherwise, treat filename as relative to current directory or an H5 file path
                 self.log.info(
-                    f"Not running GPU analysis as parent dir {base_path} does not exist; Is DAQ in /dev/shm mode?"
+                    f"Base path {base_path} does not exist; treating {parameters.filename} as direct file path"
                 )
-                rw.transport.ack(header)
-                return
-
-            # Form the expected path for this dataset
-            data_path = base_path / parameters.filename
+                data_path = parameters.filename
 
         # Debugging: Reject messages that are "old", if the files are not on disk. This
         # should help avoid sitting spending hours running through all messages (meaning
         # that a manual purge is required).
-        if parameters.startTime:
+        # Only apply this check for /dev/shm directories (not for H5 files)
+        if parameters.startTime and Path(base_path).is_dir():
             age_seconds = (datetime.now() - parameters.startTime).total_seconds()
             if age_seconds > 60 and not data_path.is_dir():
                 self.log.warning(
