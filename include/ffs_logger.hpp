@@ -4,6 +4,7 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+#include <unistd.h>
 
 #include <memory>
 
@@ -64,19 +65,24 @@ class FFSLogger {
             // Initialize spdlog asynchronous mode with a background worker thread
             spdlog::init_thread_pool(queue_size, 1);
 
-            // Create a rotating file sink (max 5MB per file, 3 rotated files)
-            auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-              "ffs_log.txt", 5 * 1024 * 1024, 3);
-            file_sink->set_pattern(
-              "[%Y-%m-%d %H:%M:%S] [PID:%P Thread:%t] [%^%l%$] [%s:%#] %v");
+            // Create sinks based on whether we're running in a TTY
+            std::vector<spdlog::sink_ptr> sinks;
 
-            // Create a colored console sink
+            // Always create console sink
             auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
             console_sink->set_pattern("[%Y-%m-%d %H:%M:%S] [thread %t] [%^%l%$] %v");
+            sinks.push_back(console_sink);
+
+            // Only add file sink if running in a TTY (interactive mode)
+            if (isatty(STDIN_FILENO)) {
+                auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+                  "ffs_log.txt", 5 * 1024 * 1024, 3);
+                file_sink->set_pattern(
+                  "[%Y-%m-%d %H:%M:%S] [PID:%P Thread:%t] [%^%l%$] [%s:%#] %v");
+                sinks.push_back(file_sink);
+            }
 
             // Combine sinks into one asynchronous logger
-            std::vector<spdlog::sink_ptr> sinks{console_sink, file_sink};
-            // std::vector<spdlog::sink_ptr> sinks{console_sink};
             logger_ = std::make_shared<spdlog::async_logger>(
               "FFSLogger",
               sinks.begin(),
