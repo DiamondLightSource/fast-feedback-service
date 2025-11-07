@@ -55,6 +55,7 @@ COPY --from=build /opt/ffs /opt/ffs
 # Set environment variables for the service
 ENV PATH=/opt/ffs/bin:$PATH
 ENV SPOTFINDER=/opt/ffs/bin/spotfinder
+ENV LD_LIBRARY_PATH=/opt/ffs/lib:$LD_LIBRARY_PATH
 # ENV ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
 
 # # Start the service
