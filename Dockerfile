@@ -31,6 +31,14 @@ RUN cmake /opt/ffs_src -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFI
 RUN cmake --build . --target spotfinder
 
 RUN cmake --install . --component Runtime
+
+# Build and install dx2 submodule
+WORKDIR /opt/build_dx2
+RUN cmake /opt/ffs_src/dx2 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs
+RUN cmake --build . && cmake --install .
+
+# Install Python package
+WORKDIR /opt/build
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
 
 # Now copy this into an isolated runtime container
