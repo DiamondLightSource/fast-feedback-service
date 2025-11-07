@@ -65,24 +65,31 @@ class FFSLogger {
             // Initialize spdlog asynchronous mode with a background worker thread
             spdlog::init_thread_pool(queue_size, 1);
 
-            // Create sinks based on whether we're running in a TTY
+            // Create sinks based on whether we're running in a TTY (k8s container or interactive)
             std::vector<spdlog::sink_ptr> sinks;
 
-            // Always create console sink
+            bool is_tty = isatty(STDIN_FILENO);
+
+            // Create console sink with appropriate pattern
             auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-            console_sink->set_pattern("[%Y-%m-%d %H:%M:%S] [thread %t] [%^%l%$] %v");
+            if (is_tty) {
+                // Interactive mode: colorful, detailed output
+                console_sink->set_pattern(
+                  "[%Y-%m-%d %H:%M:%S] [thread %t] [%^%l%$] %v");
+            } else {
+                // Container mode: simple output for Graylog
+                console_sink->set_pattern("%v");
+            }
             sinks.push_back(console_sink);
 
             // Only add file sink if running in a TTY (interactive mode)
-            if (isatty(STDIN_FILENO)) {
+            if (is_tty) {
                 auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
                   "ffs_log.txt", 5 * 1024 * 1024, 3);
                 file_sink->set_pattern(
                   "[%Y-%m-%d %H:%M:%S] [PID:%P Thread:%t] [%^%l%$] [%s:%#] %v");
                 sinks.push_back(file_sink);
-            }
-
-            // Combine sinks into one asynchronous logger
+            }  // Combine sinks into one asynchronous logger
             logger_ = std::make_shared<spdlog::async_logger>(
               "FFSLogger",
               sinks.begin(),
