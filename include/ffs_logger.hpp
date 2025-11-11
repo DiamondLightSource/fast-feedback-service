@@ -3,6 +3,7 @@
 #include <spdlog/async.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/spdlog.h>
 #include <unistd.h>
 
@@ -71,16 +72,19 @@ class FFSLogger {
             bool is_tty = isatty(STDIN_FILENO);
 
             // Create console sink with appropriate pattern
-            auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
             if (is_tty) {
                 // Interactive mode: colorful, detailed output
+                auto console_sink =
+                  std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
                 console_sink->set_pattern(
                   "[%Y-%m-%d %H:%M:%S] [thread %t] [%^%l%$] %v");
+                sinks.push_back(console_sink);
             } else {
                 // Container mode: simple output for Graylog
+                auto console_sink = std::make_shared<spdlog::sinks::stdout_sink_mt>();
                 console_sink->set_pattern("%v");
+                sinks.push_back(console_sink);
             }
-            sinks.push_back(console_sink);
 
             // Only add file sink if running in a TTY (interactive mode)
             if (is_tty) {
