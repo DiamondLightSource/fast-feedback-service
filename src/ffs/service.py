@@ -63,9 +63,21 @@ def _setup_rich_logging(level=logging.DEBUG):
         # We also want to lower the output level, so pin this to the existing
         handler.setLevel(rootLogger.level)
 
-    rootLogger.handlers.append(
-        RichHandler(level=level, log_time_format="[%Y-%m-%d %H:%M:%S]")
-    )
+    # Check if we're in a TTY (interactive) or not (k8s container)
+    is_tty = sys.stdout.isatty()
+
+    if is_tty:
+        # Interactive mode: use RichHandler with formatting
+        rootLogger.handlers.append(
+            RichHandler(level=level, log_time_format="[%Y-%m-%d %H:%M:%S]")
+        )
+    else:
+        # Container mode: simple output for Graylog
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(level)
+        # Simple format: just the message
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        rootLogger.handlers.append(handler)
 
 
 def _find_spotfinder() -> Path:
