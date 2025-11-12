@@ -1,0 +1,16 @@
+name: fast-feedback-service-runtime
+channels:
+  - conda-forge
+dependencies:
+  - boost-cpp=1.85.0
+  - fmt=11.2.0
+  - gemmi=0.7.3
+  - hdf5=1.14.6
+  - hdf5-external-filter-plugins=0.1.0
+  - python=3.13.7
+  - pip
+  - zocalo
+  - workflows
+  - pydantic
+  - rich
+  - spdlog=1.15.3

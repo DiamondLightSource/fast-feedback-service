@@ -25,31 +25,42 @@ include_directories(include)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 include_directories(${Python3_INCLUDE_DIRS})
 
-# Dependency fetching
+# Find packages that are in conda environment
+find_package(fmt REQUIRED)
+find_package(spdlog REQUIRED)
+find_package(nlohmann_json 3.11.3 REQUIRED)
+find_package(Eigen3 3.4 REQUIRED)
+
+# Dependency fetching - only for packages NOT in conda
 set(FETCHCONTENT_QUIET OFF)
 include(FetchContent)
+
 FetchContent_Declare(
   nanobind
   GIT_REPOSITORY https://github.com/wjakob/nanobind.git
   GIT_TAG        v2.8.0
 )
 FetchContent_MakeAvailable(nanobind)
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
-    FIND_PACKAGE_ARGS
-)
-FetchContent_MakeAvailable(nlohmann_json)
+
 FetchContent_Declare(
     argparse
     GIT_REPOSITORY  https://github.com/ndevenish/argparse
     GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
+    EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(argparse)
 
-find_package(fmt REQUIRED)
-find_package(spdlog REQUIRED)
+# GTest - try find_package first, fallback to FetchContent
+find_package(GTest QUIET)
+if(NOT GTest_FOUND AND NOT TARGET GTest::gtest_main)
+    FetchContent_Declare(
+        GTest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+        EXCLUDE_FROM_ALL
+    )
+    FetchContent_MakeAvailable(GTest)
+endif()
 
 # Handle inclusion of dx2 dependency using git submodule
 set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")

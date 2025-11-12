@@ -1,0 +1,30 @@
+image:
+  repository: ghcr.io/diamondlightsource/fast-feedback-service
+  tag: latest
+
+# Beamline configuration
+beamline: "i24"
+
+zocalo:
+  config: "/dls_sw/apps/zocalo/live/configuration.yaml"
+  queue: "per_image_analysis.i24"
+
+# Additional environment variables
+extraEnv:
+  # SPOTFINDER: "/opt/ffs/bin/spotfinder"
+
+# Additional node selector labels
+nodeSelector:
+  kubernetes.io/hostname: "cs05r-i24-k8s-serv-02.diamond.ac.uk"
+
+# Pod-level security context
+podSecurityContext:
+  # dls_softinst group
+  supplementalGroups:
+    - 37910
+    - 37948
+
+# Container-level security context
+containerSecurityContext:
+  # k8s-i24-beamline user
+  runAsUser: 36145
