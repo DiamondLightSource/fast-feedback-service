@@ -1,6 +1,6 @@
-#include <optional>
 #include <Eigen/Dense>
 #include <gemmi/symmetry.hpp>
+#include <optional>
 
 using Eigen::Matrix3d;
 using Eigen::Matrix4d;
@@ -14,11 +14,11 @@ using Eigen::Vector3d;
  */
 class ReekeIndexGenerator {
   public:
-    ReekeIndexGenerator(const Matrix3d& A1,
-                        const Matrix3d& A2,
-                        gemmi::GroupOps& crystal_symmetry_operations,
-                        const Vector3d& s0_1,
-                        const Vector3d& s0_2,
+    ReekeIndexGenerator(const Matrix3d &A1,
+                        const Matrix3d &A2,
+                        gemmi::GroupOps &crystal_symmetry_operations,
+                        const Vector3d &s0_1,
+                        const Vector3d &s0_2,
                         const double dmin,
                         const bool use_monochromatic)
         : A1(A1),
@@ -129,7 +129,7 @@ class ReekeIndexGenerator {
 	 * @param dmin The minimum lattice spacing that can be resolved
 	 * @return std::pair<double, double>
 	 */
-    auto calc_h_limits_resolution(const Vector3d& a, const Vector3d& s0)
+    auto calc_h_limits_resolution(const Vector3d &a, const Vector3d &s0)
       -> std::pair<double, double> {
         double dstar_max = 1.0 / dmin;
         double s0_len_sq = s0.squaredNorm();
@@ -208,7 +208,7 @@ class ReekeIndexGenerator {
 	 * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
 	 * @return std::optional<std::pair<int, int>>
 	 */
-    auto calc_k_limits_ewald(const Matrix4d& T, const int h)
+    auto calc_k_limits_ewald(const Matrix4d &T, const int h)
       -> std::optional<std::pair<int, int>> {
         double r0 = T(2, 3) * T(2, 3)
                     + h
@@ -236,7 +236,7 @@ class ReekeIndexGenerator {
      * @param dmin The minimum lattice spacing that can be resolved
      * @return std::optional<std::pair<int, int>> 
      */
-    auto calc_k_limits_resolution(const Matrix4d& T, const int h)
+    auto calc_k_limits_resolution(const Matrix4d &T, const int h)
       -> std::optional<std::pair<int, int>> {
         double r0 =
           h * h * (T(0, 2) * T(0, 2) - T(0, 0) * T(2, 2)) + T(2, 2) / (dmin * dmin);
@@ -293,7 +293,7 @@ class ReekeIndexGenerator {
      * @param k The k Miller index
      * @return std::optional<std::pair<int, int>> 
      */
-    auto calc_l_limits_ewald(const Matrix4d& T, const int h, const int k)
+    auto calc_l_limits_ewald(const Matrix4d &T, const int h, const int k)
       -> std::optional<std::pair<int, int>> {
         double q0 = T(0, 0) * h * h + 2 * T(0, 1) * h * k + T(1, 1) * k * k
                     + 2 * T(0, 3) * h + 2 * T(1, 3) * k;
@@ -319,7 +319,7 @@ class ReekeIndexGenerator {
      * @param dmin The minimum lattice spacing that can be resolved
      * @return std::optional<std::pair<int, int>> 
      */
-    auto calc_l_limits_resolution(const Matrix4d& T, const int h, const int k)
+    auto calc_l_limits_resolution(const Matrix4d &T, const int h, const int k)
       -> std::optional<std::pair<int, int>> {
         double q0 =
           T(0, 0) * h * h + 2 * T(0, 1) * h * k + T(1, 1) * k * k - 1.0 / (dmin * dmin);
@@ -444,10 +444,10 @@ class StillsIndexGenerator {
   public:
     // FIXME: This is quite ugly to accommodate polychromatic prediction, maybe a separate generator
     // or better naming of variables will solve the problem.
-    StillsIndexGenerator(const Matrix3d& A,
-                         gemmi::GroupOps& crystal_symmetry_operations,
-                         const Vector3d& s0_upper,
-                         const Vector3d& s0_lower,
+    StillsIndexGenerator(const Matrix3d &A,
+                         gemmi::GroupOps &crystal_symmetry_operations,
+                         const Vector3d &s0_upper,
+                         const Vector3d &s0_lower,
                          const double angular_tolerance)
         : A(A),
           s0(s0_upper),

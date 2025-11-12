@@ -13,7 +13,7 @@ class Rotator {
     Vector3d axis_ = Vector3d{0, 0, 0};
 
   public:
-    Rotator(const Vector3d& axis) : axis_(axis.normalized()) {}
+    Rotator(const Vector3d &axis) : axis_(axis.normalized()) {}
 
     /**
 	 * @brief Output a rotation matrix corresponding to a given axis and angle.
@@ -38,7 +38,7 @@ class Rotator {
 	 * @brief Rotate a 3D vector by a given angle around the pre-specified axis
 	 *
 	 */
-    Vector3d rotate(const Vector3d& vec, double θ) const {
+    Vector3d rotate(const Vector3d &vec, double θ) const {
         return rotation_matrix(θ) * vec;
     }
 
@@ -46,7 +46,7 @@ class Rotator {
 	 * @brief Multiply the rotation matrix (angle θ) by a 3x3 matrix and return the result.
 	 *
 	 */
-    Matrix3d rotate(const Matrix3d& mat, double θ) const {
+    Matrix3d rotate(const Matrix3d &mat, double θ) const {
         return rotation_matrix(θ) * mat;
     }
 };

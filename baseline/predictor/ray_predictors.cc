@@ -1,6 +1,7 @@
-#include <cmath>
 #include <Eigen/Dense>
+#include <cmath>
 #include <nlohmann/json.hpp>
+
 #include "utils.cc"
 using json = nlohmann::json;
 
@@ -18,9 +19,9 @@ using Eigen::Vector3d;
  * @param delta_psi_tolerance The tolerance (in radians) of 
  * @return std::optional<Ray> 
  */
-std::optional<Ray> predict_ray_monochromatic_stills(const std::array<int, 3>& index,
-                                                    const Matrix3d& A,
-                                                    const Vector3d& s0,
+std::optional<Ray> predict_ray_monochromatic_stills(const std::array<int, 3> &index,
+                                                    const Matrix3d &A,
+                                                    const Vector3d &s0,
                                                     const double dmin,
                                                     const double delta_psi_tolerance) {
     const Vector3d hkl_vec{(double)index[0], (double)index[1], (double)index[2]};
@@ -61,13 +62,13 @@ std::optional<Ray> predict_ray_monochromatic_stills(const std::array<int, 3>& in
  * @return std::array<std::optional<Ray>, 2> 
  */
 std::array<std::optional<Ray>, 2> predict_ray_monochromatic_static(
-  const std::array<int, 3>& index,
-  const Matrix3d& A,
-  const Matrix3d& r_setting,
-  const Matrix3d& r_setting_inv,
-  const Vector3d& s0,
-  const Vector3d& m2,
-  const Rotator& rotator,
+  const std::array<int, 3> &index,
+  const Matrix3d &A,
+  const Matrix3d &r_setting,
+  const Matrix3d &r_setting_inv,
+  const Vector3d &s0,
+  const Vector3d &m2,
+  const Rotator &rotator,
   const double dmin,
   const double phi_beg,
   const double d_osc) {
@@ -148,11 +149,11 @@ std::array<std::optional<Ray>, 2> predict_ray_monochromatic_static(
  * @param d_osc The amount the goniometer rotates during the image capture (in degrees)
  * @return std::optional<Ray>
  */
-std::optional<Ray> predict_ray_monochromatic_sv(const std::array<int, 3>& index,
-                                                const Matrix3d& A1,
-                                                const Matrix3d& A2,
-                                                const Vector3d& s0_1,
-                                                const Vector3d& s0_2,
+std::optional<Ray> predict_ray_monochromatic_sv(const std::array<int, 3> &index,
+                                                const Matrix3d &A1,
+                                                const Matrix3d &A2,
+                                                const Vector3d &s0_1,
+                                                const Vector3d &s0_2,
                                                 const double dmin,
                                                 const double phi_beg,
                                                 const double d_osc) {
@@ -248,8 +249,8 @@ std::optional<Ray> predict_ray_monochromatic_sv(const std::array<int, 3>& index,
  * @param dmin The minimum lattice spacing that can be resolved
  * @return std::optional<Ray> 
  */
-std::optional<Ray> predict_ray_polychromatic_stills(const std::array<int, 3>& index,
-                                                    const Matrix3d& A,
+std::optional<Ray> predict_ray_polychromatic_stills(const std::array<int, 3> &index,
+                                                    const Matrix3d &A,
                                                     Vector3d s0_unit,
                                                     const double wavelength_min,
                                                     const double wavelength_max,
@@ -281,9 +282,9 @@ std::optional<Ray> predict_ray_polychromatic_stills(const std::array<int, 3>& in
  * @param d_osc The amount the goniometer rotates during the image capture (in degrees)
  * @return std::optional<Ray> 
  */
-std::optional<Ray> predict_ray_polychromatic_rotational(const std::array<int, 3>& index,
-                                                        const Matrix3d& A1,
-                                                        const Matrix3d& A2,
+std::optional<Ray> predict_ray_polychromatic_rotational(const std::array<int, 3> &index,
+                                                        const Matrix3d &A1,
+                                                        const Matrix3d &A2,
                                                         Vector3d s0_1_unit,
                                                         Vector3d s0_2_unit,
                                                         const double wavelength_min,
@@ -294,4 +295,3 @@ std::optional<Ray> predict_ray_polychromatic_rotational(const std::array<int, 3>
     // FIXME: Not implemented
     return std::nullopt;
 }
-
