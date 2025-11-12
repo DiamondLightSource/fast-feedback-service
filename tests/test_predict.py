@@ -152,7 +152,7 @@ def test_predict_static(tmp_path):
         json.dump(expt_json, f)
 
     expts = tmp_path / "test.expt"
-    proc = subprocess.run(
+    subprocess.run(
         [predictor_path, "-e", expts],
         capture_output=True,
         cwd=tmp_path,
@@ -210,7 +210,7 @@ def test_predict_varying(tmp_path):
         json.dump(sv_expt_json, f)
 
     expts = tmp_path / "test.expt"
-    proc = subprocess.run(
+    subprocess.run(
         [predictor_path, "-e", expts],
         capture_output=True,
         cwd=tmp_path,
