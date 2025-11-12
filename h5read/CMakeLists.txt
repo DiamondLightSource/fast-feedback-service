@@ -15,7 +15,6 @@ find_package(HDF5)
 add_library(h5read src/h5read.c src/h5read.cc)
 target_include_directories(h5read PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include )
 target_link_libraries(h5read PUBLIC $<TARGET_NAME_IF_EXISTS:hdf5::hdf5> $<TARGET_NAME_IF_EXISTS:compile_options>)
-install(TARGETS h5read LIBRARY COMPONENT Runtime)
 
 if (TARGET hdf5::hdf5)
   add_compile_definitions(HAVE_HDF5)
