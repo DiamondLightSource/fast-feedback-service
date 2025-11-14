@@ -47,17 +47,8 @@ class ReekeIndexGenerator {
         const int enter = 0;
         const int yield = 1;
 
-        // Static variables
-        static std::optional<std::pair<int, int>> h_lims;
-        static std::optional<std::pair<int, int>> k_lims;
-        static std::array<std::optional<std::pair<int, int>>, 2> l_lims_arr;
-        static std::size_t l_index;
-        static int state = enter;
-
         // The first time the function is executed, control starts at the top (case 0).
-        // On subsequent calls, control starts after the "yield" point (case 1), The
-        // static variables ensure that the state is recovered on each subsequent
-        // function call.
+        // On subsequent calls, control starts after the "yield" point (case 1).
         std::array<int, 3> result;
         switch (state) {
         case enter:
@@ -424,6 +415,12 @@ class ReekeIndexGenerator {
     double dmin;
     bool use_monochromatic;
     gemmi::GroupOps crystal_symmetry_operations;
+    std::optional<std::pair<int, int>> h_lims;
+    std::optional<std::pair<int, int>> k_lims;
+    std::array<std::optional<std::pair<int, int>>, 2> l_lims_arr;
+    std::size_t l_index;
+    int state = 0;
+
 };
 
 class PolychromaticRotationalIndexGenerator {
@@ -477,18 +474,9 @@ class StillsIndexGenerator {
         const int enter = 0;
         const int yield = 1;
 
-        // Static variables
-        static std::optional<std::pair<int, int>> h_lims;
-        static std::optional<std::pair<int, int>> k_lims;
-        static std::array<std::optional<std::pair<int, int>>, 2> l_lims_arr;
-        static std::size_t l_index;
-        static int state = enter;
-
         // This switch simulates a co-routine or python generator. The first time
         // the function is executed, control starts at the top (case 0). On
-        // subsequent calls, control starts after the "yield" point (case 1), The
-        // static variables ensure that the state is recovered on each subsequent
-        // function call.
+        // subsequent calls, control starts after the "yield" point (case 1).
         std::array<int, 3> result;
         switch (state) {
         case enter:
@@ -668,5 +656,10 @@ class StillsIndexGenerator {
     double s0_len_sq_min;
     double s0_len_sq_max;
     gemmi::GroupOps crystal_symmetry_operations;
+    std::optional<std::pair<int, int>> h_lims;
+    std::optional<std::pair<int, int>> k_lims;
+    std::array<std::optional<std::pair<int, int>>, 2> l_lims_arr;
+    std::size_t l_index;
+    int state = 0;
 };
 #pragma endregion

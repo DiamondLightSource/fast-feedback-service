@@ -24,10 +24,13 @@
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <vector>
-
+#include <mutex>
+#include <future>
 #include "index_generators.cc"
 #include "ray_predictors.cc"
 #include "utils.cc"
+#include "threadpool.cc"
+
 
 using json = nlohmann::json;
 
@@ -60,6 +63,9 @@ void configure_parser(argparse::ArgumentParser &parser) {
       .help("for a scan varying model, forces static prediction")
       .default_value(false)
       .implicit_value(true);
+    parser.add_argument("-n", "--nthreads")
+      .help("Number of threads for parallelisation")
+      .scan<'u', size_t>();
 }
 
 /**
@@ -118,10 +124,118 @@ struct scan_varying_data {
     auto operator<=>(const scan_varying_data &) const = default;
 };
 
-predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experiment,
+// use a global output struct for writing predictions from many threads.
+predicted_data_rotation output_data {};
+std::mutex write_output_data_mtx;
+
+void predict_single_image(const int image_index, const scan_varying_data& sv_data,
+    const Vector3d s0, const Matrix3d A, const Goniometer& goniometer, const Scan& scan, const Detector& detector, double param_dmin,
+    gemmi::GroupOps crystal_symmetry_operations
+){
+    bool use_mono = true;
+    const Vector3d m2 = goniometer.get_rotation_axis();
+    int z0 = scan.get_image_range()[0] - 1;
+    // A Rotator object that generates rotations around axis m2
+    const Rotator rotator(m2);
+    const Matrix3d r_fixed = goniometer.get_sample_rotation();
+    const Matrix3d r_setting = goniometer.get_setting_rotation();
+    const double d_osc = scan.get_oscillation()[1];
+    const double osc0 = scan.get_oscillation()[0];
+
+    predicted_data_rotation output_data_this_image;
+    Vector3d s0_1 = sv_data.s0_at_scan_points.empty()
+                      ? s0
+                      : sv_data.s0_at_scan_points[image_index];
+    Vector3d s0_2 = sv_data.s0_at_scan_points.empty()
+                      ? s0
+                      : sv_data.s0_at_scan_points[image_index + 1];
+    Matrix3d A1 =
+      sv_data.A_at_scan_points.empty() ? A : sv_data.A_at_scan_points[image_index];
+    Matrix3d A2 = sv_data.A_at_scan_points.empty()
+                    ? A
+                    : sv_data.A_at_scan_points[image_index + 1];
+    Matrix3d r_setting_1 = sv_data.r_setting_at_scan_points.empty()
+                              ? r_setting
+                              : sv_data.r_setting_at_scan_points[image_index];
+    Matrix3d r_setting_2 = sv_data.r_setting_at_scan_points.empty()
+                              ? r_setting
+                              : sv_data.r_setting_at_scan_points[image_index + 1];
+    // Redefine A1 and A2 to encompass all 3 rotations
+    const double phi_beg = osc0 + image_index * d_osc;
+    const double phi_end = phi_beg + d_osc;
+    Matrix3d r_beg = rotator.rotation_matrix(phi_beg);
+    Matrix3d r_end = rotator.rotation_matrix(phi_end);
+    A1 = r_setting_1 * r_beg * r_fixed * A1;
+    A2 = r_setting_2 * r_end * r_fixed * A2;
+    ReekeIndexGenerator index_generator(
+      A1, A2, crystal_symmetry_operations, s0_1, s0_2, param_dmin, use_mono);
+
+    std::function<std::array<std::optional<Ray>, 2>(const std::array<int, 3> &)>
+      predict_ray;
+
+    // Note that using predict_ray_monochromatic_sv seems to be 2x faster than using
+    // predict_ray_monochromatic_static, and we have all the inputs required, so use that...
+    // Otherwise wrap in an if/else based on if any sv_data not being empty.
+    predict_ray = [=](const std::array<int, 3> &index) {
+        std::array<std::optional<Ray>, 2> rays;
+        rays[0] = predict_ray_monochromatic_sv(
+          index, A1, A2, s0_1, s0_2, param_dmin, phi_beg, d_osc);
+        return rays;
+    };
+    // Slower static predict function,
+    /*predict_ray = [=](const std::array<int, 3>& index) {
+      return predict_ray_monochromatic_static(
+        index, A1, r_setting_1, r_setting_1_inv, s0, m2, rotator, param_dmin, phi_beg, d_osc
+      );
+  };*/
+
+    for (;;) {
+        std::optional<std::array<int, 3>> index = index_generator.next();
+        if (!index) break;
+
+        // Check if a reflection occurs at the given Miller index
+        // within the required resolution.
+        std::array<std::optional<Ray>, 2> rays = predict_ray(index.value());
+        for (std::optional<Ray> ray : rays) {
+            if (!ray) continue;
+            // Append the ray
+            auto impact = detector.get_ray_intersection(ray->s1);
+            if (!impact.has_value()) continue;
+            // Get the frame that a reflection with this angle will be observed at
+            double frame = z0 + (ray->angle - osc0) / d_osc;
+            intersection result = impact.value();
+            auto panel = result.panel_id;
+            std::array<double, 3> coords_mm = {
+              result.xymm[0], result.xymm[1], ray->angle * M_PI / 180};
+            std::array<double, 2> xycoords_px =
+              detector.panels()[panel].mm_to_px(coords_mm[0], coords_mm[1]);
+            std::array<double, 3> coords_px = {
+              xycoords_px[0], xycoords_px[1], frame};
+            std::array<double, 3> s1 = {ray->s1[0], ray->s1[1], ray->s1[2]};
+            output_data_this_image.add(index.value(),
+                            s1,
+                            coords_px,
+                            coords_mm,
+                            panel,
+                            ray->entering,
+                            predicted_flag);
+        }
+    }
+    // now write to shared output data.
+    std::lock_guard<std::mutex> lock(write_output_data_mtx);
+    output_data.hkl.insert(output_data.hkl.end(), output_data_this_image.hkl.begin(), output_data_this_image.hkl.end());
+    output_data.s1.insert(output_data.s1.end(), output_data_this_image.s1.begin(), output_data_this_image.s1.end());
+    output_data.xyz_px.insert(output_data.xyz_px.end(), output_data_this_image.xyz_px.begin(), output_data_this_image.xyz_px.end());
+    output_data.xyz_mm.insert(output_data.xyz_mm.end(), output_data_this_image.xyz_mm.begin(), output_data_this_image.xyz_mm.end());
+    output_data.panels.insert(output_data.panels.end(), output_data_this_image.panels.begin(), output_data_this_image.panels.end());
+    output_data.enter.insert(output_data.enter.end(), output_data_this_image.enter.begin(), output_data_this_image.enter.end());
+    output_data.flags.insert(output_data.flags.end(), output_data_this_image.flags.begin(), output_data_this_image.flags.end());
+}
+
+void predict_rotation(Experiment<MonochromaticBeam> &experiment,
                                          const scan_varying_data &sv_data,
                                          double param_dmin,
-                                         int buffer_size = 0) {
+                                         int buffer_size = 0, int nthreads=1) {
     Scan &scan = experiment.scan();
     if (buffer_size > 0) {
         // Can't have both scan varying data and a buffer
@@ -158,97 +272,19 @@ predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experime
     int z1 = scan.get_image_range()[1];
 
     Vector3d s0 = beam.get_s0();
+    int n_images = z1-z0;
+    nthreads = std::min(n_images, nthreads);
+    logger.info("Predicting spots on {} images over {} threads", n_images, nthreads);
 
-    predicted_data_rotation output_data;  // to store the predictions.
-    bool use_mono = true;
+    ThreadPool pool(nthreads);
 
-    for (int frame = z0; frame < z1; frame++) {
-        int image_index = frame - z0;
-
-        // Define the potentially scan-varying vector (s0) and matrices (A and r_setting)
-        Vector3d s0_1 = sv_data.s0_at_scan_points.empty()
-                          ? s0
-                          : sv_data.s0_at_scan_points[image_index];
-        Vector3d s0_2 = sv_data.s0_at_scan_points.empty()
-                          ? s0
-                          : sv_data.s0_at_scan_points[image_index + 1];
-        Matrix3d A1 =
-          sv_data.A_at_scan_points.empty() ? A : sv_data.A_at_scan_points[image_index];
-        Matrix3d A2 = sv_data.A_at_scan_points.empty()
-                        ? A
-                        : sv_data.A_at_scan_points[image_index + 1];
-        Matrix3d r_setting_1 = sv_data.r_setting_at_scan_points.empty()
-                                 ? r_setting
-                                 : sv_data.r_setting_at_scan_points[image_index];
-        Matrix3d r_setting_2 = sv_data.r_setting_at_scan_points.empty()
-                                 ? r_setting
-                                 : sv_data.r_setting_at_scan_points[image_index + 1];
-        Matrix3d r_setting_1_inv = r_setting_1.inverse();
-        // Redefine A1 and A2 to encompass all 3 rotations
-        const double phi_beg = osc0 + image_index * d_osc;
-        const double phi_end = phi_beg + d_osc;
-        Matrix3d r_beg = rotator.rotation_matrix(phi_beg);
-        Matrix3d r_end = rotator.rotation_matrix(phi_end);
-        A1 = r_setting_1 * r_beg * r_fixed * A1;
-        A2 = r_setting_2 * r_end * r_fixed * A2;
-
-        ReekeIndexGenerator index_generator(
-          A1, A2, crystal_symmetry_operations, s0_1, s0_2, param_dmin, use_mono);
-
-        std::function<std::array<std::optional<Ray>, 2>(const std::array<int, 3> &)>
-          predict_ray;
-
-        // Note that using predict_ray_monochromatic_sv seems to be 2x faster than using
-        // predict_ray_monochromatic_static, and we have all the inputs required, so use that...
-        // Otherwise wrap in an if/else based on if any sv_data not being empty.
-        predict_ray = [=](const std::array<int, 3> &index) {
-            std::array<std::optional<Ray>, 2> rays;
-            rays[0] = predict_ray_monochromatic_sv(
-              index, A1, A2, s0_1, s0_2, param_dmin, phi_beg, d_osc);
-            return rays;
-        };
-        // Slower static predict function,
-        /*predict_ray = [=](const std::array<int, 3>& index) {
-          return predict_ray_monochromatic_static(
-            index, A1, r_setting_1, r_setting_1_inv, s0, m2, rotator, param_dmin, phi_beg, d_osc
-          );
-      };*/
-
-        for (;;) {
-            std::optional<std::array<int, 3>> index = index_generator.next();
-            if (!index) break;
-
-            // Check if a reflection occurs at the given Miller index
-            // within the required resolution.
-            std::array<std::optional<Ray>, 2> rays = predict_ray(index.value());
-            for (std::optional<Ray> ray : rays) {
-                if (!ray) continue;
-                // Append the ray
-                auto impact = detector.get_ray_intersection(ray->s1);
-                if (!impact.has_value()) continue;
-                // Get the frame that a reflection with this angle will be observed at
-                double frame = z0 + (ray->angle - osc0) / d_osc;
-                intersection result = impact.value();
-                auto panel = result.panel_id;
-                std::array<double, 3> coords_mm = {
-                  result.xymm[0], result.xymm[1], ray->angle * M_PI / 180};
-                std::array<double, 2> xycoords_px =
-                  detector.panels()[panel].mm_to_px(coords_mm[0], coords_mm[1]);
-                std::array<double, 3> coords_px = {
-                  xycoords_px[0], xycoords_px[1], frame};
-                std::array<double, 3> s1 = {ray->s1[0], ray->s1[1], ray->s1[2]};
-                output_data.add(index.value(),
-                                s1,
-                                coords_px,
-                                coords_mm,
-                                panel,
-                                ray->entering,
-                                predicted_flag);
-            }
-        }
+    for (int image_index = 0; image_index < n_images; ++image_index) {
+        pool.enqueue([=] {
+            predict_single_image(image_index, sv_data, s0, A,
+                                goniometer, scan, detector,
+                                param_dmin, crystal_symmetry_operations);
+        });
     }
-
-    return output_data;
 }
 
 int main(int argc, char **argv) {
@@ -272,6 +308,13 @@ int main(int argc, char **argv) {
     bool param_force_static = parser.get<bool>("force_static");
     const int buffer_size = parser.get<int>("buffer_size");
     const std::string output_file_path = "predicted.refl";
+    size_t nthreads;
+    if (parser.is_used("nthreads")) {
+        nthreads = parser.get<size_t>("nthreads");
+    } else {
+        size_t max_threads = std::thread::hardware_concurrency();
+        nthreads = max_threads ? max_threads : 1;
+    }
 
     std::ifstream f(input_expt);
     json elist_json_obj;
@@ -400,8 +443,7 @@ int main(int argc, char **argv) {
     int i_expt = 0;
     std::string identifier = expt.identifier();
 
-    predicted_data_rotation output_data =
-      predict_rotation(expt, sv_data, param_dmin, buffer_size);
+    predict_rotation(expt, sv_data, param_dmin, buffer_size, nthreads);
 
     // Add extra metadata to enable reflection table creation. The 'predict rotation' function can
     // be called in a loop over experiments, so here add the data which tracks which experiment
