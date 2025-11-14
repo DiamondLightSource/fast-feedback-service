@@ -20,17 +20,17 @@
 #include <dx2/scan.hpp>
 #include <exception>
 #include <fstream>
+#include <future>
 #include <gemmi/symmetry.hpp>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <vector>
-#include <mutex>
-#include <future>
+
 #include "index_generators.cc"
 #include "ray_predictors.cc"
-#include "utils.cc"
 #include "threadpool.cc"
-
+#include "utils.cc"
 
 using json = nlohmann::json;
 
@@ -125,13 +125,18 @@ struct scan_varying_data {
 };
 
 // use a global output struct for writing predictions from many threads.
-predicted_data_rotation output_data {};
+predicted_data_rotation output_data{};
 std::mutex write_output_data_mtx;
 
-void predict_single_image(const int image_index, const scan_varying_data& sv_data,
-    const Vector3d s0, const Matrix3d A, const Goniometer& goniometer, const Scan& scan, const Detector& detector, double param_dmin,
-    gemmi::GroupOps crystal_symmetry_operations
-){
+void predict_single_image(const int image_index,
+                          const scan_varying_data &sv_data,
+                          const Vector3d s0,
+                          const Matrix3d A,
+                          const Goniometer &goniometer,
+                          const Scan &scan,
+                          const Detector &detector,
+                          double param_dmin,
+                          gemmi::GroupOps crystal_symmetry_operations) {
     bool use_mono = true;
     const Vector3d m2 = goniometer.get_rotation_axis();
     int z0 = scan.get_image_range()[0] - 1;
@@ -143,23 +148,21 @@ void predict_single_image(const int image_index, const scan_varying_data& sv_dat
     const double osc0 = scan.get_oscillation()[0];
 
     predicted_data_rotation output_data_this_image;
-    Vector3d s0_1 = sv_data.s0_at_scan_points.empty()
-                      ? s0
-                      : sv_data.s0_at_scan_points[image_index];
+    Vector3d s0_1 =
+      sv_data.s0_at_scan_points.empty() ? s0 : sv_data.s0_at_scan_points[image_index];
     Vector3d s0_2 = sv_data.s0_at_scan_points.empty()
                       ? s0
                       : sv_data.s0_at_scan_points[image_index + 1];
     Matrix3d A1 =
       sv_data.A_at_scan_points.empty() ? A : sv_data.A_at_scan_points[image_index];
-    Matrix3d A2 = sv_data.A_at_scan_points.empty()
-                    ? A
-                    : sv_data.A_at_scan_points[image_index + 1];
+    Matrix3d A2 =
+      sv_data.A_at_scan_points.empty() ? A : sv_data.A_at_scan_points[image_index + 1];
     Matrix3d r_setting_1 = sv_data.r_setting_at_scan_points.empty()
-                              ? r_setting
-                              : sv_data.r_setting_at_scan_points[image_index];
+                             ? r_setting
+                             : sv_data.r_setting_at_scan_points[image_index];
     Matrix3d r_setting_2 = sv_data.r_setting_at_scan_points.empty()
-                              ? r_setting
-                              : sv_data.r_setting_at_scan_points[image_index + 1];
+                             ? r_setting
+                             : sv_data.r_setting_at_scan_points[image_index + 1];
     // Redefine A1 and A2 to encompass all 3 rotations
     const double phi_beg = osc0 + image_index * d_osc;
     const double phi_end = phi_beg + d_osc;
@@ -209,33 +212,47 @@ void predict_single_image(const int image_index, const scan_varying_data& sv_dat
               result.xymm[0], result.xymm[1], ray->angle * M_PI / 180};
             std::array<double, 2> xycoords_px =
               detector.panels()[panel].mm_to_px(coords_mm[0], coords_mm[1]);
-            std::array<double, 3> coords_px = {
-              xycoords_px[0], xycoords_px[1], frame};
+            std::array<double, 3> coords_px = {xycoords_px[0], xycoords_px[1], frame};
             std::array<double, 3> s1 = {ray->s1[0], ray->s1[1], ray->s1[2]};
             output_data_this_image.add(index.value(),
-                            s1,
-                            coords_px,
-                            coords_mm,
-                            panel,
-                            ray->entering,
-                            predicted_flag);
+                                       s1,
+                                       coords_px,
+                                       coords_mm,
+                                       panel,
+                                       ray->entering,
+                                       predicted_flag);
         }
     }
     // now write to shared output data.
     std::lock_guard<std::mutex> lock(write_output_data_mtx);
-    output_data.hkl.insert(output_data.hkl.end(), output_data_this_image.hkl.begin(), output_data_this_image.hkl.end());
-    output_data.s1.insert(output_data.s1.end(), output_data_this_image.s1.begin(), output_data_this_image.s1.end());
-    output_data.xyz_px.insert(output_data.xyz_px.end(), output_data_this_image.xyz_px.begin(), output_data_this_image.xyz_px.end());
-    output_data.xyz_mm.insert(output_data.xyz_mm.end(), output_data_this_image.xyz_mm.begin(), output_data_this_image.xyz_mm.end());
-    output_data.panels.insert(output_data.panels.end(), output_data_this_image.panels.begin(), output_data_this_image.panels.end());
-    output_data.enter.insert(output_data.enter.end(), output_data_this_image.enter.begin(), output_data_this_image.enter.end());
-    output_data.flags.insert(output_data.flags.end(), output_data_this_image.flags.begin(), output_data_this_image.flags.end());
+    output_data.hkl.insert(output_data.hkl.end(),
+                           output_data_this_image.hkl.begin(),
+                           output_data_this_image.hkl.end());
+    output_data.s1.insert(output_data.s1.end(),
+                          output_data_this_image.s1.begin(),
+                          output_data_this_image.s1.end());
+    output_data.xyz_px.insert(output_data.xyz_px.end(),
+                              output_data_this_image.xyz_px.begin(),
+                              output_data_this_image.xyz_px.end());
+    output_data.xyz_mm.insert(output_data.xyz_mm.end(),
+                              output_data_this_image.xyz_mm.begin(),
+                              output_data_this_image.xyz_mm.end());
+    output_data.panels.insert(output_data.panels.end(),
+                              output_data_this_image.panels.begin(),
+                              output_data_this_image.panels.end());
+    output_data.enter.insert(output_data.enter.end(),
+                             output_data_this_image.enter.begin(),
+                             output_data_this_image.enter.end());
+    output_data.flags.insert(output_data.flags.end(),
+                             output_data_this_image.flags.begin(),
+                             output_data_this_image.flags.end());
 }
 
 void predict_rotation(Experiment<MonochromaticBeam> &experiment,
-                                         const scan_varying_data &sv_data,
-                                         double param_dmin,
-                                         int buffer_size = 0, int nthreads=1) {
+                      const scan_varying_data &sv_data,
+                      double param_dmin,
+                      int buffer_size = 0,
+                      int nthreads = 1) {
     Scan &scan = experiment.scan();
     if (buffer_size > 0) {
         // Can't have both scan varying data and a buffer
@@ -272,7 +289,7 @@ void predict_rotation(Experiment<MonochromaticBeam> &experiment,
     int z1 = scan.get_image_range()[1];
 
     Vector3d s0 = beam.get_s0();
-    int n_images = z1-z0;
+    int n_images = z1 - z0;
     nthreads = std::min(n_images, nthreads);
     logger.info("Predicting spots on {} images over {} threads", n_images, nthreads);
 
@@ -280,9 +297,15 @@ void predict_rotation(Experiment<MonochromaticBeam> &experiment,
 
     for (int image_index = 0; image_index < n_images; ++image_index) {
         pool.enqueue([=] {
-            predict_single_image(image_index, sv_data, s0, A,
-                                goniometer, scan, detector,
-                                param_dmin, crystal_symmetry_operations);
+            predict_single_image(image_index,
+                                 sv_data,
+                                 s0,
+                                 A,
+                                 goniometer,
+                                 scan,
+                                 detector,
+                                 param_dmin,
+                                 crystal_symmetry_operations);
         });
     }
 }

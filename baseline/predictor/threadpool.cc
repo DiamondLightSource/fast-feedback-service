@@ -1,20 +1,20 @@
-#include <vector>
-#include <queue>
-#include <thread>
-#include <mutex>
+#include <atomic>
 #include <condition_variable>
 #include <functional>
-#include <atomic>
+#include <mutex>
+#include <queue>
+#include <thread>
+#include <vector>
 
 class ThreadPool {
-public:
+  public:
     ThreadPool(size_t num_threads);
     ~ThreadPool();
 
     // Enqueue a task
     void enqueue(std::function<void()> task);
 
-private:
+  private:
     std::vector<std::thread> workers;
     std::queue<std::function<void()>> tasks;
 

@@ -420,7 +420,6 @@ class ReekeIndexGenerator {
     std::array<std::optional<std::pair<int, int>>, 2> l_lims_arr;
     std::size_t l_index;
     int state = 0;
-
 };
 
 class PolychromaticRotationalIndexGenerator {
