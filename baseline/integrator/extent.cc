@@ -179,7 +179,11 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
         for (const auto &s_prime : s_prime_vectors) {
             // Direct conversion from s′ vector to detector coordinates
             // get_ray_intersection returns coordinates in mm
-            std::array<double, 2> xy_mm = panel.get_ray_intersection(s_prime);
+            auto xy_mm_opt = panel.get_ray_intersection(s_prime);
+            if (!xy_mm_opt) {
+                continue;  // Skip this corner if no intersection
+            }
+            std::array<double, 2> xy_mm = *xy_mm_opt;
 
             // Convert from mm to pixels using the new mm_to_px function
             std::array<double, 2> xy_pixels = panel.mm_to_px(xy_mm[0], xy_mm[1]);
