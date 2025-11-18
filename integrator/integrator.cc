@@ -29,11 +29,10 @@
 #include "common.hpp"
 #include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
-#include "extent.cuh"
+#include "extent.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
 #include "kabsch.cuh"
-#include "math/vector3d.cuh"
 #include "version.hpp"
 
 using namespace std::chrono_literals;
@@ -233,12 +232,27 @@ int main(int argc, char **argv) {
     }
     auto phi_column = *phi_column_opt;
 
-    auto bbox_column_opt = reflections.column<int>("bbox");
-    if (!bbox_column_opt) {
-        logger.error("Column 'bbox' not found in reflection data.");
-        return 1;
+    // TODO: Improve this hacky conversion from double to scalar_t (float)
+    std::vector<scalar_t> s1_vectors_converted_data(s1_vectors.extent(0) * 3);
+    mdspan_type<scalar_t> s1_vectors_converted(
+      s1_vectors_converted_data.data(), s1_vectors.extent(0), 3);
+    size_t num_reflections = s1_vectors.extent(0);
+
+    // Direct pointer access conversion loop -> compiler should optimize this
+    const double *src = s1_vectors.data_handle();
+    scalar_t *dst = s1_vectors_converted_data.data();
+    for (size_t i = 0; i < num_reflections * 3; ++i) {
+        dst[i] = static_cast<scalar_t>(src[i]);
     }
-    auto bbox_column = *bbox_column_opt;
+
+    std::vector<scalar_t> phi_positions_converted_data(phi_column.extent(0));
+    // mdspan_type<scalar_t> phi_positions_converted(phi_positions_converted_data.data(), phi_column.extent(0));
+    // Direct pointer access conversion loop -> compiler should optimize this
+    src = phi_column.data_handle();
+    dst = phi_positions_converted_data.data();
+    for (size_t i = 0; i < phi_column.extent(0); ++i) {
+        dst[i] = static_cast<scalar_t>(src[i]);
+    }
 
     // Parse experiment list from JSON
     std::ifstream f(experiment_file);
@@ -272,14 +286,276 @@ int main(int argc, char **argv) {
     // Extract vectors and parameters
     Eigen::Vector3d s0 = beam.get_s0();
     Eigen::Vector3d rotation_axis = gonio.get_rotation_axis();
-    size_t num_reflections = s1_vectors.extent(0);
+    // size_t num_reflections = s1_vectors.extent(0);
     const auto [osc_start, osc_width] = scan.get_oscillation();
     int image_range_start = scan.get_image_range()[0];
     double wl = beam.get_wavelength();
 
 #pragma endregion Data preparation
-#pragma region Bbox computation
 
+#pragma region Image Reading and Threading
+    // Now set up for multi-threaded image reading and processing
+    logger.info("Setting up image reading and threading");
+
+    std::signal(SIGINT, stop_processing);
+
+    // Compute bounding boxes using CPU-based Kabsch coordinate system
+    logger.info(
+      "Computing Kabsch bounding boxes for {} reflections using CPU implementation",
+      num_reflections);
+
+    // Call the CPU-based extent function
+    // Note: compute_kabsch_bounding_boxes expects double precision mdspan,
+    // so we pass the original double precision s1_vectors and phi_column
+    std::vector<BoundingBoxExtents> computed_bboxes =
+      compute_kabsch_bounding_boxes(s0,
+                                    rotation_axis,
+                                    s1_vectors,
+                                    phi_column,
+                                    num_reflections,
+                                    sigma_b,
+                                    sigma_m,
+                                    panel,
+                                    scan,
+                                    beam);
+
+    logger.info("Bounding box computation completed");
+
+    // Convert BoundingBoxExtents to flat array format for storage
+    std::vector<double> computed_bbox_data(num_reflections * 6);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        const int step = 6 * i;
+        computed_bbox_data[step + 0] = computed_bboxes[i].x_min;
+        computed_bbox_data[step + 1] = computed_bboxes[i].x_max;
+        computed_bbox_data[step + 2] = computed_bboxes[i].y_min;
+        computed_bbox_data[step + 3] = computed_bboxes[i].y_max;
+        computed_bbox_data[step + 4] = static_cast<double>(computed_bboxes[i].z_min);
+        computed_bbox_data[step + 5] = static_cast<double>(computed_bboxes[i].z_max);
+    }
+
+    // Map reflections by z layer (image number)
+    logger.info("Mapping reflections by image number (z layer)");
+    std::unordered_map<int, std::vector<size_t>> reflections_by_image;
+
+    for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
+        const auto &bbox = computed_bboxes[refl_id];
+
+        // Add this reflection to all images it spans
+        for (int z = bbox.z_min; z <= bbox.z_max; ++z) {
+            reflections_by_image[z].push_back(refl_id);
+        }
+    }
+
+    logger.info("Reflections mapped across {} unique images",
+                reflections_by_image.size());
+
+    // Log some statistics about the mapping
+    if (!reflections_by_image.empty()) {
+        size_t min_refls_per_image = std::numeric_limits<size_t>::max();
+        size_t max_refls_per_image = 0;
+        size_t total_refls = 0;
+
+        for (const auto &[image, refls] : reflections_by_image) {
+            min_refls_per_image = std::min(min_refls_per_image, refls.size());
+            max_refls_per_image = std::max(max_refls_per_image, refls.size());
+            total_refls += refls.size();
+        }
+
+        double avg_refls_per_image =
+          static_cast<double>(total_refls) / reflections_by_image.size();
+        logger.info("Reflections per image: min={}, max={}, avg={:.1f}",
+                    min_refls_per_image,
+                    max_refls_per_image,
+                    avg_refls_per_image);
+    }
+
+    // Get threading parameters
+    uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
+    if (num_cpu_threads < 1) {
+        logger.error("Thread count must be >= 1");
+        return 1;
+    }
+    logger.info("Running with {} CPU threads", num_cpu_threads);
+
+    // Set up image reader
+    const auto images_file = parser.images();
+    std::unique_ptr<Reader> reader_ptr;
+
+    // Wait for read-readiness
+    if (!std::filesystem::exists(images_file)) {
+        wait_for_ready_for_read(
+          images_file,
+          [](const std::string &s) { return std::filesystem::exists(s); },
+          wait_timeout);
+    }
+
+    if (std::filesystem::is_directory(images_file)) {
+        wait_for_ready_for_read(images_file, is_ready_for_read<SHMRead>, wait_timeout);
+        reader_ptr = std::make_unique<SHMRead>(images_file);
+    } else if (images_file.ends_with(".cbf")) {
+        logger.error("CBF reading not yet supported in integrator mode");
+        return 1;
+    } else {
+        wait_for_ready_for_read(images_file, is_ready_for_read<H5Read>, wait_timeout);
+        reader_ptr = images_file.empty() ? std::make_unique<H5Read>()
+                                         : std::make_unique<H5Read>(images_file);
+    }
+
+    Reader &reader = *reader_ptr;
+    auto reader_mutex = std::mutex{};
+
+    uint32_t num_images = reader.get_number_of_images();
+    uint32_t height = reader.image_shape()[0];
+    uint32_t width = reader.image_shape()[1];
+
+    logger.info("Image dimensions: {} x {} = {} pixels", width, height, width * height);
+    logger.info("Number of images: {}", num_images);
+
+    auto all_images_start_time = std::chrono::high_resolution_clock::now();
+    auto next_image = std::atomic<int>(0);
+    auto completed_images = std::atomic<int>(0);
+    auto cpu_sync = std::barrier{num_cpu_threads};
+
+    double time_waiting_for_images = 0.0;
+
+    // Spawn the reader threads
+    std::vector<std::jthread> threads;
+    for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
+        threads.emplace_back([&, thread_id]() {
+            auto stop_token = global_stop.get_token();
+
+            // Full image buffers for decompression
+            auto decompressed_image = make_cuda_pinned_malloc<pixel_t>(width * height);
+            auto raw_chunk_buffer =
+              std::vector<uint8_t>(width * height * sizeof(pixel_t));
+
+            // Let all threads do setup tasks before reading starts
+            cpu_sync.arrive_and_wait();
+
+            auto last_image_received = std::chrono::high_resolution_clock::now();
+
+            while (!stop_token.stop_requested()) {
+                auto image_num = next_image.fetch_add(1);
+                if (image_num >= num_images) {
+                    break;
+                }
+
+                // Check if this image has any reflections
+                if (reflections_by_image.find(image_num)
+                    == reflections_by_image.end()) {
+                    completed_images += 1;
+                    continue;
+                }
+
+                {
+                    std::scoped_lock lock(reader_mutex);
+                    auto swmr_wait_start_time =
+                      std::chrono::high_resolution_clock::now();
+
+                    // Check that our image is available and wait if not
+                    while (!reader.is_image_available(image_num)
+                           && !stop_token.stop_requested()) {
+                        auto current_time = std::chrono::high_resolution_clock::now();
+                        auto elapsed_wait_time =
+                          std::chrono::duration_cast<std::chrono::duration<double>>(
+                            current_time - last_image_received)
+                            .count();
+
+                        if (elapsed_wait_time > wait_timeout) {
+                            logger.error("Timeout waiting for image {}", image_num);
+                            global_stop.request_stop();
+                            break;
+                        }
+
+                        std::this_thread::sleep_for(100ms);
+                    }
+
+                    if (stop_token.stop_requested()) {
+                        break;
+                    }
+
+                    last_image_received = std::chrono::high_resolution_clock::now();
+                    time_waiting_for_images +=
+                      std::chrono::duration_cast<std::chrono::duration<double>>(
+                        std::chrono::high_resolution_clock::now()
+                        - swmr_wait_start_time)
+                        .count();
+                }
+
+                // Fetch the image data from the reader
+                std::span<uint8_t> buffer;
+                while (true) {
+                    {
+                        std::scoped_lock lock(reader_mutex);
+                        buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
+                    }
+
+                    if (buffer.size() == 0) {
+                        logger.warn("Got buffer size 0 for image {}. Sleeping.",
+                                    image_num);
+                        std::this_thread::sleep_for(100ms);
+                        continue;
+                    }
+                    break;
+                }
+
+                // Decompress the data
+                switch (reader.get_raw_chunk_compression()) {
+                case Reader::ChunkCompression::BITSHUFFLE_LZ4:
+                    bshuf_decompress_lz4(buffer.data() + 12,
+                                         decompressed_image.get(),
+                                         width * height,
+                                         sizeof(pixel_t),
+                                         0);
+                    break;
+                case Reader::ChunkCompression::BYTE_OFFSET_32:
+                    decompress_byte_offset<pixel_t>(
+                      buffer,
+                      {decompressed_image.get(),
+                       static_cast<std::span<pixel_t>::size_type>(width * height)});
+                    break;
+                }
+
+                // TODO: image processing here
+                // decompressed_image.get() contains the decompressed pixel data (width * height pixels)
+                // reflections_by_image[image_num] contains the reflection IDs for this image
+
+                logger.trace("Thread {} loaded image {}", thread_id, image_num);
+                completed_images += 1;
+            }
+        });
+    }
+
+    // Wait for all threads to finish
+    for (auto &thread : threads) {
+        thread.join();
+    }
+
+    float total_time =
+      std::chrono::duration_cast<std::chrono::duration<double>>(
+        std::chrono::high_resolution_clock::now() - all_images_start_time)
+        .count();
+
+    logger.info("{} images processed in {:.2f} s ({:.1f} fps)",
+                int(completed_images),
+                total_time,
+                completed_images / total_time);
+
+    if (time_waiting_for_images < 10) {
+        logger.info("Total time waiting for images: {:.0f} ms",
+                    time_waiting_for_images * 1000);
+    } else {
+        logger.info("Total time waiting for images: {:.2f} s", time_waiting_for_images);
+    }
+
+#pragma endregion Image Reading and Threading
+
+    return 0;
+}
+#pragma endregion Application Entry
+
+#pragma region Bbox computation
+/*
     // Compute new bounding boxes using Kabsch coordinate system
 
     logger.info("Computing new Kabsch bounding boxes for {} reflections",
@@ -585,11 +861,10 @@ int main(int argc, char **argv) {
 #pragma region Application Output
 
     // Add computed bounding boxes to reflection table for comparison
-    std::vector<double> computed_bbox_data_double(computed_bbox_data.begin(),
-                                                  computed_bbox_data.end());
+    // computed_bbox_data is already std::vector<double>
     reflections.add_column("computed_bbox",
                            std::vector<size_t>{num_reflections, 6},
-                           computed_bbox_data_double);
+                           computed_bbox_data);
 
     // Create voxel data table
     ReflectionTable voxel_table;
@@ -609,221 +884,5 @@ int main(int argc, char **argv) {
     voxel_table.write("voxel_kabsch_data.h5");
 
     logger.info("Results saved to output_reflections.h5 and voxel_kabsch_data.h5");
-
+*/
 #pragma endregion Application Output
-
-#pragma region Image Reading and Threading
-    // Now set up for multi-threaded image reading and processing
-    logger.info("Setting up image reading and threading");
-
-    std::signal(SIGINT, stop_processing);
-
-    logger.info("Grouping reflections by image number");
-    /*
-     * Create a mapping from image number to list of reflection IDs to
-     * identify which reflections need to be processed for each image.
-     * 
-     * An image appears on image z if its bounding box z-range (z_min, z_max).
-     * 
-     * This allows efficient lookup of reflections for each image during
-     * multi-threaded image processing. When processing image N, we can
-     * quickly find all reflections that span image N.
-    */
-    std::unordered_map<int, std::vector<size_t>> reflections_by_image;
-
-    for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
-        int z_min = static_cast<int>(bbox_column(refl_id, 4));
-        int z_max = static_cast<int>(bbox_column(refl_id, 5));
-
-        // Add reflection to all images it spans
-        for (int z = z_min; z < z_max; ++z) {
-            reflections_by_image[z].push_back(refl_id);
-        }
-    }
-
-    logger.info("Reflections span {} unique images", reflections_by_image.size());
-
-    // Get threading parameters
-    uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
-    if (num_cpu_threads < 1) {
-        logger.error("Thread count must be >= 1");
-        return 1;
-    }
-    logger.info("Running with {} CPU threads", num_cpu_threads);
-
-    // Set up image reader
-    const auto images_file = parser.images();
-    std::unique_ptr<Reader> reader_ptr;
-
-    // Wait for read-readiness
-    if (!std::filesystem::exists(images_file)) {
-        wait_for_ready_for_read(
-          images_file,
-          [](const std::string &s) { return std::filesystem::exists(s); },
-          wait_timeout);
-    }
-
-    if (std::filesystem::is_directory(images_file)) {
-        wait_for_ready_for_read(images_file, is_ready_for_read<SHMRead>, wait_timeout);
-        reader_ptr = std::make_unique<SHMRead>(images_file);
-    } else if (images_file.ends_with(".cbf")) {
-        logger.error("CBF reading not yet supported in integrator mode");
-        return 1;
-    } else {
-        wait_for_ready_for_read(images_file, is_ready_for_read<H5Read>, wait_timeout);
-        reader_ptr = images_file.empty() ? std::make_unique<H5Read>()
-                                         : std::make_unique<H5Read>(images_file);
-    }
-
-    Reader &reader = *reader_ptr;
-    auto reader_mutex = std::mutex{};
-
-    uint32_t num_images = reader.get_number_of_images();
-    uint32_t height = reader.image_shape()[0];
-    uint32_t width = reader.image_shape()[1];
-
-    logger.info("Image dimensions: {} x {} = {} pixels", width, height, width * height);
-    logger.info("Number of images: {}", num_images);
-
-    auto all_images_start_time = std::chrono::high_resolution_clock::now();
-    auto next_image = std::atomic<int>(0);
-    auto completed_images = std::atomic<int>(0);
-    auto cpu_sync = std::barrier{num_cpu_threads};
-
-    double time_waiting_for_images = 0.0;
-
-    // Spawn the reader threads
-    std::vector<std::jthread> threads;
-    for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
-        threads.emplace_back([&, thread_id]() {
-            auto stop_token = global_stop.get_token();
-
-            // Full image buffers for decompression
-            auto decompressed_image = make_cuda_pinned_malloc<pixel_t>(width * height);
-            auto raw_chunk_buffer =
-              std::vector<uint8_t>(width * height * sizeof(pixel_t));
-
-            // Let all threads do setup tasks before reading starts
-            cpu_sync.arrive_and_wait();
-
-            auto last_image_received = std::chrono::high_resolution_clock::now();
-
-            while (!stop_token.stop_requested()) {
-                auto image_num = next_image.fetch_add(1);
-                if (image_num >= num_images) {
-                    break;
-                }
-
-                // Check if this image has any reflections
-                if (reflections_by_image.find(image_num)
-                    == reflections_by_image.end()) {
-                    completed_images += 1;
-                    continue;
-                }
-
-                {
-                    std::scoped_lock lock(reader_mutex);
-                    auto swmr_wait_start_time =
-                      std::chrono::high_resolution_clock::now();
-
-                    // Check that our image is available and wait if not
-                    while (!reader.is_image_available(image_num)
-                           && !stop_token.stop_requested()) {
-                        auto current_time = std::chrono::high_resolution_clock::now();
-                        auto elapsed_wait_time =
-                          std::chrono::duration_cast<std::chrono::duration<double>>(
-                            current_time - last_image_received)
-                            .count();
-
-                        if (elapsed_wait_time > wait_timeout) {
-                            logger.error("Timeout waiting for image {}", image_num);
-                            global_stop.request_stop();
-                            break;
-                        }
-
-                        std::this_thread::sleep_for(100ms);
-                    }
-
-                    if (stop_token.stop_requested()) {
-                        break;
-                    }
-
-                    last_image_received = std::chrono::high_resolution_clock::now();
-                    time_waiting_for_images +=
-                      std::chrono::duration_cast<std::chrono::duration<double>>(
-                        std::chrono::high_resolution_clock::now()
-                        - swmr_wait_start_time)
-                        .count();
-                }
-
-                // Fetch the image data from the reader
-                std::span<uint8_t> buffer;
-                while (true) {
-                    {
-                        std::scoped_lock lock(reader_mutex);
-                        buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
-                    }
-
-                    if (buffer.size() == 0) {
-                        logger.warn("Got buffer size 0 for image {}. Sleeping.",
-                                    image_num);
-                        std::this_thread::sleep_for(100ms);
-                        continue;
-                    }
-                    break;
-                }
-
-                // Decompress the data
-                switch (reader.get_raw_chunk_compression()) {
-                case Reader::ChunkCompression::BITSHUFFLE_LZ4:
-                    bshuf_decompress_lz4(buffer.data() + 12,
-                                         decompressed_image.get(),
-                                         width * height,
-                                         sizeof(pixel_t),
-                                         0);
-                    break;
-                case Reader::ChunkCompression::BYTE_OFFSET_32:
-                    decompress_byte_offset<pixel_t>(
-                      buffer,
-                      {decompressed_image.get(),
-                       static_cast<std::span<pixel_t>::size_type>(width * height)});
-                    break;
-                }
-
-                // TODO: image processing here
-                // decompressed_image.get() contains the decompressed pixel data (width * height pixels)
-                // reflections_by_image[image_num] contains the reflection IDs for this image
-
-                logger.trace("Thread {} loaded image {}", thread_id, image_num);
-                completed_images += 1;
-            }
-        });
-    }
-
-    // Wait for all threads to finish
-    for (auto &thread : threads) {
-        thread.join();
-    }
-
-    float total_time =
-      std::chrono::duration_cast<std::chrono::duration<double>>(
-        std::chrono::high_resolution_clock::now() - all_images_start_time)
-        .count();
-
-    logger.info("{} images processed in {:.2f} s ({:.1f} fps)",
-                int(completed_images),
-                total_time,
-                completed_images / total_time);
-
-    if (time_waiting_for_images < 10) {
-        logger.info("Total time waiting for images: {:.0f} ms",
-                    time_waiting_for_images * 1000);
-    } else {
-        logger.info("Total time waiting for images: {:.2f} s", time_waiting_for_images);
-    }
-
-#pragma endregion Image Reading and Threading
-
-    return 0;
-}
-#pragma endregion Application Entry
