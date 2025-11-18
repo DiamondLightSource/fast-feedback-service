@@ -8,7 +8,7 @@ add_executable(integrator
     integrator.cc
     integrator.cu
     kabsch.cu
-    extent.cu
+    extent.cc
     ../spotfinder/shmread.cc
     ../spotfinder/cbfread.cc
 )
