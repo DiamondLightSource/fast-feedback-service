@@ -47,6 +47,7 @@ jobs:
           fi
 
       - name: Build and push Docker image
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         id: push
         uses: docker/build-push-action@v5
         with:
@@ -56,6 +57,7 @@ jobs:
           tags: ghcr.io/diamondlightsource/fast-feedback-service:${{ steps.tags.outputs.suffix }}
 
   create-manifest:
+    if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
     needs: build
     runs-on: ubuntu-latest
 
