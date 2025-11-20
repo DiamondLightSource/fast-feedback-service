@@ -206,17 +206,22 @@ main() {
     
     # Show build artifacts
     print_status "Build artifacts:"
-    if [[ -f build/bin/spotfinder ]]; then
-        echo "  - build/bin/spotfinder"
+    # 16-bit build artifacts
+    if [[ -d build/bin ]]; then
+        print_status "16-bit binaries (build/bin/):"
+        [[ -f build/bin/spotfinder ]] && echo -e "  - ${GREEN}spotfinder${NC}"
+        [[ -f build/bin/baseline_indexer ]] && echo -e "  - ${GREEN}baseline_indexer${NC}"
+        [[ -f build/bin/baseline_integrator ]] && echo -e "  - ${GREEN}baseline_integrator${NC}"
+        [[ -f build/bin/integrator ]] && echo -e "  - ${GREEN}integrator${NC}"
     fi
-    if [[ -f build_32bit/bin/spotfinder ]]; then
-        echo "  - build_32bit/bin/spotfinder"
-    fi
-    if [[ -f build/bin/baseline_indexer ]]; then
-        echo "  - build/bin/baseline_indexer"
-    fi
-    if [[ -f build_32bit/bin/baseline_indexer ]]; then
-        echo "  - build_32bit/bin/baseline_indexer"
+    
+    # 32-bit build artifacts
+    if [[ -d build_32bit/bin ]]; then
+        print_status "32-bit binaries (build_32bit/bin/):"
+        [[ -f build_32bit/bin/spotfinder ]] && echo -e "  - ${GREEN}spotfinder${NC}"
+        [[ -f build_32bit/bin/baseline_indexer ]] && echo -e "  - ${GREEN}baseline_indexer${NC}"
+        [[ -f build_32bit/bin/baseline_integrator ]] && echo -e "  - ${GREEN}baseline_integrator${NC}"
+        [[ -f build_32bit/bin/integrator ]] && echo -e "  - ${GREEN}integrator${NC}"
     fi
 }
 
