@@ -33,7 +33,7 @@ int validate_bounding_boxes(ReflectionTable &reflections,
       "Validation mode: comparing computed bounding boxes with existing bbox column");
 
     // Load existing bounding boxes
-    auto bbox_column_opt = reflections.column<double>(data_path + "bbox");
+    auto bbox_column_opt = reflections.column<int>(data_path + "bbox");
     if (!bbox_column_opt) {
         logger.error("Column 'bbox' not found in reflection data for validation.");
         return 1;
@@ -132,7 +132,7 @@ TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
 
     // HDF5 data path prefixes for reflection columns
     const std::string indexed_data_path = "";
-    const std::string integrated_data_path = "dials/processing/group_0/";
+    const std::string integrated_data_path = "";
 
     // Extract required columns from indexed reflections
     auto s1_vectors_opt = reflections.column<double>(indexed_data_path + "s1");
@@ -147,7 +147,7 @@ TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
 
     // Extract bbox from integrated reflections for comparison
     auto bbox_column_opt =
-      integrated_reflections.column<double>(integrated_data_path + "bbox");
+      integrated_reflections.column<int>(integrated_data_path + "bbox");
     ASSERT_TRUE(bbox_column_opt.has_value())
       << "Column 'bbox' not found in integrated reflection data.";
     auto bbox_column = *bbox_column_opt;
