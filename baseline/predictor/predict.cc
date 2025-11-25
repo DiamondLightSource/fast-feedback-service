@@ -49,6 +49,7 @@ constexpr size_t predicted_flag = (1 << 0);
  */
 void configure_parser(argparse::ArgumentParser &parser) {
     parser.add_argument("-e", "--expt").help("path to DIALS expt file");
+    parser.add_argument("-r", "--refl").help("path to DIALS indexed refl file");
     parser.add_argument("--dmin")
       .help("minimum d-spacing of predicted reflections")
       .scan<'f', double>()
@@ -324,6 +325,51 @@ int main(int argc, char **argv) {
     }
 
     verify_arguments(parser);
+    
+
+    if (parser.is_used("refl")){
+      constexpr size_t indexed_flag = (1 << 2);  // 4
+      std::string filename = parser.get<std::string>("refl");
+      ReflectionTable indexed(filename);
+      // Select based on indexed flag.
+      // Simple mean of sigma_b_variance.
+      // Mean of sigma_m_variance only of those with z > thresold?
+      auto sigma_b = indexed.column<double>("sigma_b_variance");
+      auto flags = indexed.column<std::size_t>("flags");
+      auto& sigma_b_data = sigma_b.value();
+      auto& flags_data = flags.value();
+      std::vector<bool> selection(sigma_b_data.size(), false);
+      for (int i=0;i<flags_data.size();++i){
+        if (flags_data(i,0) & indexed_flag){
+          selection[i] = true;
+        }
+      }
+      ReflectionTable filtered = indexed.select(selection);
+      auto filtered_sigma_b = filtered.column<double>("sigma_b_variance");
+      auto& filtered_sigma_b_data = filtered_sigma_b.value();
+      auto filtered_sigma_m = filtered.column<double>("sigma_m_variance");
+      auto& filtered_sigma_m_data = filtered_sigma_m.value();
+      auto extent_z = filtered.column<int>("spot_extent_z");
+      auto& extent_z_data = extent_z.value();
+      double sigma_b_total = 0;
+      double sigma_m_total = 0;
+      int n_sigma_m = 0;
+      int min_bbox_depth = 6;
+      for (int i=0;i<filtered_sigma_b_data.extent(0);++i){
+        sigma_b_total += filtered_sigma_b_data(i,0);
+        if (extent_z_data(i,0) >= min_bbox_depth){
+          sigma_m_total += filtered_sigma_m_data(i,0);
+          n_sigma_m++;
+        }
+      }
+      double avg = 180.0 * std::pow(sigma_b_total / filtered_sigma_b_data.extent(0), 0.5) / M_PI;
+      logger.info("Sigma b estimate (degrees): {:.6f}", avg);
+      double avg2 = 180.0 * std::pow(sigma_m_total / n_sigma_m, 0.5) / M_PI;
+      logger.info("Sigma m estimate (degrees): {:.6f}", avg2);
+      
+
+      // Then add rmsd error in quadrature.
+    }
 
     // Obtain argument values from the parsed command-line input
     std::string input_expt = parser.get<std::string>("expt");
