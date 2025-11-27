@@ -40,8 +40,16 @@ int validate_bounding_boxes(ReflectionTable &reflections,
     }
     auto bbox_column = *bbox_column_opt;
 
+    // Statistics for comparison
+    double total_x_min_diff = 0.0, total_x_max_diff = 0.0;
+    double total_y_min_diff = 0.0, total_y_max_diff = 0.0;
+    double total_z_min_diff = 0.0, total_z_max_diff = 0.0;
+    double max_x_min_diff = 0.0, max_x_max_diff = 0.0;
+    double max_y_min_diff = 0.0, max_y_max_diff = 0.0;
+    double max_z_min_diff = 0.0, max_z_max_diff = 0.0;
+
     logger.info("First {} bounding box comparisons:", num_to_display);
-    for (size_t i = 0; i < std::min(num_to_display, num_reflections); ++i) {
+    for (size_t i = 0; i < num_reflections; ++i) {
         // Existing bbox
         double ex_x_min = bbox_column(i, 0);
         double ex_x_max = bbox_column(i, 1);
@@ -58,23 +66,82 @@ int validate_bounding_boxes(ReflectionTable &reflections,
         int comp_z_min = static_cast<int>(computed_bbox_data[i * 6 + 4]);
         int comp_z_max = static_cast<int>(computed_bbox_data[i * 6 + 5]);
 
-        logger.info("bbox[{}]: existing x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
-                    i,
-                    ex_x_min,
-                    ex_x_max,
-                    ex_y_min,
-                    ex_y_max,
-                    ex_z_min,
-                    ex_z_max);
-        logger.info("bbox[{}]: computed x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
-                    i,
-                    comp_x_min,
-                    comp_x_max,
-                    comp_y_min,
-                    comp_y_max,
-                    comp_z_min,
-                    comp_z_max);
+        // Compute differences
+        double diff_x_min = std::abs(comp_x_min - ex_x_min);
+        double diff_x_max = std::abs(comp_x_max - ex_x_max);
+        double diff_y_min = std::abs(comp_y_min - ex_y_min);
+        double diff_y_max = std::abs(comp_y_max - ex_y_max);
+        double diff_z_min = std::abs(comp_z_min - ex_z_min);
+        double diff_z_max = std::abs(comp_z_max - ex_z_max);
+
+        // Accumulate statistics
+        total_x_min_diff += diff_x_min;
+        total_x_max_diff += diff_x_max;
+        total_y_min_diff += diff_y_min;
+        total_y_max_diff += diff_y_max;
+        total_z_min_diff += diff_z_min;
+        total_z_max_diff += diff_z_max;
+
+        max_x_min_diff = std::max(max_x_min_diff, diff_x_min);
+        max_x_max_diff = std::max(max_x_max_diff, diff_x_max);
+        max_y_min_diff = std::max(max_y_min_diff, diff_y_min);
+        max_y_max_diff = std::max(max_y_max_diff, diff_y_max);
+        max_z_min_diff = std::max(max_z_min_diff, diff_z_min);
+        max_z_max_diff = std::max(max_z_max_diff, diff_z_max);
+
+        // Display first N comparisons
+        if (i < num_to_display) {
+            logger.info(
+              "bbox[{}]: existing x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
+              i,
+              ex_x_min,
+              ex_x_max,
+              ex_y_min,
+              ex_y_max,
+              ex_z_min,
+              ex_z_max);
+            logger.info(
+              "bbox[{}]: computed x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
+              i,
+              comp_x_min,
+              comp_x_max,
+              comp_y_min,
+              comp_y_max,
+              comp_z_min,
+              comp_z_max);
+            logger.info(
+              "bbox[{}]: diff     x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] "
+              "z=[{:.1f},{:.1f}]",
+              i,
+              diff_x_min,
+              diff_x_max,
+              diff_y_min,
+              diff_y_max,
+              diff_z_min,
+              diff_z_max);
+        }
     }
+
+    // Compute and display average differences
+    double n = static_cast<double>(num_reflections);
+    logger.info("\n=== Bounding Box Comparison Statistics ===");
+    logger.info("Mean absolute differences:");
+    logger.info("  x_min: {:.3f} pixels, x_max: {:.3f} pixels",
+                total_x_min_diff / n,
+                total_x_max_diff / n);
+    logger.info("  y_min: {:.3f} pixels, y_max: {:.3f} pixels",
+                total_y_min_diff / n,
+                total_y_max_diff / n);
+    logger.info("  z_min: {:.3f} frames,  z_max: {:.3f} frames",
+                total_z_min_diff / n,
+                total_z_max_diff / n);
+    logger.info("Maximum absolute differences:");
+    logger.info(
+      "  x_min: {:.3f} pixels, x_max: {:.3f} pixels", max_x_min_diff, max_x_max_diff);
+    logger.info(
+      "  y_min: {:.3f} pixels, y_max: {:.3f} pixels", max_y_min_diff, max_y_max_diff);
+    logger.info(
+      "  z_min: {:.3f} frames,  z_max: {:.3f} frames", max_z_min_diff, max_z_max_diff);
 
     // Add computed bounding boxes to reflection table for comparison
     reflections.add_column(
@@ -93,17 +160,15 @@ class ExtentValidationTest : public ::testing::Test {
     void SetUp() override {
         // Get paths relative to test directory
         test_dir = std::filesystem::path(__FILE__).parent_path();
-        reflection_file = test_dir / "data" / "indexed.refl";
+        reflection_file = test_dir / "data" / "predicted.refl";
         experiment_file = test_dir / "data" / "indexed.expt";
-        integrated_reflection_file = test_dir / "data" / "integrated.refl";
-        integrated_experiment_file = test_dir / "data" / "integrated.expt";
+        integrated_reflection_file = test_dir / "data" / "simple_integrated.refl";
     }
 
     std::filesystem::path test_dir;
     std::filesystem::path reflection_file;
     std::filesystem::path experiment_file;
     std::filesystem::path integrated_reflection_file;
-    std::filesystem::path integrated_experiment_file;
 };
 
 TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
@@ -181,9 +246,9 @@ TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
     Eigen::Vector3d s0 = beam.get_s0();
     Eigen::Vector3d rotation_axis = gonio.get_rotation_axis();
 
-    // Use typical values for sigma_b and sigma_m
-    double sigma_b = 0.024;  // Typical beam divergence
-    double sigma_m = 0.157;  // Typical mosaicity
+    // Use baseline values for sigma_b and sigma_m
+    double sigma_b = 0.01;
+    double sigma_m = 0.01;
 
     // Compute bounding boxes using CPU-based Kabsch coordinate system
     logger.info("Computing Kabsch bounding boxes for {} reflections", num_reflections);
