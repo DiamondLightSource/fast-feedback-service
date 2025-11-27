@@ -382,12 +382,12 @@ int main(int argc, char **argv) {
     std::unique_ptr<Reader> reader_ptr;
 
     // Wait for read-readiness
-    if (!std::filesystem::exists(images_file)) {
-        wait_for_ready_for_read(
-          images_file,
-          [](const std::string &s) { return std::filesystem::exists(s); },
-          wait_timeout);
-    }
+    // if (!std::filesystem::exists(images_file)) {
+    //     wait_for_ready_for_read(
+    //       images_file,
+    //       [](const std::string &s) { return std::filesystem::exists(s); },
+    //       wait_timeout);
+    // }
 
     if (std::filesystem::is_directory(images_file)) {
         wait_for_ready_for_read(images_file, is_ready_for_read<SHMRead>, wait_timeout);
