@@ -287,10 +287,20 @@ TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
                                          integrated_data_path);
     EXPECT_EQ(result, 0) << "Validation failed";
 
-    // Check that bounding boxes are reasonable
+    // Check for verbose mode via environment variable
+    bool verbose = std::getenv("VERBOSE_TEST") != nullptr;
+
+    // Track mismatches for summary
+    size_t total_mismatches = 0;
+    size_t x_min_mismatches = 0, x_max_mismatches = 0;
+    size_t y_min_mismatches = 0, y_max_mismatches = 0;
+    size_t z_min_mismatches = 0, z_max_mismatches = 0;
+
+    // Compare computed bounding boxes with existing ones - fail if any differences
     for (size_t i = 0; i < num_reflections; ++i) {
         const auto &bbox = computed_bboxes[i];
 
+        // Check that bounding boxes are reasonable
         EXPECT_LE(bbox.x_min, bbox.x_max) << "Invalid x bounds for reflection " << i;
         EXPECT_LE(bbox.y_min, bbox.y_max) << "Invalid y bounds for reflection " << i;
         EXPECT_LE(bbox.z_min, bbox.z_max) << "Invalid z bounds for reflection " << i;
@@ -299,7 +309,89 @@ TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
         EXPECT_GT(bbox.x_max - bbox.x_min, 0) << "Zero width x for reflection " << i;
         EXPECT_GT(bbox.y_max - bbox.y_min, 0) << "Zero width y for reflection " << i;
         EXPECT_GT(bbox.z_max - bbox.z_min, 0) << "Zero width z for reflection " << i;
+
+        // Compare with existing bbox - fail on any difference
+        double ex_x_min = bbox_column(i, 0);
+        double ex_x_max = bbox_column(i, 1);
+        double ex_y_min = bbox_column(i, 2);
+        double ex_y_max = bbox_column(i, 3);
+        int ex_z_min = static_cast<int>(bbox_column(i, 4));
+        int ex_z_max = static_cast<int>(bbox_column(i, 5));
+
+        bool has_mismatch = false;
+
+        if (bbox.x_min != ex_x_min) {
+            x_min_mismatches++;
+            has_mismatch = true;
+            if (verbose) {
+                EXPECT_EQ(bbox.x_min, ex_x_min)
+                  << "x_min mismatch for reflection " << i;
+            }
+        }
+        if (bbox.x_max != ex_x_max) {
+            x_max_mismatches++;
+            has_mismatch = true;
+            if (verbose) {
+                EXPECT_EQ(bbox.x_max, ex_x_max)
+                  << "x_max mismatch for reflection " << i;
+            }
+        }
+        if (bbox.y_min != ex_y_min) {
+            y_min_mismatches++;
+            has_mismatch = true;
+            if (verbose) {
+                EXPECT_EQ(bbox.y_min, ex_y_min)
+                  << "y_min mismatch for reflection " << i;
+            }
+        }
+        if (bbox.y_max != ex_y_max) {
+            y_max_mismatches++;
+            has_mismatch = true;
+            if (verbose) {
+                EXPECT_EQ(bbox.y_max, ex_y_max)
+                  << "y_max mismatch for reflection " << i;
+            }
+        }
+        if (bbox.z_min != ex_z_min) {
+            z_min_mismatches++;
+            has_mismatch = true;
+            if (verbose) {
+                EXPECT_EQ(bbox.z_min, ex_z_min)
+                  << "z_min mismatch for reflection " << i;
+            }
+        }
+        if (bbox.z_max != ex_z_max) {
+            z_max_mismatches++;
+            has_mismatch = true;
+            if (verbose) {
+                EXPECT_EQ(bbox.z_max, ex_z_max)
+                  << "z_max mismatch for reflection " << i;
+            }
+        }
+
+        if (has_mismatch) {
+            total_mismatches++;
+        }
     }
+
+    // Print summary
+    logger.info("\n=== Bounding Box Comparison Summary ===");
+    logger.info("Total reflections checked: {}", num_reflections);
+    logger.info("Reflections with mismatches: {}", total_mismatches);
+    if (total_mismatches > 0) {
+        logger.info("Mismatches by component:");
+        logger.info("  x_min: {} mismatches", x_min_mismatches);
+        logger.info("  x_max: {} mismatches", x_max_mismatches);
+        logger.info("  y_min: {} mismatches", y_min_mismatches);
+        logger.info("  y_max: {} mismatches", y_max_mismatches);
+        logger.info("  z_min: {} mismatches", z_min_mismatches);
+        logger.info("  z_max: {} mismatches", z_max_mismatches);
+        logger.info("\nSet VERBOSE_TEST=1 to see detailed mismatch output");
+    }
+
+    // Fail test if any mismatches found
+    EXPECT_EQ(total_mismatches, 0)
+      << "Found " << total_mismatches << " reflections with bounding box mismatches";
 
     logger.info("Validation complete for {} reflections", num_reflections);
 }
