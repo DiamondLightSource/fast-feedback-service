@@ -172,8 +172,8 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
               image_range_start - 1 + ((phi_minus_deg - osc_start) / osc_width);
 
             // Clamp to the actual image range and use floor/ceil for integer bounds
-            bbox.z_min =
-              std::max(image_range_start, (int)std::floor(std::min(z_plus, z_minus)));
+            bbox.z_min = std::max(image_range_start - 1,
+                                  (int)std::floor(std::min(z_plus, z_minus)));
             bbox.z_max =
               std::min(image_range_end, (int)std::ceil(std::max(z_plus, z_minus)));
         } else {
