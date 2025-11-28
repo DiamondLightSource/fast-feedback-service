@@ -10,6 +10,7 @@
 #include <cmath>
 
 #include "ffs_logger.hpp"
+#include "math/math_utils.cuh"
 
 std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
   const Eigen::Vector3d &s0,
@@ -40,11 +41,15 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
     */
     static constexpr double ZETA_TOLERANCE = 1e-10;
 
+    // Convert sigma values from degrees to radians if necessary
+    auto sigma_b_rad = degrees_to_radians(sigma_b);
+    auto sigma_m_rad = degrees_to_radians(sigma_m);
+
     // Calculate the angular divergence parameters:
     // Δb = nσ × σb × m (beam divergence extent)
     // Δm = nσ × σm (mosaicity extent)
-    double delta_b = n_sigma * sigma_b * sigma_b_multiplier;
-    double delta_m = n_sigma * sigma_m;
+    double delta_b = n_sigma * sigma_b_rad * sigma_b_multiplier;
+    double delta_m = n_sigma * sigma_m_rad;
 
     // Extract experimental parameters needed for coordinate transformations
     const auto [osc_start, osc_width] = scan.get_oscillation();
