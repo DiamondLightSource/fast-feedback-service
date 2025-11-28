@@ -160,34 +160,34 @@ class ExtentValidationTest : public ::testing::Test {
     void SetUp() override {
         // Get paths relative to test directory
         test_dir = std::filesystem::path(__FILE__).parent_path();
-        reflection_file = test_dir / "data" / "predicted.refl";
-        experiment_file = test_dir / "data" / "indexed.expt";
-        integrated_reflection_file = test_dir / "data" / "simple_integrated.refl";
+        predicted_refl = test_dir / "data" / "predicted.refl";
+        indexed_expt = test_dir / "data" / "indexed.expt";
+        integrated_truth_refl = test_dir / "data" / "simple_integrated.refl";
     }
 
     std::filesystem::path test_dir;
-    std::filesystem::path reflection_file;
-    std::filesystem::path experiment_file;
-    std::filesystem::path integrated_reflection_file;
+    std::filesystem::path predicted_refl;
+    std::filesystem::path indexed_expt;
+    std::filesystem::path integrated_truth_refl;
 };
 
 TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
     // Check if test files exist
-    ASSERT_TRUE(std::filesystem::exists(reflection_file))
-      << "Reflection file not found: " << reflection_file;
-    ASSERT_TRUE(std::filesystem::exists(experiment_file))
-      << "Experiment file not found: " << experiment_file;
-    ASSERT_TRUE(std::filesystem::exists(integrated_reflection_file))
-      << "Integrated reflection file not found: " << integrated_reflection_file;
+    ASSERT_TRUE(std::filesystem::exists(predicted_refl))
+      << "Reflection file not found: " << predicted_refl;
+    ASSERT_TRUE(std::filesystem::exists(indexed_expt))
+      << "Experiment file not found: " << indexed_expt;
+    ASSERT_TRUE(std::filesystem::exists(integrated_truth_refl))
+      << "Integrated reflection file not found: " << integrated_truth_refl;
 
     // Load source reflection data (indexed reflections for computing)
-    logger.info("Loading indexed data from file: {}", reflection_file.string());
-    ReflectionTable reflections(reflection_file.string());
+    logger.info("Loading indexed data from file: {}", predicted_refl.string());
+    ReflectionTable reflections(predicted_refl.string());
 
     // Load integrated reflections for comparison (contains bbox)
     logger.info("Loading integrated data for comparison from: {}",
-                integrated_reflection_file.string());
-    ReflectionTable integrated_reflections(integrated_reflection_file.string());
+                integrated_truth_refl.string());
+    ReflectionTable integrated_reflections(integrated_truth_refl.string());
 
     // Log available columns in integrated reflections
     logger.info("Available columns in integrated reflections:");
@@ -221,7 +221,7 @@ TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
     logger.info("Processing {} reflections", num_reflections);
 
     // Parse experiment list from JSON
-    std::ifstream f(experiment_file);
+    std::ifstream f(indexed_expt);
     nlohmann::json elist_json_obj;
     try {
         elist_json_obj = nlohmann::json::parse(f);
