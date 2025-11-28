@@ -52,8 +52,8 @@ struct BoundingBoxExtents {
  *                      column contains φᶜ values in radians
  * @param num_reflections Number of reflections to process
  * @param sigma_b Beam divergence standard deviation (σb), in reciprocal space
- *                units
- * @param sigma_m Mosaicity standard deviation (σm), in reciprocal space units
+ *                units (degrees)
+ * @param sigma_m Mosaicity standard deviation (σm), in reciprocal space units (degrees)
  * @param panel Detector panel object for coordinate transformations
  * @param scan Scan object containing oscillation and image range information
  * @param beam Beam object for wavelength and other beam properties
