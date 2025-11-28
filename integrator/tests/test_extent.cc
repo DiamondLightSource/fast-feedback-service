@@ -190,10 +190,10 @@ TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
     ReflectionTable integrated_reflections(integrated_truth_refl.string());
 
     // Log available columns in integrated reflections
-    logger.info("Available columns in integrated reflections:");
-    for (const auto &name : integrated_reflections.get_column_names()) {
-        logger.info("  - {}", name);
-    }
+    // logger.info("Available columns in integrated reflections:");
+    // for (const auto &name : integrated_reflections.get_column_names()) {
+    //     logger.info("  - {}", name);
+    // }
 
     // HDF5 data path prefixes for reflection columns
     const std::string indexed_data_path = "";
