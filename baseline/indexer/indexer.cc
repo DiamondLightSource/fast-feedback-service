@@ -23,6 +23,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "scan_static_predictor.cc"
 
 #include "assign_indices.cc"
 #include "combinations.cc"
@@ -459,6 +460,11 @@ int main(int argc, char **argv) {
                 }
             }
         }
+
+        final_reflections.add_column(std::string("entering"), enterings);
+        simple_reflection_predictor(
+          expt.beam(), expt.goniometer(), expt.crystal().get_A_matrix(),
+          expt.detector().panels()[0], final_reflections);
 
         // Save the indexed reflection table.
         std::string output_filename = "indexed.refl";

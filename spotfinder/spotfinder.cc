@@ -15,6 +15,7 @@
 #include <cmath>
 #include <csignal>
 #include <dx2/detector.hpp>
+#include <dx2/detector_attenuations.hpp>
 #include <dx2/reflection.hpp>
 #include <dx2/scan.hpp>
 #include <iostream>
@@ -1164,11 +1165,25 @@ int main(int argc, char **argv) {
         for (const auto &refl : reflections_3d) {
             auto [x, y, z] = refl.center_of_mass();
             auto [xmm, ymm] = panel.px_to_mm(x, y);
+            if ((x < 2067) && (x > 2066) && (y < 2643) && (y>2642)){
+              std::cout << xmm << " " << ymm << std::endl;
+            }
             Vector3d s1 = panel.get_lab_coord(xmm, ymm);
+            //s1.normalize();
+            //s1 /= wavelength;
+            double sigma_b_variance;
+            double sigma_m_variance;
+            int bbox_depth;
             double phi = (oscillation_start + (z - image_range_0) * oscillation_width)
                          * deg_to_rad;
-            auto [sigma_b_variance, sigma_m_variance, bbox_depth] =
-              refl.variances_in_kabsch_space(s1, s0, m2, panel, scan, phi);
+            if ((x < 2067) && (x > 2066) && (y < 2643) && (y>2642)){
+              std::tie(sigma_b_variance, sigma_m_variance, bbox_depth) =
+                refl.variances_in_kabsch_space_verbose(s1, s0, m2, panel, scan, phi);
+            } else {
+              std::tie(sigma_b_variance, sigma_m_variance, bbox_depth) =
+                refl.variances_in_kabsch_space(s1, s0, m2, panel, scan, phi);
+            }
+            
             sigma_b_variances.push_back(sigma_b_variance);
             sigma_m_variances.push_back(sigma_m_variance);
             bbox_depths.push_back(bbox_depth);

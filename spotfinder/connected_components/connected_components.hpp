@@ -221,6 +221,12 @@ class Reflection3D {
                                                               const Panel &panel,
                                                               const Scan &scan,
                                                               const double phi) const;
+    std::tuple<double, double, int> variances_in_kabsch_space_verbose(const Vector3d &s1,
+                                                              const Vector3d &s0,
+                                                              const Vector3d &m2,
+                                                              const Panel &panel,
+                                                              const Scan &scan,
+                                                              const double phi) const;
 
     // Getters for bounding box
     inline uint32_t get_x_min() const {
