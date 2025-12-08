@@ -6,7 +6,7 @@ dependencies:
   - bitshuffle=0.5.2
   - boost-cpp=1.85.0
   - cmake=4.1.1
-  - compilers=1.10.0
+  - compilers
   - dials-data=2.4.134
   - eigen=3.4.0
   - fmt=11.2.0

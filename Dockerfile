@@ -1,6 +1,6 @@
-ARG CUDA_VERSION=12.6.3
+ARG CUDA_VERSION=13.0.2
 
-FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS build
+FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
 
 # Install dependencies
 RUN DEBIAN_FRONTEND=noninteractive \
@@ -42,7 +42,7 @@ WORKDIR /opt/build
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
 
 # Now copy this into an isolated runtime container
-FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
 
 LABEL org.opencontainers.image.title="fast-feedback-service" \
       org.opencontainers.image.description="GPU-accelerated fast-feedback X-ray diffraction analysis service" \
