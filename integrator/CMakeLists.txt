@@ -6,9 +6,6 @@ find_package(Bitshuffle REQUIRED)
 
 add_executable(integrator
     integrator.cc
-    integrator.cu
-    kabsch.cu
-    extent.cc
     ../spotfinder/shmread.cc
     ../spotfinder/cbfread.cc
 )
@@ -41,6 +38,3 @@ target_link_libraries(integrator
 set_property(TARGET integrator PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(integrator PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
 target_compile_options(integrator PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:--generate-line-info>")
-
-# Add tests subdirectory
-add_subdirectory(tests)
