@@ -1135,9 +1135,9 @@ int main(int argc, char **argv) {
         //  - rotation axis (default +x?)
         std::array<int, 2> image_size = {static_cast<int>(width),
                                          static_cast<int>(height)};
-        Panel panel(detector.distance,
+        Panel panel(detector.distance * 1000,
                     {detector.beam_center_x, detector.beam_center_y},
-                    {detector.pixel_size_x, detector.pixel_size_y},
+                    {detector.pixel_size_x * 1000, detector.pixel_size_y * 1000},
                     image_size);
         Vector3d s0 = {0.0, 0.0, -1.0 / wavelength};
         Scan scan({1, static_cast<int>(num_images)},
