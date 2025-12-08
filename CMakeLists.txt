@@ -49,6 +49,14 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(argparse)
+FetchContent_Declare(
+    Eigen3
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG 3.4.0
+    EXCLUDE_FROM_ALL
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(Eigen3)
 
 # GTest - try find_package first, fallback to FetchContent
 find_package(GTest QUIET)
@@ -89,7 +97,6 @@ if(PIXEL_DATA_32BIT)
 else()
     message(STATUS "Building with 16-bit pixel data support")
 endif()
-
 # Make a common C++ library for shared code
 add_library(ffs_common STATIC 
     src/ffs/ffs_logger.cc
@@ -138,5 +145,6 @@ enable_testing()
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
+add_subdirectory(integrator)
 
 configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx_index COPYONLY)

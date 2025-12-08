@@ -80,7 +80,6 @@ auto CUDAArgumentParser::parse_args(int argc, char **argv) -> CUDAArguments {
 
     // Copy common arguments to CUDA-specific structure
     _cuda_args.verbose = _arguments.verbose;
-    _cuda_args.file = _arguments.file;
 
     return _cuda_args;
 }
