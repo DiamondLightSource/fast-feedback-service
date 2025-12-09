@@ -144,8 +144,9 @@ int main(int argc, char **argv) {
     // Read data from a reflection table.
     ReflectionTable strong_reflections(filename);
     auto xyzobs_px_ = strong_reflections.column<double>("xyzobs.px.value");
-    if (!xyzobs_px_.has_value()){
-      throw std::runtime_error("No xyzobs.px.value column found in input reflection table.");
+    if (!xyzobs_px_.has_value()) {
+        throw std::runtime_error(
+          "No xyzobs.px.value column found in input reflection table.");
     }
     mdspan_type<double> xyzobs_px = xyzobs_px_.value();
 
@@ -222,7 +223,8 @@ int main(int argc, char **argv) {
 
     // Now we need to generate candidate crystals from the lattice vectors and evaluate them
     // FFS output does not yet have flags - so set all to strong.
-    std::vector<std::size_t> flags = std::vector<std::size_t>(results.rlp.extent(0), strong_flag);
+    std::vector<std::size_t> flags =
+      std::vector<std::size_t>(results.rlp.extent(0), strong_flag);
     // calculate entering array
     std::vector<bool> enterings(results.rlp.extent(0));
     Vector3d s0 = beam.get_s0();
@@ -386,16 +388,16 @@ int main(int argc, char **argv) {
     if (!no_output) {
         // Load the strong refls, to persist existing data items
         std::vector<std::string> labels = {expt.identifier()};
-        
+
         strong_reflections.set_identifiers(labels);
 
         // Recalculate the rlp and s1 vectors based on the updated models.
         xyz_to_rlp_results final_results =
           xyz_to_rlp(xyzobs_px, detector.panels()[0], expt.beam(), scan, gonio);
         strong_reflections.add_column(std::string("xyzobs.mm.value"),
-                                     final_results.xyzobs_mm.extent(0),
-                                     3,
-                                     final_results.xyzobs_mm_data);
+                                      final_results.xyzobs_mm.extent(0),
+                                      3,
+                                      final_results.xyzobs_mm_data);
         strong_reflections.add_column(
           std::string("s1"), final_results.s1.extent(0), 3, final_results.s1_data);
         strong_reflections.add_column(
@@ -404,13 +406,13 @@ int main(int argc, char **argv) {
         // Add required columns for next steps (DIALS compatibility)
         // if not panel, add
         auto panels = strong_reflections.column<uint64_t>("panel");
-        if (!panels.has_value()){
-          std::vector<uint64_t> panel_column(final_results.rlp.extent(0), 0);
-          strong_reflections.add_column(
-            std::string("panel"), final_results.xyzobs_mm.extent(0), 1, panel_column);
+        if (!panels.has_value()) {
+            std::vector<uint64_t> panel_column(final_results.rlp.extent(0), 0);
+            strong_reflections.add_column(
+              std::string("panel"), final_results.xyzobs_mm.extent(0), 1, panel_column);
         }
         auto xyzobs_px_var_ = strong_reflections.column<double>("xyzobs.px.variance");
-        if (xyzobs_px_var_.has_value()){
+        if (xyzobs_px_var_.has_value()) {
             // Need to convert the px variance to mm variance
             std::vector<double> xyzobs_mm_var_data(final_results.rlp.size());
             mdspan_type<double> xyzobs_mm_variance = mdspan_type<double>(
@@ -420,9 +422,9 @@ int main(int argc, char **argv) {
             const auto &xyzobs_px_variance = xyzobs_px_var_.value();
             px_to_mm(xyzobs_px_variance, xyzobs_mm_variance, scan, best_panel);
             strong_reflections.add_column("xyzobs.mm.variance",
-                                         xyzobs_mm_variance.extent(0),
-                                         3,
-                                         xyzobs_mm_var_data);
+                                          xyzobs_mm_variance.extent(0),
+                                          3,
+                                          xyzobs_mm_var_data);
         }
         // Index the data with the refined models.
         assign_indices_results assign_results = assign_indices_global(
@@ -431,32 +433,31 @@ int main(int argc, char **argv) {
                     assign_results.number_indexed,
                     xyzobs_px.extent(0));
         strong_reflections.add_column(std::string("miller_index"),
-                                     assign_results.miller_indices.extent(0),
-                                     assign_results.miller_indices.extent(1),
-                                     assign_results.miller_indices_data);
+                                      assign_results.miller_indices.extent(0),
+                                      assign_results.miller_indices.extent(1),
+                                      assign_results.miller_indices_data);
         // Set the indexed flag in the output.
         auto flags_ = strong_reflections.column<std::size_t>("flags");
-        if (!flags_.has_value()){
-          for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
-            if ((assign_results.miller_indices(i, 0)) != 0
-                | (assign_results.miller_indices(i, 1) != 0)
-                | (assign_results.miller_indices(i, 2) != 0)) {
-                flags[i] |= indexed_flag;
+        if (!flags_.has_value()) {
+            for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
+                if ((assign_results.miller_indices(i, 0)) != 0
+                    | (assign_results.miller_indices(i, 1) != 0)
+                    | (assign_results.miller_indices(i, 2) != 0)) {
+                    flags[i] |= indexed_flag;
+                }
             }
-          }
-          strong_reflections.add_column(std::string("flags"), flags);
-        }
-        else {
-          auto flag_span = flags_.value();
-          for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
-            if ((assign_results.miller_indices(i, 0)) != 0
-                | (assign_results.miller_indices(i, 1) != 0)
-                | (assign_results.miller_indices(i, 2) != 0)) {
-                flag_span(i,0) |= indexed_flag;
+            strong_reflections.add_column(std::string("flags"), flags);
+        } else {
+            auto flag_span = flags_.value();
+            for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
+                if ((assign_results.miller_indices(i, 0)) != 0
+                    | (assign_results.miller_indices(i, 1) != 0)
+                    | (assign_results.miller_indices(i, 2) != 0)) {
+                    flag_span(i, 0) |= indexed_flag;
+                }
             }
-          }
         }
-        
+
         // Save the indexed reflection table.
         std::string output_filename = "indexed.refl";
         strong_reflections.write(output_filename);
