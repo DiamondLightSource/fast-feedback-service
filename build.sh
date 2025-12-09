@@ -190,16 +190,16 @@ main() {
         
         # Build production version
         if [[ "$PIXEL_32BIT" == "true" ]]; then
-            build_directory "build" "-DPIXEL_DATA_32BIT=ON -DCMAKE_BUILD_TYPE=Release" "production (32-bit)"
+            build_directory "build" "-DPIXEL_DATA_32BIT=ON -DUSE_DOUBLE_PRECISION=ON -DCMAKE_BUILD_TYPE=Release" "production (32-bit, double precision)"
         else
-            build_directory "build" "-DCMAKE_BUILD_TYPE=Release" "production (16-bit)"
+            build_directory "build" "-DUSE_DOUBLE_PRECISION=ON -DCMAKE_BUILD_TYPE=Release" "production (16-bit, double precision)"
         fi
     else
         print_status "Development build mode"
         
         # Build both 16-bit and 32-bit versions
-        build_directory "build" "-DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (16-bit)"
-        build_directory "build_32bit" "-DPIXEL_DATA_32BIT=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (32-bit)"
+        build_directory "build" "-DUSE_DOUBLE_PRECISION=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (16-bit, double precision)"
+        build_directory "build_32bit" "-DPIXEL_DATA_32BIT=ON -DUSE_DOUBLE_PRECISION=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (32-bit, double precision)"
     fi
     
     print_success "Build completed successfully!"
