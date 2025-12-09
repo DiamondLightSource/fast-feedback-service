@@ -12,6 +12,7 @@
 
 #include "extent.hpp"
 #include "ffs_logger.hpp"
+#include "math/math_utils.cuh"
 
 /**
  * @brief Validate computed bounding boxes against existing bbox column
@@ -247,8 +248,8 @@ TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
     Eigen::Vector3d rotation_axis = gonio.get_rotation_axis();
 
     // Use baseline values for sigma_b and sigma_m
-    double sigma_b = 0.01;
-    double sigma_m = 0.01;
+    double sigma_b = degrees_to_radians(0.01);
+    double sigma_m = degrees_to_radians(0.01);
 
     // Compute bounding boxes using CPU-based Kabsch coordinate system
     logger.info("Computing Kabsch bounding boxes for {} reflections", num_reflections);

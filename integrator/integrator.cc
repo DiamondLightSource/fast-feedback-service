@@ -33,6 +33,7 @@
 #include "ffs_logger.hpp"
 #include "h5read.h"
 #include "kabsch.cuh"
+#include "math/math_utils.cuh"
 #include "version.hpp"
 
 using namespace std::chrono_literals;
@@ -192,8 +193,8 @@ int main(int argc, char **argv) {
     const auto experiment_file = parser.experiment();
     float wait_timeout = parser.get<float>("timeout");
     // These two will be optional later, should be gettable from reflection table
-    float sigma_m = parser.get<float>("sigma_m");
-    float sigma_b = parser.get<float>("sigma_b");
+    float sigma_m = degrees_to_radians(parser.get<float>("sigma_m"));
+    float sigma_b = degrees_to_radians(parser.get<float>("sigma_b"));
 
     // Guard against missing files
     if (!std::filesystem::exists(reflection_file)) {
