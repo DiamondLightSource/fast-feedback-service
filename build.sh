@@ -190,33 +190,38 @@ main() {
         
         # Build production version
         if [[ "$PIXEL_32BIT" == "true" ]]; then
-            build_directory "build" "-DPIXEL_DATA_32BIT=ON -DCMAKE_BUILD_TYPE=Release" "production (32-bit)"
+            build_directory "build" "-DPIXEL_DATA_32BIT=ON -DUSE_DOUBLE_PRECISION=ON -DCMAKE_BUILD_TYPE=Release" "production (32-bit, double precision)"
         else
-            build_directory "build" "-DCMAKE_BUILD_TYPE=Release" "production (16-bit)"
+            build_directory "build" "-DUSE_DOUBLE_PRECISION=ON -DCMAKE_BUILD_TYPE=Release" "production (16-bit, double precision)"
         fi
     else
         print_status "Development build mode"
         
         # Build both 16-bit and 32-bit versions
-        build_directory "build" "-DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (16-bit)"
-        build_directory "build_32bit" "-DPIXEL_DATA_32BIT=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (32-bit)"
+        build_directory "build" "-DUSE_DOUBLE_PRECISION=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (16-bit, double precision)"
+        build_directory "build_32bit" "-DPIXEL_DATA_32BIT=ON -DUSE_DOUBLE_PRECISION=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (32-bit, double precision)"
     fi
     
     print_success "Build completed successfully!"
     
     # Show build artifacts
     print_status "Build artifacts:"
-    if [[ -f build/bin/spotfinder ]]; then
-        echo "  - build/bin/spotfinder"
+    # 16-bit build artifacts
+    if [[ -d build/bin ]]; then
+        print_status "16-bit binaries (build/bin/):"
+        [[ -f build/bin/spotfinder ]] && echo -e "  - ${GREEN}spotfinder${NC}"
+        [[ -f build/bin/baseline_indexer ]] && echo -e "  - ${GREEN}baseline_indexer${NC}"
+        [[ -f build/bin/baseline_integrator ]] && echo -e "  - ${GREEN}baseline_integrator${NC}"
+        [[ -f build/bin/integrator ]] && echo -e "  - ${GREEN}integrator${NC}"
     fi
-    if [[ -f build_32bit/bin/spotfinder ]]; then
-        echo "  - build_32bit/bin/spotfinder"
-    fi
-    if [[ -f build/bin/baseline_indexer ]]; then
-        echo "  - build/bin/baseline_indexer"
-    fi
-    if [[ -f build_32bit/bin/baseline_indexer ]]; then
-        echo "  - build_32bit/bin/baseline_indexer"
+    
+    # 32-bit build artifacts
+    if [[ -d build_32bit/bin ]]; then
+        print_status "32-bit binaries (build_32bit/bin/):"
+        [[ -f build_32bit/bin/spotfinder ]] && echo -e "  - ${GREEN}spotfinder${NC}"
+        [[ -f build_32bit/bin/baseline_indexer ]] && echo -e "  - ${GREEN}baseline_indexer${NC}"
+        [[ -f build_32bit/bin/baseline_integrator ]] && echo -e "  - ${GREEN}baseline_integrator${NC}"
+        [[ -f build_32bit/bin/integrator ]] && echo -e "  - ${GREEN}integrator${NC}"
     fi
 }
 

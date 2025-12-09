@@ -12,4 +12,5 @@ def set_env_vars():
     os.environ["SPOTFINDER_32BIT"] = os.fspath(
         Path.cwd() / "build_32bit/bin/spotfinder"
     )
+    os.environ["INTEGRATOR"] = os.fspath(Path.cwd() / "build/bin/integrator")
     os.environ["FFS_ROOT_DIR"] = os.fspath(Path.cwd())

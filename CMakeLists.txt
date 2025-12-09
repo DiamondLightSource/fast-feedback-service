@@ -16,6 +16,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # Option to use 32-bit pixel data instead of 16-bit
 option(PIXEL_DATA_32BIT "Use 32-bit pixel data instead of 16-bit" OFF)
 
+# Option to use double precision for CUDA calculations
+option(USE_DOUBLE_PRECISION "Use double precision for CUDA calculations" OFF)
+
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
@@ -90,6 +93,13 @@ else()
     message(STATUS "Building with 16-bit pixel data support")
 endif()
 
+if(USE_DOUBLE_PRECISION)
+    target_compile_definitions(compile_options INTERFACE USE_DOUBLE_PRECISION)
+    message(STATUS "Building with double precision")
+else()
+    message(STATUS "Building with single precision")
+endif()
+
 # Make a common C++ library for shared code
 add_library(ffs_common STATIC 
     src/ffs/ffs_logger.cc
@@ -138,5 +148,6 @@ enable_testing()
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
+add_subdirectory(integrator)
 
 configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx_index COPYONLY)
