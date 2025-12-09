@@ -191,6 +191,7 @@ int main(int argc, char **argv) {
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();
     float wait_timeout = parser.get<float>("timeout");
+    // These two will be optional later, should be gettable from reflection table
     float sigma_m = parser.get<float>("sigma_m");
     float sigma_b = parser.get<float>("sigma_b");
 

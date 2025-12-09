@@ -72,8 +72,8 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
   const mdspan_2d &s1_vectors,
   const mdspan_2d &phi_positions,
   const size_t num_reflections,
-  const double sigma_b,                     // σb from arguments
-  const double sigma_m,                     // σm from arguments
+  const double sigma_b,                     // σb in radians
+  const double sigma_m,                     // σm in radians
   const Panel &panel,                       // Panel for coordinate transformations
   const Scan &scan,                         // Scan for oscillation and image range data
   const MonochromaticBeam &beam,            // Beam for wavelength

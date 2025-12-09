@@ -68,14 +68,19 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .default_value<float>(30.0f)
           .scan<'f', float>();
 
+        // Taken in as degrees, converted to radians later
         add_argument("--sigma_m")
-          .help("Sigma_m: Standard deviation of the rotation axis in reciprocal space.")
+          .help(
+            "Sigma_m (deg): Standard deviation of the rotation axis in reciprocal "
+            "space.")
           .metavar("σm")
           .scan<'f', float>();
 
+        // Taken in as degrees, converted to radians later
         add_argument("--sigma_b")
           .help(
-            "Sigma_b: Standard deviation of the beam direction in reciprocal space.")
+            "Sigma_b (deg): Standard deviation of the beam direction in reciprocal "
+            "space.")
           .metavar("σb")
           .scan<'f', float>();
 
