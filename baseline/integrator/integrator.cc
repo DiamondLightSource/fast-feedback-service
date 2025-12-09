@@ -102,8 +102,10 @@ int main(int argc, char **argv) {
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();
 
-    float sigma_m = parser.get<float>("sigma_m");
-    float sigma_b = parser.get<float>("sigma_b");
+    float sigma_m =
+      parser.get<float>("sigma_m") * (M_PI / 180.0f);  // Convert to radians
+    float sigma_b =
+      parser.get<float>("sigma_b") * (M_PI / 180.0f);  // Convert to radians
     float timeout = parser.get<float>("timeout");
     std::string output_file = parser.get<std::string>("output");
 
