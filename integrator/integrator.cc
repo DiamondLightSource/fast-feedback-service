@@ -57,47 +57,6 @@ extern "C" void stop_processing(int sig) {
 }
 
 /**
- * @brief Wait for a file/path to be ready for reading
- */
-void wait_for_ready_for_read(const std::string &path,
-                             std::function<bool(const std::string &)> checker,
-                             float timeout = 120.0f) {
-    if (!checker(path)) {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        auto message_prefix =
-          fmt::format("Waiting for \033[1;35m{}\033[0m to be ready for read", path);
-        std::vector<std::string> ball = {
-          "( ●    )",
-          "(  ●   )",
-          "(   ●  )",
-          "(    ● )",
-          "(     ●)",
-          "(    ● )",
-          "(   ●  )",
-          "(  ●   )",
-          "( ●    )",
-          "(●     )",
-        };
-        int i = 0;
-        while (!checker(path)) {
-            auto wait_time = std::chrono::duration_cast<std::chrono::duration<double>>(
-                               std::chrono::high_resolution_clock::now() - start_time)
-                               .count();
-            fmt::print("\r{}  {} [{:4.1f} s] ", message_prefix, ball[i], wait_time);
-            i = (i + 1) % ball.size();
-            std::cout << std::flush;
-
-            if (wait_time > timeout) {
-                fmt::print("\nError: Waited too long for read availability\n");
-                std::exit(1);
-            }
-            std::this_thread::sleep_for(80ms);
-        }
-        fmt::print("\n");
-    }
-}
-
-/**
  * @brief Structure to hold detector parameters for GPU kernels
  * 
  * This struct packages all the detector-specific parameters needed for
@@ -383,22 +342,12 @@ int main(int argc, char **argv) {
     const auto images_file = parser.images();
     std::unique_ptr<Reader> reader_ptr;
 
-    // Wait for read-readiness
-    // if (!std::filesystem::exists(images_file)) {
-    //     wait_for_ready_for_read(
-    //       images_file,
-    //       [](const std::string &s) { return std::filesystem::exists(s); },
-    //       wait_timeout);
-    // }
-
     if (std::filesystem::is_directory(images_file)) {
-        wait_for_ready_for_read(images_file, is_ready_for_read<SHMRead>, wait_timeout);
         reader_ptr = std::make_unique<SHMRead>(images_file);
     } else if (images_file.ends_with(".cbf")) {
         logger.error("CBF reading not yet supported in integrator mode");
         return 1;
     } else {
-        wait_for_ready_for_read(images_file, is_ready_for_read<H5Read>, wait_timeout);
         reader_ptr = images_file.empty() ? std::make_unique<H5Read>()
                                          : std::make_unique<H5Read>(images_file);
     }
