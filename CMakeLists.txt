@@ -49,14 +49,6 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(argparse)
-FetchContent_Declare(
-    Eigen3
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.0
-    EXCLUDE_FROM_ALL
-    FIND_PACKAGE_ARGS
-)
-FetchContent_MakeAvailable(Eigen3)
 
 # GTest - try find_package first, fallback to FetchContent
 find_package(GTest QUIET)
