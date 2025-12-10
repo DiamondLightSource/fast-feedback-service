@@ -374,11 +374,15 @@ int main(int argc, char **argv) {
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
         threads.emplace_back([&, thread_id]() {
             auto stop_token = global_stop.get_token();
+            CudaStream stream;  // Per-thread CUDA stream
 
-            // Full image buffers for decompression
-            auto decompressed_image = make_cuda_pinned_malloc<pixel_t>(width * height);
+            // Full image buffers for decompression (pinned memory for faster transfer)
+            auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
             auto raw_chunk_buffer =
               std::vector<uint8_t>(width * height * sizeof(pixel_t));
+
+            // Device memory for GPU processing
+            auto device_image = PitchedMalloc<pixel_t>(width, height);
 
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
@@ -450,11 +454,11 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                // Decompress the data
+                // Decompress the data into pinned host memory
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4:
                     bshuf_decompress_lz4(buffer.data() + 12,
-                                         decompressed_image.get(),
+                                         host_image.get(),
                                          width * height,
                                          sizeof(pixel_t),
                                          0);
@@ -462,13 +466,25 @@ int main(int argc, char **argv) {
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
                     decompress_byte_offset<pixel_t>(
                       buffer,
-                      {decompressed_image.get(),
+                      {host_image.get(),
                        static_cast<std::span<pixel_t>::size_type>(width * height)});
                     break;
                 }
 
+                // Copy image data to device memory
+                cudaMemcpy2DAsync(device_image.get(),
+                                  device_image.pitch_bytes(),
+                                  host_image.get(),
+                                  width * sizeof(pixel_t),
+                                  width * sizeof(pixel_t),
+                                  height,
+                                  cudaMemcpyHostToDevice,
+                                  stream);
+                cuda_throw_error();
+
                 // TODO: image processing here
-                // decompressed_image.get() contains the decompressed pixel data (width * height pixels)
+                // device_image.get() contains the image data on the GPU (pitched allocation)
+                // host_image.get() contains the decompressed pixel data in pinned host memory
                 // reflections_by_image[image_num] contains the reflection IDs for this image
 
                 logger.trace("Thread {} loaded image {}", thread_id, image_num);
