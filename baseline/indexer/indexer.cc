@@ -141,17 +141,18 @@ int main(int argc, char **argv) {
            == 1);  // only considering single panel detectors initially.
     Panel panel = detector.panels()[0];
 
-    // Read data from a reflection table. Again, this should be moved to
-    // dx2 and only require the data array name (xyzobs.px.value) with some
-    // logic to step through the directory structure
-    std::string array_name = "/dials/processing/group_0/xyzobs.px.value";
-    // Note, xyzobs_px is the flattened, on-disk representation of the array
-    // i.e. if there are 100 spots, the length of xyzobs_px is 300, and
-    // contains the elements [x0, y0, z0, x1, y1, z1, ..., x99, y99, z99]
-    std::vector<double> xyzobs_px_data =
-      read_array_from_h5_file<double>(filename, array_name);
-    mdspan_type<double> xyzobs_px =
-      mdspan_type<double>(xyzobs_px_data.data(), xyzobs_px_data.size() / 3, 3);
+    // Read data from a reflection table.
+    ReflectionTable strong_reflections(filename);
+    auto xyzobs_px_ = strong_reflections.column<double>("xyzobs.px.value");
+    if (!xyzobs_px_.has_value()) {
+        throw std::runtime_error(
+          "No xyzobs.px.value column found in input reflection table.");
+    }
+    mdspan_type<double> xyzobs_px = xyzobs_px_.value();
+    if (xyzobs_px.rank() != 2 || xyzobs_px.extent(1) != 3) {
+        throw std::runtime_error(
+          "Input xyzobs.px.value column does not have the expected shape of (N,3).");
+    }
 
     // The diffraction spots form a lattice in reciprocal space (if the experimental
     // geometry is accurate). So use the experimental models to transform the spot
@@ -225,9 +226,6 @@ int main(int argc, char **argv) {
     }
 
     // Now we need to generate candidate crystals from the lattice vectors and evaluate them
-
-    // std::string flags_array_name = "/dials/processing/group_0/flags";
-    // read_array_from_h5_file<std::size_t>(filename, flags_array_name);
     // FFS output does not yet have flags - so set all to strong.
     std::vector<std::size_t> flags(results.rlp.extent(0), strong_flag);
     // calculate entering array
@@ -391,85 +389,80 @@ int main(int argc, char **argv) {
 
     bool no_output = parser.get<bool>("no-output");
     if (!no_output) {
-        // Create an indexed reflection table.
-        std::vector<uint64_t> ids = {0};
+        // Load the strong refls, to persist existing data items
         std::vector<std::string> labels = {expt.identifier()};
-        ReflectionTable final_reflections(ids, labels);
+        strong_reflections.set_identifiers(labels);
 
         // Recalculate the rlp and s1 vectors based on the updated models.
         xyz_to_rlp_results final_results =
           xyz_to_rlp(xyzobs_px, detector.panels()[0], expt.beam(), scan, gonio);
-        final_reflections.add_column(std::string("xyzobs.mm.value"),
-                                     final_results.xyzobs_mm.extent(0),
-                                     3,
-                                     final_results.xyzobs_mm_data);
-        final_reflections.add_column(
+        strong_reflections.add_column(std::string("xyzobs.mm.value"),
+                                      final_results.xyzobs_mm.extent(0),
+                                      3,
+                                      final_results.xyzobs_mm_data);
+        strong_reflections.add_column(
           std::string("s1"), final_results.s1.extent(0), 3, final_results.s1_data);
-        final_reflections.add_column(
+        strong_reflections.add_column(
           std::string("rlp"), final_results.rlp.extent(0), 3, final_results.rlp_data);
 
         // Add required columns for next steps (DIALS compatibility)
-        std::string xyzvar_name = "/dials/processing/group_0/xyzobs.px.variance";
-        bool has_xyzobs_px_var = false;
-        // FFS does not currently determine px.variance, but dials.find_spots does.
-        try {
-            H5Eset_auto(H5E_DEFAULT, NULL, NULL);
-            std::vector<double> xyzobs_px_var_data =
-              read_array_from_h5_file<double>(filename, xyzvar_name);
-            final_reflections.add_column(std::string("xyzobs.px.variance"),
-                                         final_results.xyzobs_mm.extent(0),
-                                         3,
-                                         xyzobs_px_var_data);
-            has_xyzobs_px_var = true;
-        } catch (...) {
+        // if not panel, add
+        auto panels = strong_reflections.column<uint64_t>("panel");
+        if (!panels.has_value()) {
+            std::vector<uint64_t> panel_column(final_results.rlp.extent(0), 0);
+            strong_reflections.add_column(
+              std::string("panel"), final_results.xyzobs_mm.extent(0), 1, panel_column);
         }
-        final_reflections.add_column(
-          std::string("xyzobs.px.value"), xyzobs_px.extent(0), 3, xyzobs_px_data);
-        std::vector<uint64_t> panel_column(final_results.rlp.extent(0), 0);
-        final_reflections.add_column(
-          std::string("panel"), final_results.xyzobs_mm.extent(0), 1, panel_column);
-
-        // Need to convert the px variance to mm variance
-        if (has_xyzobs_px_var) {
+        auto xyzobs_px_var_ = strong_reflections.column<double>("xyzobs.px.variance");
+        if (xyzobs_px_var_.has_value()) {
+            // Need to convert the px variance to mm variance
             std::vector<double> xyzobs_mm_var_data(final_results.rlp.size());
             mdspan_type<double> xyzobs_mm_variance = mdspan_type<double>(
               xyzobs_mm_var_data.data(), xyzobs_mm_var_data.size() / 3, 3);
             auto xyzobs_px_var_ =
-              final_reflections.column<double>("xyzobs.px.variance");
+              strong_reflections.column<double>("xyzobs.px.variance");
             const auto &xyzobs_px_variance = xyzobs_px_var_.value();
             px_to_mm(xyzobs_px_variance, xyzobs_mm_variance, scan, best_panel);
-            final_reflections.add_column("xyzobs.mm.variance",
-                                         xyzobs_mm_variance.extent(0),
-                                         3,
-                                         xyzobs_mm_var_data);
+            strong_reflections.add_column("xyzobs.mm.variance",
+                                          xyzobs_mm_variance.extent(0),
+                                          3,
+                                          xyzobs_mm_var_data);
         }
-
         // Index the data with the refined models.
         assign_indices_results assign_results = assign_indices_global(
           expt.crystal().get_A_matrix(), final_results.rlp, final_results.xyzobs_mm);
         logger.info("Indexed {}/{} reflections using the refined models",
                     assign_results.number_indexed,
                     xyzobs_px.extent(0));
-        final_reflections.add_column(std::string("miller_index"),
-                                     assign_results.miller_indices.extent(0),
-                                     assign_results.miller_indices.extent(1),
-                                     assign_results.miller_indices_data);
+        strong_reflections.add_column(std::string("miller_index"),
+                                      assign_results.miller_indices.extent(0),
+                                      assign_results.miller_indices.extent(1),
+                                      assign_results.miller_indices_data);
         // Set the indexed flag in the output.
-        for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
-            if ((assign_results.miller_indices(i, 0)) != 0
-                | (assign_results.miller_indices(i, 1) != 0)
-                | (assign_results.miller_indices(i, 2) != 0)) {
-                flags[i] |= indexed_flag;
+        auto flags_ = strong_reflections.column<std::size_t>("flags");
+        if (!flags_.has_value()) {
+            for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
+                if ((assign_results.miller_indices(i, 0)) != 0
+                    | (assign_results.miller_indices(i, 1) != 0)
+                    | (assign_results.miller_indices(i, 2) != 0)) {
+                    flags[i] |= indexed_flag;
+                }
+            }
+            strong_reflections.add_column(std::string("flags"), flags);
+        } else {
+            auto flag_span = flags_.value();
+            for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
+                if ((assign_results.miller_indices(i, 0)) != 0
+                    | (assign_results.miller_indices(i, 1) != 0)
+                    | (assign_results.miller_indices(i, 2) != 0)) {
+                    flag_span(i, 0) |= indexed_flag;
+                }
             }
         }
-        final_reflections.add_column(std::string("flags"), flags);
-        // Generate an id column.
-        std::vector<int> id_column(final_results.rlp.extent(0), 0);
-        final_reflections.add_column("id", final_results.rlp.extent(0), 1, id_column);
 
         // Save the indexed reflection table.
         std::string output_filename = "indexed.refl";
-        final_reflections.write(output_filename);
+        strong_reflections.write(output_filename);
         logger.info("Saved reflection table to {}", output_filename);
     }
 
