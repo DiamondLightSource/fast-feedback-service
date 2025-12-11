@@ -1,5 +1,9 @@
 /**
   * @file integrator.cc
+  * @brief Main application file for accelerated integration processing
+  *        containing the necessary data loading, argument parsing, 
+  *        threading, data preparation, and GPU kernel invocation in
+  *        order to perform GPU-accelerated integration processing.
  */
 
 #include "integrator.cuh"
