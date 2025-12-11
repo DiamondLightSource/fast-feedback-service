@@ -149,8 +149,8 @@ int main(int argc, char **argv) {
           "No xyzobs.px.value column found in input reflection table.");
     }
     mdspan_type<double> xyzobs_px = xyzobs_px_.value();
-    if (xyzobs_px.rank() != 2 || xyzobs_px.extent(1) != 3){
-      throw std::runtime_error(
+    if (xyzobs_px.rank() != 2 || xyzobs_px.extent(1) != 3) {
+        throw std::runtime_error(
           "Input xyzobs.px.value column does not have the expected shape of (N,3).");
     }
 
