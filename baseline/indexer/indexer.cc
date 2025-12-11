@@ -227,8 +227,7 @@ int main(int argc, char **argv) {
 
     // Now we need to generate candidate crystals from the lattice vectors and evaluate them
     // FFS output does not yet have flags - so set all to strong.
-    std::vector<std::size_t> flags =
-      std::vector<std::size_t>(results.rlp.extent(0), strong_flag);
+    std::vector<std::size_t> flags(results.rlp.extent(0), strong_flag);
     // calculate entering array
     std::vector<bool> enterings(results.rlp.extent(0));
     Vector3d s0 = beam.get_s0();
@@ -392,7 +391,6 @@ int main(int argc, char **argv) {
     if (!no_output) {
         // Load the strong refls, to persist existing data items
         std::vector<std::string> labels = {expt.identifier()};
-
         strong_reflections.set_identifiers(labels);
 
         // Recalculate the rlp and s1 vectors based on the updated models.
