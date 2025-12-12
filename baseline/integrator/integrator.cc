@@ -17,12 +17,12 @@
 #include <string>
 #include <vector>
 
-#include "math/math_utils.cuh"
 #include "arg_parser.hpp"
 #include "common.hpp"
 #include "extent.cc"
 #include "ffs_logger.hpp"
 #include "kabsch.cc"
+#include "math/math_utils.cuh"
 #include "sigma_estimation.cc"
 #include "version.hpp"
 
@@ -209,10 +209,12 @@ int main(int argc, char **argv) {
     float sigma_b = 0.0;
     float sigma_m = 0.0;
     if (parser.is_used("sigma_m")) {
-        sigma_m = degrees_to_radians(parser.get<float>("sigma_m")); // Use radians for calculations
+        sigma_m = degrees_to_radians(
+          parser.get<float>("sigma_m"));  // Use radians for calculations
     }
     if (parser.is_used("sigma_b")) {
-        sigma_b = degrees_to_radians(parser.get<float>("sigma_b")); // Use radians for calculations
+        sigma_b = degrees_to_radians(
+          parser.get<float>("sigma_b"));  // Use radians for calculations
     }
 
     // Estimate sigmas
