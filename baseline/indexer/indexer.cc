@@ -23,7 +23,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "scan_static_predictor.cc"
 
 #include "assign_indices.cc"
 #include "combinations.cc"
@@ -32,6 +31,7 @@
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
 #include "peaks_to_rlvs.cc"
+#include "scan_static_predictor.cc"
 #include "score_crystals.cc"
 #include "xyz_to_rlp.cc"
 
@@ -463,9 +463,11 @@ int main(int argc, char **argv) {
 
         strong_reflections.add_column(std::string("entering"), enterings);
         // Call the predictor to get xyzcal values in the output.
-        simple_reflection_predictor(
-          expt.beam(), expt.goniometer(), expt.crystal().get_A_matrix(),
-          expt.detector().panels()[0], strong_reflections);
+        simple_reflection_predictor(expt.beam(),
+                                    expt.goniometer(),
+                                    expt.crystal().get_A_matrix(),
+                                    expt.detector().panels()[0],
+                                    strong_reflections);
 
         // Save the indexed reflection table.
         std::string output_filename = "indexed.refl";

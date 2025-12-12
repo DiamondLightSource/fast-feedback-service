@@ -32,8 +32,8 @@
 #include "math/device_precision.cuh"
 #include "math/math_utils.cuh"
 #include "math/vector3d.cuh"
-#include "version.hpp"
 #include "sigma_estimation.cc"
+#include "version.hpp"
 
 using namespace std::chrono_literals;
 
@@ -137,9 +137,10 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
           .metavar("σb")
           .scan<'f', float>();
 
-    add_argument("--sigma_estimation.min_bbox_depth", "--min_bbox_depth")
+        add_argument("--sigma_estimation.min_bbox_depth", "--min_bbox_depth")
           .help(
-            "When calculating sigma_m, only use reflections that span at least this number of images.")
+            "When calculating sigma_m, only use reflections that span at least this "
+            "number of images.")
           .default_value<int>(6)
           .scan<'i', int>();
     }
@@ -264,39 +265,42 @@ int main(int argc, char **argv) {
     // code in this program.
     float sigma_b = 0.0;
     float sigma_m = 0.0;
-    if (parser.is_used("sigma_m")){
-      sigma_m =
-        parser.get<float>("sigma_m") * (M_PI / 180.0f);  // Convert to radians
+    if (parser.is_used("sigma_m")) {
+        sigma_m = parser.get<float>("sigma_m") * (M_PI / 180.0f);  // Convert to radians
     }
-    if (parser.is_used("sigma_b")){
-      sigma_b =
-        parser.get<float>("sigma_b") * (M_PI / 180.0f);  // Convert to radians
+    if (parser.is_used("sigma_b")) {
+        sigma_b = parser.get<float>("sigma_b") * (M_PI / 180.0f);  // Convert to radians
     }
 
     // Estimate sigmas
     auto sigma_b_data = reflections.column<double>("sigma_b_variance");
     auto sigma_m_data = reflections.column<double>("sigma_m_variance");
     auto extent_z_data = reflections.column<int>("spot_extent_z");
-    if (sigma_b_data && sigma_m_data && extent_z_data){
-      int min_bbox_depth = parser.get<int>("sigma_estimation.min_bbox_depth");
-      // Estimate the values from the data, and use if user hasn't specified values.
-      auto [sigma_b_calc, sigma_m_calc, sigma_rmsd_calc] = estimate_sigmas(reflections, expt, min_bbox_depth);
-      // Note we might want to inflate sigma_b_calc to include the rmsd too, but we just report
-      // it for now.
-      if (sigma_m == 0.0){
-        sigma_m = sigma_m_calc;
-      }
-      if (sigma_b == 0.0){
-        sigma_b = sigma_b_calc;
-      }
+    if (sigma_b_data && sigma_m_data && extent_z_data) {
+        int min_bbox_depth = parser.get<int>("sigma_estimation.min_bbox_depth");
+        // Estimate the values from the data, and use if user hasn't specified values.
+        auto [sigma_b_calc, sigma_m_calc, sigma_rmsd_calc] =
+          estimate_sigmas(reflections, expt, min_bbox_depth);
+        // Note we might want to inflate sigma_b_calc to include the rmsd too, but we just report
+        // it for now.
+        if (sigma_m == 0.0) {
+            sigma_m = sigma_m_calc;
+        }
+        if (sigma_b == 0.0) {
+            sigma_b = sigma_b_calc;
+        }
     }
-    if (sigma_b == 0.0){
-      throw std::runtime_error("No value for sigma_b. This must either be provided as input, or an input reflection "
-        "table containing sigma_b_variance must be used.");
+    if (sigma_b == 0.0) {
+        throw std::runtime_error(
+          "No value for sigma_b. This must either be provided as input, or an input "
+          "reflection "
+          "table containing sigma_b_variance must be used.");
     }
-    if (sigma_m == 0.0){
-      throw std::runtime_error("No value for sigma_m. This must either be provided as input, or an input reflection "
-        "table containing sigma_m_variance and spot_extent_z must be used.");
+    if (sigma_m == 0.0) {
+        throw std::runtime_error(
+          "No value for sigma_m. This must either be provided as input, or an input "
+          "reflection "
+          "table containing sigma_m_variance and spot_extent_z must be used.");
     }
 #pragma endregion Sigma estimation
 
