@@ -2,8 +2,8 @@
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/reflection.hpp>
-#include <tuple>
 #include <math/math_utils.cuh>
+#include <tuple>
 
 #include "ffs_logger.hpp"
 
