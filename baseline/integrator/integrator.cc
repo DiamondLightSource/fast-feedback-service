@@ -22,6 +22,8 @@
 #include "extent.cc"
 #include "ffs_logger.hpp"
 #include "kabsch.cc"
+#include "math/math_utils.cuh"
+#include "sigma_estimation.cc"
 #include "version.hpp"
 
 using json = nlohmann::json;
@@ -84,6 +86,13 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .metavar("σb")
           .scan<'f', float>();
 
+        add_argument("--sigma_estimation.min_bbox_depth", "--min_bbox_depth")
+          .help(
+            "When calculating sigma_m, only use reflections that span at least this "
+            "number of images.")
+          .default_value<int>(6)
+          .scan<'i', int>();
+
         add_argument("output")
           .help("Output file path")
           .metavar("output.h5")
@@ -102,18 +111,8 @@ int main(int argc, char **argv) {
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();
 
-    float sigma_m =
-      parser.get<float>("sigma_m") * (M_PI / 180.0f);  // Convert to radians
-    float sigma_b =
-      parser.get<float>("sigma_b") * (M_PI / 180.0f);  // Convert to radians
     float timeout = parser.get<float>("timeout");
     std::string output_file = parser.get<std::string>("output");
-
-    logger.info("Parameters: sigma_m={:.6f}, sigma_b={:.6f}, timeout={:.1f}, output={}",
-                sigma_m,
-                sigma_b,
-                timeout,
-                output_file);
 
     // Guard against missing files
     if (!std::filesystem::exists(reflection_file)) {
@@ -201,6 +200,53 @@ int main(int argc, char **argv) {
                 rotation_axis.z());
     logger.info("  Oscillation: start={:.3f}°, width={:.3f}°", osc_start, osc_width);
     logger.info("  Image range: {} to {}", image_range_start, image_range_end);
+
+    // If input is a predicted refl, then we require sigma_b, sigma_m as we will not be
+    // able to estimate it from the data
+    // Else the input as an indexed.refl/refined.refl with the sigma variance columns,
+    // then we can calculate sigma_b, sigma_m but will have to also run the predict
+    // code in this program.
+    float sigma_b = 0.0;
+    float sigma_m = 0.0;
+    if (parser.is_used("sigma_m")) {
+        sigma_m = degrees_to_radians(
+          parser.get<float>("sigma_m"));  // Use radians for calculations
+    }
+    if (parser.is_used("sigma_b")) {
+        sigma_b = degrees_to_radians(
+          parser.get<float>("sigma_b"));  // Use radians for calculations
+    }
+
+    // Estimate sigmas
+    auto sigma_b_data = reflections.column<double>("sigma_b_variance");
+    auto sigma_m_data = reflections.column<double>("sigma_m_variance");
+    auto extent_z_data = reflections.column<int>("spot_extent_z");
+    if (sigma_b_data && sigma_m_data && extent_z_data) {
+        int min_bbox_depth = parser.get<int>("sigma_estimation.min_bbox_depth");
+        // Estimate the values from the data, and use if user hasn't specified values.
+        auto [sigma_b_calc, sigma_m_calc, sigma_rmsd_calc] =
+          estimate_sigmas(reflections, expt, min_bbox_depth);
+        // Note we might want to inflate sigma_b_calc to include the rmsd too, but we just report
+        // it for now.
+        if (sigma_m == 0.0) {
+            sigma_m = sigma_m_calc;
+        }
+        if (sigma_b == 0.0) {
+            sigma_b = sigma_b_calc;
+        }
+    }
+    if (sigma_b == 0.0) {
+        throw std::runtime_error(
+          "No value for sigma_b. This must either be provided as input, or an input "
+          "reflection "
+          "table containing sigma_b_variance must be used.");
+    }
+    if (sigma_m == 0.0) {
+        throw std::runtime_error(
+          "No value for sigma_m. This must either be provided as input, or an input "
+          "reflection "
+          "table containing sigma_m_variance and spot_extent_z must be used.");
+    }
 
     // Compute bounding boxes using baseline CPU algorithms
     logger.info("Computing Kabsch bounding boxes using baseline CPU algorithms...");
