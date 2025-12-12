@@ -12,7 +12,6 @@
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
-#include <iostream>
 
 #pragma region Connected Components
 ConnectedComponents::ConnectedComponents(const uint8_t *result_image,
@@ -196,14 +195,13 @@ std::tuple<double, double, int> Reflection3D::variances_in_kabsch_space(
         varz += signal.intensity * eps3 * eps3;
         total_intensity += signal.intensity;
     }
-    total_intensity -= 1;
     varx = varx / total_intensity;
     vary = vary / total_intensity;
     varz = varz / total_intensity;
     // Reason for dividing by two below, see https://github.com/dials/dials/issues/2851#issuecomment-2657018707
     return std::make_tuple((varx + vary) / 2.0, varz, z_max_ - z_min_ + 1);
 }
-
+#pragma endregion Reflection3D
 
 #pragma region 2D Connected Components
 std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
