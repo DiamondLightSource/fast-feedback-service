@@ -137,7 +137,7 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
           .metavar("σb")
           .scan<'f', float>();
 
-        add_argument("--sigma_estimation.min_bbox_depth", "--min_bbox_depth")
+    add_argument("--sigma_estimation.min_bbox_depth", "--min_bbox_depth")
           .help(
             "When calculating sigma_m, only use reflections that span at least this number of images.")
           .default_value<int>(6)

@@ -462,6 +462,7 @@ int main(int argc, char **argv) {
         }
 
         strong_reflections.add_column(std::string("entering"), enterings);
+        // Call the predictor to get xyzcal values in the output.
         simple_reflection_predictor(
           expt.beam(), expt.goniometer(), expt.crystal().get_A_matrix(),
           expt.detector().panels()[0], strong_reflections);
