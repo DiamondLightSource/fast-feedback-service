@@ -266,10 +266,10 @@ int main(int argc, char **argv) {
     float sigma_b = 0.0;
     float sigma_m = 0.0;
     if (parser.is_used("sigma_m")) {
-        sigma_m = parser.get<float>("sigma_m") * (M_PI / 180.0f);  // Convert to radians
+        sigma_m = degrees_to_radians(parser.get<float>("sigma_m")); // Use radians for calculations
     }
     if (parser.is_used("sigma_b")) {
-        sigma_b = parser.get<float>("sigma_b") * (M_PI / 180.0f);  // Convert to radians
+        sigma_b = degrees_to_radians(parser.get<float>("sigma_b")); // Use radians for calculations
     }
 
     // Estimate sigmas
