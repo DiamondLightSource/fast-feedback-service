@@ -3,10 +3,10 @@
 #include <dx2/experiment.hpp>
 #include <dx2/reflection.hpp>
 #include <tuple>
+#include <math/math_utils.cuh>
 
 #include "ffs_logger.hpp"
 
-constexpr double RAD2DEG = 180.0 / M_PI;
 constexpr size_t indexed_flag = (1 << 2);  // 4
 /*
 Function to calculate the square deviation in kabsch space between
@@ -62,7 +62,7 @@ std::tuple<double, double, double> estimate_sigmas(ReflectionTable const &indexe
     double sigma_b_radians =
       std::pow(sigma_b_total / filtered_sigma_b_data.extent(0), 0.5);
     logger.info("Sigma b estimate (degrees): {:.6f} on {} reflections",
-                RAD2DEG * sigma_b_radians,
+                radians_to_degrees(sigma_b_radians),
                 filtered_sigma_b_data.extent(0));
     if (n_sigma_m == 0) {
         throw std::runtime_error(
@@ -71,7 +71,7 @@ std::tuple<double, double, double> estimate_sigmas(ReflectionTable const &indexe
     double sigma_m_radians = std::pow(sigma_m_total / n_sigma_m, 0.5);
     logger.info(
       "Sigma m estimate (degrees): {:.6f} on {} reflections with min_bbox_depth={}",
-      sigma_m_radians * RAD2DEG,
+      radians_to_degrees(sigma_m_radians),
       n_sigma_m,
       min_bbox_depth);
     // loop through refls - map s1 to recip space
@@ -87,7 +87,7 @@ std::tuple<double, double, double> estimate_sigmas(ReflectionTable const &indexe
         Eigen::Map<Vector3d> xyzobs_this(&xyzobs(i, 0));
         double val =
           squaredev_in_kabsch_space(xyzcal_this, xyzobs_this, expt.beam().get_s0(), p);
-        if (RAD2DEG * std::pow(val, 0.5)
+        if (radians_to_degrees(std::pow(val, 0.5))
             < 0.1) {  // Guard against mispredictions in indexing.
             tot_rmsd += val;
             count++;
@@ -100,7 +100,7 @@ std::tuple<double, double, double> estimate_sigmas(ReflectionTable const &indexe
     }
     double rmsd_deviation_radians = std::pow(tot_rmsd / count, 0.5);
     logger.info("Sigma rmsd (degrees): {:.6f} on {} reflections",
-                rmsd_deviation_radians * RAD2DEG,
+                radians_to_degrees(rmsd_deviation_radians),
                 count);
     return std::make_tuple(sigma_b_radians, sigma_m_radians, rmsd_deviation_radians);
 }
