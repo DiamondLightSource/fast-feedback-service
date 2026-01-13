@@ -43,9 +43,12 @@ struct _h5read_handle {
     uint8_t *mask;         ///< Shared image mask
     uint8_t *module_mask;  ///< Shared module mask
     size_t mask_size;      ///< Total size(in pixels) of mask
-    image_t_type trusted_range_min,
-      trusted_range_max;  ///< Trusted range of this dataset
-    float wavelength;     ///< Wavelength of the X-ray beam
+
+    h5read_dtype data_dtype;    ///< Detected pixel data type
+    size_t data_element_size;   ///< Bytes per pixel element
+    int64_t trusted_range_min;  ///< Minimum trusted pixel value
+    int64_t trusted_range_max;  ///< Maximum trusted pixel value
+    float wavelength;           ///< Wavelength of the X-ray beam
 
     float pixel_size_x, pixel_size_y;
     float detector_distance;
@@ -54,29 +57,77 @@ struct _h5read_handle {
     float oscillation_width;
 };
 
-/// Validate that the HDF5 datatype size matches the expected pixel data size
-///
-/// @param datatype The HDF5 datatype to validate
-static void _validate_data_type_size(hid_t datatype) {
-    size_t datasize = H5Tget_size(datatype);
-#ifdef PIXEL_DATA_32BIT
-    if (datasize != 4) {
-        fprintf(stderr,
-                "Error: Expected 32-bit data but got %zu bytes. Use "
-                "-DPIXEL_DATA_32BIT=OFF for 16-bit data.\n",
-                datasize);
-        exit(1);
+/// Get the element size in bytes for a given dtype
+size_t h5read_dtype_size(h5read_dtype dtype) {
+    switch (dtype) {
+    case H5READ_DTYPE_UINT8:
+    case H5READ_DTYPE_INT8:
+        return 1;
+    case H5READ_DTYPE_UINT16:
+    case H5READ_DTYPE_INT16:
+        return 2;
+    case H5READ_DTYPE_UINT32:
+    case H5READ_DTYPE_INT32:
+    case H5READ_DTYPE_FLOAT32:
+        return 4;
+    case H5READ_DTYPE_FLOAT64:
+        return 8;
+    default:
+        return 0;
     }
-#else
-    if (datasize != 2) {
-        fprintf(stderr,
-                "Error: Expected 16-bit data but got %zu bytes. Use "
-                "-DPIXEL_DATA_32BIT=ON for 32-bit data.\n",
-                datasize);
-        exit(1);
-    }
-#endif
 }
+
+#ifdef HAVE_HDF5
+/// Detect the h5read_dtype from an HDF5 datatype
+///
+/// @param datatype The HDF5 datatype to detect
+/// @return The detected h5read_dtype, or H5READ_DTYPE_UNKNOWN if unsupported
+static h5read_dtype _detect_hdf5_dtype(hid_t datatype) {
+    H5T_class_t type_class = H5Tget_class(datatype);
+    size_t size = H5Tget_size(datatype);
+    H5T_sign_t sign = H5Tget_sign(datatype);
+
+    if (type_class == H5T_INTEGER) {
+        if (sign == H5T_SGN_NONE) {  // unsigned
+            if (size == 1) return H5READ_DTYPE_UINT8;
+            if (size == 2) return H5READ_DTYPE_UINT16;
+            if (size == 4) return H5READ_DTYPE_UINT32;
+        } else {  // signed
+            if (size == 1) return H5READ_DTYPE_INT8;
+            if (size == 2) return H5READ_DTYPE_INT16;
+            if (size == 4) return H5READ_DTYPE_INT32;
+        }
+    } else if (type_class == H5T_FLOAT) {
+        if (size == 4) return H5READ_DTYPE_FLOAT32;
+        if (size == 8) return H5READ_DTYPE_FLOAT64;
+    }
+    return H5READ_DTYPE_UNKNOWN;
+}
+
+/// Get the HDF5 native type for a given h5read_dtype
+static hid_t _h5read_dtype_to_native(h5read_dtype dtype) {
+    switch (dtype) {
+    case H5READ_DTYPE_UINT8:
+        return H5T_NATIVE_UINT8;
+    case H5READ_DTYPE_UINT16:
+        return H5T_NATIVE_UINT16;
+    case H5READ_DTYPE_UINT32:
+        return H5T_NATIVE_UINT32;
+    case H5READ_DTYPE_INT8:
+        return H5T_NATIVE_INT8;
+    case H5READ_DTYPE_INT16:
+        return H5T_NATIVE_INT16;
+    case H5READ_DTYPE_INT32:
+        return H5T_NATIVE_INT32;
+    case H5READ_DTYPE_FLOAT32:
+        return H5T_NATIVE_FLOAT;
+    case H5READ_DTYPE_FLOAT64:
+        return H5T_NATIVE_DOUBLE;
+    default:
+        return H5T_NATIVE_UINT16;  // fallback
+    }
+}
+#endif
 
 void h5read_free(h5read_handle *obj) {
 #ifdef HAVE_HDF5
@@ -104,6 +155,14 @@ size_t h5read_get_image_slow(h5read_handle *obj) {
 
 size_t h5read_get_image_fast(h5read_handle *obj) {
     return obj->fast;
+}
+
+h5read_dtype h5read_get_data_dtype(h5read_handle *obj) {
+    return obj->data_dtype;
+}
+
+size_t h5read_get_element_size(h5read_handle *obj) {
+    return obj->data_element_size;
 }
 
 void h5read_free_image(image_t *i) {
@@ -135,11 +194,15 @@ void _blit(image_t *image, image_modules_t *modules) {
     modules->slow = E2XE_MOD_SLOW;
     modules->fast = E2XE_MOD_FAST;
     modules->modules = slow * fast;
+    modules->dtype = image->dtype;
 
     size_t module_pixels = E2XE_MOD_SLOW * E2XE_MOD_FAST;
+    size_t elem_size = h5read_dtype_size(image->dtype);
 
-    modules->data =
-      (image_t_type *)malloc(sizeof(image_t_type) * slow * fast * module_pixels);
+    modules->data = malloc(elem_size * slow * fast * module_pixels);
+
+    uint8_t *src = (uint8_t *)image->data;
+    uint8_t *dst = (uint8_t *)modules->data;
 
     for (size_t _slow = 0; _slow < slow; _slow++) {
         size_t row0 = _slow * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * image->fast;
@@ -149,9 +212,9 @@ void _blit(image_t *image, image_modules_t *modules) {
                   (row0 + row * image->fast + _fast * (E2XE_MOD_FAST + E2XE_GAP_FAST));
                 size_t target =
                   (_slow * fast + _fast) * module_pixels + row * E2XE_MOD_FAST;
-                memcpy((void *)&modules->data[target],
-                       (void *)&image->data[offset],
-                       sizeof(image_t_type) * E2XE_MOD_FAST);
+                memcpy(dst + target * elem_size,
+                       src + offset * elem_size,
+                       elem_size * E2XE_MOD_FAST);
             }
         }
     }
@@ -194,15 +257,16 @@ uint32_t pcg32_random_r(pcg32_random_t *rng) {
 
 #define NUM_SAMPLE_IMAGES 6
 
-/// Generate a sample image from number
-void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
+/// Generate a sample image from number (sample data uses uint16_t)
+void _generate_sample_image(h5read_handle *obj, size_t n, void *data_ptr) {
+    uint16_t *data = (uint16_t *)data_ptr;
     assert(n >= 0 && n <= NUM_SAMPLE_IMAGES);
 
     if (n == 0) {
-        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(image_t_type));
+        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
     } else if (n == 1) {
         // Image 1: I=1 for every unmasked pixel
-        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(image_t_type));
+        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
         for (int mody = 0; mody < E2XE_16M_NSLOW; ++mody) {
             // row0 is the row of the module top row
             size_t row0 = mody * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
@@ -218,7 +282,7 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
         }
     } else if (n == 2) {
         // Image 2: High pixel (100) every 42 pixels across the detector
-        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(image_t_type));
+        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
         for (int y = 0; y < E2XE_16M_SLOW; y += 42) {
             for (int x = 0; x < E2XE_16M_FAST; x += 42) {
                 int k = y * E2XE_16M_FAST + x;
@@ -246,7 +310,7 @@ void _generate_sample_image(h5read_handle *obj, size_t n, image_t_type *data) {
         // Image 3: "Random" background, zero on masks
 
         pcg32_random_t state = {0};
-        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(image_t_type));
+        memset(data, 0, E2XE_16M_FAST * E2XE_16M_SLOW * sizeof(uint16_t));
         for (int mody = 0; mody < E2XE_16M_NSLOW; ++mody) {
             // row0 is the row of the module top row
             size_t row0 = mody * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
@@ -336,9 +400,6 @@ void h5read_get_raw_chunk(h5read_handle *obj,
         exit(1);
     }
 
-    hid_t datatype = H5Dget_type(current->dataset);
-    _validate_data_type_size(datatype);
-
     uint32_t filter = 0;
     herr_t err = H5Dread_chunk(current->dataset, H5P_DEFAULT, offset, &filter, data);
     if (err < 0) {
@@ -348,7 +409,7 @@ void h5read_get_raw_chunk(h5read_handle *obj,
 #endif
 }
 
-void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data) {
+void h5read_get_image_into(h5read_handle *obj, size_t index, void *data) {
     if (index >= obj->frames) {
         fprintf(stderr,
                 "Error: image %ld greater than number of frames (%ld)\n",
@@ -376,7 +437,7 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
     h5_data_file *current = &(obj->data_files[data_file]);
 
     hid_t space = H5Dget_space(current->dataset);
-    hid_t datatype = H5Dget_type(current->dataset);
+    hid_t native_type = _h5read_dtype_to_native(obj->data_dtype);
 
     hsize_t block[3] = {1, obj->slow, obj->fast};
     hsize_t offset[3] = {index + current->offset, 0, 0};
@@ -385,7 +446,8 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
     H5Sselect_hyperslab(space, H5S_SELECT_SET, offset, NULL, block, NULL);
     hid_t mem_space = H5Screate_simple(3, block, NULL);
 
-    if (H5Dread(current->dataset, datatype, mem_space, space, H5P_DEFAULT, data) < 0) {
+    if (H5Dread(current->dataset, native_type, mem_space, space, H5P_DEFAULT, data)
+        < 0) {
         H5Eprint(H5E_DEFAULT, NULL);
         exit(1);
     }
@@ -401,17 +463,16 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     result->mask = obj->mask;
     result->fast = obj->fast;
     result->slow = obj->slow;
+    result->dtype = obj->data_dtype;
     // Create the buffer here. This will be freed by h5read_free_image
-    result->data = malloc(sizeof(image_t_type) * obj->slow * obj->fast);
+    result->data = malloc(obj->data_element_size * obj->slow * obj->fast);
     // Use our read-into-buffer function to fill this
     h5read_get_image_into(obj, n, result->data);
 
     return result;
 }
 
-void h5read_get_trusted_range(h5read_handle *obj,
-                              image_t_type *min,
-                              image_t_type *max) {
+void h5read_get_trusted_range(h5read_handle *obj, int64_t *min, int64_t *max) {
     if (min != NULL) {
         *min = obj->trusted_range_min;
     }
@@ -561,7 +622,7 @@ void read_mask(h5read_handle *obj) {
     H5Dclose(mask_dataset);
 }
 
-/// Read a single float value out of an HDF5 dataset
+/// Read a single integer value out of an HDF5 dataset into int64_t
 ///
 /// If the dataset is present, but cannot be read, terminates the program.
 ///
@@ -571,15 +632,14 @@ void read_mask(h5read_handle *obj) {
 /// successful.
 ///
 /// @return The HDF error code (negative) if opening the dataset failed, or 0
-herr_t _read_single_value_image_t_type(hid_t origin,
-                                       const char *dataset_path,
-                                       image_t_type *destination) {
+herr_t _read_single_value_int64(hid_t origin,
+                                const char *dataset_path,
+                                int64_t *destination) {
     hid_t dataset = H5Dopen(origin, dataset_path, H5P_DEFAULT);
     if (dataset < 0) {
         return dataset;
     }
     hid_t datatype = H5Dget_type(dataset);
-    size_t datatype_size = H5Tget_size(datatype);
     hid_t dataspace = H5Dget_space(dataset);
     size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
 
@@ -593,25 +653,9 @@ herr_t _read_single_value_image_t_type(hid_t origin,
                 dataset_path);
         exit(1);
     }
-    if (datatype_size < sizeof(image_t_type)) {
-        char name[256] = "\0";
-        H5Iget_name(origin, name, 256);
-
-        fprintf(stderr,
-                "Error: While reading %s%s: Value of size %zu is smaller than data "
-                "type\n",
-                name,
-                dataset_path,
-                datatype_size);
-        exit(1);
-    }
-#ifdef PIXEL_DATA_32BIT
-    if (H5Dread(dataset, H5T_NATIVE_UINT32, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
+    // Read as int64 which can hold any integer value up to 64-bit
+    if (H5Dread(dataset, H5T_NATIVE_INT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
         < 0) {
-#else
-    if (H5Dread(dataset, H5T_NATIVE_UINT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
-        < 0) {
-#endif
         char name[256] = "\0";
         H5Iget_name(origin, name, 256);
         fprintf(stderr,
@@ -683,24 +727,43 @@ herr_t _read_single_value_float(hid_t origin, const char *path, float *destinati
 
 void read_trusted_range(h5read_handle *obj) {
     obj->trusted_range_min = 0;
-#ifdef PIXEL_DATA_32BIT
-    obj->trusted_range_max = UINT32_MAX;
-#else
-    obj->trusted_range_max = UINT16_MAX;
-#endif
+    // Default to max value based on detected dtype, or UINT32_MAX as fallback
+    switch (obj->data_dtype) {
+    case H5READ_DTYPE_UINT8:
+        obj->trusted_range_max = UINT8_MAX;
+        break;
+    case H5READ_DTYPE_UINT16:
+        obj->trusted_range_max = UINT16_MAX;
+        break;
+    case H5READ_DTYPE_UINT32:
+        obj->trusted_range_max = UINT32_MAX;
+        break;
+    case H5READ_DTYPE_INT8:
+        obj->trusted_range_max = INT8_MAX;
+        break;
+    case H5READ_DTYPE_INT16:
+        obj->trusted_range_max = INT16_MAX;
+        break;
+    case H5READ_DTYPE_INT32:
+        obj->trusted_range_max = INT32_MAX;
+        break;
+    default:
+        obj->trusted_range_max = UINT32_MAX;  // fallback
+        break;
+    }
 
     // Try to read saturation value, but don't fail if it doesn't exist
-    if (_read_single_value_image_t_type(obj->master_file,
-                                        "/entry/instrument/detector/saturation_value",
-                                        &obj->trusted_range_max)
+    if (_read_single_value_int64(obj->master_file,
+                                 "/entry/instrument/detector/saturation_value",
+                                 &obj->trusted_range_max)
         < 0) {
         fprintf(stderr, "Warning: No saturation_value found, using maximum value\n");
     }
 
     // Try to read underload value, but don't fail if it doesn't exist
-    if (_read_single_value_image_t_type(obj->master_file,
-                                        "/entry/instrument/detector/underload_value",
-                                        &obj->trusted_range_min)
+    if (_read_single_value_int64(obj->master_file,
+                                 "/entry/instrument/detector/underload_value",
+                                 &obj->trusted_range_min)
         < 0) {
         fprintf(stderr, "Warning: No underload_value found, using 0\n");
     }
@@ -932,7 +995,21 @@ void setup_data(h5read_handle *obj) {
     hid_t dataset = obj->data_files[0].dataset;
     hid_t datatype = H5Dget_type(dataset);
 
-    _validate_data_type_size(datatype);
+    // Detect the data type from the HDF5 file
+    obj->data_dtype = _detect_hdf5_dtype(datatype);
+    obj->data_element_size = h5read_dtype_size(obj->data_dtype);
+
+    if (obj->data_dtype == H5READ_DTYPE_UNKNOWN) {
+        fprintf(stderr,
+                "Warning: Unknown HDF5 data type (size=%zu), defaulting to uint16\n",
+                H5Tget_size(datatype));
+        obj->data_dtype = H5READ_DTYPE_UINT16;
+        obj->data_element_size = 2;
+    }
+
+    printf("Detected data type: %d (%zu bytes per element)\n",
+           obj->data_dtype,
+           obj->data_element_size);
 
     hid_t space = H5Dget_space(dataset);
 
@@ -999,6 +1076,9 @@ h5read_handle *h5read_open(const char *master_filename) {
         file->frames += data_files[j].frames;
     }
 
+    // setup_data must come first as it detects the data type
+    setup_data(file);
+
     read_trusted_range(file);
 
     read_wavelength(file);
@@ -1008,8 +1088,6 @@ h5read_handle *h5read_open(const char *master_filename) {
     read_oscillation_start_and_width(file);
 
     read_mask(file);
-
-    setup_data(file);
 
     return file;
 }
@@ -1046,11 +1124,15 @@ uint8_t *_generate_e2xe_16m_mask() {
 h5read_handle *h5read_generate_samples() {
     h5read_handle *file = calloc(1, sizeof(h5read_handle));
 
+    // Sample data uses uint16
+    file->data_dtype = H5READ_DTYPE_UINT16;
+    file->data_element_size = sizeof(uint16_t);
+
     // Generate the mask - with module gaps masked off
     file->slow = E2XE_16M_SLOW;
     file->fast = E2XE_16M_FAST;
     file->mask = _generate_e2xe_16m_mask();
-    file->trusted_range_max = (image_t_type)(-1);
+    file->trusted_range_max = UINT16_MAX;
     file->trusted_range_min = 0;
     file->beam_center_x = E2XE_16M_FAST / 2.0;
     file->beam_center_y = E2XE_16M_SLOW / 2.0;

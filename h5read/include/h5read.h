@@ -12,28 +12,38 @@ extern "C" {
 
 typedef struct _h5read_handle h5read_handle;
 
-// Define a data type alias so that other users don't have to hardcode
-#ifdef PIXEL_DATA_32BIT
-typedef uint32_t image_t_type;
-#else
-typedef uint16_t image_t_type;
-#endif
+/// Data type enum for runtime type identification
+typedef enum {
+    H5READ_DTYPE_UNKNOWN = 0,
+    H5READ_DTYPE_UINT8,
+    H5READ_DTYPE_UINT16,
+    H5READ_DTYPE_UINT32,
+    H5READ_DTYPE_INT8,
+    H5READ_DTYPE_INT16,
+    H5READ_DTYPE_INT32,
+    H5READ_DTYPE_FLOAT32,
+    H5READ_DTYPE_FLOAT64,
+} h5read_dtype;
+
+/// Get the element size in bytes for a given dtype
+size_t h5read_dtype_size(h5read_dtype dtype);
 
 typedef struct image_t {
-    image_t_type *data;
-    uint8_t *mask;
-    size_t slow;
-    size_t fast;
+    void *data;          ///< Image pixel data (type determined by dtype field)
+    uint8_t *mask;       ///< Image mask
+    size_t slow;         ///< Number of pixels in slow direction
+    size_t fast;         ///< Number of pixels in fast direction
+    h5read_dtype dtype;  ///< Data type of the pixel data
 } image_t;
 
 /* data as modules i.e. 3D array */
 typedef struct image_modules_t {
-    image_t_type
-      *data;         ///< Module image data in a 3D array block of [module][slow][fast]
+    void *data;      ///< Module image data in a 3D array block of [module][slow][fast]
     uint8_t *mask;   ///< Image mask, in the same shape as the module data
     size_t modules;  ///< Total number of modules
     size_t slow;     ///< Number of pixels in slow direction per module
     size_t fast;     ///< Number of pixels in fast direction per module
+    h5read_dtype dtype;  ///< Data type of the pixel data
 } image_modules_t;
 
 /// Read an h5 file. Returns NULL if failed.
@@ -51,8 +61,12 @@ size_t h5read_get_number_of_images(h5read_handle *obj);
 size_t h5read_get_image_slow(h5read_handle *obj);
 /// Get the number of image pixels in the fast dimension
 size_t h5read_get_image_fast(h5read_handle *obj);
-/// Get the trusted range for this dataset
-void h5read_get_trusted_range(h5read_handle *obj, image_t_type *min, image_t_type *max);
+/// Get the detected pixel data type
+h5read_dtype h5read_get_data_dtype(h5read_handle *obj);
+/// Get the element size in bytes for the detected pixel data type
+size_t h5read_get_element_size(h5read_handle *obj);
+/// Get the trusted range for this dataset (using int64 to support all types)
+void h5read_get_trusted_range(h5read_handle *obj, int64_t *min, int64_t *max);
 /// Get the wavelength for this dataset
 float h5read_get_wavelength(h5read_handle *obj);
 /// Get the pixel size for this dataset
@@ -80,9 +94,10 @@ void h5read_free_image(image_t *image);
  *
  * The caller is responsible for both allocating and releasing the image
  * data buffer. This buffer *must* be at least large enough to hold an
- * image of slow*fast, or else undefined memory could be overwritten.
+ * image of slow*fast*element_size bytes, or else undefined memory could
+ * be overwritten. Use h5read_get_element_size() to determine the element size.
  */
-void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data);
+void h5read_get_image_into(h5read_handle *obj, size_t index, void *data);
 
 void h5read_get_raw_chunk(h5read_handle *obj,
                           size_t index,
@@ -119,10 +134,18 @@ class Image {
   public:
     Image(std::shared_ptr<h5read_handle> reader, size_t i) noexcept;
 
-    const std::span<image_t_type> data;
+    void *data() const {
+        return _image->data;
+    }
     const std::span<uint8_t> mask;
     const size_t slow;
     const size_t fast;
+    const h5read_dtype dtype;
+
+    /// Get the element size in bytes
+    size_t element_size() const {
+        return h5read_dtype_size(dtype);
+    }
 };
 
 class ImageModules {
@@ -130,22 +153,27 @@ class ImageModules {
     std::shared_ptr<h5read_handle> _handle;
     std::shared_ptr<image_modules_t> _modules;
     // Mutable vectors to point to the appropriate parts of the module data
-    std::vector<std::span<image_t_type>> _modules_data;
     std::vector<std::span<uint8_t>> _modules_masks;
 
   public:
     ImageModules(std::shared_ptr<h5read_handle> handle, size_t i) noexcept;
 
-    const std::span<image_t_type> data;
+    void *data() const {
+        return _modules->data;
+    }
     const std::span<uint8_t> mask;
 
     const size_t n_modules;  ///< Number of modules
     const size_t slow;       ///< Height of a module, in pixels
     const size_t fast;       ///< Width of a module, in pixels
-    /// Convenience lookup to get data for a particular module
-    const std::span<std::span<image_t_type>> modules;
+    const h5read_dtype dtype;
     /// Convenience lookup to get mask for a particular module
     const std::span<std::span<uint8_t>> masks;
+
+    /// Get the element size in bytes
+    size_t element_size() const {
+        return h5read_dtype_size(dtype);
+    }
 };
 
 /// Base class object to provide a unified reader interface
@@ -164,7 +192,9 @@ class Reader {
                                              std::span<uint8_t> destination) = 0;
     virtual ChunkCompression get_raw_chunk_compression() = 0;
     virtual size_t get_number_of_images() const = 0;
-    virtual std::array<image_t_type, 2> get_trusted_range() const = 0;
+    virtual h5read_dtype get_data_dtype() const = 0;
+    virtual size_t get_element_size() const = 0;
+    virtual std::array<int64_t, 2> get_trusted_range() const = 0;
     virtual std::array<size_t, 2> image_shape() const = 0;
     virtual std::optional<std::span<const uint8_t>> get_mask() const = 0;
     virtual std::optional<float> get_wavelength() const = 0;
@@ -181,8 +211,6 @@ class Reader {
 // Declare a C++ "object" version so we don't have to keep track of allocations
 class H5Read : public Reader {
   public:
-    using image_type = image_t_type;
-
     /// Create a reader using generated sample data
     H5Read();
     /// Create a reader from a Nexus file
@@ -190,16 +218,9 @@ class H5Read : public Reader {
     /// Create a reader by parsing command arguments
     H5Read(int argc, char **argv) noexcept;
 
-    /// Read image data into an existing buffer
-    void get_image_into(size_t index, image_t_type *data) {
+    /// Read image data into an existing buffer (must be at least slow*fast*element_size)
+    void get_image_into(size_t index, void *data) {
         h5read_get_image_into(_handle.get(), index, data);
-    }
-    /// Read image data into an existing buffer
-    void get_image_into(size_t index, std::span<image_t_type> data) {
-#ifndef NDEBUG
-        assert(data.size() >= get_image_slow() * get_image_fast());
-#endif
-        h5read_get_image_into(_handle.get(), index, data.data());
     }
 
     /// See if an image is available for raw chunk read
@@ -253,9 +274,17 @@ class H5Read : public Reader {
     virtual std::array<size_t, 2> image_shape() const {
         return {get_image_slow(), get_image_fast()};
     }
+    /// Get the detected pixel data type
+    virtual h5read_dtype get_data_dtype() const {
+        return h5read_get_data_dtype(_handle.get());
+    }
+    /// Get the element size in bytes for the detected pixel data type
+    virtual size_t get_element_size() const {
+        return h5read_get_element_size(_handle.get());
+    }
     /// Get the (min, max) inclusive trusted range of pixel values
-    virtual std::array<image_t_type, 2> get_trusted_range() const {
-        image_t_type min, max;
+    virtual std::array<int64_t, 2> get_trusted_range() const {
+        int64_t min, max;
         h5read_get_trusted_range(_handle.get(), &min, &max);
         return {min, max};
     }
@@ -294,8 +323,6 @@ class H5Read : public Reader {
   protected:
     std::shared_ptr<h5read_handle> _handle;
 };
-
-using pixel_t = H5Read::image_type;
 
 template <typename T>
 bool is_ready_for_read(const std::string &path);
