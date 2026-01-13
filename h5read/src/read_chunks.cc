@@ -23,7 +23,7 @@ int main(int argc, char **argv) {
         bshuf_decompress_lz4(
           buffer.data() + 12, image.data(), num_pixels, sizeof(image_t_type), 0);
 
-        printf("Read Image %d chunk of %zu KBytes\n", j, data.size() / 1024);
+        printf("Read Image %zu chunk of %zu KBytes\n", j, data.size() / 1024);
     }
 
     // Work out how long this took and print stats
