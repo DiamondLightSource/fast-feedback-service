@@ -65,7 +65,7 @@ size_t h5read_get_image_fast(h5read_handle *obj);
 h5read_dtype h5read_get_data_dtype(h5read_handle *obj);
 /// Get the element size in bytes for the detected pixel data type
 size_t h5read_get_element_size(h5read_handle *obj);
-/// Get the trusted range for this dataset (using int64 to support all types)
+/// Get the trusted range for this dataset
 void h5read_get_trusted_range(h5read_handle *obj, int64_t *min, int64_t *max);
 /// Get the wavelength for this dataset
 float h5read_get_wavelength(h5read_handle *obj);
@@ -218,7 +218,10 @@ class H5Read : public Reader {
     /// Create a reader by parsing command arguments
     H5Read(int argc, char **argv) noexcept;
 
-    /// Read image data into an existing buffer (must be at least slow*fast*element_size)
+    /// Read image data into an existing buffer.
+    ///
+    /// Buffer must be at least slow*fast*element_size, and allocated to
+    /// contain the same as the native data type of the data.
     void get_image_into(size_t index, void *data) {
         h5read_get_image_into(_handle.get(), index, data);
     }
