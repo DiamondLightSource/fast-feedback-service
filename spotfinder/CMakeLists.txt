@@ -40,3 +40,39 @@ target_compile_options(spotfinder PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LAN
 target_compile_options(spotfinder PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:--generate-line-info>")
 
 install(TARGETS spotfinder RUNTIME COMPONENT Runtime)
+
+
+add_executable(spotfinder32
+    spotfinder.cc
+    spotfinder.cu
+    shmread.cc
+    cbfread.cc
+    kernels/masking.cu
+    kernels/thresholding.cu
+    kernels/erosion.cu
+    connected_components/connected_components.cc
+)
+target_link_libraries(spotfinder32
+    PRIVATE
+    fmt
+    h5read
+    argparse
+    standalone
+    LZ4::LZ4
+    Bitshuffle::bitshuffle
+    CUDA::cudart
+    Boost::graph
+    lodepng
+    nlohmann_json::nlohmann_json
+    spdlog::spdlog
+    dx2
+    version
+    ffs_common
+    cuda_parser
+)
+target_compile_definitions(spotfinder32 PRIVATE PIXEL_DATA_32BIT)
+set_property(TARGET spotfinder32 PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+target_compile_options(spotfinder32 PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G>")
+target_compile_options(spotfinder32 PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:--generate-line-info>")
+
+install(TARGETS spotfinder32 RUNTIME COMPONENT Runtime)
