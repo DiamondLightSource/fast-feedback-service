@@ -25,7 +25,7 @@
 #include "math/math_utils.cuh"
 #include "sigma_estimation.cc"
 #include "version.hpp"
-#include "algorithm.cc"
+#include "predict.cc"
 
 using json = nlohmann::json;
 
@@ -125,19 +125,21 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // Load reflection data - default assumption is that it will be indexed/refined data
-    // It can be predicted data - in that case we will have to supply values for sigma_b, sigma_m
+    // Load reflection data.
+    // Expectation is that it will be indexed/refined reflection data, with the sigma_b_variance,
+    // sigma_m_variance and spot_extent_z parameters (if processed with the ffs spotfinder), which will
+    // be used to calculate sigma_b and sigma_m. Then prediction code will be run as part of integration.
+    // The input can also be predicted reflection data - in that case we will have to supply
+    // values for sigma_b, sigma_m but won't need to call predict code again.
     logger.info("Loading reflection data from: {}", reflection_file);
     ReflectionTable reflections(reflection_file);
 
     // Display column names for debugging
-    /*std::string column_names_str;
+    std::string column_names_str;
     for (const auto &name : reflections.get_column_names()) {
         column_names_str += "\n\t- " + name;
     }
-    logger.info("Available columns: {}", column_names_str);*/
-
-    
+    logger.info("Available columns: {}", column_names_str);
 
     // Parse experiment list from JSON
     logger.info("Loading experiment data from: {}", experiment_file);
@@ -222,21 +224,22 @@ int main(int argc, char **argv) {
         }
     }
     if (sigma_b == 0.0) {
-        throw std::runtime_error(
+        logger.error(
           "No value for sigma_b. This must either be provided as input, or an input "
           "reflection "
           "table containing sigma_b_variance must be used.");
+        return 1;
     }
     if (sigma_m == 0.0) {
-        throw std::runtime_error(
+        logger.error(
           "No value for sigma_m. This must either be provided as input, or an input "
           "reflection "
           "table containing sigma_m_variance and spot_extent_z must be used.");
+        return 1;
     }
 
-    // Now determine if already have predictions or if need to generate
-    // should probably inspect predicted flag?
-    // if all predicted:
+    // Determine if the data are predicted based on the reflection flags
+    // If data are not predicted, run predict code.
     auto flags_column_opt = reflections.column<size_t>("flags");
     if (!flags_column_opt) {
         logger.error("Column 'flags' not found.");
@@ -251,12 +254,14 @@ int main(int argc, char **argv) {
         break;
       }
     }
-    logger.info("ALL PREDICTED {}", all_predicted);
+    if (all_predicted){
+      logger.info("Input data have the predict flag set, treating as predicted data.");
+    }
 
     mdspan_type<double> phi_column;
     mdspan_type<double> s1_vectors;
     size_t num_reflections;
-    predicted_data_rotation output_data;
+    predicted_data_rotation output_data; // Define here so that members stay in scope
     if (!all_predicted){
       scan_varying_data sv_data;
       bool scan_varying = false;
@@ -279,17 +284,14 @@ int main(int argc, char **argv) {
       std::size_t num_new_reflections = output_data.panels.size();
       logger.info("Predicted {} reflections", num_new_reflections);
 
-      
       s1_vectors =
         mdspan_type<double>(output_data.s1.data(), output_data.s1.size() / 3, 3);
-
       phi_column =
         mdspan_type<double>(output_data.xyz_mm.data(), output_data.xyz_mm.size() / 3, 3);
       num_reflections = output_data.enter.size();
-      
     }
     else {
-      // was predicted, extract required data.
+      // is already predicted, so just extract required data.
       auto s1_vectors_opt = reflections.column<double>("s1");
       if (!s1_vectors_opt) {
         logger.error("Column 's1' not found in reflection data.");
@@ -304,18 +306,12 @@ int main(int argc, char **argv) {
       phi_column = *phi_column_opt;
       num_reflections = s1_vectors.extent(0);
     }
+    // Create a new reflection table for the output.
     std::vector<std::string> identifiers = reflections.get_identifiers();
     std::vector<uint64_t> ids = reflections.get_experiment_ids();
     ReflectionTable integrated_data(ids, identifiers);
 
     logger.info("Processing {} reflections", num_reflections);
-    
-
-    //s1, phi, 
-    // Extract required columns
-    //auto s1_vectors = mdspan<> output_data.s1;
-
-    
 
     // Compute bounding boxes using baseline CPU algorithms
     logger.info("Computing Kabsch bounding boxes using baseline CPU algorithms...");
