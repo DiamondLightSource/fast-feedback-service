@@ -472,8 +472,6 @@ int main(int argc, char **argv) {
                                     expt.detector().panels()[0],
                                     strong_reflections);
         // reset the predicted flags as these are observed not predicted
-        //auto flags_ = strong_reflections.column<std::size_t>("flags");
-        //auto flag_span = flags_.value();
         for (int i = 0; i < flag_span.extent(0); ++i) {
             flag_span(i, 0) = flag_span(i, 0) & ~predicted_value;
         }
