@@ -91,9 +91,6 @@ struct scan_varying_data {
     auto operator<=>(const scan_varying_data &) const = default;
 };
 
-// use a global output struct for writing predictions from many threads.
-//predicted_data_rotation output_data{};
-//std::mutex write_output_data_mtx;
 
 predicted_data_rotation predict_single_image(const int image_index,
                           const scan_varying_data &sv_data,
@@ -191,29 +188,6 @@ predicted_data_rotation predict_single_image(const int image_index,
         }
     }
     return output_data_this_image;
-    // now write to shared output data.
-    /*std::lock_guard<std::mutex> lock(write_output_data_mtx);
-    output_data.hkl.insert(output_data.hkl.end(),
-                           output_data_this_image.hkl.begin(),
-                           output_data_this_image.hkl.end());
-    output_data.s1.insert(output_data.s1.end(),
-                          output_data_this_image.s1.begin(),
-                          output_data_this_image.s1.end());
-    output_data.xyz_px.insert(output_data.xyz_px.end(),
-                              output_data_this_image.xyz_px.begin(),
-                              output_data_this_image.xyz_px.end());
-    output_data.xyz_mm.insert(output_data.xyz_mm.end(),
-                              output_data_this_image.xyz_mm.begin(),
-                              output_data_this_image.xyz_mm.end());
-    output_data.panels.insert(output_data.panels.end(),
-                              output_data_this_image.panels.begin(),
-                              output_data_this_image.panels.end());
-    output_data.enter.insert(output_data.enter.end(),
-                             output_data_this_image.enter.begin(),
-                             output_data_this_image.enter.end());
-    output_data.flags.insert(output_data.flags.end(),
-                             output_data_this_image.flags.begin(),
-                             output_data_this_image.flags.end());*/
 }
 
 predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experiment,
@@ -269,15 +243,8 @@ predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experime
     {
     ThreadPool pool(nthreads);
 
-    
-    //std::mutex results_mutex;
-
     for (int image_index = 0; image_index < n_images; ++image_index) {
-        //futures.emplace_back(
         pool.enqueue([&, image_index] {
-            //auto result = 
-            
-            //std::lock_guard<std::mutex> lock(results_mutex);
             try {
               per_image_results[image_index] = predict_single_image(image_index,
                                 sv_data,
@@ -292,13 +259,13 @@ predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experime
                 std::lock_guard<std::mutex> lk(eptr_mtx);
                 if (!eptr) eptr = std::current_exception();
             }
-            // = std::move(result);
         });
     }
-    }
+    } // Threadpool needs to go out of scope to make sure all
+    // jobs completed before merge
     if (eptr) std::rethrow_exception(eptr);
+    
     predicted_data_rotation all_output;
-
     for (auto& r : per_image_results) {
         all_output.merge(std::move(r));
     }
