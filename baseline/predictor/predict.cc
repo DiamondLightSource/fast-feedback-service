@@ -24,8 +24,8 @@
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <thread>
-#include <vector>
 #include <tuple>
+#include <vector>
 
 #include "index_generators.cc"
 #include "ray_predictors.cc"
@@ -38,7 +38,6 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 
 constexpr size_t predicted_flag = (1 << 0);
-
 
 struct predicted_data_rotation {
     // Shape {size, 3}
@@ -70,7 +69,7 @@ struct predicted_data_rotation {
         flags.push_back(flag);
     }
 
-    void merge(predicted_data_rotation&& other) {
+    void merge(predicted_data_rotation &&other) {
         hkl.insert(hkl.end(), other.hkl.begin(), other.hkl.end());
         s1.insert(s1.end(), other.s1.begin(), other.s1.end());
         xyz_px.insert(xyz_px.end(), other.xyz_px.begin(), other.xyz_px.end());
@@ -79,7 +78,6 @@ struct predicted_data_rotation {
         enter.insert(enter.end(), other.enter.begin(), other.enter.end());
         flags.insert(flags.end(), other.flags.begin(), other.flags.end());
     }
-
 };
 
 struct scan_varying_data {
@@ -90,16 +88,16 @@ struct scan_varying_data {
     auto operator<=>(const scan_varying_data &) const = default;
 };
 
-
-predicted_data_rotation predict_single_image(const int image_index,
-                          const scan_varying_data &sv_data,
-                          const Vector3d s0,
-                          const Matrix3d A,
-                          const Goniometer &goniometer,
-                          const Scan &scan,
-                          const Detector &detector,
-                          double param_dmin,
-                          gemmi::GroupOps crystal_symmetry_operations) {
+predicted_data_rotation predict_single_image(
+  const int image_index,
+  const scan_varying_data &sv_data,
+  const Vector3d s0,
+  const Matrix3d A,
+  const Goniometer &goniometer,
+  const Scan &scan,
+  const Detector &detector,
+  double param_dmin,
+  gemmi::GroupOps crystal_symmetry_operations) {
     bool use_mono = true;
     const Vector3d m2 = goniometer.get_rotation_axis();
     int z0 = scan.get_image_range()[0] - 1;
@@ -190,10 +188,10 @@ predicted_data_rotation predict_single_image(const int image_index,
 }
 
 predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experiment,
-                      const scan_varying_data &sv_data,
-                      double param_dmin,
-                      int buffer_size = 0,
-                      int nthreads = 1) {
+                                         const scan_varying_data &sv_data,
+                                         double param_dmin,
+                                         int buffer_size = 0,
+                                         int nthreads = 1) {
     Scan &scan = experiment.scan();
     if (buffer_size > 0) {
         // Can't have both scan varying data and a buffer
@@ -240,98 +238,98 @@ predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experime
     std::mutex eptr_mtx;
 
     {
-    ThreadPool pool(nthreads);
+        ThreadPool pool(nthreads);
 
-    for (int image_index = 0; image_index < n_images; ++image_index) {
-        pool.enqueue([&, image_index] {
-            try {
-              per_image_results[image_index] = predict_single_image(image_index,
-                                sv_data,
-                                s0,
-                                A,
-                                goniometer,
-                                scan,
-                                detector,
-                                param_dmin,
-                                crystal_symmetry_operations);
-            } catch (...){
-                std::lock_guard<std::mutex> lk(eptr_mtx);
-                if (!eptr) eptr = std::current_exception();
-            }
-        });
-    }
-    } // Threadpool needs to go out of scope to make sure all
+        for (int image_index = 0; image_index < n_images; ++image_index) {
+            pool.enqueue([&, image_index] {
+                try {
+                    per_image_results[image_index] =
+                      predict_single_image(image_index,
+                                           sv_data,
+                                           s0,
+                                           A,
+                                           goniometer,
+                                           scan,
+                                           detector,
+                                           param_dmin,
+                                           crystal_symmetry_operations);
+                } catch (...) {
+                    std::lock_guard<std::mutex> lk(eptr_mtx);
+                    if (!eptr) eptr = std::current_exception();
+                }
+            });
+        }
+    }  // Threadpool needs to go out of scope to make sure all
     // jobs completed before merge
     if (eptr) std::rethrow_exception(eptr);
-    
+
     predicted_data_rotation all_output;
-    for (auto& r : per_image_results) {
+    for (auto &r : per_image_results) {
         all_output.merge(std::move(r));
     }
     return all_output;
 }
 
-std::tuple<bool, scan_varying_data> extract_scan_varying_data(json elist_json_obj, Scan scan){
-  scan_varying_data sv_data;
-  bool scan_varying = false;
+std::tuple<bool, scan_varying_data> extract_scan_varying_data(json elist_json_obj,
+                                                              Scan scan) {
+    scan_varying_data sv_data;
+    bool scan_varying = false;
 
-  const int num_images =
-    scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
-  json beam_data = elist_json_obj.at("beam")[0];
-  json goniometer_data = elist_json_obj.at("goniometer")[0];
-  json crystal_data = elist_json_obj.at("crystal")[0];
-  json s0_at_scan_points;
-  json A_at_scan_points;
-  json r_setting_at_scan_points;
-  if (beam_data.contains("s0_at_scan_points")) {
-      scan_varying = true;
-      s0_at_scan_points = beam_data.at("s0_at_scan_points");
-      if (s0_at_scan_points.size()
-          == num_images + 1) {  // i.e. is expected length.
-          std::vector<Vector3d> scan_varying_s0;
-          for (const auto &entry : s0_at_scan_points) {
-              Vector3d vec(entry[0].get<double>(),
-                            entry[1].get<double>(),
-                            entry[2].get<double>());
-              scan_varying_s0.push_back(vec);
-          }
-          sv_data.s0_at_scan_points = scan_varying_s0;
-      }
-  }
-  if (crystal_data.contains("A_at_scan_points")) {
-      scan_varying = true;
-      A_at_scan_points = crystal_data.at("A_at_scan_points");
-      if (A_at_scan_points.size() == num_images + 1) {
-          std::vector<Matrix3d> scan_varying_A;
-          for (const auto &entry : A_at_scan_points) {
-              Matrix3d A_mat;
-              A_mat << entry[0].get<double>(), entry[1].get<double>(),
-                entry[2].get<double>(), entry[3].get<double>(),
-                entry[4].get<double>(), entry[5].get<double>(),
-                entry[6].get<double>(), entry[7].get<double>(),
-                entry[8].get<double>();
-              scan_varying_A.push_back(A_mat);
-          }
-          sv_data.A_at_scan_points = scan_varying_A;
-      }
-  }
-  if (goniometer_data.contains("setting_rotation_at_scan_points")) {
-      scan_varying = true;
-      r_setting_at_scan_points =
-        goniometer_data.at("setting_rotation_at_scan_points");
-      if (r_setting_at_scan_points.size() == num_images + 1) {
-          std::vector<Matrix3d> scan_varying_r;
-          for (const auto &entry : r_setting_at_scan_points) {
-              Matrix3d r_mat;
-              r_mat << entry[0].get<double>(), entry[1].get<double>(),
-                entry[2].get<double>(), entry[3].get<double>(),
-                entry[4].get<double>(), entry[5].get<double>(),
-                entry[6].get<double>(), entry[7].get<double>(),
-                entry[8].get<double>();
-              scan_varying_r.push_back(r_mat);
-          }
-          sv_data.r_setting_at_scan_points = scan_varying_r;
-      }
-  }
-  return std::make_tuple(scan_varying, sv_data);
+    const int num_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
+    json beam_data = elist_json_obj.at("beam")[0];
+    json goniometer_data = elist_json_obj.at("goniometer")[0];
+    json crystal_data = elist_json_obj.at("crystal")[0];
+    json s0_at_scan_points;
+    json A_at_scan_points;
+    json r_setting_at_scan_points;
+    if (beam_data.contains("s0_at_scan_points")) {
+        scan_varying = true;
+        s0_at_scan_points = beam_data.at("s0_at_scan_points");
+        if (s0_at_scan_points.size() == num_images + 1) {  // i.e. is expected length.
+            std::vector<Vector3d> scan_varying_s0;
+            for (const auto &entry : s0_at_scan_points) {
+                Vector3d vec(entry[0].get<double>(),
+                             entry[1].get<double>(),
+                             entry[2].get<double>());
+                scan_varying_s0.push_back(vec);
+            }
+            sv_data.s0_at_scan_points = scan_varying_s0;
+        }
+    }
+    if (crystal_data.contains("A_at_scan_points")) {
+        scan_varying = true;
+        A_at_scan_points = crystal_data.at("A_at_scan_points");
+        if (A_at_scan_points.size() == num_images + 1) {
+            std::vector<Matrix3d> scan_varying_A;
+            for (const auto &entry : A_at_scan_points) {
+                Matrix3d A_mat;
+                A_mat << entry[0].get<double>(), entry[1].get<double>(),
+                  entry[2].get<double>(), entry[3].get<double>(),
+                  entry[4].get<double>(), entry[5].get<double>(),
+                  entry[6].get<double>(), entry[7].get<double>(),
+                  entry[8].get<double>();
+                scan_varying_A.push_back(A_mat);
+            }
+            sv_data.A_at_scan_points = scan_varying_A;
+        }
+    }
+    if (goniometer_data.contains("setting_rotation_at_scan_points")) {
+        scan_varying = true;
+        r_setting_at_scan_points =
+          goniometer_data.at("setting_rotation_at_scan_points");
+        if (r_setting_at_scan_points.size() == num_images + 1) {
+            std::vector<Matrix3d> scan_varying_r;
+            for (const auto &entry : r_setting_at_scan_points) {
+                Matrix3d r_mat;
+                r_mat << entry[0].get<double>(), entry[1].get<double>(),
+                  entry[2].get<double>(), entry[3].get<double>(),
+                  entry[4].get<double>(), entry[5].get<double>(),
+                  entry[6].get<double>(), entry[7].get<double>(),
+                  entry[8].get<double>();
+                scan_varying_r.push_back(r_mat);
+            }
+            sv_data.r_setting_at_scan_points = scan_varying_r;
+        }
+    }
+    return std::make_tuple(scan_varying, sv_data);
 }

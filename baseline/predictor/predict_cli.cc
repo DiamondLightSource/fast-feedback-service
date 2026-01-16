@@ -26,8 +26,8 @@
 #include <thread>
 #include <vector>
 
-#include "predict.cc"
 #include "index_generators.cc"
+#include "predict.cc"
 #include "ray_predictors.cc"
 #include "threadpool.cc"
 #include "utils.cc"
@@ -149,10 +149,11 @@ int main(int argc, char **argv) {
     // Extract scan varying parameters (until we can access from the experiment object)
     scan_varying_data sv_data;
     bool scan_varying = false;
-    if (!param_force_static){
-      std::tie(scan_varying, sv_data) = extract_scan_varying_data(elist_json_obj, scan);
+    if (!param_force_static) {
+        std::tie(scan_varying, sv_data) =
+          extract_scan_varying_data(elist_json_obj, scan);
     }
-    
+
     if (scan_varying) {
         logger.info("Monochromatic scan-varying prediction on {}", input_expt);
     } else {
@@ -183,7 +184,8 @@ int main(int argc, char **argv) {
     int i_expt = 0;
     std::string identifier = expt.identifier();
 
-    predicted_data_rotation output_data = predict_rotation(expt, sv_data, param_dmin, buffer_size, nthreads);
+    predicted_data_rotation output_data =
+      predict_rotation(expt, sv_data, param_dmin, buffer_size, nthreads);
 
     // Add extra metadata to enable reflection table creation. The 'predict rotation' function can
     // be called in a loop over experiments, so here add the data which tracks which experiment
