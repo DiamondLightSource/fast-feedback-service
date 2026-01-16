@@ -189,6 +189,7 @@ int main(int argc, char **argv) {
     logger.info("  Oscillation: start={:.3f}°, width={:.3f}°", osc_start, osc_width);
     logger.info("  Image range: {} to {}", image_range_start, image_range_end);
 
+#pragma region Sigma estimation
     // If input is a predicted refl, then we require sigma_b, sigma_m as we will not be
     // able to estimate it from the data
     // Else the input as an indexed.refl/refined.refl with the sigma variance columns,
@@ -237,7 +238,9 @@ int main(int argc, char **argv) {
           "table containing sigma_m_variance and spot_extent_z must be used.");
         return 1;
     }
+#pragma endregion Sigma estimation
 
+#pragma region Predict or extract predictions
     // Determine if the data are predicted based on the reflection flags
     // If data are not predicted, run predict code.
     auto flags_column_opt = reflections.column<size_t>("flags");
@@ -306,6 +309,8 @@ int main(int argc, char **argv) {
       phi_column = *phi_column_opt;
       num_reflections = s1_vectors.extent(0);
     }
+
+ #pragma endregion Predict or extract predictions
     // Create a new reflection table for the output.
     std::vector<std::string> identifiers = reflections.get_identifiers();
     std::vector<uint64_t> ids = reflections.get_experiment_ids();
