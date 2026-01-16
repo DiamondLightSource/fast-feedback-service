@@ -82,7 +82,7 @@ project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
-# Create a header-only interface library for compile definitions
+# Create an interface library for compile definitions
 add_library(compile_options INTERFACE)
 
 # Add compile definitions if enabled
