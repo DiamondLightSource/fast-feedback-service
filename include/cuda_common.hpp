@@ -25,39 +25,6 @@
 // }
 // #endif
 
-/// Type-erased shared ptr. Can index data
-template <class Deleter>
-class dynamic_shared_ptr {
-  public:
-    dynamic_shared_ptr(void *data, size_t stride, Deleter deleter)
-        : _data{data, deleter}, _stride(stride) {}
-    void *get() {
-        return _data.get();
-    }
-
-    /// Return the item at a specific offset. For debug purposes, does not handle type properly.
-    int64_t at(std::size_t i) const {
-        switch (_stride) {
-        case 1:
-            return reinterpret_cast<int8_t>(_data.get() + i * stride);
-        case 2:
-            return reinterpret_cast<int16_t>(_data.get() + i * stride);
-        case 4:
-            return reinterpret_cast<int32_t>(_data.get() + i * stride);
-        default:
-            throw std::runtime_error("Unknown conversion from dynamic_shared_ptr");
-        }
-        return *reinterpret_cast<T *>(_data.get() + i * stride);
-    }
-    size_t stride() {
-        return _stride;
-    }
-
-  private:
-    std::shared_ptr<std::byte> _data;
-    size_t _stride;
-}
-
 class cuda_error : public std::runtime_error {
   public:
     using std::runtime_error::runtime_error;
