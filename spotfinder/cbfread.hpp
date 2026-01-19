@@ -124,6 +124,9 @@ class CBFRead : public Reader {
   public:
     CBFRead(const std::string &templatestr, size_t num_images, size_t first_index);
 
+    h5read_dtype get_dtype() const {
+        return H5READ_DTYPE_UINT16;
+    }
     bool is_image_available(size_t index);
 
     std::span<uint8_t> get_raw_chunk(size_t index, std::span<uint8_t> destination);
@@ -140,7 +143,7 @@ class CBFRead : public Reader {
     std::optional<std::span<const uint8_t>> get_mask() const {
         return {{_mask.data(), _mask.size()}};
     }
-    virtual std::array<image_t_type, 2> get_trusted_range() const {
+    virtual std::array<int64_t, 2> get_trusted_range() const {
         return {0, std::numeric_limits<image_t_type>::max()};
     }
     virtual std::optional<float> get_wavelength() const {

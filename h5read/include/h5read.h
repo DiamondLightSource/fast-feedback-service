@@ -19,6 +19,18 @@ typedef uint32_t image_t_type;
 typedef uint16_t image_t_type;
 #endif
 
+typedef enum {
+    H5READ_DTYPE_UNKNOWN = 0,
+    H5READ_DTYPE_UINT8,
+    H5READ_DTYPE_UINT16,
+    H5READ_DTYPE_UINT32,
+    H5READ_DTYPE_INT8,
+    H5READ_DTYPE_INT16,
+    H5READ_DTYPE_INT32,
+    H5READ_DTYPE_FLOAT32,
+    H5READ_DTYPE_FLOAT64,
+} h5read_dtype;
+
 typedef struct image_t {
     image_t_type *data;
     uint8_t *mask;
@@ -45,14 +57,23 @@ h5read_handle *h5read_generate_samples();
 /// Cleanup and release an h5 file object
 void h5read_free(h5read_handle *);
 
+/// Get the element size of a specific dtype
+size_t h5read_get_element_size(h5read_dtype dtype);
+
+/// Get the dtype of the image data
+h5read_dtype h5read_get_dtype(h5read_handle *obj);
 /// Get the number of images in a dataset
 size_t h5read_get_number_of_images(h5read_handle *obj);
 /// Get the number of image pixels in the slow dimension
 size_t h5read_get_image_slow(h5read_handle *obj);
 /// Get the number of image pixels in the fast dimension
 size_t h5read_get_image_fast(h5read_handle *obj);
-/// Get the trusted range for this dataset
+/// [Deprecated: Use _min/_max variants instead] Get the trusted range for this dataset
 void h5read_get_trusted_range(h5read_handle *obj, image_t_type *min, image_t_type *max);
+// Get the trusted range minimum for this dataset
+int64_t h5read_get_trusted_range_min(h5read_handle *obj);
+// Get the trusted range maximum for this dataset
+int64_t h5read_get_trusted_range_max(h5read_handle *obj);
 /// Get the wavelength for this dataset
 float h5read_get_wavelength(h5read_handle *obj);
 /// Get the pixel size for this dataset
@@ -164,7 +185,11 @@ class Reader {
                                              std::span<uint8_t> destination) = 0;
     virtual ChunkCompression get_raw_chunk_compression() = 0;
     virtual size_t get_number_of_images() const = 0;
-    virtual std::array<image_t_type, 2> get_trusted_range() const = 0;
+    size_t get_element_size() const {
+        return h5read_get_element_size(this->get_dtype());
+    };
+    virtual h5read_dtype get_dtype() const = 0;
+    virtual std::array<int64_t, 2> get_trusted_range() const = 0;
     virtual std::array<size_t, 2> image_shape() const = 0;
     virtual std::optional<std::span<const uint8_t>> get_mask() const = 0;
     virtual std::optional<float> get_wavelength() const = 0;
@@ -207,6 +232,9 @@ class H5Read : public Reader {
         return h5read_get_chunk_size(_handle.get(), index) > 0;
     }
 
+    h5read_dtype get_dtype() const {
+        return h5read_get_dtype(_handle.get());
+    }
     std::span<uint8_t> get_raw_chunk(size_t index, std::span<uint8_t> destination) {
         size_t chunk_bytes;
         h5read_get_raw_chunk(_handle.get(),
@@ -254,10 +282,9 @@ class H5Read : public Reader {
         return {get_image_slow(), get_image_fast()};
     }
     /// Get the (min, max) inclusive trusted range of pixel values
-    virtual std::array<image_t_type, 2> get_trusted_range() const {
-        image_t_type min, max;
-        h5read_get_trusted_range(_handle.get(), &min, &max);
-        return {min, max};
+    virtual std::array<int64_t, 2> get_trusted_range() const {
+        return {h5read_get_trusted_range_min(_handle.get()),
+                h5read_get_trusted_range_max(_handle.get())};
     }
     /// Get the wavelength of the X-ray beam
     virtual std::optional<float> get_wavelength() const {

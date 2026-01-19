@@ -36,6 +36,7 @@ struct _h5read_handle {
     hid_t master_file;
     int data_file_count;
     h5_data_file *data_files;
+    h5read_dtype dtype;
     size_t frames;  ///< Number of frames in this dataset
     size_t slow;    ///< Pixel dimension of images in the slow direction
     size_t fast;    ///< Pixel dimensions of images in the fast direction
@@ -76,6 +77,10 @@ static void _validate_data_type_size(hid_t datatype) {
         exit(1);
     }
 #endif
+}
+
+h5read_dtype h5read_get_dtype(h5read_handle *obj) {
+    return obj->dtype;
 }
 
 void h5read_free(h5read_handle *obj) {
@@ -412,12 +417,22 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
 void h5read_get_trusted_range(h5read_handle *obj,
                               image_t_type *min,
                               image_t_type *max) {
+    // this is only safe if dtype == image_t_type. The user should
+    // use h5read_get_trusted_range_min/_max instead.
+    assert(obj->dtype == H5READ_DTYPE_UINT16);
     if (min != NULL) {
         *min = obj->trusted_range_min;
     }
     if (max != NULL) {
         *max = obj->trusted_range_max;
     }
+}
+
+int64_t h5read_get_trusted_range_min(h5read_handle *obj) {
+    return obj->trusted_range_min;
+}
+int64_t h5read_get_trusted_range_max(h5read_handle *obj) {
+    return obj->trusted_range_max;
 }
 
 float h5read_get_wavelength(h5read_handle *obj) {
@@ -1167,4 +1182,23 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
         exit(1);
     }
     return handle;
+}
+
+size_t h5read_dtype_size(h5read_dtype dtype) {
+    switch (dtype) {
+    case H5READ_DTYPE_UINT8:
+    case H5READ_DTYPE_INT8:
+        return 1;
+    case H5READ_DTYPE_UINT16:
+    case H5READ_DTYPE_INT16:
+        return 2;
+    case H5READ_DTYPE_UINT32:
+    case H5READ_DTYPE_INT32:
+    case H5READ_DTYPE_FLOAT32:
+        return 4;
+    case H5READ_DTYPE_FLOAT64:
+        return 8;
+    default:
+        return 0;
+    }
 }
