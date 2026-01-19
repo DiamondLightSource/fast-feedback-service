@@ -80,7 +80,7 @@ def _setup_rich_logging(level=logging.DEBUG):
         rootLogger.handlers.append(handler)
 
 
-def _find_spotfinder() -> Path:
+def _find_spotfinder() -> tuple[Path, Path]:
     """
     Finds and sets the path to the spotfinder executable
 
@@ -126,7 +126,17 @@ def _find_spotfinder() -> Path:
         sys.exit(1)
 
     logger.info(f"Using spotfinder: {spotfinder_path}")
-    return spotfinder_path
+
+    # Make sure that we have a spotfinder32 at the same location
+    spotfinder_32 = spotfinder_path.parent / "spotfinder32"
+    if not spotfinder_32.is_file():
+        sys.exit("Could not find spotfinder32 variant")
+    if subprocess.run(
+        [spotfinder_32, "--list-devices"], capture_output=True, text=True
+    ).returncode:
+        sys.exit("Error: Found spotfinder32 but failed to enumerate devices")
+
+    return (spotfinder_path, spotfinder_32)
 
 
 class MessageOrderResolver:
@@ -177,7 +187,7 @@ class MessageOrderResolver:
 class GPUPerImageAnalysis(CommonService):
     _service_name = "GPU Per-Image-Analysis"
     _logger_name = "spotfinder.service"
-    _spotfinder_executable: Path
+    _spotfinder_executable: tuple[Path, Path]
     _spotfind_proc: subprocess.Popen | None = None
 
     def initializing(self):
@@ -269,7 +279,7 @@ class GPUPerImageAnalysis(CommonService):
 
         # Now run the spotfinder
         command = [
-            str(self._spotfinder_executable),
+            str(self._spotfinder_executable[0]),
             str(data_path),
             "--images",
             str(parameters.number_of_frames),
