@@ -13,12 +13,13 @@ class SHMRead : public Reader {
     std::array<size_t, 2> _image_shape;
     const std::string _base_path;
     std::vector<uint8_t> _mask;
-    std::array<image_t_type, 2> _trusted_range;
+    std::array<int64_t, 2> _trusted_range;
     std::optional<float> _wavelength;
     std::array<float, 2> _beam_center;
     std::array<float, 2> _pixel_size;
     float _detector_distance;
     std::array<float, 2> _oscillation;
+    h5read_dtype _dtype;
 
   public:
     SHMRead(const std::string &path);
@@ -30,7 +31,9 @@ class SHMRead : public Reader {
     virtual auto get_raw_chunk_compression() -> ChunkCompression {
         return Reader::ChunkCompression::BITSHUFFLE_LZ4;
     }
-
+    h5read_dtype get_dtype() const {
+        return _dtype;
+    }
     size_t get_number_of_images() const {
         return _num_images;
     }
@@ -40,7 +43,7 @@ class SHMRead : public Reader {
     std::optional<std::span<const uint8_t>> get_mask() const {
         return {{_mask.data(), _mask.size()}};
     }
-    virtual std::array<image_t_type, 2> get_trusted_range() const {
+    virtual std::array<int64_t, 2> get_trusted_range() const {
         return _trusted_range;
     }
     std::optional<float> get_wavelength() const {
