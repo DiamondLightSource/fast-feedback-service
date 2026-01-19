@@ -949,6 +949,31 @@ int unpack_vds(const char *filename, h5_data_file **data_files) {
     return vds_count;
 }
 
+/// Detect the h5read_dtype from an HDF5 datatype
+///
+/// @param datatype The HDF5 datatype to detect
+/// @return The detected h5read_dtype, or H5READ_DTYPE_UNKNOWN if unsupported
+static h5read_dtype _detect_hdf5_dtype(hid_t datatype) {
+    H5T_class_t type_class = H5Tget_class(datatype);
+    size_t size = H5Tget_size(datatype);
+    H5T_sign_t sign = H5Tget_sign(datatype);
+    if (type_class == H5T_INTEGER) {
+        if (sign == H5T_SGN_NONE) {  // unsigned
+            if (size == 1) return H5READ_DTYPE_UINT8;
+            if (size == 2) return H5READ_DTYPE_UINT16;
+            if (size == 4) return H5READ_DTYPE_UINT32;
+        } else {  // signed
+            if (size == 1) return H5READ_DTYPE_INT8;
+            if (size == 2) return H5READ_DTYPE_INT16;
+            if (size == 4) return H5READ_DTYPE_INT32;
+        }
+    } else if (type_class == H5T_FLOAT) {
+        if (size == 4) return H5READ_DTYPE_FLOAT32;
+        if (size == 8) return H5READ_DTYPE_FLOAT64;
+    }
+    return H5READ_DTYPE_UNKNOWN;
+}
+
 void setup_data(h5read_handle *obj) {
     hid_t dataset = obj->data_files[0].dataset;
     hid_t datatype = H5Dget_type(dataset);
@@ -1032,31 +1057,6 @@ h5read_handle *h5read_open(const char *master_filename) {
     setup_data(file);
 
     return file;
-}
-
-/// Detect the h5read_dtype from an HDF5 datatype
-///
-/// @param datatype The HDF5 datatype to detect
-/// @return The detected h5read_dtype, or H5READ_DTYPE_UNKNOWN if unsupported
-static h5read_dtype _detect_hdf5_dtype(hid_t datatype) {
-    H5T_class_t type_class = H5Tget_class(datatype);
-    size_t size = H5Tget_size(datatype);
-    H5T_sign_t sign = H5Tget_sign(datatype);
-    if (type_class == H5T_INTEGER) {
-        if (sign == H5T_SGN_NONE) {  // unsigned
-            if (size == 1) return H5READ_DTYPE_UINT8;
-            if (size == 2) return H5READ_DTYPE_UINT16;
-            if (size == 4) return H5READ_DTYPE_UINT32;
-        } else {  // signed
-            if (size == 1) return H5READ_DTYPE_INT8;
-            if (size == 2) return H5READ_DTYPE_INT16;
-            if (size == 4) return H5READ_DTYPE_INT32;
-        }
-    } else if (type_class == H5T_FLOAT) {
-        if (size == 4) return H5READ_DTYPE_FLOAT32;
-        if (size == 8) return H5READ_DTYPE_FLOAT64;
-    }
-    return H5READ_DTYPE_UNKNOWN;
 }
 #endif
 

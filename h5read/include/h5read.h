@@ -58,7 +58,7 @@ h5read_handle *h5read_generate_samples();
 void h5read_free(h5read_handle *);
 
 /// Get the element size of a specific dtype
-size_t h5read_get_element_size(h5read_dtype dtype);
+size_t h5read_dtype_size(h5read_dtype dtype);
 
 /// Get the dtype of the image data
 h5read_dtype h5read_get_dtype(h5read_handle *obj);
@@ -186,7 +186,7 @@ class Reader {
     virtual ChunkCompression get_raw_chunk_compression() = 0;
     virtual size_t get_number_of_images() const = 0;
     size_t get_element_size() const {
-        return h5read_get_element_size(this->get_dtype());
+        return h5read_dtype_size(this->get_dtype());
     };
     virtual h5read_dtype get_dtype() const = 0;
     virtual std::array<int64_t, 2> get_trusted_range() const = 0;

@@ -452,7 +452,7 @@ int main(int argc, char **argv) {
     Reader &reader = *reader_ptr;
 
     auto reader_mutex = std::mutex{};
-
+    size_t bytes_per_pixel = reader.get_element_size();
     uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
                                                    : reader.get_number_of_images();
 
@@ -716,9 +716,8 @@ int main(int argc, char **argv) {
                                      height,
                                      mask.pitch);
 
-            // Buffer for reading compressed chunk data in
-            auto raw_chunk_buffer =
-              std::vector<uint8_t>(width * height * sizeof(pixel_t));
+            // Buffer for reading compressed chunk data in.. sized to maximum handled.
+            auto raw_chunk_buffer = std::vector<uint8_t>(width * height * 4);
 
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
@@ -780,7 +779,7 @@ int main(int argc, char **argv) {
                 }
                 // Sized buffer for the actual data read from file
                 std::span<uint8_t> buffer;
-                // Fetch the image data from the reader
+                // Fetch the image data from the reader.. loop in case we need to wait
                 while (true) {
                     {
                         std::scoped_lock lock(reader_mutex);
