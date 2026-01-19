@@ -716,8 +716,9 @@ int main(int argc, char **argv) {
                                      height,
                                      mask.pitch);
 
-            // Buffer for reading compressed chunk data in.. sized to maximum handled.
-            auto raw_chunk_buffer = std::vector<uint8_t>(width * height * 4);
+            // Buffer for reading compressed chunk data in
+            auto raw_chunk_buffer =
+              std::vector<uint8_t>(width * height * sizeof(pixel_t));
 
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
