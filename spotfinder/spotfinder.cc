@@ -1,3 +1,21 @@
+/**
+ * @file spotfinder.cc
+ * @brief GPU-accelerated spotfinding for crystallography diffraction images.
+ *
+ * This application processes crystallography diffraction images to identify
+ * "strong" pixels that likely correspond to Bragg reflections. It supports
+ * both rotation datasets (with 3D connected component analysis) and still
+ * datasets (with 2D analysis).
+ *
+ * The main processing pipeline is:
+ * 1. Parse arguments and initialize the data reader
+ * 2. Configure detector geometry and wavelength
+ * 3. Upload mask to GPU and apply resolution filtering if requested
+ * 4. Spawn worker threads to process images in parallel
+ * 5. For each image: decompress, copy to GPU, run spotfinding, analyze components
+ * 6. For rotation datasets: combine slices into 3D reflections
+ * 7. Write results to HDF5 if requested
+ */
 #include "spotfinder.cuh"
 
 #include <bitshuffle.h>
@@ -8,396 +26,394 @@
 #include <array>
 #include <atomic>
 #include <barrier>
-#include <boost/graph/adjacency_list.hpp>
-#include <boost/graph/connected_components.hpp>
-#include <cassert>
 #include <chrono>
-#include <cmath>
 #include <csignal>
 #include <dx2/detector.hpp>
 #include <dx2/reflection.hpp>
 #include <dx2/scan.hpp>
 #include <iostream>
 #include <memory>
-#include <ranges>
 #include <stop_token>
 #include <thread>
-#include <utility>
 
 #include "cbfread.hpp"
 #include "common.hpp"
 #include "connected_components/connected_components.hpp"
-#include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
+#include "dispersion_algorithm.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
-#include "kernels/masking.cuh"
+#include "mask_utils.hpp"
+#include "pipe_handler.hpp"
 #include "shmread.hpp"
+#include "signal_handler.hpp"
+#include "spotfinder_args.hpp"
 #include "standalone.h"
 #include "version.hpp"
+#include "wait_utils.hpp"
 
 using namespace std::chrono_literals;
 using json = nlohmann::json;
 
-// Global stop token for picking up user cancellation
-std::stop_source global_stop;
+// ============================================================================
+// Utility Functions
+// ============================================================================
 
-// Function for passing to std::signal to register the stop request
-extern "C" void stop_processing(int sig) {
-    if (global_stop.stop_requested()) {
-        // We already requested before, but we want it faster. Abort.
-        std::quick_exit(1);
-    } else {
-        fmt::print("Running interrupted by user request\n");
-        global_stop.request_stop();
-    }
-}
-
-bool are_close(float a, float b, float tolerance) {
+/**
+ * @brief Check if two floating point values are approximately equal.
+ */
+inline bool are_close(float a, float b, float tolerance) {
     return std::fabs(a - b) < tolerance;
 }
 
-/// Copy the mask from a reader into a pitched GPU area
-template <typename T>
-auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
-    size_t height = reader.image_shape()[0];
-    size_t width = reader.image_shape()[1];
+// ============================================================================
+// Helper Functions for Diagnostic Output
+// ============================================================================
 
-    auto [dev_mask, device_mask_pitch] =
-      make_cuda_pitched_malloc<uint8_t>(width, height);
+/**
+ * @brief Write diagnostic output images for debugging spotfinding results.
+ */
+void write_diagnostic_images(const pixel_t *host_image,
+                             const uint8_t *host_results,
+                             const std::vector<Reflection> &boxes,
+                             uint32_t width,
+                             uint32_t height,
+                             int image_num) {
+    auto buffer = std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
+    constexpr std::array<uint8_t, 3> color_pixel{255, 0, 0};
 
-    size_t valid_pixels = 0;
-    CudaEvent start, end;
-    if (reader.get_mask()) {
-        // Count how many valid Mpx in this mask
-        for (size_t i = 0; i < width * height; ++i) {
-            if (reader.get_mask().value()[i]) {
-                valid_pixels += 1;
-            }
+    for (uint32_t y = 0, k = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x, ++k) {
+            uint8_t graysc_value =
+              std::max(0.0f, 255.99f - static_cast<float>(host_image[k]) * 10);
+            buffer[k] = {graysc_value, graysc_value, graysc_value};
         }
-        start.record();
-        cudaMemcpy2DAsync(dev_mask.get(),
-                          device_mask_pitch,
-                          reader.get_mask()->data(),
-                          width,
-                          width,
-                          height,
-                          cudaMemcpyHostToDevice);
-        cuda_throw_error();
-    } else {
-        valid_pixels = width * height;
-        start.record();
-        cudaMemset(dev_mask.get(), 1, device_mask_pitch * height);
-        cuda_throw_error();
     }
-    end.record();
-    end.synchronize();
 
-    float memcpy_time = end.elapsed_time(start);
-    fmt::print("Uploaded mask ({:.2f} Mpx) in {:.2f} ms ({:.1f} GBps)\n",
-               static_cast<float>(valid_pixels) / 1e6,
-               memcpy_time,
-               GBps(memcpy_time, width * height));
-
-    return PitchedMalloc{
-      dev_mask,
-      width,
-      height,
-      device_mask_pitch,
-    };
-}
-
-void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
-                                int width,
-                                int height,
-                                float wavelength,
-                                detector_geometry detector,
-                                float dmin,
-                                float dmax,
-                                cudaStream_t stream = 0) {
-    // Define the block size and grid size for the kernel
-    dim3 threadsPerBlock(32, 32);
-    dim3 numBlocks((width + threadsPerBlock.x - 1) / threadsPerBlock.x,
-                   (height + threadsPerBlock.y - 1) / threadsPerBlock.y);
-
-    // Set the parameters for the resolution mask kernel
-    ResolutionMaskParams params{.mask_pitch = mask.pitch,
-                                .width = width,
-                                .height = height,
-                                .wavelength = wavelength,
-                                .detector = detector,
-                                .dmin = dmin,
-                                .dmax = dmax};
-
-    // Launch the kernel to apply resolution filtering
-    call_apply_resolution_mask(
-      numBlocks, threadsPerBlock, 0, stream, mask.get(), params);
-
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-}
-
-void wait_for_ready_for_read(const std::string &path,
-                             std::function<bool(const std::string &)> checker,
-                             float timeout = 120.0f) {
-    if (!checker(path)) {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        auto message_prefix =
-          fmt::format("Waiting for \033[1;35m{}\033[0m to be ready for read", path);
-        std::vector<std::string> ball = {
-          "( ●    )",
-          "(  ●   )",
-          "(   ●  )",
-          "(    ● )",
-          "(     ●)",
-          "(    ● )",
-          "(   ●  )",
-          "(  ●   )",
-          "( ●    )",
-          "(●     )",
-        };
-        int i = 0;
-        while (!checker(path)) {
-            auto wait_time = std::chrono::duration_cast<std::chrono::duration<double>>(
-                               std::chrono::high_resolution_clock::now() - start_time)
-                               .count();
-            fmt::print("\r{}  {} [{:4.1f} s] ", message_prefix, ball[i], wait_time);
-            i = (i + 1) % ball.size();
-            std::cout << std::flush;
-
-            if (wait_time > timeout) {
-                fmt::print("\nError: Waited too long for read availability\n");
-                std::exit(1);
+    // Draw bounding boxes
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        auto &box = boxes[i];
+        constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
+        constexpr int edgeMin = 5, edgeMax = 7;
+        for (int edge = edgeMin; edge <= edgeMax; ++edge) {
+            for (int x = box.l - edge; x <= static_cast<int>(box.r) + edge; ++x) {
+                buffer[width * (box.t - edge) + x] = color_shoebox;
+                buffer[width * (box.b + edge) + x] = color_shoebox;
             }
-            std::this_thread::sleep_for(80ms);
+            for (int y = box.t - edge; y <= static_cast<int>(box.b) + edge; ++y) {
+                buffer[width * y + box.l - edge] = color_shoebox;
+                buffer[width * y + box.r + edge] = color_shoebox;
+            }
         }
-        fmt::print("\n");
+    }
+
+    // Draw strong pixels on top
+    for (uint32_t y = 0, k = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x, ++k) {
+            if (host_results[k]) {
+                buffer[k] = color_pixel;
+            }
+        }
+    }
+
+    lodepng::encode(fmt::format("image_{:05d}.png", image_num),
+                    reinterpret_cast<uint8_t *>(buffer.data()),
+                    width,
+                    height,
+                    LCT_RGB);
+
+    auto out = fmt::output_file(fmt::format("pixels_{:05d}.txt", image_num));
+    for (uint32_t y = 0, k = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x, ++k) {
+            if (host_results[k]) {
+                out.print("{:4d}, {:4d}\n", x, y);
+            }
+        }
     }
 }
 
 /**
- * @brief Struct to store the dispersion algorithm and its string representation.
+ * @brief Write mask as a diagnostic PNG image.
  */
-struct DispersionAlgorithm {
-    std::string algorithm_str;
-    enum class Algorithm { DISPERSION, DISPERSION_EXTENDED };
-    Algorithm algorithm;
-
-    /**
-     * @brief Constructor to initialize the DispersionAlgorithm object.
-     * @param input The string representation of the algorithm.
-     */
-    DispersionAlgorithm(std::string input) {
-        // Convert the input to lowercase for case-insensitive comparison
-        this->algorithm_str = input;
-        std::transform(input.begin(), input.end(), input.begin(), ::tolower);
-        if (input == "dispersion") {
-            this->algorithm_str = "Dispersion";
-            this->algorithm = Algorithm::DISPERSION;
-        } else if (input == "dispersion_extended") {
-            this->algorithm_str = "Dispersion Extended";  // ✨
-            this->algorithm = Algorithm::DISPERSION_EXTENDED;
-        } else {
-            throw std::invalid_argument("Invalid algorithm specified");
+void write_mask_diagnostic(const uint8_t *mask_data,
+                           uint32_t width,
+                           uint32_t height,
+                           const std::string &filename) {
+    auto image_mask = std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
+    for (uint32_t y = 0, k = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x, ++k) {
+            image_mask[k] = {255, 255, 255};
+            if (!mask_data[k]) {
+                image_mask[k] = {255, 0, 0};
+            }
         }
     }
-};
+    lodepng::encode(filename,
+                    reinterpret_cast<uint8_t *>(image_mask.data()),
+                    width,
+                    height,
+                    LCT_RGB);
+}
+
+// ============================================================================
+// Results Processing Functions
+// ============================================================================
 
 /**
- * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
+ * @brief Calculate spot variances for 3D reflections in Kabsch space.
  */
-class PipeHandler {
-  private:
-    int pipe_fd;     // File descriptor for the pipe
-    std::mutex mtx;  // Mutex for synchronization
+void calculate_spot_variances(const std::vector<Reflection3D> &reflections_3d,
+                              const Panel &panel,
+                              const Scan &scan,
+                              const Vector3d &s0,
+                              const Vector3d &m2,
+                              std::vector<double> &sigma_b_variances,
+                              std::vector<double> &sigma_m_variances,
+                              std::vector<int> &bbox_depths) {
+    constexpr double deg_to_rad = M_PI / 180.0;
+    constexpr double rad_to_deg = 180.0 / M_PI;
+    int image_range_0 = scan.get_image_range()[0];
+    double oscillation_width = scan.get_oscillation()[1];
+    double oscillation_start = scan.get_oscillation()[0];
 
-  public:
-    /**
-     * @brief Constructor to initialize the PipeHandler object.
-     * @param pipe_fd The file descriptor for the pipe.
-     */
-    PipeHandler(int pipe_fd) : pipe_fd(pipe_fd) {
-        // Constructor to initialize the pipe handler
-        fmt::print("PipeHandler initialized with pipe_fd: {}\n", pipe_fd);
-    }
+    sigma_b_variances.reserve(reflections_3d.size());
+    sigma_m_variances.reserve(reflections_3d.size());
+    bbox_depths.reserve(reflections_3d.size());
 
-    /**
-     * @brief Destructor to close the pipe.
-     */
-    ~PipeHandler() {
-        close(pipe_fd);
-    }
+    double sum_sigma_b_variance = 0.0;
+    double sum_sigma_m_variance = 0.0;
+    constexpr int min_bbox_depth = 5;
+    int n_sigma_m = 0;
 
-    /**
-     * @brief Sends data through the pipe in a thread-safe manner.
-     * @param json_data A json object containing the data to be sent.
-     */
-    void sendData(const json &json_data) {
-        // Lock the mutex, to ensure that only one thread writes to the pipe at a time
-        // This unlocks the mutex when the function returns
-        std::lock_guard<std::mutex> lock(mtx);
-
-        // Convert the JSON object to a string
-        std::string stringified_json = json_data.dump() + "\n";
-
-        // Write the data to the pipe
-        // Returns the number of bytes written to the pipe
-        // Returns -1 if an error occurs
-        ssize_t bytes_written =
-          write(pipe_fd, stringified_json.c_str(), stringified_json.length());
-
-        // Check if an error occurred while writing to the pipe
-        if (bytes_written == -1) {
-            std::cerr << "Error writing to pipe: " << strerror(errno) << std::endl;
-        } else {
-            // fmt::print("Data sent through the pipe: {}\n", stringified_json);
+    for (const auto &refl : reflections_3d) {
+        auto [x, y, z] = refl.center_of_mass();
+        auto [xmm, ymm] = panel.px_to_mm(x, y);
+        Vector3d s1 = panel.get_lab_coord(xmm, ymm);
+        double phi =
+          (oscillation_start + (z - image_range_0) * oscillation_width) * deg_to_rad;
+        auto [sigma_b_variance, sigma_m_variance, bbox_depth] =
+          refl.variances_in_kabsch_space(s1, s0, m2, panel, scan, phi);
+        sigma_b_variances.push_back(sigma_b_variance);
+        sigma_m_variances.push_back(sigma_m_variance);
+        bbox_depths.push_back(bbox_depth);
+        sum_sigma_b_variance += sigma_b_variance;
+        if (bbox_depth >= min_bbox_depth) {
+            sum_sigma_m_variance += sigma_m_variance;
+            n_sigma_m++;
         }
     }
-};
 
-#pragma region Argument Parser
-class SpotfinderArgumentParser : public CUDAArgumentParser {
-  public:
-    SpotfinderArgumentParser(std::string version) : CUDAArgumentParser(version) {
-        add_h5read_arguments();
-        add_spotfinder_arguments();
+    // Print estimated average values
+    if (reflections_3d.size()) {
+        double est_sigma_b =
+          std::sqrt(sum_sigma_b_variance / reflections_3d.size()) * rad_to_deg;
+        logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
     }
-
-    // Override the HDF5 reading arguments
-    void add_h5read_arguments() override {
-        // Check if implicit sample is enable via environment variable
-        bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != nullptr;
-        // Create a mutually exclusive group for sample vs file input
-        auto &group = add_mutually_exclusive_group(!implicit_sample);
-
-        group.add_argument("--sample")
-          .help("Use generated test data (H5READ_IMPLICIT_SAMPLE)")
-          .implicit_value(true);
-
-        group.add_argument("file")
-          .metavar("FILE.nxs")
-          .help("Path to Nexus file")
-          .action([&](const std::string &val) { _filepath = val; });
-
-        _activated_h5read = true;
+    if (n_sigma_m) {
+        double est_sigma_m = std::sqrt(sum_sigma_m_variance / n_sigma_m) * rad_to_deg;
+        logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots",
+                    est_sigma_m,
+                    n_sigma_m);
     }
+}
 
-    auto const file() const -> const std::string & {
-        if (!_activated_h5read) {
-            throw std::runtime_error("HDF5 reading arguments not activated");
+/**
+ * @brief Write 3D reflections debug output to text file.
+ */
+void write_3d_reflections_debug(const std::vector<Reflection3D> &reflections_3d) {
+    std::ofstream out("3d_reflections.txt");
+    for (const auto &reflection : reflections_3d) {
+        auto [x, y, z] = reflection.center_of_mass();
+        std::string reflection_info =
+          fmt::format("X: [{}, {}] Y: [{}, {}] Z: [{}, {}] COM: ({}, {}, {})",
+                      reflection.get_x_min(),
+                      reflection.get_x_max(),
+                      reflection.get_y_min(),
+                      reflection.get_y_max(),
+                      reflection.get_z_min(),
+                      reflection.get_z_max(),
+                      x,
+                      y,
+                      z);
+        logger.trace(reflection_info);
+        out << "X: [" << reflection.get_x_min() << ", " << reflection.get_x_max()
+            << "] ";
+        out << "Y: [" << reflection.get_y_min() << ", " << reflection.get_y_max()
+            << "] ";
+        out << "Z: [" << reflection.get_z_min() << ", " << reflection.get_z_max()
+            << "] ";
+        out << "COM: (" << x << ", " << y << ", " << z << ")\n";
+    }
+    logger.flush();
+}
+
+/**
+ * @brief Write 3D reflections to HDF5 file.
+ */
+void write_3d_reflections_to_h5(const std::vector<Reflection3D> &reflections_3d,
+                                const std::vector<double> &sigma_b_variances,
+                                const std::vector<double> &sigma_m_variances,
+                                const std::vector<int> &bbox_depths) {
+    logger.debug("Writing 3D reflections to HDF5 file");
+
+    try {
+        std::vector<double> flat_coms;
+        flat_coms.reserve(reflections_3d.size() * 3);
+
+        for (const auto &refl : reflections_3d) {
+            auto [x, y, z] = refl.center_of_mass();
+            flat_coms.push_back(x);
+            flat_coms.push_back(y);
+            flat_coms.push_back(z);
         }
-        return _filepath;
+
+        ReflectionTable table;
+        table.add_column("xyzobs.px.value", reflections_3d.size(), 3, flat_coms);
+        std::vector<int> id(reflections_3d.size(), table.get_experiment_ids()[0]);
+        table.add_column("id", reflections_3d.size(), 1, id);
+        table.add_column(
+          "sigma_b_variance", sigma_b_variances.size(), 1, sigma_b_variances);
+        table.add_column(
+          "sigma_m_variance", sigma_m_variances.size(), 1, sigma_m_variances);
+        table.add_column("spot_extent_z", bbox_depths.size(), 1, bbox_depths);
+
+        table.write("results_ffs.h5", "dials/processing/group_0");
+        logger.info("Successfully wrote 3D reflections to HDF5 file");
+    } catch (const std::exception &e) {
+        logger.error("Error writing data to HDF5 file: {}", e.what());
+    } catch (...) {
+        logger.error("Unknown error writing data to HDF5 file");
+    }
+}
+
+/**
+ * @brief Write 2D reflections to HDF5 file.
+ */
+void write_2d_reflections_to_h5(
+  const std::map<int, std::vector<float>> &reflection_centers_2d) {
+    logger.info("Processing 2D spots");
+    logger.debug("Writing 2D reflections to HDF5 file");
+
+    try {
+        std::vector<double> flat_coms;
+        std::vector<int> ids;
+        std::vector<int> centers_map_keys;
+        for (const auto &pair : reflection_centers_2d) {
+            centers_map_keys.push_back(pair.first);
+        }
+        std::sort(centers_map_keys.begin(), centers_map_keys.end());
+        int id = 0;
+        for (int imageno : centers_map_keys) {
+            std::vector<float> flat_coms_this = reflection_centers_2d.at(imageno);
+            int n_refls = flat_coms_this.size() / 3;
+            for (auto com : flat_coms_this) {
+                flat_coms.push_back(static_cast<double>(com));
+            }
+            for (int i = 0; i < n_refls; ++i) {
+                ids.push_back(id);
+            }
+            id += 1;
+        }
+
+        ReflectionTable table;
+        for (int i = 0; i < id - 1; ++i) {
+            table.generate_new_attributes();
+        }
+        table.add_column("xyzobs.px.value", flat_coms.size() / 3, 3, flat_coms);
+        table.add_column("id", ids.size(), 1, ids);
+
+        table.write("results_ffs.h5", "dials/processing/group_0");
+        logger.info("Successfully wrote {} 2D reflections to HDF5 file", ids.size());
+    } catch (const std::exception &e) {
+        logger.error("Error writing data to HDF5 file: {}", e.what());
+    } catch (...) {
+        logger.error("Unknown error writing data to HDF5 file");
+    }
+    logger.info("2D spot analysis complete");
+}
+
+/**
+ * @brief Process 3D connected components and write results.
+ */
+void process_3d_results(
+  std::map<int, std::unique_ptr<ConnectedComponents>> &rotation_slices,
+  uint32_t width,
+  uint32_t height,
+  uint32_t num_images,
+  uint32_t min_spot_size_3d,
+  float max_peak_centroid_separation,
+  const detector_geometry &detector,
+  float wavelength,
+  float oscillation_start,
+  float oscillation_width,
+  bool save_to_h5,
+  bool do_writeout) {
+    logger.info("Processing 3D spots");
+
+    // Step 1: Convert rotation_slices map to a vector
+    std::vector<std::unique_ptr<ConnectedComponents>> slices;
+    for (auto &[image_num, connected_components] : rotation_slices) {
+        slices.push_back(std::move(connected_components));
     }
 
-    void add_spotfinder_arguments() {
-        add_argument("-n", "--threads")
-          .help("Number of parallel reader threads")
-          .default_value<uint32_t>(1)
-          .metavar("NUM")
-          .scan<'u', uint32_t>();
+    // Step 2: Find 3D connected components
+    auto reflections_3d = ConnectedComponents::find_3d_components(
+      slices, width, height, min_spot_size_3d, max_peak_centroid_separation);
 
-        add_argument("--validate")
-          .help("Run DIALS standalone validation")
-          .default_value(false)
-          .implicit_value(true);
+    // Step 3: Output the 3D reflections
+    logger.info(
+      fmt::format("Found {} spots", fmt::styled(reflections_3d.size(), fmt_cyan)));
 
-        add_argument("--images")
-          .help("Maximum number of images to process")
-          .metavar("NUM")
-          .scan<'u', uint32_t>();
-
-        add_argument("--writeout")
-          .help("Write diagnostic output images")
-          .default_value(false)
-          .implicit_value(true);
-
-        add_argument("--min-spot-size")
-          .help("2D Reflections with a pixel count below this will be discarded.")
-          .metavar("N")
-          .default_value<uint32_t>(3)
-          .scan<'u', uint32_t>();
-
-        add_argument("--min-spot-size-3d")
-          .help("3D Reflections with a pixel count below this will be discarded.")
-          .metavar("N")
-          .default_value<uint32_t>(3)
-          .scan<'u', uint32_t>();
-
-        add_argument("--max-peak-centroid-separation")
-          .help(
-            "Reflections with a peak-centroid difference greater than this will be "
-            "filtered during output.")
-          .metavar("N")
-          .default_value<float>(2.0)
-          .scan<'f', float>();
-
-        add_argument("--start-index")
-          .help(
-            "Index of first image. Only used for CBF reading, and can only be 0 or 1.")
-          .metavar("N")
-          .default_value<uint32_t>(0)
-          .scan<'u', uint32_t>();
-
-        add_argument("-t", "--timeout")
-          .help("Amount of time (in seconds) to wait for new images before failing.")
-          .metavar("S")
-          .default_value<float>(30)
-          .scan<'f', float>();
-
-        add_argument("-fd", "--pipe_fd")
-          .help("File descriptor for the pipe to output data through")
-          .metavar("FD")
-          .default_value<int>(-1)
-          .scan<'i', int>();
-
-        add_argument("-a", "--algorithm")
-          .help("Dispersion algorithm to use")
-          .metavar("ALGO")
-          .default_value<std::string>("dispersion");
-
-        add_argument("--dmin")
-          .help("Minimum resolution (Å)")
-          .metavar("MIN D")
-          .default_value<float>(-1.f)
-          .scan<'f', float>();
-
-        add_argument("--dmax")
-          .help("Maximum resolution (Å)")
-          .metavar("MAX D")
-          .default_value<float>(-1.f)
-          .scan<'f', float>();
-
-        add_argument("-w", "-λ", "--wavelength")
-          .help("Wavelength of the X-ray beam (Å)")
-          .metavar("λ")
-          .scan<'f', float>();
-
-        add_argument("--detector").help("Detector geometry JSON").metavar("JSON");
-
-        add_argument("-h5", "--save-h5")
-          .help("Save the output to an HDF5 file")
-          .metavar("FILE")
-          .default_value(false)
-          .implicit_value(true);
-
-        add_argument("--output-for-index")
-          .help("Pipe spot centroids from 2D images to enable indexing")
-          .default_value(false)
-          .implicit_value(true);
+    if (do_writeout) {
+        write_3d_reflections_debug(reflections_3d);
     }
 
-  private:
-    std::string _filepath;  ///< Path to the input file
-};
-#pragma endregion
+    // Step 4: Calculate spot variances
+    std::array<int, 2> image_size = {static_cast<int>(width), static_cast<int>(height)};
+    Panel panel(detector.distance * 1000,
+                {detector.beam_center_x, detector.beam_center_y},
+                {detector.pixel_size_x * 1000, detector.pixel_size_y * 1000},
+                image_size);
+    Vector3d s0 = {0.0, 0.0, -1.0 / wavelength};
+    Scan scan({1, static_cast<int>(num_images)},
+              {oscillation_start, oscillation_width});
+    Vector3d m2 = {1.0, 0.0, 0.0};  // Rotation axis, assumed to be +x
 
-#pragma region Application Entry
+    std::vector<double> sigma_b_variances;
+    std::vector<double> sigma_m_variances;
+    std::vector<int> bbox_depths;
+
+    calculate_spot_variances(reflections_3d,
+                             panel,
+                             scan,
+                             s0,
+                             m2,
+                             sigma_b_variances,
+                             sigma_m_variances,
+                             bbox_depths);
+
+    // Step 5: Write to HDF5 if requested
+    if (save_to_h5) {
+        write_3d_reflections_to_h5(
+          reflections_3d, sigma_b_variances, sigma_m_variances, bbox_depths);
+    }
+
+    logger.info("3D spot analysis complete");
+}
+
+// ============================================================================
+// Main Application Entry Point
+// ============================================================================
+
 int main(int argc, char **argv) {
     logger.info("Spotfinder version: {}", FFS_VERSION);
-#pragma region Argument Parsing
-    // Parse arguments and get our H5Reader
-    SpotfinderArgumentParser parser(FFS_VERSION);
 
+    // =========================================================================
+    // Step 1: Parse command-line arguments
+    // =========================================================================
+    SpotfinderArgumentParser parser(FFS_VERSION);
     auto args = parser.parse_args(argc, argv);
+
     auto const file = parser.file();
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
@@ -405,7 +421,6 @@ int main(int argc, char **argv) {
     float wait_timeout = parser.get<float>("timeout");
     bool save_to_h5 = parser.get<bool>("save-h5");
     bool output_for_index = parser.get<bool>("output-for-index");
-
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
 
@@ -418,21 +433,26 @@ int main(int argc, char **argv) {
         fmt::print("Error: Thread count must be >= 1\n");
         std::exit(1);
     }
+
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
     uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
     float max_peak_centroid_separation =
       parser.get<float>("max-peak-centroid-separation");
 
+    // =========================================================================
+    // Step 2: Initialize the data reader
+    // =========================================================================
     std::unique_ptr<Reader> reader_ptr;
 
-    // Wait for read-readiness
-    // Firstly: That the path exists at all
+    // Wait for file to exist
     if (!std::filesystem::exists(file)) {
         wait_for_ready_for_read(
           file,
           [](const std::string &s) { return std::filesystem::exists(s); },
           wait_timeout);
     }
+
+    // Create appropriate reader based on file type
     if (std::filesystem::is_directory(file)) {
         wait_for_ready_for_read(file, is_ready_for_read<SHMRead>, wait_timeout);
         reader_ptr = std::make_unique<SHMRead>(file);
@@ -448,18 +468,19 @@ int main(int argc, char **argv) {
         reader_ptr =
           file.empty() ? std::make_unique<H5Read>() : std::make_unique<H5Read>(file);
     }
-    // Bind this as a reference
-    Reader &reader = *reader_ptr;
 
+    Reader &reader = *reader_ptr;
     auto reader_mutex = std::mutex{};
 
     uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
                                                    : reader.get_number_of_images();
-
     uint32_t height = reader.image_shape()[0];
     uint32_t width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
 
+    // =========================================================================
+    // Step 3: Configure detector geometry and wavelength
+    // =========================================================================
     detector_geometry detector;
 
     if (parser.is_used("detector")) {
@@ -477,9 +498,7 @@ int main(int argc, char **argv) {
                       detector.beam_center_y, beam_center.value()[0], 0.1))) {
                 fmt::print(
                   "Warning: Beam center mismatched:\n    json:   {} px, {} px (used)\n "
-                  "   "
-                  "reader: "
-                  "{} px, {} px\n",
+                  "   reader: {} px, {} px\n",
                   detector.beam_center_x,
                   detector.beam_center_y,
                   beam_center.value()[1],
@@ -491,9 +510,7 @@ int main(int argc, char **argv) {
                       detector.pixel_size_y, pixel_size.value()[0], 1e-9))) {
                 fmt::print(
                   "Warning: Pixel size mismatched:\n    json:   {} µm, {} µm (used)\n  "
-                  "  "
-                  "reader: "
-                  "{} µm, {} µm\n",
+                  "  reader: {} µm, {} µm\n",
                   detector.pixel_size_x,
                   detector.pixel_size_y,
                   pixel_size.value()[1] * 1e6,
@@ -502,15 +519,12 @@ int main(int argc, char **argv) {
             if (distance && !are_close(distance.value(), detector.distance, 0.1e-6)) {
                 fmt::print(
                   "Warning: Detector distance mismatched:\n    json:   {} m (used)\n   "
-                  " "
-                  "reader: "
-                  "{} m\n",
+                  " reader: {} m\n",
                   detector.distance,
                   distance.value());
             }
         }
     } else {
-        // Try to read detector geometry out of the reader
         auto beam_center = reader.get_beam_center();
         auto pixel_size = reader.get_pixel_size();
         auto distance = reader.get_detector_distance();
@@ -535,13 +549,14 @@ int main(int argc, char **argv) {
         detector =
           detector_geometry(distance.value(), beam_center.value(), pixel_size.value());
     }
+
     float wavelength;
     if (parser.is_used("wavelength")) {
         wavelength = parser.get<float>("wavelength");
         if (do_validate && reader.get_wavelength()
             && reader.get_wavelength().value() != wavelength) {
             fmt::print(
-              "Warning: Wavelength mismatch:\n    Argument: {} Å\n    Reader:   {} Å\n",
+              "Warning: Wavelength mismatch:\n    Argument: {} Å\n    Reader:   {} Å\n",
               wavelength,
               reader.get_wavelength().value());
         }
@@ -556,38 +571,39 @@ int main(int argc, char **argv) {
         wavelength = wavelength_opt.value();
         printf("Got wavelength from file: %f Å\n", wavelength);
     }
+
     fmt::print(
       "Detector geometry:\n"
       "    Distance:    {0:.1f} mm\n"
       "    Beam Center: {1:.1f} px {2:.1f} px\n"
-      "Beam Wavelength: {3:.2f} Å\n",
+      "Beam Wavelength: {3:.2f} Å\n",
       fmt::styled(detector.distance * 1000, fmt_cyan),
       fmt::styled(detector.beam_center_x, fmt_cyan),
       fmt::styled(detector.beam_center_y, fmt_cyan),
       fmt::styled(wavelength, fmt_cyan));
 
     auto [oscillation_start, oscillation_width] = reader.get_oscillation();
-
-    /*
-     * If the oscillation width is greater than 0, then this is a
-     * rotation dataset. Otherwise, it is a still dataset.
-    */
     if (oscillation_width > 0) {
         fmt::print("Oscillation:  Start: {:.2f}°  Width: {:.2f}°\n",
                    fmt::styled(oscillation_start, fmt_cyan),
                    fmt::styled(oscillation_width, fmt_cyan));
     }
-#pragma endregion Argument Parsing
 
+    // =========================================================================
+    // Step 4: Set up signal handling
+    // =========================================================================
     std::signal(SIGINT, stop_processing);
 
-    // Work out how many blocks this is
+    // =========================================================================
+    // Step 5: Configure GPU execution parameters
+    // =========================================================================
     dim3 gpu_thread_block_size{32, 16};
     dim3 blocks_dims{
       static_cast<unsigned int>(ceilf((float)width / gpu_thread_block_size.x)),
       static_cast<unsigned int>(ceilf((float)height / gpu_thread_block_size.y))};
     const int num_threads_per_block = gpu_thread_block_size.x * gpu_thread_block_size.y;
     const int num_blocks = blocks_dims.x * blocks_dims.y * blocks_dims.z;
+
     fmt::print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
     fmt::print("GPU Threads: {:4d} x {:<4d} = {}\n",
                gpu_thread_block_size.x,
@@ -600,37 +616,21 @@ int main(int argc, char **argv) {
                num_blocks);
     fmt::print("Running with {} CPU threads\n", num_cpu_threads);
 
+    // =========================================================================
+    // Step 6: Upload mask and apply resolution filtering
+    // =========================================================================
     auto mask = upload_mask(reader);
 
-    // Create a mask image for debugging
-    if (do_writeout) {
-        auto image_mask =
-          std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
-
-        // Write out the raw image mask
-        auto image_mask_source = reader.get_mask()->data();
-        for (int y = 0, k = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x, ++k) {
-                image_mask[k] = {255, 255, 255};
-                if (!image_mask_source[k]) {
-                    image_mask[k] = {255, 0, 0};
-                }
-            }
-        }
-        lodepng::encode("mask_source.png",
-                        reinterpret_cast<uint8_t *>(image_mask.data()),
-                        width,
-                        height,
-                        LCT_RGB);
+    if (do_writeout && reader.get_mask()) {
+        write_mask_diagnostic(
+          reader.get_mask()->data(), width, height, "mask_source.png");
     }
 
-#pragma region Resolution Filtering
-    // If set, apply resolution filtering
     if (dmin > 0 || dmax > 0) {
         apply_resolution_filtering(
           mask, width, height, wavelength, detector, dmin, dmax);
+
         if (do_writeout) {
-            // Copy the mask back from the GPU
             auto calculated_mask = std::vector<uint8_t>(width * height, 0);
             cudaMemcpy2D(calculated_mask.data(),
                          width,
@@ -639,74 +639,52 @@ int main(int argc, char **argv) {
                          width,
                          height,
                          cudaMemcpyDeviceToHost);
-
-            auto image_mask =
-              std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
-
-            for (int y = 0, k = 0; y < height; ++y) {
-                for (int x = 0; x < width; ++x, ++k) {
-                    image_mask[k] = {255, 255, 255};
-                    if (!calculated_mask[k]) {
-                        image_mask[k] = {255, 0, 0};
-                    }
-                }
-            }
-            lodepng::encode("mask_calculated.png",
-                            reinterpret_cast<uint8_t *>(image_mask.data()),
-                            width,
-                            height,
-                            LCT_RGB);
+            write_mask_diagnostic(
+              calculated_mask.data(), width, height, "mask_calculated.png");
         }
     }
-#pragma endregion Resolution Filtering
 
+    // =========================================================================
+    // Step 7: Initialize data structures for results collection
+    // =========================================================================
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
-
     auto next_image = std::atomic<int>(0);
     auto completed_images = std::atomic<int>(0);
-
     auto cpu_sync = std::barrier{num_cpu_threads};
-
-    auto png_write_mutex = std::mutex{};
-
     double time_waiting_for_images = 0.0;
 
-    // Create a PipeHandler object if the pipe file descriptor is provided
     std::unique_ptr<PipeHandler> pipeHandler = nullptr;
     if (pipe_fd != -1) {
         pipeHandler = std::make_unique<PipeHandler>(pipe_fd);
     }
 
-    // Create a unique pointer to store the image slices if this is a rotation dataset
-    std::unique_ptr<std::map<int, std::unique_ptr<ConnectedComponents>>>
-      rotation_slices = nullptr;
-    std::mutex rotation_slices_mutex;  // Mutex to protect the rotation slices map
-    // Create a unique pointer to store the reflection centres if we want to save 2D spot data.
+    std::unique_ptr<std::map<int, std::unique_ptr<ConnectedComponents>>> rotation_slices =
+      nullptr;
+    std::mutex rotation_slices_mutex;
     std::unique_ptr<std::map<int, std::vector<float>>> reflection_centers_2d = nullptr;
-    std::mutex
-      reflection_centers_2d_mutex;  // Mutex to protect the reflection centers 2d map
+    std::mutex reflection_centers_2d_mutex;
 
     if (oscillation_width > 0) {
-        // If oscillation information is available then this is a rotation dataset
         rotation_slices =
           std::make_unique<std::map<int, std::unique_ptr<ConnectedComponents>>>();
         fmt::print("Dataset type: {}\n", fmt::styled("Rotation set", fmt_magenta));
     } else {
         fmt::print("Dataset type: {}\n", fmt::styled("Still set", fmt_magenta));
         if (save_to_h5) {
-            // A map we will use to save results as we go.
-            reflection_centers_2d =
-              std::make_unique<std::map<int, std::vector<float>>>();
+            reflection_centers_2d = std::make_unique<std::map<int, std::vector<float>>>();
         }
     }
 
-    // Spawn the reader threads
+    // =========================================================================
+    // Step 8: Spawn worker threads for image processing
+    // =========================================================================
     std::vector<std::jthread> threads;
-    for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
+    for (uint32_t thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
         threads.emplace_back([&, thread_id]() {
             auto stop_token = global_stop.get_token();
             CudaStream stream;
 
+            // Allocate thread-local buffers
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
             auto host_results = make_cuda_pinned_malloc<uint8_t>(width * height);
             auto device_image = PitchedMalloc<pixel_t>(width, height);
@@ -716,36 +694,27 @@ int main(int argc, char **argv) {
                                      height,
                                      mask.pitch);
 
-            // Buffer for reading compressed chunk data in
             auto raw_chunk_buffer =
               std::vector<uint8_t>(width * height * sizeof(pixel_t));
 
-            // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
             CudaEvent start, copy, post, postcopy, end;
-
-            // Get the time the lastimage was received to avoid waiting for too long
             auto last_image_received = std::chrono::high_resolution_clock::now();
 
+            // Main image processing loop
             while (!stop_token.stop_requested()) {
                 auto image_num = next_image.fetch_add(1);
-                if (image_num >= num_images) {
+                if (image_num >= static_cast<int>(num_images)) {
                     break;
                 }
                 auto offset_image_num = image_num + parser.get<uint32_t>("start-index");
-                {
-                    // TODO:
-                    //  - Counting time like this does not work efficiently
-                    //    because it might not be the "next" image that
-                    //    gets the lock.
 
-                    // Lock so we don't duplicate wait count, and also
-                    // because we don't know if the HDF5 function is threadsafe
+                // Wait for image availability
+                {
                     std::scoped_lock lock(reader_mutex);
                     auto swmr_wait_start_time =
                       std::chrono::high_resolution_clock::now();
 
-                    // Check that our image is available and wait if not
                     while (!reader.is_image_available(offset_image_num)
                            && !stop_token.stop_requested()) {
                         auto current_time = std::chrono::high_resolution_clock::now();
@@ -760,8 +729,6 @@ int main(int argc, char **argv) {
                             global_stop.request_stop();
                             break;
                         }
-
-                        // Sleep for a bit to avoid busy-waiting
                         std::this_thread::sleep_for(100ms);
                     }
 
@@ -769,41 +736,33 @@ int main(int argc, char **argv) {
                         break;
                     }
 
-                    // If the image is available, update the last image received time
                     last_image_received = std::chrono::high_resolution_clock::now();
-
                     time_waiting_for_images +=
                       std::chrono::duration_cast<std::chrono::duration<double>>(
                         std::chrono::high_resolution_clock::now()
                         - swmr_wait_start_time)
                         .count();
                 }
-                // Sized buffer for the actual data read from file
+
+                // Fetch raw image data
                 std::span<uint8_t> buffer;
-                // Fetch the image data from the reader
                 while (true) {
                     {
                         std::scoped_lock lock(reader_mutex);
                         buffer =
                           reader.get_raw_chunk(offset_image_num, raw_chunk_buffer);
                     }
-                    // /dev/shm we might not have an atomic write
                     if (buffer.size() == 0) {
                         fmt::print(fmt::runtime(
                           "\033[1mRace Condition?!?? Got buffer size 0 for image "
-                          "{image_num}. "
-                          "Sleeping.\033[0m\n"));
+                          "{image_num}. Sleeping.\033[0m\n"));
                         std::this_thread::sleep_for(100ms);
                         continue;
                     }
                     break;
                 }
 
-#pragma region Decompression
-                // Decompress this data, outside of the mutex.
-                // We do this here rather than in the reader, because we
-                // anticipate that we will want to eventually offload
-                // the decompression
+                // Decompress image data
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4:
                     bshuf_decompress_lz4(buffer.data() + 12,
@@ -820,8 +779,8 @@ int main(int argc, char **argv) {
                     break;
                 }
 
+                // Copy image to GPU
                 start.record(stream);
-                // Copy the image to GPU
                 CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
                                              device_image.pitch_bytes(),
                                              host_image.get(),
@@ -831,10 +790,8 @@ int main(int argc, char **argv) {
                                              cudaMemcpyHostToDevice,
                                              stream));
                 copy.record(stream);
-#pragma endregion Decompression
 
-#pragma region Spotfinding
-                // When done, launch the spotfind kernel
+                // Run spotfinding kernel
                 switch (dispersion_algorithm.algorithm) {
                 case DispersionAlgorithm::Algorithm::DISPERSION:
                     call_do_spotfinding_dispersion(blocks_dims,
@@ -862,7 +819,7 @@ int main(int argc, char **argv) {
                 }
                 post.record(stream);
 
-                // Copy the results buffer back to the CPU
+                // Copy results back to CPU
                 CUDA_CHECK(cudaMemcpy2DAsync(host_results.get(),
                                              width * sizeof(uint8_t),
                                              device_results.get(),
@@ -872,11 +829,9 @@ int main(int argc, char **argv) {
                                              cudaMemcpyDeviceToHost,
                                              stream));
                 postcopy.record(stream);
-                // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
-#pragma endregion Spotfinding
 
-#pragma region Connected Components
+                // Run connected components analysis
                 std::unique_ptr<ConnectedComponents> connected_components_2d =
                   std::make_unique<ConnectedComponents>(
                     host_results.get(), host_image.get(), width, height, min_spot_size);
@@ -888,14 +843,13 @@ int main(int argc, char **argv) {
                   connected_components_2d->get_num_strong_pixels_filtered();
 
                 std::vector<float> centers_of_mass;
-                // If this is a rotation dataset, store the connected component slice
-                if (oscillation_width) {
-                    // Lock the mutex to protect the map
+
+                // Store results based on dataset type
+                if (oscillation_width > 0) {
                     std::lock_guard<std::mutex> lock(rotation_slices_mutex);
-                    // Store the connected components slice in the map
                     (*rotation_slices)[offset_image_num] =
                       std::move(connected_components_2d);
-                } else if (save_to_h5 | output_for_index) {
+                } else if (save_to_h5 || output_for_index) {
                     std::vector<Reflection3D> reflections =
                       connected_components_2d->find_2d_components(
                         min_spot_size, max_peak_centroid_separation);
@@ -912,69 +866,20 @@ int main(int argc, char **argv) {
                 }
 
                 end.record(stream);
-                // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
 
+                // Write diagnostic output if requested
                 if (do_writeout) {
-                    // Build an image buffer
-                    auto buffer =
-                      std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
-                    constexpr std::array<uint8_t, 3> color_pixel{255, 0, 0};
-
-                    for (int y = 0, k = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x, ++k) {
-                            uint8_t graysc_value = std::max(
-                              0.0f, 255.99f - static_cast<float>(host_image[k]) * 10);
-                            buffer[k] = {graysc_value, graysc_value, graysc_value};
-                        }
-                    }
-                    // Go over each shoebox and write a square
-                    // for (auto box : boxes) {
-                    for (int i = 0; i < boxes.size(); ++i) {
-                        auto &box = boxes[i];
-                        constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
-
-                        // edgeMin/edgeMax define how thick the border is
-                        constexpr int edgeMin = 5, edgeMax = 7;
-                        for (int edge = edgeMin; edge <= edgeMax; ++edge) {
-                            for (int x = box.l - edge; x <= box.r + edge; ++x) {
-                                buffer[width * (box.t - edge) + x] = color_shoebox;
-                                buffer[width * (box.b + edge) + x] = color_shoebox;
-                            }
-                            for (int y = box.t - edge; y <= box.b + edge; ++y) {
-                                buffer[width * y + box.l - edge] = color_shoebox;
-                                buffer[width * y + box.r + edge] = color_shoebox;
-                            }
-                        }
-                    }
-                    // Go over everything again, so that strong spots are visible over the boxes
-                    for (int y = 0, k = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x, ++k) {
-                            if (host_results[k]) {
-                                buffer[k] = color_pixel;
-                            }
-                        }
-                    }
-                    lodepng::encode(fmt::format("image_{:05d}.png", image_num),
-                                    reinterpret_cast<uint8_t *>(buffer.data()),
-                                    width,
-                                    height,
-                                    LCT_RGB);
-                    // Also write a list of pixels out here
-                    auto out =
-                      fmt::output_file(fmt::format("pixels_{:05d}.txt", image_num));
-                    for (int y = 0, k = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x, ++k) {
-                            if (host_results[k]) {
-                                out.print("{:4d}, {:4d}\n", x, y);
-                            }
-                        }
-                    }
+                    write_diagnostic_images(host_image.get(),
+                                            host_results.get(),
+                                            boxes,
+                                            width,
+                                            height,
+                                            image_num);
                 }
 
-                // Check if pipeHandler was initialized
+                // Send data through pipe if configured
                 if (pipeHandler != nullptr) {
-                    // Create a JSON object to store the data
                     json json_data = {{"num_strong_pixels", num_strong_pixels},
                                       {"file", file},
                                       {"file-number", image_num},
@@ -982,24 +887,20 @@ int main(int argc, char **argv) {
                     if (output_for_index) {
                         json_data["spot_centers"] = centers_of_mass;
                     }
-                    // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
-#pragma endregion Connected Components
 
-#pragma region Validation
+                // Validation or logging
                 if (do_validate) {
-                    // Count the number of pixels
-                    size_t num_strong_pixels = 0;
-                    for (int y = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x) {
+                    size_t count = 0;
+                    for (uint32_t y = 0; y < height; ++y) {
+                        for (uint32_t x = 0; x < width; ++x) {
                             if (host_results[x + width * y]) {
-                                ++num_strong_pixels;
+                                ++count;
                             }
                         }
                     }
                     auto spotfinder = StandaloneSpotfinder(width, height);
-                    // Read the image into a vector
                     auto converted_image = std::vector<double>{
                       host_image.get(), host_image.get() + width * height};
                     auto dials_strong = spotfinder.standard_dispersion(
@@ -1020,16 +921,15 @@ int main(int argc, char **argv) {
                           "px\033[0m\n",
                           thread_id,
                           image_num,
-                          num_strong_pixels);
+                          count);
                     } else {
                         fmt::print(
                           "Thread {:2d}, Image {:4d}: Compared: "
                           "\033[1;31mMismatch ({} px from kernel)\033[0m\n",
                           thread_id,
                           image_num,
-                          num_strong_pixels);
+                          count);
                     }
-
                 } else {
                     if (num_cpu_threads == 1) {
                         fmt::print(
@@ -1064,226 +964,39 @@ int main(int argc, char **argv) {
                           num_strong_pixels_filtered);
                     }
                 }
-#pragma endregion Validation
-                // auto image_num = next_image.fetch_add(1);
                 completed_images += 1;
             }
         });
     }
-    // For now, just wait on all threads to finish
+
+    // Wait for all threads to finish
     for (auto &thread : threads) {
         thread.join();
     }
 
-#pragma region 3D Connected Components
-    // After all threads have finished processing slices
-    if (oscillation_width) {
-        logger.info("Processing 3D spots");
-
-        // Step 1: Convert rotation_slices map to a vector
-        std::vector<std::unique_ptr<ConnectedComponents>> slices;
-        for (auto &[image_num, connected_components] : *rotation_slices) {
-            slices.push_back(std::move(connected_components));
-        }
-
-        // Step 2: Call find_3d_components
-        auto reflections_3d = ConnectedComponents::find_3d_components(
-          slices, width, height, min_spot_size_3d, max_peak_centroid_separation);
-
-        // Step 3: Output the 3D reflections
-        logger.info(
-          fmt::format("Found {} spots", fmt::styled(reflections_3d.size(), fmt_cyan)));
-
-        if (do_writeout) {
-            std::ofstream out("3d_reflections.txt");
-            for (const auto &reflection : reflections_3d) {
-                auto [x, y, z] = reflection.center_of_mass();
-
-                std::string reflection_info =
-                  fmt::format("X: [{}, {}] Y: [{}, {}] Z: [{}, {}] COM: ({}, {}, {})",
-                              reflection.get_x_min(),
-                              reflection.get_x_max(),
-                              reflection.get_y_min(),
-                              reflection.get_y_max(),
-                              reflection.get_z_min(),
-                              reflection.get_z_max(),
-                              x,
-                              y,
-                              z);
-                logger.trace(reflection_info);
-
-                // Print all members of the reflection
-                // Print x bounds
-                out << "X: [" << reflection.get_x_min() << ", "
-                    << reflection.get_x_max() << "] ";
-                // Print y bounds
-                out << "Y: [" << reflection.get_y_min() << ", "
-                    << reflection.get_y_max() << "] ";
-                // Print z bounds
-                out << "Z: [" << reflection.get_z_min() << ", "
-                    << reflection.get_z_max() << "] ";
-                // Print Centre of Mass
-                out << "COM: (" << x << ", " << y << ", " << z << ")\n";
-            }
-            logger.flush();  // Flush to ensure all messages printed before continuing
-        }
-
-#pragma Calculate spot variances
-        // Calculate sigma_b and sigma_m for each spot, so that we have this value for
-        // integration without needing to reload data.
-        // Key new metadata needed
-        //  - rotation axis (default +x?)
-        std::array<int, 2> image_size = {static_cast<int>(width),
-                                         static_cast<int>(height)};
-        Panel panel(detector.distance * 1000,
-                    {detector.beam_center_x, detector.beam_center_y},
-                    {detector.pixel_size_x * 1000, detector.pixel_size_y * 1000},
-                    image_size);
-        Vector3d s0 = {0.0, 0.0, -1.0 / wavelength};
-        Scan scan({1, static_cast<int>(num_images)},
-                  {oscillation_start, oscillation_width});
-        int image_range_0 = scan.get_image_range()[0];
-        Vector3d m2 = {1.0, 0.0, 0.0};  // The rotation axis, assumed to be +x.
-        constexpr double deg_to_rad = M_PI / 180.0;
-        constexpr double rad_to_deg = 180.0 / M_PI;
-
-        // Data vectors for output.
-        std::vector<double> sigma_b_variances;
-        std::vector<double> sigma_m_variances;
-        std::vector<int> bbox_depths;
-        sigma_b_variances.reserve(reflections_3d.size());
-        sigma_m_variances.reserve(reflections_3d.size());
-        bbox_depths.reserve(reflections_3d.size());
-
-        // Variables for outputting estimated global values.
-        double sum_sigma_b_variance = 0.0;
-        double sum_sigma_m_variance = 0.0;
-        constexpr int min_bbox_depth = 5;
-        int n_sigma_m = 0;
-
-        for (const auto &refl : reflections_3d) {
-            auto [x, y, z] = refl.center_of_mass();
-            auto [xmm, ymm] = panel.px_to_mm(x, y);
-            Vector3d s1 = panel.get_lab_coord(xmm, ymm);
-            double phi = (oscillation_start + (z - image_range_0) * oscillation_width)
-                         * deg_to_rad;
-            auto [sigma_b_variance, sigma_m_variance, bbox_depth] =
-              refl.variances_in_kabsch_space(s1, s0, m2, panel, scan, phi);
-            sigma_b_variances.push_back(sigma_b_variance);
-            sigma_m_variances.push_back(sigma_m_variance);
-            bbox_depths.push_back(bbox_depth);
-            sum_sigma_b_variance += sigma_b_variance;
-            if (bbox_depth >= min_bbox_depth) {
-                sum_sigma_m_variance += sigma_m_variance;
-                n_sigma_m++;
-            }
-        }
-        // Print out the estimated average values. This is only an estimate at this stage,
-        // as it will include spots that don't get indexed and which will therefore be
-        // excluded when this calculation is repeated in integration.
-        if (reflections_3d.size()) {
-            double est_sigma_b =
-              std::sqrt(sum_sigma_b_variance / reflections_3d.size()) * rad_to_deg;
-            logger.info("Estimated sigma_b (degrees): {:.6f}", est_sigma_b);
-        }
-        if (n_sigma_m) {
-            double est_sigma_m =
-              std::sqrt(sum_sigma_m_variance / n_sigma_m) * rad_to_deg;
-            logger.info("Estimated sigma_m (degrees): {:.6f}, calculated on {} spots",
-                        est_sigma_m,
-                        n_sigma_m);
-        }
-#pragma endregion Calculate spot variances
-
-        if (save_to_h5) {
-            // Step 4: Write the 3D reflections to a `.h5` file using ReflectionTable
-            logger.debug("Writing 3D reflections to HDF5 file");
-
-            try {
-                std::vector<double> flat_coms;
-                flat_coms.reserve(reflections_3d.size() * 3);
-
-                for (const auto &refl : reflections_3d) {
-                    auto [x, y, z] = refl.center_of_mass();
-                    flat_coms.push_back(x);
-                    flat_coms.push_back(y);
-                    flat_coms.push_back(z);
-                }
-
-                ReflectionTable table;
-                // Add the 3D reflections to the table
-                table.add_column(
-                  "xyzobs.px.value", reflections_3d.size(), 3, flat_coms);
-                // Map each reflection to the generated experiment ID
-                std::vector<int> id(reflections_3d.size(),
-                                    table.get_experiment_ids()[0]);
-                table.add_column("id", reflections_3d.size(), 1, id);
-                table.add_column(
-                  "sigma_b_variance", sigma_b_variances.size(), 1, sigma_b_variances);
-                table.add_column(
-                  "sigma_m_variance", sigma_m_variances.size(), 1, sigma_m_variances);
-                table.add_column("spot_extent_z", bbox_depths.size(), 1, bbox_depths);
-
-                // Write the table to an HDF5 file
-                table.write("results_ffs.h5", "dials/processing/group_0");
-                logger.info("Successfully wrote 3D reflections to HDF5 file");
-            } catch (const std::exception &e) {
-                logger.error("Error writing data to HDF5 file: {}", e.what());
-            } catch (...) {
-                logger.error("Unknown error writing data to HDF5 file");
-            }
-        }
-
-        logger.info("3D spot analysis complete");
-    } else if (save_to_h5) {  // i.e. not rotation, but want to save results to disk.
-        logger.info("Processing 2D spots");
-        logger.debug("Writing 2D reflections to HDF5 file");
-
-        try {
-            std::vector<double> flat_coms;
-            std::vector<int> ids;
-            std::vector<int> centers_map_keys;
-            for (const auto &pair : *reflection_centers_2d) {
-                centers_map_keys.push_back(pair.first);
-            }
-            std::sort(centers_map_keys.begin(), centers_map_keys.end());
-            int id = 0;
-            for (int imageno : centers_map_keys) {
-                std::vector<float> flat_coms_this = (*reflection_centers_2d)[imageno];
-                int n_refls = flat_coms_this.size() / 3;
-                for (auto com : flat_coms_this) {
-                    flat_coms.push_back(static_cast<double>(com));
-                }
-                for (int i = 0; i < n_refls; ++i) {
-                    ids.push_back(id);
-                }
-                id += 1;
-            }
-
-            // Make the reflection table with correctly assigned IDS.
-            ReflectionTable table;
-            for (int i = 0; i < id - 1; ++i) {
-                // Currently no other way to trigger generating UUIDs from here.
-                table.generate_new_attributes();
-            }
-            // Add the reflection centroids to the table
-            table.add_column("xyzobs.px.value", flat_coms.size() / 3, 3, flat_coms);
-            // Map each reflection to the generated experiment ID
-            table.add_column("id", ids.size(), 1, ids);
-
-            // Write the table to an HDF5 file
-            table.write("results_ffs.h5", "dials/processing/group_0");
-            logger.info("Successfully wrote {} 2D reflections to HDF5 file",
-                        ids.size());
-        } catch (const std::exception &e) {
-            logger.error("Error writing data to HDF5 file: {}", e.what());
-        } catch (...) {
-            logger.error("Unknown error writing data to HDF5 file");
-        }
-        logger.info("2D spot analysis complete");
+    // =========================================================================
+    // Step 9: Process and write results
+    // =========================================================================
+    if (oscillation_width > 0) {
+        process_3d_results(*rotation_slices,
+                           width,
+                           height,
+                           num_images,
+                           min_spot_size_3d,
+                           max_peak_centroid_separation,
+                           detector,
+                           wavelength,
+                           oscillation_start,
+                           oscillation_width,
+                           save_to_h5,
+                           do_writeout);
+    } else if (save_to_h5) {
+        write_2d_reflections_to_h5(*reflection_centers_2d);
     }
-#pragma endregion 3D Connected Components
 
+    // =========================================================================
+    // Step 10: Print summary statistics
+    // =========================================================================
     float total_time =
       std::chrono::duration_cast<std::chrono::duration<double>>(
         std::chrono::high_resolution_clock::now() - all_images_start_time)
@@ -1306,5 +1019,6 @@ int main(int argc, char **argv) {
         fmt::print("Total time waiting for images to appear: {:.2f} s\n",
                    time_waiting_for_images);
     }
+
+    return 0;
 }
-#pragma endregion Application Entry

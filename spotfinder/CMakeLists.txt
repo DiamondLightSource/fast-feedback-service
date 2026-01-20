@@ -11,6 +11,8 @@ add_executable(spotfinder
     spotfinder.cu
     shmread.cc
     cbfread.cc
+    signal_handler.cc
+    mask_utils.cc
     kernels/masking.cu
     kernels/thresholding.cu
     kernels/erosion.cu
