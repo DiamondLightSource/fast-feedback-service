@@ -704,7 +704,7 @@ int main(int argc, char **argv) {
             // Main image processing loop
             while (!stop_token.stop_requested()) {
                 auto image_num = next_image.fetch_add(1);
-                if (image_num >= static_cast<int>(num_images)) {
+                if (image_num >= num_images) {
                     break;
                 }
                 auto offset_image_num = image_num + parser.get<uint32_t>("start-index");
