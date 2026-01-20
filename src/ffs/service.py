@@ -348,16 +348,20 @@ class GPUPerImageAnalysis(CommonService):
         # Run the spotfinder
         self._spotfind_proc = subprocess.Popen(command, pass_fds=[write_fd])
 
-        # Close the write end of the pipe (for this process)
-        # spotfind_process will hold the write end open until it is done
-        # This will allow the read end to detect the end of the output
-        os.close(write_fd)
-
         # Start the read thread
         read_and_send_data_thread.start()
 
         # Wait for the process to finish
-        self._spotfind_proc.wait()
+        if self._spotfind_proc.wait() == 32:
+            self.log.info("Spotfinder exited indicating data is 32-bit, relaunching")
+            # We need to run the 32-bit version of the spotfinder instead....
+            command[0] = str(self._spotfinder_executable[1])
+            self._spotfind_proc = subprocess.Popen(command, pass_fds=[write_fd])
+
+        # Close the write end of the pipe (for this process)
+        # spotfind_process will hold the write end open until it is done
+        # This will allow the read end to detect the end of the output
+        os.close(write_fd)
 
         # Log the duration
         duration = time.monotonic() - start_time

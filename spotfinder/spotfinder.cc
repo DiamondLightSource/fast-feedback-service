@@ -453,7 +453,7 @@ int main(int argc, char **argv) {
 
     auto reader_mutex = std::mutex{};
     size_t bytes_per_pixel = reader.get_element_size();
-    // Ensure this matches what we exect
+    // Ensure this matches what we expect
     if (bytes_per_pixel != sizeof(pixel_t)) {
         fmt::print(
           "Error: Data type mismatch; This executable only accepts {} bit != {}\n",
