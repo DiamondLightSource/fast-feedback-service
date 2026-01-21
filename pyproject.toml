@@ -22,6 +22,11 @@ dependencies = [
     "zocalo>=1.2.0",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
 [tool.setuptools_scm]
 
 # pytest.ini

@@ -80,7 +80,7 @@ def _setup_rich_logging(level=logging.DEBUG):
         rootLogger.handlers.append(handler)
 
 
-def _find_spotfinder() -> Path:
+def _find_spotfinder() -> tuple[Path, Path]:
     """
     Finds and sets the path to the spotfinder executable
 
@@ -126,7 +126,17 @@ def _find_spotfinder() -> Path:
         sys.exit(1)
 
     logger.info(f"Using spotfinder: {spotfinder_path}")
-    return spotfinder_path
+
+    # Make sure that we have a spotfinder32 at the same location
+    spotfinder_32 = spotfinder_path.parent / "spotfinder32"
+    if not spotfinder_32.is_file():
+        sys.exit("Could not find spotfinder32 variant")
+    if subprocess.run(
+        [spotfinder_32, "--list-devices"], capture_output=True, text=True
+    ).returncode:
+        sys.exit("Error: Found spotfinder32 but failed to enumerate devices")
+
+    return (spotfinder_path, spotfinder_32)
 
 
 class MessageOrderResolver:
@@ -177,7 +187,7 @@ class MessageOrderResolver:
 class GPUPerImageAnalysis(CommonService):
     _service_name = "GPU Per-Image-Analysis"
     _logger_name = "spotfinder.service"
-    _spotfinder_executable: Path
+    _spotfinder_executable: tuple[Path, Path]
     _spotfind_proc: subprocess.Popen | None = None
 
     def initializing(self):
@@ -269,7 +279,7 @@ class GPUPerImageAnalysis(CommonService):
 
         # Now run the spotfinder
         command = [
-            str(self._spotfinder_executable),
+            str(self._spotfinder_executable[0]),
             str(data_path),
             "--images",
             str(parameters.number_of_frames),
@@ -338,16 +348,20 @@ class GPUPerImageAnalysis(CommonService):
         # Run the spotfinder
         self._spotfind_proc = subprocess.Popen(command, pass_fds=[write_fd])
 
-        # Close the write end of the pipe (for this process)
-        # spotfind_process will hold the write end open until it is done
-        # This will allow the read end to detect the end of the output
-        os.close(write_fd)
-
         # Start the read thread
         read_and_send_data_thread.start()
 
         # Wait for the process to finish
-        self._spotfind_proc.wait()
+        if self._spotfind_proc.wait() == 32:
+            self.log.info("Spotfinder exited indicating data is 32-bit, relaunching")
+            # We need to run the 32-bit version of the spotfinder instead....
+            command[0] = str(self._spotfinder_executable[1])
+            self._spotfind_proc = subprocess.Popen(command, pass_fds=[write_fd])
+
+        # Close the write end of the pipe (for this process)
+        # spotfind_process will hold the write end open until it is done
+        # This will allow the read end to detect the end of the output
+        os.close(write_fd)
 
         # Log the duration
         duration = time.monotonic() - start_time
