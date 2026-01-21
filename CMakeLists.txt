@@ -13,9 +13,6 @@ project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# Option to use 32-bit pixel data instead of 16-bit
-option(PIXEL_DATA_32BIT "Use 32-bit pixel data instead of 16-bit" OFF)
-
 # Option to use double precision for CUDA calculations
 option(USE_DOUBLE_PRECISION "Use double precision for CUDA calculations" OFF)
 
@@ -86,13 +83,6 @@ add_library(version STATIC version.cc)
 add_library(compile_options INTERFACE)
 
 # Add compile definitions if enabled
-if(PIXEL_DATA_32BIT)
-    target_compile_definitions(compile_options INTERFACE PIXEL_DATA_32BIT)
-    message(STATUS "Building with 32-bit pixel data support")
-else()
-    message(STATUS "Building with 16-bit pixel data support")
-endif()
-
 if(USE_DOUBLE_PRECISION)
     target_compile_definitions(compile_options INTERFACE USE_DOUBLE_PRECISION)
     message(STATUS "Building with double precision")
