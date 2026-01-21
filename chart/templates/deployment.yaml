@@ -38,6 +38,8 @@ spec:
             {{- end }}
           resources:
             limits:
+              cpu: 40
+              memory: 100Gi
               nvidia.com/gpu: 1
           {{- if .Values.containerSecurityContext }}
           securityContext:
