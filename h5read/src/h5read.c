@@ -315,12 +315,14 @@ h5_data_file *get_data_file(h5read_handle *obj, size_t index) {
     }
     h5_data_file *current = &(obj->data_files[index]);
     if (current->file == 0) {
-        printf("Opening data file %s\n", current->filename);
-        hid_t file =
-          H5Fopen(current->filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
-        // Failing to open a data file isn't necessarily an error - it could not exist yet
-        if (file > 0) {
-            current->file = file;
+        if (access(current->filename, F_OK) == 0) {
+            printf("Opening data file %s\n", current->filename);
+            hid_t file = H5Fopen(
+              current->filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
+            // Failing to open a data file isn't necessarily an error - it could not exist yet
+            if (file > 0) {
+                current->file = file;
+            }
         }
     }
     if (current->file != 0 && current->dataset == 0) {
