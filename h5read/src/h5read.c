@@ -386,10 +386,6 @@ h5_data_file *get_data_file(h5read_handle *obj, size_t index) {
 }
 
 size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
-    if (obj->data_files == 0) {
-        fprintf(stderr, "Error: Cannot do direct chunk read with sample data\n", index);
-        exit(1);
-    }
 #ifdef HAVE_HDF5
     int data_file = _find_data_file_for_image(obj, &index);
     if (data_file == obj->data_file_count) {
@@ -403,13 +399,26 @@ size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
     }
     hsize_t offset[3] = {index + current->offset, 0, 0};
     hsize_t chunk_size = 0;
-    // H5Drefresh(current->dataset);
+
+    // No way to check without hitting HDF5 error handler if it is missing,
+    // and thus a whole load of error output. Save and clear the error
+    // handler for this call so we don't hit that.
+    H5E_auto2_t old_func;
+    void *old_data;
+    H5Eget_auto(H5E_DEFAULT, &old_func, &old_data);
+    H5Eset_auto(H5E_DEFAULT, NULL, NULL);
+    // Check to see if this chunk is allocated yet
     H5Dget_chunk_storage_size(current->dataset, offset, &chunk_size);
-#endif
+    // Restore error handler
+    H5Eset_auto(H5E_DEFAULT, old_func, old_data);
     if (chunk_size < 0) {
         return 0;
     }
     return (size_t)chunk_size;
+#else
+    fprintf(stderr, "Error: Cannot do direct chunk read with sample data\n", index);
+    exit(1);
+#endif
 }
 
 void h5read_get_raw_chunk(h5read_handle *obj,
