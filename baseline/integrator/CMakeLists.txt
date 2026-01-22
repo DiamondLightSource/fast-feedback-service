@@ -7,6 +7,8 @@ add_executable(baseline_integrator
     integrator.cc
 )
 
+target_include_directories(baseline_integrator PRIVATE ${CMAKE_SOURCE_DIR}/baseline/predictor)
+
 target_link_libraries(baseline_integrator
     PRIVATE
     fmt

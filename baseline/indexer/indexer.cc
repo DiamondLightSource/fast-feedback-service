@@ -441,6 +441,7 @@ int main(int argc, char **argv) {
                                       assign_results.miller_indices_data);
         // Set the indexed flag in the output.
         auto flags_ = strong_reflections.column<std::size_t>("flags");
+        mdspan_type<size_t> flag_span;
         if (!flags_.has_value()) {
             for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
                 if ((assign_results.miller_indices(i, 0)) != 0
@@ -450,6 +451,8 @@ int main(int argc, char **argv) {
                 }
             }
             strong_reflections.add_column(std::string("flags"), flags);
+            flags_ = strong_reflections.column<std::size_t>("flags");
+            flag_span = flags_.value();
         } else {
             auto flag_span = flags_.value();
             for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
@@ -468,6 +471,10 @@ int main(int argc, char **argv) {
                                     expt.crystal().get_A_matrix(),
                                     expt.detector().panels()[0],
                                     strong_reflections);
+        // reset the predicted flags as these are observed not predicted
+        for (int i = 0; i < flag_span.extent(0); ++i) {
+            flag_span(i, 0) = flag_span(i, 0) & ~predicted_value;
+        }
 
         // Save the indexed reflection table.
         std::string output_filename = "indexed.refl";

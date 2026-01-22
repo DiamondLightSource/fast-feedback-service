@@ -1,3 +1,4 @@
+#pragma once
 #include <Eigen/Dense>
 #include <gemmi/symmetry.hpp>
 #include <optional>

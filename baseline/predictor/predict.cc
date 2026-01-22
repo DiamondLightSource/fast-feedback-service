@@ -20,11 +20,11 @@
 #include <dx2/scan.hpp>
 #include <exception>
 #include <fstream>
-#include <future>
 #include <gemmi/symmetry.hpp>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include "index_generators.cc"
@@ -38,52 +38,6 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 
 constexpr size_t predicted_flag = (1 << 0);
-
-#pragma region Argument Parser Configuration
-/**
- * @brief Take a default-initialized ArgumentParser object and configure it
- *      with the arguments to be parsed; assign various properties to each
- *      argument, eg. help message, default value, etc.
- *
- * @param parser The ArgumentParser object (pre-input) to be configured.
- */
-void configure_parser(argparse::ArgumentParser &parser) {
-    parser.add_argument("-e", "--expt").help("path to DIALS expt file");
-    parser.add_argument("--dmin")
-      .help("minimum d-spacing of predicted reflections")
-      .scan<'f', double>()
-      .default_value(-1.0);
-    parser.add_argument("-b", "--buffer_size")
-      .help(
-        "calculates predictions within a buffer zone of n images either side"
-        "of the scan (for static)")
-      .scan<'i', int>()
-      .default_value<int>(0);
-    parser.add_argument("-s", "--force_static")
-      .help("for a scan varying model, forces static prediction")
-      .default_value(false)
-      .implicit_value(true);
-    parser.add_argument("-n", "--nthreads")
-      .help("Number of threads for parallelisation")
-      .scan<'u', size_t>();
-}
-
-/**
- * @brief Take an ArgumentParser object after the user has entered input and check
- *      it for consistency; output errors and exit the program if a check fails.
- *
- * @param parser The ArgumentParser object (post-input) to be verified.
- */
-void verify_arguments(const argparse::ArgumentParser &parser) {
-    if (!parser.is_used("expt")) {
-        logger.error("Must specify experiment list file with -e or --expt\n");
-        std::exit(1);
-    }
-    if (parser.is_used("buffer_size") && parser.get<int>("buffer_size") < 0) {
-        logger.error("--buffer_size cannot be negative\n");
-    }
-}
-#pragma endregion
 
 struct predicted_data_rotation {
     // Shape {size, 3}
@@ -114,6 +68,16 @@ struct predicted_data_rotation {
         enter.push_back(enter_flag);
         flags.push_back(flag);
     }
+
+    void merge(predicted_data_rotation &&other) {
+        hkl.insert(hkl.end(), other.hkl.begin(), other.hkl.end());
+        s1.insert(s1.end(), other.s1.begin(), other.s1.end());
+        xyz_px.insert(xyz_px.end(), other.xyz_px.begin(), other.xyz_px.end());
+        xyz_mm.insert(xyz_mm.end(), other.xyz_mm.begin(), other.xyz_mm.end());
+        panels.insert(panels.end(), other.panels.begin(), other.panels.end());
+        enter.insert(enter.end(), other.enter.begin(), other.enter.end());
+        flags.insert(flags.end(), other.flags.begin(), other.flags.end());
+    }
 };
 
 struct scan_varying_data {
@@ -124,19 +88,16 @@ struct scan_varying_data {
     auto operator<=>(const scan_varying_data &) const = default;
 };
 
-// use a global output struct for writing predictions from many threads.
-predicted_data_rotation output_data{};
-std::mutex write_output_data_mtx;
-
-void predict_single_image(const int image_index,
-                          const scan_varying_data &sv_data,
-                          const Vector3d s0,
-                          const Matrix3d A,
-                          const Goniometer &goniometer,
-                          const Scan &scan,
-                          const Detector &detector,
-                          double param_dmin,
-                          gemmi::GroupOps crystal_symmetry_operations) {
+predicted_data_rotation predict_single_image(
+  const int image_index,
+  const scan_varying_data &sv_data,
+  const Vector3d s0,
+  const Matrix3d A,
+  const Goniometer &goniometer,
+  const Scan &scan,
+  const Detector &detector,
+  double param_dmin,
+  gemmi::GroupOps crystal_symmetry_operations) {
     bool use_mono = true;
     const Vector3d m2 = goniometer.get_rotation_axis();
     int z0 = scan.get_image_range()[0] - 1;
@@ -223,36 +184,14 @@ void predict_single_image(const int image_index,
                                        predicted_flag);
         }
     }
-    // now write to shared output data.
-    std::lock_guard<std::mutex> lock(write_output_data_mtx);
-    output_data.hkl.insert(output_data.hkl.end(),
-                           output_data_this_image.hkl.begin(),
-                           output_data_this_image.hkl.end());
-    output_data.s1.insert(output_data.s1.end(),
-                          output_data_this_image.s1.begin(),
-                          output_data_this_image.s1.end());
-    output_data.xyz_px.insert(output_data.xyz_px.end(),
-                              output_data_this_image.xyz_px.begin(),
-                              output_data_this_image.xyz_px.end());
-    output_data.xyz_mm.insert(output_data.xyz_mm.end(),
-                              output_data_this_image.xyz_mm.begin(),
-                              output_data_this_image.xyz_mm.end());
-    output_data.panels.insert(output_data.panels.end(),
-                              output_data_this_image.panels.begin(),
-                              output_data_this_image.panels.end());
-    output_data.enter.insert(output_data.enter.end(),
-                             output_data_this_image.enter.begin(),
-                             output_data_this_image.enter.end());
-    output_data.flags.insert(output_data.flags.end(),
-                             output_data_this_image.flags.begin(),
-                             output_data_this_image.flags.end());
+    return output_data_this_image;
 }
 
-void predict_rotation(Experiment<MonochromaticBeam> &experiment,
-                      const scan_varying_data &sv_data,
-                      double param_dmin,
-                      int buffer_size = 0,
-                      int nthreads = 1) {
+predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experiment,
+                                         const scan_varying_data &sv_data,
+                                         double param_dmin,
+                                         int buffer_size = 0,
+                                         int nthreads = 1) {
     Scan &scan = experiment.scan();
     if (buffer_size > 0) {
         // Can't have both scan varying data and a buffer
@@ -293,214 +232,104 @@ void predict_rotation(Experiment<MonochromaticBeam> &experiment,
     nthreads = std::min(n_images, nthreads);
     logger.info("Predicting spots on {} images over {} threads", n_images, nthreads);
 
-    ThreadPool pool(nthreads);
+    std::vector<predicted_data_rotation> per_image_results(n_images);
 
-    for (int image_index = 0; image_index < n_images; ++image_index) {
-        pool.enqueue([=] {
-            predict_single_image(image_index,
-                                 sv_data,
-                                 s0,
-                                 A,
-                                 goniometer,
-                                 scan,
-                                 detector,
-                                 param_dmin,
-                                 crystal_symmetry_operations);
-        });
+    std::exception_ptr eptr = nullptr;
+    std::mutex eptr_mtx;
+
+    {
+        ThreadPool pool(nthreads);
+
+        for (int image_index = 0; image_index < n_images; ++image_index) {
+            pool.enqueue([&, image_index] {
+                try {
+                    per_image_results[image_index] =
+                      predict_single_image(image_index,
+                                           sv_data,
+                                           s0,
+                                           A,
+                                           goniometer,
+                                           scan,
+                                           detector,
+                                           param_dmin,
+                                           crystal_symmetry_operations);
+                } catch (...) {
+                    std::lock_guard<std::mutex> lk(eptr_mtx);
+                    if (!eptr) eptr = std::current_exception();
+                }
+            });
+        }
+    }  // Threadpool needs to go out of scope to make sure all
+    // jobs completed before merge
+    if (eptr) std::rethrow_exception(eptr);
+
+    predicted_data_rotation all_output;
+    for (auto &r : per_image_results) {
+        all_output.merge(std::move(r));
     }
+    return all_output;
 }
 
-int main(int argc, char **argv) {
-    auto t1 = std::chrono::system_clock::now();
-    auto parser = argparse::ArgumentParser();
-    configure_parser(parser);
-
-    // Parse the command-line input against the defined parser
-    try {
-        parser.parse_args(argc, argv);
-    } catch (const std::exception &err) {
-        logger.error(err.what());
-        std::exit(1);
-    }
-
-    verify_arguments(parser);
-
-    // Obtain argument values from the parsed command-line input
-    std::string input_expt = parser.get<std::string>("expt");
-    double param_dmin = parser.get<double>("dmin");
-    bool param_force_static = parser.get<bool>("force_static");
-    const int buffer_size = parser.get<int>("buffer_size");
-    const std::string output_file_path = "predicted.refl";
-    size_t nthreads;
-    if (parser.is_used("nthreads")) {
-        nthreads = parser.get<size_t>("nthreads");
-    } else {
-        size_t max_threads = std::thread::hardware_concurrency();
-        nthreads = max_threads ? max_threads : 1;
-    }
-
-    std::ifstream f(input_expt);
-    json elist_json_obj;
-    try {
-        elist_json_obj = json::parse(f);
-    } catch (json::parse_error &ex) {
-        logger.error("Unable to read {}; json parse error at byte {}",
-                     input_expt.c_str(),
-                     ex.byte);
-        std::exit(1);
-    }
-    Experiment<MonochromaticBeam> expt;
-    try {
-        expt = Experiment<MonochromaticBeam>(elist_json_obj);
-    } catch (std::invalid_argument const &ex) {
-        logger.error("Unable to create MonochromaticBeam experiment: {}", ex.what());
-        std::exit(1);
-    }
-
-    Scan scan = expt.scan();
-    if (buffer_size > 0) {
-        logger.info(
-          "Buffer size of {} images will be predicted either side of the scan.\n"
-          "Scan static prediction is forced in this case.",
-          buffer_size);
-        param_force_static = true;
-    }
-    if (scan.get_oscillation()[1] == 0.0) {
-        //For now, only implement rotation prediction.
-        logger.error(
-          "Data appears to be still shot, this program only implements rotation "
-          "prediction");
-        std::exit(1);
-    }
-
-    // Extract scan varying parameters (until we can access from the experiment object)
+std::tuple<bool, scan_varying_data> extract_scan_varying_data(json elist_json_obj,
+                                                              Scan scan) {
     scan_varying_data sv_data;
     bool scan_varying = false;
-    if (!param_force_static) {
-        const int num_images =
-          scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
-        json beam_data = elist_json_obj.at("beam")[0];
-        json goniometer_data = elist_json_obj.at("goniometer")[0];
-        json crystal_data = elist_json_obj.at("crystal")[0];
-        json s0_at_scan_points;
-        json A_at_scan_points;
-        json r_setting_at_scan_points;
-        if (beam_data.contains("s0_at_scan_points")) {
-            scan_varying = true;
-            s0_at_scan_points = beam_data.at("s0_at_scan_points");
-            if (s0_at_scan_points.size()
-                == num_images + 1) {  // i.e. is expected length.
-                std::vector<Vector3d> scan_varying_s0;
-                for (const auto &entry : s0_at_scan_points) {
-                    Vector3d vec(entry[0].get<double>(),
-                                 entry[1].get<double>(),
-                                 entry[2].get<double>());
-                    scan_varying_s0.push_back(vec);
-                }
-                sv_data.s0_at_scan_points = scan_varying_s0;
+
+    const int num_images = scan.get_image_range()[1] - scan.get_image_range()[0] + 1;
+    json beam_data = elist_json_obj.at("beam")[0];
+    json goniometer_data = elist_json_obj.at("goniometer")[0];
+    json crystal_data = elist_json_obj.at("crystal")[0];
+    json s0_at_scan_points;
+    json A_at_scan_points;
+    json r_setting_at_scan_points;
+    if (beam_data.contains("s0_at_scan_points")) {
+        scan_varying = true;
+        s0_at_scan_points = beam_data.at("s0_at_scan_points");
+        if (s0_at_scan_points.size() == num_images + 1) {  // i.e. is expected length.
+            std::vector<Vector3d> scan_varying_s0;
+            for (const auto &entry : s0_at_scan_points) {
+                Vector3d vec(entry[0].get<double>(),
+                             entry[1].get<double>(),
+                             entry[2].get<double>());
+                scan_varying_s0.push_back(vec);
             }
-        }
-        if (crystal_data.contains("A_at_scan_points")) {
-            scan_varying = true;
-            A_at_scan_points = crystal_data.at("A_at_scan_points");
-            if (A_at_scan_points.size() == num_images + 1) {
-                std::vector<Matrix3d> scan_varying_A;
-                for (const auto &entry : A_at_scan_points) {
-                    Matrix3d A_mat;
-                    A_mat << entry[0].get<double>(), entry[1].get<double>(),
-                      entry[2].get<double>(), entry[3].get<double>(),
-                      entry[4].get<double>(), entry[5].get<double>(),
-                      entry[6].get<double>(), entry[7].get<double>(),
-                      entry[8].get<double>();
-                    scan_varying_A.push_back(A_mat);
-                }
-                sv_data.A_at_scan_points = scan_varying_A;
-            }
-        }
-        if (goniometer_data.contains("setting_rotation_at_scan_points")) {
-            scan_varying = true;
-            r_setting_at_scan_points =
-              goniometer_data.at("setting_rotation_at_scan_points");
-            if (r_setting_at_scan_points.size() == num_images + 1) {
-                std::vector<Matrix3d> scan_varying_r;
-                for (const auto &entry : r_setting_at_scan_points) {
-                    Matrix3d r_mat;
-                    r_mat << entry[0].get<double>(), entry[1].get<double>(),
-                      entry[2].get<double>(), entry[3].get<double>(),
-                      entry[4].get<double>(), entry[5].get<double>(),
-                      entry[6].get<double>(), entry[7].get<double>(),
-                      entry[8].get<double>();
-                    scan_varying_r.push_back(r_mat);
-                }
-                sv_data.r_setting_at_scan_points = scan_varying_r;
-            }
+            sv_data.s0_at_scan_points = scan_varying_s0;
         }
     }
-    if (scan_varying) {
-        logger.info("Monochromatic scan-varying prediction on {}", input_expt);
-    } else {
-        logger.info("Monochromatic static prediction on {}", input_expt);
+    if (crystal_data.contains("A_at_scan_points")) {
+        scan_varying = true;
+        A_at_scan_points = crystal_data.at("A_at_scan_points");
+        if (A_at_scan_points.size() == num_images + 1) {
+            std::vector<Matrix3d> scan_varying_A;
+            for (const auto &entry : A_at_scan_points) {
+                Matrix3d A_mat;
+                A_mat << entry[0].get<double>(), entry[1].get<double>(),
+                  entry[2].get<double>(), entry[3].get<double>(),
+                  entry[4].get<double>(), entry[5].get<double>(),
+                  entry[6].get<double>(), entry[7].get<double>(),
+                  entry[8].get<double>();
+                scan_varying_A.push_back(A_mat);
+            }
+            sv_data.A_at_scan_points = scan_varying_A;
+        }
     }
-
-    // Check if the minimum resolution paramenter (dmin) was passed in by the user,
-    // if yes, check if it is a valid value; if not, assign a default.
-    MonochromaticBeam beam = expt.beam();
-    double wavelength = beam.get_wavelength();
-    double dmin_min = 0.5 * wavelength;
-    // FIXME: Need a better dmin_default from .expt file (like in DIALS)
-    double dmin_default = dmin_min;
-    if (!parser.is_used("dmin")) {
-        param_dmin = dmin_default;
-    } else if (param_dmin < dmin_min) {
-        logger.error(
-          "Prediction at a dmin of {} is not possible with wavelength {}.\n"
-          "dmin must be at least 0.5 times the wavelength. Setting dmin to the\n"
-          "default value of {}.\n",
-          param_dmin,
-          wavelength,
-          dmin_default);
-        param_dmin = dmin_default;
+    if (goniometer_data.contains("setting_rotation_at_scan_points")) {
+        scan_varying = true;
+        r_setting_at_scan_points =
+          goniometer_data.at("setting_rotation_at_scan_points");
+        if (r_setting_at_scan_points.size() == num_images + 1) {
+            std::vector<Matrix3d> scan_varying_r;
+            for (const auto &entry : r_setting_at_scan_points) {
+                Matrix3d r_mat;
+                r_mat << entry[0].get<double>(), entry[1].get<double>(),
+                  entry[2].get<double>(), entry[3].get<double>(),
+                  entry[4].get<double>(), entry[5].get<double>(),
+                  entry[6].get<double>(), entry[7].get<double>(),
+                  entry[8].get<double>();
+                scan_varying_r.push_back(r_mat);
+            }
+            sv_data.r_setting_at_scan_points = scan_varying_r;
+        }
     }
-
-    int num_reflections_initial = 0;
-    int i_expt = 0;
-    std::string identifier = expt.identifier();
-
-    predict_rotation(expt, sv_data, param_dmin, buffer_size, nthreads);
-
-    // Add extra metadata to enable reflection table creation. The 'predict rotation' function can
-    // be called in a loop over experiments, so here add the data which tracks which experiment
-    // it came from (e.g. ids, identifiers).
-    std::size_t num_new_reflections =
-      output_data.panels.size() - num_reflections_initial;
-    std::vector<int> new_ids(num_new_reflections, i_expt);
-    // Add ids outside of per reflection loop.
-    output_data.ids.insert(output_data.ids.end(), new_ids.begin(), new_ids.end());
-    output_data.experiment_ids.push_back(i_expt);
-    output_data.identifiers.push_back(identifier);
-
-    // now write a reflection table.
-    std::size_t sz = output_data.panels.size();
-    ReflectionTable predicted(output_data.experiment_ids, output_data.identifiers);
-    predicted.add_column("miller_index", sz, 3, output_data.hkl);
-    predicted.add_column("panel", sz, 1, output_data.panels);
-    predicted.add_column("entering", sz, 1, output_data.enter);
-    predicted.add_column("s1", sz, 3, output_data.s1);
-    predicted.add_column("xyzcal.px", sz, 3, output_data.xyz_px);
-    predicted.add_column("xyzcal.mm", sz, 3, output_data.xyz_mm);
-    predicted.add_column("flags", sz, 1, output_data.flags);
-    predicted.add_column("id", sz, 1, output_data.ids);
-
-#pragma endregion
-
-#pragma region Write to File
-    // Save reflections to file
-    predicted.write(output_file_path);
-
-    auto t2 = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsed_time = t2 - t1;
-    logger.info("Saved {} reflections to {}.", sz, output_file_path);
-    logger.info("Total time for prediction: {:.4f}s", elapsed_time.count());
-#pragma endregion
-    return 0;
+    return std::make_tuple(scan_varying, sv_data);
 }

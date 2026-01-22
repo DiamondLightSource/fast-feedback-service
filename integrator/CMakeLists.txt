@@ -14,6 +14,7 @@ target_include_directories(integrator
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../spotfinder
     ${CMAKE_CURRENT_SOURCE_DIR}/../baseline/integrator
+    ${CMAKE_CURRENT_SOURCE_DIR}/../baseline/predictor
 )
 
 target_link_libraries(integrator
