@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/diamondlightsource/fast-feedback-service
-  tag: pr-86
+  tag: pr-86-amd64
 
 # Beamline configuration
 beamline: "i24"
