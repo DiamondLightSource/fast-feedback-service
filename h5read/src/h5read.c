@@ -55,6 +55,10 @@ struct _h5read_handle {
     float oscillation_width;
 };
 
+#ifdef HAVE_HDF5
+static h5read_dtype _detect_hdf5_dtype(hid_t datatype);
+#endif
+
 /// Validate that the HDF5 datatype size matches the expected pixel data size.
 ///
 /// Note that this is only used when trying to extract image data directly,
@@ -91,8 +95,12 @@ h5read_dtype h5read_get_dtype(h5read_handle *obj) {
 void h5read_free(h5read_handle *obj) {
 #ifdef HAVE_HDF5
     for (int i = 0; i < obj->data_file_count; i++) {
-        H5Dclose(obj->data_files[i].dataset);
-        H5Fclose(obj->data_files[i].file);
+        if (obj->data_files[i].dataset != 0) {
+            H5Dclose(obj->data_files[i].dataset);
+        }
+        if (obj->data_files[i].file != 0) {
+            H5Fclose(obj->data_files[i].file);
+        }
     }
     if (obj->master_file) H5Fclose(obj->master_file);
 #endif
@@ -295,6 +303,86 @@ int _find_data_file_for_image(h5read_handle *obj, size_t *index) {
     return data_file;
 }
 
+/// Get the data file object, opening the data file if possible.
+///
+/// This will always return (barring fatal errors) a valid h5_data_file
+/// object. The .file and .dataset members may not be present, if the
+/// file can not be currently opened.
+h5_data_file *get_data_file(h5read_handle *obj, size_t index) {
+    if (index >= obj->data_file_count) {
+        fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
+        exit(1);
+    }
+    h5_data_file *current = &(obj->data_files[index]);
+    if (current->file == 0) {
+        printf("Opening data file %s\n", current->filename);
+        hid_t file =
+          H5Fopen(current->filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
+        // Failing to open a data file isn't necessarily an error - it could not exist yet
+        if (file > 0) {
+            current->file = file;
+        }
+    }
+    if (current->file != 0 && current->dataset == 0) {
+        hid_t dataset = H5Dopen(current->file, current->dsetname, H5P_DEFAULT);
+        if (dataset < 0) {
+            fprintf(
+              stderr, "Error: Reading datasets of child file %s\n", current->filename);
+            exit(1);
+        }
+        current->dataset = dataset;
+        // Now we have a dataset, validate that it matches our expected layout
+        hid_t datatype = H5Dget_type(dataset);
+        // For now, with our basic dtype approach, verify this matches
+        if (_detect_hdf5_dtype(datatype) != obj->dtype) {
+            fprintf(stderr,
+                    "Fatal Error: Child data set in %s does not match VDS datatype\n",
+                    current->filename);
+            exit(1);
+        }
+        H5Tclose(datatype);
+        hid_t space = H5Dget_space(dataset);
+        if (H5Sget_simple_extent_ndims(space) != 3) {
+            fprintf(stderr,
+                    "Error: Data file %s data are not three dimensional\n",
+                    current->filename);
+            exit(1);
+        }
+        hsize_t dims[3];
+        H5Sget_simple_extent_dims(space, dims, NULL);
+        H5Sclose(space);
+        // Do a load of validation that this data file matches what we expect
+        if (dims[0] != current->frames) {
+            fprintf(
+              stderr,
+              "Validation Error: Data file %s data has %ld frames, expected %ld\n",
+              current->filename,
+              dims[0],
+              current->frames);
+            exit(1);
+        }
+        if (dims[1] != obj->slow) {
+            fprintf(
+              stderr,
+              "Validation Error: Data file %s slow data has %ld pixels, expected %ld\n",
+              current->filename,
+              dims[1],
+              obj->slow);
+            exit(1);
+        }
+        if (dims[2] != obj->fast) {
+            fprintf(
+              stderr,
+              "Validation Error: Data file %s fast data has %ld pixels, expected %ld\n",
+              current->filename,
+              dims[2],
+              obj->fast);
+            exit(1);
+        }
+    }
+    return current;
+}
+
 size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
     if (obj->data_files == 0) {
         fprintf(stderr, "Error: Cannot do direct chunk read with sample data\n", index);
@@ -306,8 +394,11 @@ size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
         exit(1);
     }
-    h5_data_file *current = &(obj->data_files[data_file]);
-
+    h5_data_file *current = get_data_file(obj, index);
+    // Count a missing file as "zero" size for the dataset
+    if (current->file == 0) {
+        return 0;
+    }
     hsize_t offset[3] = {index + current->offset, 0, 0};
     hsize_t chunk_size = 0;
     // H5Drefresh(current->dataset);
@@ -334,8 +425,12 @@ void h5read_get_raw_chunk(h5read_handle *obj,
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
         exit(1);
     }
-    h5_data_file *current = &(obj->data_files[data_file]);
-
+    h5_data_file *current = get_data_file(obj, index);
+    // Count a missing file as fatal error here
+    if (current->file == 0) {
+        fprintf(stderr, "Error: Trying to read raw chunk for missing file\n");
+        exit(1);
+    }
     hsize_t offset[3] = {index + current->offset, 0, 0};
     hsize_t chunk_size = 0;
     H5Dget_chunk_storage_size(current->dataset, offset, &chunk_size);
@@ -899,7 +994,7 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
             strcpy(vds[j].filename, scr);
         }
 
-        // do I want to open these here? Or when they are needed...
+        // These will be opened when required
         vds[j].file = 0;
         vds[j].dataset = 0;
     }
@@ -975,24 +1070,27 @@ static h5read_dtype _detect_hdf5_dtype(hid_t datatype) {
 }
 
 void setup_data(h5read_handle *obj) {
-    hid_t dataset = obj->data_files[0].dataset;
-    hid_t datatype = H5Dget_type(dataset);
+    hid_t vds_dataset = H5Dopen2(obj->master_file, "/entry/data/data", H5P_DEFAULT);
+
+    hid_t datatype = H5Dget_type(vds_dataset);
     obj->dtype = _detect_hdf5_dtype(datatype);
 
-    hid_t space = H5Dget_space(dataset);
+    hid_t space = H5Dget_space(vds_dataset);
 
     if (H5Sget_simple_extent_ndims(space) != 3) {
-        fprintf(stderr, "raw data not three dimensional\n");
+        fprintf(stderr, "VDS data not three dimensional\n");
         exit(1);
     }
 
     hsize_t dims[3];
     H5Sget_simple_extent_dims(space, dims, NULL);
 
+    obj->frames = dims[0];
     obj->slow = dims[1];
     obj->fast = dims[2];
 
     printf("Total data size: %ldx%ldx%ld\n", obj->frames, obj->slow, obj->fast);
+    H5Dclose(vds_dataset);
     H5Sclose(space);
 }
 
@@ -1016,32 +1114,6 @@ h5read_handle *h5read_open(const char *master_filename) {
         H5Fclose(master_file);
         free(file);
         return NULL;
-    }
-
-    // open up the actual data files, count all the frames
-    file->frames = 0;
-    h5_data_file *data_files = file->data_files;
-    for (int j = 0; j < file->data_file_count; j++) {
-        data_files[j].file = H5Fopen(
-          data_files[j].filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
-        if (data_files[j].file < 0) {
-            fprintf(stderr, "Error: Opening child file %s\n", data_files[j].filename);
-            H5Fclose(master_file);
-            free(file);
-            return NULL;
-        }
-        data_files[j].dataset =
-          H5Dopen(data_files[j].file, data_files[j].dsetname, H5P_DEFAULT);
-        if (data_files[j].dataset < 0) {
-            fprintf(stderr,
-                    "Error: Reading datasets of child file %s\n",
-                    data_files[j].filename);
-            H5Fclose(data_files[j].file);
-            H5Fclose(master_file);
-            free(file);
-            return NULL;
-        }
-        file->frames += data_files[j].frames;
     }
 
     read_trusted_range(file);
