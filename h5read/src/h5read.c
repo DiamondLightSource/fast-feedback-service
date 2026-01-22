@@ -409,6 +409,12 @@ size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
     H5Eset_auto(H5E_DEFAULT, NULL, NULL);
     // Check to see if this chunk is allocated yet
     H5Dget_chunk_storage_size(current->dataset, offset, &chunk_size);
+
+    // If this failed, refresh the file then try again
+    if (chunk_size <= 0) {
+        H5Drefresh(current->dataset);
+        H5Dget_chunk_storage_size(current->dataset, offset, &chunk_size);
+    }
     // Restore error handler
     H5Eset_auto(H5E_DEFAULT, old_func, old_data);
     if (chunk_size < 0) {
