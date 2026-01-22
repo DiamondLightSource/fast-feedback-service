@@ -394,7 +394,7 @@ size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
         exit(1);
     }
-    h5_data_file *current = get_data_file(obj, index);
+    h5_data_file *current = get_data_file(obj, data_file);
     // Count a missing file as "zero" size for the dataset
     if (current->file == 0) {
         return 0;
@@ -425,7 +425,7 @@ void h5read_get_raw_chunk(h5read_handle *obj,
         fprintf(stderr, "Error: Could not find data file for frame %ld\n", index);
         exit(1);
     }
-    h5_data_file *current = get_data_file(obj, index);
+    h5_data_file *current = get_data_file(obj, data_file);
     // Count a missing file as fatal error here
     if (current->file == 0) {
         fprintf(stderr, "Error: Trying to read raw chunk for missing file\n");
