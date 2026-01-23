@@ -94,6 +94,7 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     double tot_rmsd_z = 0;
     Vector3d s0 = expt.beam().get_s0();
     Vector3d m2 = expt.goniometer().get_rotation_axis();
+    int count_m = 0;
     for (int i = 0; i < xyzcal.extent(0); ++i) {
         Eigen::Map<Vector3d> xyzcal_this(&xyzcal(i, 0));
         Eigen::Map<Vector3d> xyzobs_this(&xyzobs(i, 0));
@@ -102,8 +103,11 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
         if (radians_to_degrees(std::pow(valxy, 0.5))
             < 0.1) {  // Guard against mispredictions in indexing.
             tot_rmsd += valxy;
-            tot_rmsd_z += valz;
             count++;
+            if (extent_z_data(i, 0) >= min_bbox_depth) {
+              tot_rmsd_z += valz;
+              count_m++;
+          }
         }
     }
     if (count == 0) {
@@ -115,10 +119,10 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     logger.info("Misprediction sigma-b estimate (degrees): {:.6f} on {} reflections",
                 radians_to_degrees(rmsd_deviation_radians),
                 count);
-    double rmsdz_deviation_radians = std::pow(tot_rmsd_z / count, 0.5);
+    double rmsdz_deviation_radians = std::pow(tot_rmsd_z / count_m, 0.5);
     logger.info("Misprediction sigma-m estimate (degrees): {:.6f} on {} reflections",
                 radians_to_degrees(rmsdz_deviation_radians),
-                count);
+                count_m);
     // Total sigma given by sqrt of sum of variances
     double total_sigma_b =
       std::pow(std::pow(sigma_b_radians, 2) + std::pow(rmsd_deviation_radians, 2), 0.5);
