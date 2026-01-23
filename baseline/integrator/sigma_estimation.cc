@@ -105,9 +105,9 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
             tot_rmsd += valxy;
             count++;
             if (extent_z_data(i, 0) >= min_bbox_depth) {
-              tot_rmsd_z += valz;
-              count_m++;
-          }
+                tot_rmsd_z += valz;
+                count_m++;
+            }
         }
     }
     if (count == 0) {
