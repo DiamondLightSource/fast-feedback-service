@@ -13,10 +13,10 @@ Function to calculate the square deviation in kabsch space between
 the predicted and observed positions.
 */
 std::pair<double, double> squaredev_in_kabsch_space(const Vector3d &xyzcal,  //mm
-                                 const Vector3d &xyzobs,  //mm
-                                 const Vector3d &s0,
-                                 const Panel &panel,
-                                 Vector3d m2) {
+                                                    const Vector3d &xyzobs,  //mm
+                                                    const Vector3d &s0,
+                                                    const Panel &panel,
+                                                    Vector3d m2) {
     Vector3d s1cal = panel.get_lab_coord(xyzcal[0], xyzcal[1]);
     Vector3d s1obs = panel.get_lab_coord(xyzobs[0], xyzobs[1]);
     double delta_phi = xyzcal[2] - xyzobs[2];
@@ -36,8 +36,8 @@ std::pair<double, double> squaredev_in_kabsch_space(const Vector3d &xyzcal,  //m
 }
 
 std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
-                                                   Experiment<MonochromaticBeam> &expt,
-                                                   int min_bbox_depth = 6) {
+                                          Experiment<MonochromaticBeam> &expt,
+                                          int min_bbox_depth = 6) {
     auto flags = indexed.column<std::size_t>("flags");
     auto &flags_data = flags.value();
     std::vector<bool> selection(flags_data.extent(0), false);
@@ -75,7 +75,8 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     }
     double sigma_m_radians = std::pow(sigma_m_total / n_sigma_m, 0.5);
     logger.info(
-      "Internal sigma-m estimate (degrees): {:.6f} on {} reflections with min_bbox_depth={}",
+      "Internal sigma-m estimate (degrees): {:.6f} on {} reflections with "
+      "min_bbox_depth={}",
       radians_to_degrees(sigma_m_radians),
       n_sigma_m,
       min_bbox_depth);
@@ -96,7 +97,8 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     for (int i = 0; i < xyzcal.extent(0); ++i) {
         Eigen::Map<Vector3d> xyzcal_this(&xyzcal(i, 0));
         Eigen::Map<Vector3d> xyzobs_this(&xyzobs(i, 0));
-        auto [valxy, valz] = squaredev_in_kabsch_space(xyzcal_this, xyzobs_this, s0, p, m2);
+        auto [valxy, valz] =
+          squaredev_in_kabsch_space(xyzcal_this, xyzobs_this, s0, p, m2);
         if (radians_to_degrees(std::pow(valxy, 0.5))
             < 0.1) {  // Guard against mispredictions in indexing.
             tot_rmsd += valxy;
@@ -118,8 +120,10 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
                 radians_to_degrees(rmsdz_deviation_radians),
                 count);
     // Total sigma given by sqrt of sum of variances
-    double total_sigma_b = std::pow(std::pow(sigma_b_radians,2) + std::pow(rmsd_deviation_radians, 2), 0.5);
-    double total_sigma_m = std::pow(std::pow(sigma_m_radians,2) + std::pow(rmsdz_deviation_radians, 2), 0.5);
+    double total_sigma_b =
+      std::pow(std::pow(sigma_b_radians, 2) + std::pow(rmsd_deviation_radians, 2), 0.5);
+    double total_sigma_m = std::pow(
+      std::pow(sigma_m_radians, 2) + std::pow(rmsdz_deviation_radians, 2), 0.5);
     logger.info("Overall sigma-b estimate (degrees): {:.6f}",
                 radians_to_degrees(total_sigma_b));
     logger.info("Overall sigma-m estimate (degrees): {:.6f}",
