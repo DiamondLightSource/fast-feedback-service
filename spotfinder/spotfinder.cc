@@ -452,7 +452,15 @@ int main(int argc, char **argv) {
     Reader &reader = *reader_ptr;
 
     auto reader_mutex = std::mutex{};
-
+    size_t bytes_per_pixel = reader.get_element_size();
+    // Ensure this matches what we expect
+    if (bytes_per_pixel != sizeof(pixel_t)) {
+        fmt::print(
+          "Error: Data type mismatch; This executable only accepts {} bit != {}\n",
+          sizeof(pixel_t) * 8,
+          bytes_per_pixel * 8);
+        std::exit(bytes_per_pixel * 8);
+    }
     uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
                                                    : reader.get_number_of_images();
 
@@ -780,7 +788,7 @@ int main(int argc, char **argv) {
                 }
                 // Sized buffer for the actual data read from file
                 std::span<uint8_t> buffer;
-                // Fetch the image data from the reader
+                // Fetch the image data from the reader.. loop in case we need to wait
                 while (true) {
                     {
                         std::scoped_lock lock(reader_mutex);

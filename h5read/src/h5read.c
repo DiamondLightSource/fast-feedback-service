@@ -36,6 +36,7 @@ struct _h5read_handle {
     hid_t master_file;
     int data_file_count;
     h5_data_file *data_files;
+    h5read_dtype dtype;
     size_t frames;  ///< Number of frames in this dataset
     size_t slow;    ///< Pixel dimension of images in the slow direction
     size_t fast;    ///< Pixel dimensions of images in the fast direction
@@ -54,7 +55,12 @@ struct _h5read_handle {
     float oscillation_width;
 };
 
-/// Validate that the HDF5 datatype size matches the expected pixel data size
+/// Validate that the HDF5 datatype size matches the expected pixel data size.
+///
+/// Note that this is only used when trying to extract image data directly,
+/// when using h5read. This is because getting "raw chunks" is assumed to
+/// be done for efficiency/external-handling reasons, so it is up to the
+/// library user to check.
 ///
 /// @param datatype The HDF5 datatype to validate
 static void _validate_data_type_size(hid_t datatype) {
@@ -76,6 +82,10 @@ static void _validate_data_type_size(hid_t datatype) {
         exit(1);
     }
 #endif
+}
+
+h5read_dtype h5read_get_dtype(h5read_handle *obj) {
+    return obj->dtype;
 }
 
 void h5read_free(h5read_handle *obj) {
@@ -336,9 +346,6 @@ void h5read_get_raw_chunk(h5read_handle *obj,
         exit(1);
     }
 
-    hid_t datatype = H5Dget_type(current->dataset);
-    _validate_data_type_size(datatype);
-
     uint32_t filter = 0;
     herr_t err = H5Dread_chunk(current->dataset, H5P_DEFAULT, offset, &filter, data);
     if (err < 0) {
@@ -378,6 +385,10 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
     hid_t space = H5Dget_space(current->dataset);
     hid_t datatype = H5Dget_type(current->dataset);
 
+    // When reading through get_image_into, we assume the API is still
+    // fixed-size and so we want to ensure this data matches.
+    _validate_data_type_size(datatype);
+
     hsize_t block[3] = {1, obj->slow, obj->fast};
     hsize_t offset[3] = {index + current->offset, 0, 0};
 
@@ -412,12 +423,22 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
 void h5read_get_trusted_range(h5read_handle *obj,
                               image_t_type *min,
                               image_t_type *max) {
+    // this is only safe if dtype == image_t_type. The user should
+    // use h5read_get_trusted_range_min/_max instead.
+    assert(obj->dtype == H5READ_DTYPE_UINT16);
     if (min != NULL) {
         *min = obj->trusted_range_min;
     }
     if (max != NULL) {
         *max = obj->trusted_range_max;
     }
+}
+
+int64_t h5read_get_trusted_range_min(h5read_handle *obj) {
+    return obj->trusted_range_min;
+}
+int64_t h5read_get_trusted_range_max(h5read_handle *obj) {
+    return obj->trusted_range_max;
 }
 
 float h5read_get_wavelength(h5read_handle *obj) {
@@ -928,11 +949,35 @@ int unpack_vds(const char *filename, h5_data_file **data_files) {
     return vds_count;
 }
 
+/// Detect the h5read_dtype from an HDF5 datatype
+///
+/// @param datatype The HDF5 datatype to detect
+/// @return The detected h5read_dtype, or H5READ_DTYPE_UNKNOWN if unsupported
+static h5read_dtype _detect_hdf5_dtype(hid_t datatype) {
+    H5T_class_t type_class = H5Tget_class(datatype);
+    size_t size = H5Tget_size(datatype);
+    H5T_sign_t sign = H5Tget_sign(datatype);
+    if (type_class == H5T_INTEGER) {
+        if (sign == H5T_SGN_NONE) {  // unsigned
+            if (size == 1) return H5READ_DTYPE_UINT8;
+            if (size == 2) return H5READ_DTYPE_UINT16;
+            if (size == 4) return H5READ_DTYPE_UINT32;
+        } else {  // signed
+            if (size == 1) return H5READ_DTYPE_INT8;
+            if (size == 2) return H5READ_DTYPE_INT16;
+            if (size == 4) return H5READ_DTYPE_INT32;
+        }
+    } else if (type_class == H5T_FLOAT) {
+        if (size == 4) return H5READ_DTYPE_FLOAT32;
+        if (size == 8) return H5READ_DTYPE_FLOAT64;
+    }
+    return H5READ_DTYPE_UNKNOWN;
+}
+
 void setup_data(h5read_handle *obj) {
     hid_t dataset = obj->data_files[0].dataset;
     hid_t datatype = H5Dget_type(dataset);
-
-    _validate_data_type_size(datatype);
+    obj->dtype = _detect_hdf5_dtype(datatype);
 
     hid_t space = H5Dget_space(dataset);
 
@@ -1167,4 +1212,23 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
         exit(1);
     }
     return handle;
+}
+
+size_t h5read_dtype_size(h5read_dtype dtype) {
+    switch (dtype) {
+    case H5READ_DTYPE_UINT8:
+    case H5READ_DTYPE_INT8:
+        return 1;
+    case H5READ_DTYPE_UINT16:
+    case H5READ_DTYPE_INT16:
+        return 2;
+    case H5READ_DTYPE_UINT32:
+    case H5READ_DTYPE_INT32:
+    case H5READ_DTYPE_FLOAT32:
+        return 4;
+    case H5READ_DTYPE_FLOAT64:
+        return 8;
+    default:
+        return 0;
+    }
 }

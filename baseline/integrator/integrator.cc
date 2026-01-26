@@ -22,6 +22,9 @@
 #include "extent.cc"
 #include "ffs_logger.hpp"
 #include "kabsch.cc"
+#include "math/math_utils.cuh"
+#include "predict.cc"
+#include "sigma_estimation.cc"
 #include "version.hpp"
 
 using json = nlohmann::json;
@@ -84,6 +87,13 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .metavar("σb")
           .scan<'f', float>();
 
+        add_argument("--sigma_estimation.min_bbox_depth", "--min_bbox_depth")
+          .help(
+            "When calculating sigma_m, only use reflections that span at least this "
+            "number of images.")
+          .default_value<int>(6)
+          .scan<'i', int>();
+
         add_argument("output")
           .help("Output file path")
           .metavar("output.h5")
@@ -102,18 +112,8 @@ int main(int argc, char **argv) {
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();
 
-    float sigma_m =
-      parser.get<float>("sigma_m") * (M_PI / 180.0f);  // Convert to radians
-    float sigma_b =
-      parser.get<float>("sigma_b") * (M_PI / 180.0f);  // Convert to radians
     float timeout = parser.get<float>("timeout");
     std::string output_file = parser.get<std::string>("output");
-
-    logger.info("Parameters: sigma_m={:.6f}, sigma_b={:.6f}, timeout={:.1f}, output={}",
-                sigma_m,
-                sigma_b,
-                timeout,
-                output_file);
 
     // Guard against missing files
     if (!std::filesystem::exists(reflection_file)) {
@@ -125,7 +125,12 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // Load reflection data
+    // Load reflection data.
+    // Expectation is that it will be indexed/refined reflection data, with the sigma_b_variance,
+    // sigma_m_variance and spot_extent_z parameters (if processed with the ffs spotfinder), which will
+    // be used to calculate sigma_b and sigma_m. Then prediction code will be run as part of integration.
+    // The input can also be predicted reflection data - in that case we will have to supply
+    // values for sigma_b, sigma_m but won't need to call predict code again.
     logger.info("Loading reflection data from: {}", reflection_file);
     ReflectionTable reflections(reflection_file);
 
@@ -135,24 +140,6 @@ int main(int argc, char **argv) {
         column_names_str += "\n\t- " + name;
     }
     logger.info("Available columns: {}", column_names_str);
-
-    // Extract required columns
-    auto s1_vectors_opt = reflections.column<double>("s1");
-    if (!s1_vectors_opt) {
-        logger.error("Column 's1' not found in reflection data.");
-        return 1;
-    }
-    auto s1_vectors = *s1_vectors_opt;
-
-    auto phi_column_opt = reflections.column<double>("xyzcal.mm");
-    if (!phi_column_opt) {
-        logger.error("Column 'xyzcal.mm' not found for phi positions.");
-        return 1;
-    }
-    auto phi_column = *phi_column_opt;
-
-    size_t num_reflections = s1_vectors.extent(0);
-    logger.info("Processing {} reflections", num_reflections);
 
     // Parse experiment list from JSON
     logger.info("Loading experiment data from: {}", experiment_file);
@@ -201,6 +188,137 @@ int main(int argc, char **argv) {
                 rotation_axis.z());
     logger.info("  Oscillation: start={:.3f}°, width={:.3f}°", osc_start, osc_width);
     logger.info("  Image range: {} to {}", image_range_start, image_range_end);
+
+#pragma region Sigma estimation
+    // If input is a predicted refl, then we require sigma_b, sigma_m as we will not be
+    // able to estimate it from the data
+    // Else the input as an indexed.refl/refined.refl with the sigma variance columns,
+    // then we can calculate sigma_b, sigma_m but will have to also run the predict
+    // code in this program.
+    float sigma_b = 0.0;
+    float sigma_m = 0.0;
+    if (parser.is_used("sigma_m")) {
+        sigma_m = degrees_to_radians(
+          parser.get<float>("sigma_m"));  // Use radians for calculations
+    }
+    if (parser.is_used("sigma_b")) {
+        sigma_b = degrees_to_radians(
+          parser.get<float>("sigma_b"));  // Use radians for calculations
+    }
+
+    // Estimate sigmas
+    auto sigma_b_data = reflections.column<double>("sigma_b_variance");
+    auto sigma_m_data = reflections.column<double>("sigma_m_variance");
+    auto extent_z_data = reflections.column<int>("spot_extent_z");
+    if (sigma_b_data && sigma_m_data && extent_z_data) {
+        int min_bbox_depth = parser.get<int>("sigma_estimation.min_bbox_depth");
+        // Estimate the values from the data, and use if user hasn't specified values.
+        auto [sigma_b_calc, sigma_m_calc, sigma_rmsd_calc] =
+          estimate_sigmas(reflections, expt, min_bbox_depth);
+        // Note we might want to inflate sigma_b_calc to include the rmsd too, but we just report
+        // it for now.
+        if (sigma_m == 0.0) {
+            sigma_m = sigma_m_calc;
+        }
+        if (sigma_b == 0.0) {
+            sigma_b = sigma_b_calc;
+        }
+    }
+    if (sigma_b == 0.0) {
+        logger.error(
+          "No value for sigma_b. This must either be provided as input, or an input "
+          "reflection "
+          "table containing sigma_b_variance must be used.");
+        return 1;
+    }
+    if (sigma_m == 0.0) {
+        logger.error(
+          "No value for sigma_m. This must either be provided as input, or an input "
+          "reflection "
+          "table containing sigma_m_variance and spot_extent_z must be used.");
+        return 1;
+    }
+#pragma endregion Sigma estimation
+
+#pragma region Predict or extract predictions
+    // Determine if the data are predicted based on the reflection flags
+    // If data are not predicted, run predict code.
+    auto flags_column_opt = reflections.column<size_t>("flags");
+    if (!flags_column_opt) {
+        logger.error("Column 'flags' not found.");
+        return 1;
+    }
+    auto flags = *flags_column_opt;
+    bool all_predicted = true;
+    for (int i = 0; i < flags.extent(0); ++i) {
+        auto f = flags(i, 0);
+        if (!(f & predicted_flag)) {
+            all_predicted = false;
+            break;
+        }
+    }
+    if (all_predicted) {
+        logger.info(
+          "Input data have the predict flag set, treating as predicted data.");
+    }
+
+    mdspan_type<double> phi_column;
+    mdspan_type<double> s1_vectors;
+    size_t num_reflections;
+    predicted_data_rotation output_data;  // Define here so that members stay in scope
+    if (!all_predicted) {
+        scan_varying_data sv_data;
+        bool scan_varying = false;
+        std::tie(scan_varying, sv_data) =
+          extract_scan_varying_data(elist_json_obj, scan);
+        if (scan_varying) {
+            logger.info("Monochromatic scan-varying prediction");
+        } else {
+            logger.info("Monochromatic static prediction");
+        }
+
+        double wavelength = beam.get_wavelength();
+        double dmin_min = 0.5 * wavelength;
+        // FIXME: Need a better dmin_default from .expt file (like in DIALS)
+        double dmin_default = dmin_min;
+        double param_dmin = dmin_default;
+        size_t max_threads = std::thread::hardware_concurrency();
+        size_t nthreads = max_threads ? max_threads : 1;
+        int buffer_size = 0;
+        output_data =
+          predict_rotation(expt, sv_data, param_dmin, buffer_size, nthreads);
+        std::size_t num_new_reflections = output_data.panels.size();
+        logger.info("Predicted {} reflections", num_new_reflections);
+
+        s1_vectors =
+          mdspan_type<double>(output_data.s1.data(), output_data.s1.size() / 3, 3);
+        phi_column = mdspan_type<double>(
+          output_data.xyz_mm.data(), output_data.xyz_mm.size() / 3, 3);
+        num_reflections = output_data.enter.size();
+    } else {
+        // is already predicted, so just extract required data.
+        auto s1_vectors_opt = reflections.column<double>("s1");
+        if (!s1_vectors_opt) {
+            logger.error("Column 's1' not found in reflection data.");
+            return 1;
+        }
+        s1_vectors = *s1_vectors_opt;
+        auto phi_column_opt = reflections.column<double>("xyzcal.mm");
+        if (!phi_column_opt) {
+            logger.error("Column 'xyzcal.mm' not found for phi positions.");
+            return 1;
+        }
+        phi_column = *phi_column_opt;
+        num_reflections = s1_vectors.extent(0);
+    }
+
+#pragma endregion Predict or extract predictions
+    // Create a new reflection table for the output.
+    std::vector<std::string> identifiers = reflections.get_identifiers();
+    std::vector<uint64_t> ids = reflections.get_experiment_ids();
+    ReflectionTable integrated_data(ids, identifiers);
+
+    logger.info("Processing {} reflections", num_reflections);
 
     // Compute bounding boxes using baseline CPU algorithms
     logger.info("Computing Kabsch bounding boxes using baseline CPU algorithms...");
@@ -321,7 +439,7 @@ int main(int argc, char **argv) {
     logger.info("Saving results to: {}", output_file);
 
     // Add computed bounding boxes to reflection table
-    reflections.add_column(
+    integrated_data.add_column(
       "baseline_bbox", std::vector<size_t>{num_reflections, 6}, computed_bbox_data);
 
     // Create voxel data table
@@ -341,7 +459,7 @@ int main(int argc, char **argv) {
     }
 
     // Write output files
-    reflections.write(output_file);
+    integrated_data.write(output_file);
     if (actual_voxels > 0) {
         std::string voxel_output =
           output_file.substr(0, output_file.find_last_of('.')) + "_voxels.h5";

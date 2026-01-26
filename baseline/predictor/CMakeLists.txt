@@ -5,7 +5,7 @@ find_package(gemmi CONFIG REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 add_executable(baseline_predictor
-    predict.cc
+    predict_cli.cc
 )
 target_link_libraries(baseline_predictor
     PRIVATE
