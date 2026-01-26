@@ -121,9 +121,12 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
                 radians_to_degrees(rmsd_deviation_radians),
                 count);
     double rmsdz_deviation_radians = std::pow(tot_rmsd_z / count_m, 0.5);
-    logger.info("  σ_m (positional residual) [deg]: {:.6f} on {} reflections with min_bbox_depth={}",
-                radians_to_degrees(rmsdz_deviation_radians),
-                count_m, min_bbox_depth);
+    logger.info(
+      "  σ_m (positional residual) [deg]: {:.6f} on {} reflections with "
+      "min_bbox_depth={}",
+      radians_to_degrees(rmsdz_deviation_radians),
+      count_m,
+      min_bbox_depth);
     // Total sigma given by sqrt of sum of variances
     double total_sigma_b =
       std::pow(std::pow(sigma_b_radians, 2) + std::pow(rmsd_deviation_radians, 2), 0.5);
