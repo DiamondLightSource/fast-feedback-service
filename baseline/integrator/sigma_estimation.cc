@@ -38,6 +38,7 @@ std::pair<double, double> squaredev_in_kabsch_space(const Vector3d &xyzcal,  //m
 std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
                                           Experiment<MonochromaticBeam> &expt,
                                           int min_bbox_depth = 6) {
+    logger.info("Estimation of spot extent parameters (σ_b, σ_m):");
     auto flags = indexed.column<std::size_t>("flags");
     auto &flags_data = flags.value();
     std::vector<bool> selection(flags_data.extent(0), false);
@@ -66,16 +67,16 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     }
     double sigma_b_radians =
       std::pow(sigma_b_total / filtered_sigma_b_data.extent(0), 0.5);
-    logger.info("Internal sigma-b estimate (degrees): {:.6f} on {} reflections",
+    logger.info("  σ_b (spot profile)        [deg]: {:.6f} on {} reflections",
                 radians_to_degrees(sigma_b_radians),
                 filtered_sigma_b_data.extent(0));
     if (n_sigma_m == 0) {
         throw std::runtime_error(
-          "Unable to estimate sigma_m, no reflections above min_bbox_depth.");
+          "Unable to estimate σ_m, no reflections above min_bbox_depth.");
     }
     double sigma_m_radians = std::pow(sigma_m_total / n_sigma_m, 0.5);
     logger.info(
-      "Internal sigma-m estimate (degrees): {:.6f} on {} reflections with "
+      "  σ_m (spot profile)        [deg]: {:.6f} on {} reflections with "
       "min_bbox_depth={}",
       radians_to_degrees(sigma_m_radians),
       n_sigma_m,
@@ -116,21 +117,21 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
           "observed");
     }
     double rmsd_deviation_radians = std::pow(tot_rmsd / count, 0.5);
-    logger.info("Misprediction sigma-b estimate (degrees): {:.6f} on {} reflections",
+    logger.info("  σ_b (positional residual) [deg]: {:.6f} on {} reflections",
                 radians_to_degrees(rmsd_deviation_radians),
                 count);
     double rmsdz_deviation_radians = std::pow(tot_rmsd_z / count_m, 0.5);
-    logger.info("Misprediction sigma-m estimate (degrees): {:.6f} on {} reflections",
+    logger.info("  σ_m (positional residual) [deg]: {:.6f} on {} reflections with min_bbox_depth={}",
                 radians_to_degrees(rmsdz_deviation_radians),
-                count_m);
+                count_m, min_bbox_depth);
     // Total sigma given by sqrt of sum of variances
     double total_sigma_b =
       std::pow(std::pow(sigma_b_radians, 2) + std::pow(rmsd_deviation_radians, 2), 0.5);
     double total_sigma_m = std::pow(
       std::pow(sigma_m_radians, 2) + std::pow(rmsdz_deviation_radians, 2), 0.5);
-    logger.info("Overall sigma-b estimate (degrees): {:.6f}",
+    logger.info("  σ_b (total, quadrature)   [deg]: {:.6f}",
                 radians_to_degrees(total_sigma_b));
-    logger.info("Overall sigma-m estimate (degrees): {:.6f}",
+    logger.info("  σ_m (total, quadrature)   [deg]: {:.6f}",
                 radians_to_degrees(total_sigma_m));
     return std::make_pair(total_sigma_b, total_sigma_m);
 }
