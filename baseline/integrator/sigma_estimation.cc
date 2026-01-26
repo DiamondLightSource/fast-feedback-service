@@ -6,7 +6,7 @@
 
 #include "ffs_logger.hpp"
 
-constexpr size_t indexed_flag = (1 << 2);  // 4
+constexpr size_t indexed_flag = (1 << 2);             // 4
 constexpr size_t used_in_refinement_flag = (1 << 3);  // 8
 
 /*
@@ -51,20 +51,19 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
             break;
         }
     }
-    if (any_used_in_refinement){
-      for (int i = 0; i < flags_data.size(); ++i) {
-        if (flags_data(i, 0) & used_in_refinement_flag) {
-            selection[i] = true;
+    if (any_used_in_refinement) {
+        for (int i = 0; i < flags_data.size(); ++i) {
+            if (flags_data(i, 0) & used_in_refinement_flag) {
+                selection[i] = true;
+            }
         }
-      }
+    } else {
+        for (int i = 0; i < flags_data.size(); ++i) {
+            if (flags_data(i, 0) & indexed_flag) {
+                selection[i] = true;
+            }
+        }
     }
-    else {
-      for (int i = 0; i < flags_data.size(); ++i) {
-        if (flags_data(i, 0) & indexed_flag) {
-            selection[i] = true;
-        }
-      }
-    }                      
 
     ReflectionTable filtered = indexed.select(selection);
     auto filtered_sigma_b = filtered.column<double>("sigma_b_variance");
