@@ -7,7 +7,8 @@
 #include "ffs_logger.hpp"
 
 constexpr size_t indexed_flag = (1 << 2);  // 4
-//constexpr size_t used_in_refinement_flag = (1 << 3);  // 8
+constexpr size_t used_in_refinement_flag = (1 << 3);  // 8
+
 /*
 Function to calculate the square deviation in kabsch space between
 the predicted and observed positions.
@@ -42,12 +43,29 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     auto flags = indexed.column<std::size_t>("flags");
     auto &flags_data = flags.value();
     std::vector<bool> selection(flags_data.extent(0), false);
-    for (int i = 0; i < flags_data.size(); ++i) {
-        // FIXME - once refinement fully implemented, use used_in_refinement_flag instead.
+    bool any_used_in_refinement = false;
+    for (int i = 0; i < flags_data.extent(0); ++i) {
+        auto f = flags_data(i, 0);
+        if (f & used_in_refinement_flag) {
+            any_used_in_refinement = true;
+            break;
+        }
+    }
+    if (any_used_in_refinement){
+      for (int i = 0; i < flags_data.size(); ++i) {
+        if (flags_data(i, 0) & used_in_refinement_flag) {
+            selection[i] = true;
+        }
+      }
+    }
+    else {
+      for (int i = 0; i < flags_data.size(); ++i) {
         if (flags_data(i, 0) & indexed_flag) {
             selection[i] = true;
         }
-    }
+      }
+    }                      
+
     ReflectionTable filtered = indexed.select(selection);
     auto filtered_sigma_b = filtered.column<double>("sigma_b_variance");
     auto &filtered_sigma_b_data = filtered_sigma_b.value();
