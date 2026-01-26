@@ -271,10 +271,8 @@ int main(int argc, char **argv) {
     if (sigma_b_data && sigma_m_data && extent_z_data) {
         int min_bbox_depth = parser.get<int>("sigma_estimation.min_bbox_depth");
         // Estimate the values from the data, and use if user hasn't specified values.
-        auto [sigma_b_calc, sigma_m_calc, sigma_rmsd_calc] =
+        auto [sigma_b_calc, sigma_m_calc] =
           estimate_sigmas(reflections, expt, min_bbox_depth);
-        // Note we might want to inflate sigma_b_calc to include the rmsd too, but we just report
-        // it for now.
         if (sigma_m == 0.0) {
             sigma_m = sigma_m_calc;
         }
