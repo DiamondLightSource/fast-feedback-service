@@ -370,28 +370,6 @@ int main(int argc, char **argv) {
 
 #pragma endregion Predict or extract predictions
 
-    // TODO: Improve this hacky conversion from double to scalar_t (float)
-    std::vector<scalar_t> s1_vectors_converted_data(s1_vectors.extent(0) * 3);
-    mdspan_type<scalar_t> s1_vectors_converted(
-      s1_vectors_converted_data.data(), s1_vectors.extent(0), 3);
-    //size_t num_reflections = s1_vectors.extent(0);
-
-    // Direct pointer access conversion loop -> compiler should optimize this
-    const double *src = s1_vectors.data_handle();
-    scalar_t *dst = s1_vectors_converted_data.data();
-    for (size_t i = 0; i < num_reflections * 3; ++i) {
-        dst[i] = static_cast<scalar_t>(src[i]);
-    }
-
-    std::vector<scalar_t> phi_positions_converted_data(phi_column.extent(0));
-    // mdspan_type<scalar_t> phi_positions_converted(phi_positions_converted_data.data(), phi_column.extent(0));
-    // Direct pointer access conversion loop -> compiler should optimize this
-    src = phi_column.data_handle();
-    dst = phi_positions_converted_data.data();
-    for (size_t i = 0; i < phi_column.extent(0); ++i) {
-        dst[i] = static_cast<scalar_t>(src[i]);
-    }
-
 #pragma region Image Reading and Threading
     // Now set up for multi-threaded image reading and processing
     logger.info("Setting up image reading and threading");
