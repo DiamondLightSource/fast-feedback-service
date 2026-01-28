@@ -489,7 +489,7 @@ int main(int argc, char **argv) {
 
     double time_waiting_for_images = 0.0;
 
-    // Prepare GPU data for Kabsch transform
+#pragma region Prep GPU Data Buffers
     // Get detector d_matrix and flatten for GPU
     Eigen::Matrix3d d_matrix_eigen = panel.get_d_matrix();
     std::vector<scalar_t> d_matrix_flat(9);
@@ -548,7 +548,10 @@ int main(int argc, char **argv) {
     scalar_t wavelength = static_cast<scalar_t>(wl);
     scalar_t osc_start_scalar = static_cast<scalar_t>(osc_start);
     scalar_t osc_width_scalar = static_cast<scalar_t>(osc_width);
+#pragma endregion Prep GPU Data Buffers
 
+#pragma region Thread launch
+    logger.info("Starting image reading and processing threads");
     // Spawn the reader threads
     std::vector<std::jthread> threads;
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
@@ -722,6 +725,7 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+#pragma Thread launch
 #pragma endregion Application Entry
 
 #pragma region Bbox computation
