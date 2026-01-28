@@ -40,6 +40,7 @@
 #include "cuda_common.hpp"
 #include "integrator.cuh"
 #include "kabsch.cuh"
+#include "math/math_utils.cuh"
 
 using namespace fastvec;
 
@@ -220,8 +221,8 @@ void compute_kabsch_transform(const void *d_image,
     constexpr int BLOCK_X = 32;
     constexpr int BLOCK_Y = 16;
     dim3 blockDim(BLOCK_X, BLOCK_Y);
-    dim3 gridDim((width + 1 + blockDim.x - 1) / blockDim.x,
-                 (height + 1 + blockDim.y - 1) / blockDim.y);
+    // Launch grid covers entire image + 1 for corner sampling
+    dim3 gridDim(ceil_div(width + 1u, blockDim.x), ceil_div(height + 1u, blockDim.y));
 
     // TODO: Launch the kernel
     // kabsch_transform_image<<<gridDim, blockDim, 0, stream>>>(
