@@ -207,7 +207,19 @@ void compute_kabsch_transform(const void *d_image,
     // 7. Store the result (eps, s1_len) - output storage TBD
 
     // Configure kernel launch parameters
-    dim3 blockDim(16, 16);
+
+    /*
+     * Wide but small blocks tend to work well for 2D image processing
+     * as they provide good memory coalescing along rows.
+     * 
+     * Alternatively, could experiment with square blocks (16x16)
+     * for more balanced workload distribution and better cache usage
+     * and occupancy.
+    */
+
+    constexpr int BLOCK_X = 32;
+    constexpr int BLOCK_Y = 16;
+    dim3 blockDim(BLOCK_X, BLOCK_Y);
     dim3 gridDim((width + 1 + blockDim.x - 1) / blockDim.x,
                  (height + 1 + blockDim.y - 1) / blockDim.y);
 
