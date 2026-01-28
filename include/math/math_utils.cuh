@@ -51,15 +51,16 @@ DEVICE_HOST scalar_type degrees_to_radians(scalar_type degrees) {
  * floating-point conversion. Equivalent to (n + d - 1) / d, which
  * rounds up to the nearest integer quotient.
  * 
- * @tparam T Integer type (constrained by std::integral concept)
+ * @tparam T Integer type
  * @param n Numerator
  * @param d Denominator (must be > 0)
  * @return Ceiling of n/d
  * 
  * @example ceil_div(15, 4) returns 4, whereas 15/4 returns 3
  */
-template <std::integral T>
+template <typename T>
 DEVICE_HOST constexpr T ceil_div(T n, T d) {
+    static_assert(std::is_integral_v<T>, "ceil_div requires an integer type");
     return (n + d - 1) / d;
 }
 
