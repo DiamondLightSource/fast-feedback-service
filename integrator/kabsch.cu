@@ -40,8 +40,6 @@
 #include "cuda_common.hpp"
 #include "integrator.cuh"
 #include "kabsch.cuh"
-#include "math/device_precision.cuh"
-#include "math/vector3d.cuh"
 
 using namespace fastvec;
 
@@ -157,6 +155,78 @@ __global__ void kabsch_transform(const Vector3D *__restrict__ s_pixels,
     s1_len_array[i] = s1_len;
 }
 
+/**
+ * @brief Host wrapper function for image-based Kabsch computation
+ * 
+ * Launches a kernel over the entire image grid (width+1 x height+1 for corners).
+ * Each thread checks if its pixel falls within any reflection's bounding box,
+ * and if so, computes the Kabsch transform.
+ */
+void compute_kabsch_transform(const void *d_image,
+                              size_t image_pitch,
+                              uint32_t width,
+                              uint32_t height,
+                              int image_num,
+                              const scalar_t *d_matrix,
+                              scalar_t wavelength,
+                              scalar_t osc_start,
+                              scalar_t osc_width,
+                              int image_range_start,
+                              Vector3D s0,
+                              Vector3D rot_axis,
+                              const Vector3D *d_s1_vectors,
+                              const scalar_t *d_phi_values,
+                              const int *d_bboxes,
+                              const size_t *d_reflection_indices,
+                              size_t num_reflections_this_image,
+                              cudaStream_t stream) {
+    // TODO: Implement the image-based kernel
+    //
+    // The kernel needs to:
+    // 1. Compute pixel coordinates (x, y) from thread index
+    //    - Grid size should be (width+1) x (height+1) for corner sampling
+    //
+    // 2. For each reflection touching this image (loop over d_reflection_indices):
+    //    a. Load bounding box from d_bboxes[refl_idx * 6 + {0..5}]
+    //    b. Check if (x, y, image_num) is within the bounding box
+    //    c. If not inside any bbox, early exit
+    //
+    // 3. If inside a bbox, shift to corner coordinates (x - 0.5, y - 0.5)
+    //
+    // 4. Compute s_pixel from pixel coordinates:
+    //    - lab_coord = d_matrix * (x_corner, y_corner, 1)  (3x3 matrix multiply)
+    //    - s_pixel = normalize(lab_coord) / wavelength
+    //
+    // 5. Compute phi_pixel from image_num:
+    //    - phi_pixel = osc_start + (image_num - image_range_start + 0.5) * osc_width
+    //
+    // 6. Call pixel_to_kabsch() with:
+    //    - s0, s1_c (from d_s1_vectors[refl_idx]), phi_c (from d_phi_values[refl_idx])
+    //    - s_pixel, phi_pixel, rot_axis
+    //
+    // 7. Store the result (eps, s1_len) - output storage TBD
+
+    // Configure kernel launch parameters
+    dim3 blockDim(16, 16);
+    dim3 gridDim((width + 1 + blockDim.x - 1) / blockDim.x,
+                 (height + 1 + blockDim.y - 1) / blockDim.y);
+
+    // TODO: Launch the kernel
+    // kabsch_transform_image<<<gridDim, blockDim, 0, stream>>>(
+    //     d_image, image_pitch, width, height, image_num,
+    //     d_matrix, wavelength, osc_start, osc_width, image_range_start,
+    //     s0, rot_axis, d_s1_vectors, d_phi_values, d_bboxes,
+    //     d_reflection_indices, num_reflections_this_image);
+
+    // Check for kernel launch errors
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error(
+          fmt::format("Kernel launch failed: {}", cudaGetErrorString(err)));
+    }
+}
+
+// DEPRECATED
 /**
  * @brief Host wrapper function for voxel Kabsch computation
  * 

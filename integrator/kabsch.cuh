@@ -29,6 +29,51 @@
 #include "math/vector3d.cuh"
 
 /**
+ * @brief Host wrapper function for image-based Kabsch computation
+ * 
+ * Launches a kernel over the entire image grid to compute Kabsch coordinates
+ * for pixels that fall within reflection bounding boxes.
+ * 
+ * @param d_image Device pointer to image data (pitched allocation)
+ * @param image_pitch Pitch in bytes of the device image allocation
+ * @param width Image width in pixels
+ * @param height Image height in pixels
+ * @param image_num Current image/frame number
+ * @param d_matrix Detector matrix (3x3 flattened) for pixel to lab conversion
+ * @param wavelength Beam wavelength for s_pixel normalization
+ * @param osc_start Oscillation start angle (radians)
+ * @param osc_width Oscillation width per image (radians)
+ * @param image_range_start First image number in the scan
+ * @param s0 Incident beam vector
+ * @param rot_axis Rotation axis vector
+ * @param d_s1_vectors Device array of s1_c vectors for each reflection
+ * @param d_phi_values Device array of phi_c values for each reflection
+ * @param d_bboxes Device array of bounding boxes [x_min, x_max, y_min, y_max, z_min, z_max] per reflection
+ * @param d_reflection_indices Device array of reflection indices for this image
+ * @param num_reflections_this_image Number of reflections touching this image
+ * @param stream CUDA stream for async execution
+ */
+void compute_kabsch_transform(const void *d_image,
+                              size_t image_pitch,
+                              uint32_t width,
+                              uint32_t height,
+                              int image_num,
+                              const scalar_t *d_matrix,
+                              scalar_t wavelength,
+                              scalar_t osc_start,
+                              scalar_t osc_width,
+                              int image_range_start,
+                              fastvec::Vector3D s0,
+                              fastvec::Vector3D rot_axis,
+                              const fastvec::Vector3D *d_s1_vectors,
+                              const scalar_t *d_phi_values,
+                              const int *d_bboxes,
+                              const size_t *d_reflection_indices,
+                              size_t num_reflections_this_image,
+                              cudaStream_t stream);
+
+// DEPRECATED
+/**
  * @brief Host wrapper function for voxel Kabsch computation
  * 
  * @param h_s_pixels Host array of s_pixel vectors (different for each voxel)

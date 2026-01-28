@@ -489,6 +489,66 @@ int main(int argc, char **argv) {
 
     double time_waiting_for_images = 0.0;
 
+    // Prepare GPU data for Kabsch transform
+    // Get detector d_matrix and flatten for GPU
+    Eigen::Matrix3d d_matrix_eigen = panel.get_d_matrix();
+    std::vector<scalar_t> d_matrix_flat(9);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            d_matrix_flat[i * 3 + j] = static_cast<scalar_t>(d_matrix_eigen(i, j));
+        }
+    }
+
+    // Convert s1_vectors to Vector3D array for GPU
+    std::vector<fastvec::Vector3D> s1_vectors_vec(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        s1_vectors_vec[i] =
+          fastvec::make_vector3d(static_cast<scalar_t>(s1_vectors(i, 0)),
+                                 static_cast<scalar_t>(s1_vectors(i, 1)),
+                                 static_cast<scalar_t>(s1_vectors(i, 2)));
+    }
+
+    // phi_positions_converted_data already contains phi values (column index 2 of xyzcal.mm)
+    // Need to extract just the phi component (3rd column)
+    std::vector<scalar_t> phi_values_vec(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        phi_values_vec[i] = static_cast<scalar_t>(phi_column(i, 2));
+    }
+
+    // Flatten bounding boxes to int array [x_min, x_max, y_min, y_max, z_min, z_max] per reflection
+    std::vector<int> bboxes_flat(num_reflections * 6);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        bboxes_flat[i * 6 + 0] = computed_bboxes[i].x_min;
+        bboxes_flat[i * 6 + 1] = computed_bboxes[i].x_max;
+        bboxes_flat[i * 6 + 2] = computed_bboxes[i].y_min;
+        bboxes_flat[i * 6 + 3] = computed_bboxes[i].y_max;
+        bboxes_flat[i * 6 + 4] = computed_bboxes[i].z_min;
+        bboxes_flat[i * 6 + 5] = computed_bboxes[i].z_max;
+    }
+
+    // Allocate and copy GPU buffers (shared across all threads)
+    DeviceBuffer<scalar_t> d_d_matrix(9);
+    DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
+    DeviceBuffer<scalar_t> d_phi_values(num_reflections);
+    DeviceBuffer<int> d_bboxes(num_reflections * 6);
+
+    d_d_matrix.assign(d_matrix_flat.data());
+    d_s1_vectors.assign(s1_vectors_vec.data());
+    d_phi_values.assign(phi_values_vec.data());
+    d_bboxes.assign(bboxes_flat.data());
+
+    // Convert beam parameters to Vector3D
+    fastvec::Vector3D s0_vec = fastvec::make_vector3d(static_cast<scalar_t>(s0.x()),
+                                                      static_cast<scalar_t>(s0.y()),
+                                                      static_cast<scalar_t>(s0.z()));
+    fastvec::Vector3D rot_axis_vec =
+      fastvec::make_vector3d(static_cast<scalar_t>(rotation_axis.x()),
+                             static_cast<scalar_t>(rotation_axis.y()),
+                             static_cast<scalar_t>(rotation_axis.z()));
+    scalar_t wavelength = static_cast<scalar_t>(wl);
+    scalar_t osc_start_scalar = static_cast<scalar_t>(osc_start);
+    scalar_t osc_width_scalar = static_cast<scalar_t>(osc_width);
+
     // Spawn the reader threads
     std::vector<std::jthread> threads;
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
@@ -602,10 +662,33 @@ int main(int argc, char **argv) {
                                   stream);
                 cuda_throw_error();
 
-                // TODO: image processing here
-                // device_image.get() contains the image data on the GPU (pitched allocation)
-                // host_image.get() contains the decompressed pixel data in pinned host memory
-                // reflections_by_image[image_num] contains the reflection IDs for this image
+                // Get reflection indices for this image and copy to device
+                const auto &refl_indices = reflections_by_image[image_num];
+                size_t num_refls_this_image = refl_indices.size();
+
+                // Allocate per-image device buffer for reflection indices
+                DeviceBuffer<size_t> d_reflection_indices(num_refls_this_image);
+                d_reflection_indices.assign(refl_indices.data());
+
+                // Launch Kabsch transform kernel for this image
+                compute_kabsch_transform(device_image.get(),
+                                         device_image.pitch_bytes(),
+                                         width,
+                                         height,
+                                         image_num,
+                                         d_d_matrix.data(),
+                                         wavelength,
+                                         osc_start_scalar,
+                                         osc_width_scalar,
+                                         image_range_start,
+                                         s0_vec,
+                                         rot_axis_vec,
+                                         d_s1_vectors.data(),
+                                         d_phi_values.data(),
+                                         d_bboxes.data(),
+                                         d_reflection_indices.data(),
+                                         num_refls_this_image,
+                                         stream);
 
                 logger.trace("Thread {} loaded image {}", thread_id, image_num);
                 completed_images += 1;
