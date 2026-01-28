@@ -49,6 +49,26 @@ using namespace std::chrono_literals;
 using mdspan_2d =
   std::experimental::mdspan<scalar_t, std::experimental::dextents<size_t, 2>>;
 
+// Conversion helpers for Eigen to CUDA vector types
+/**
+ * @brief Convert Eigen::Vector3d to fastvec::Vector3D
+ */
+inline fastvec::Vector3D to_vector3d(const Eigen::Vector3d &v) {
+    return fastvec::make_vector3d(static_cast<scalar_t>(v.x()),
+                                  static_cast<scalar_t>(v.y()),
+                                  static_cast<scalar_t>(v.z()));
+}
+
+/**
+ * @brief Convert mdspan row to fastvec::Vector3D
+ */
+template <typename MdspanType>
+inline fastvec::Vector3D to_vector3d(const MdspanType &mdspan, size_t row) {
+    return fastvec::make_vector3d(static_cast<scalar_t>(mdspan(row, 0)),
+                                  static_cast<scalar_t>(mdspan(row, 1)),
+                                  static_cast<scalar_t>(mdspan(row, 2)));
+}
+
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
 
@@ -502,10 +522,7 @@ int main(int argc, char **argv) {
     // Convert s1_vectors to Vector3D array for GPU
     std::vector<fastvec::Vector3D> s1_vectors_vec(num_reflections);
     for (size_t i = 0; i < num_reflections; ++i) {
-        s1_vectors_vec[i] =
-          fastvec::make_vector3d(static_cast<scalar_t>(s1_vectors(i, 0)),
-                                 static_cast<scalar_t>(s1_vectors(i, 1)),
-                                 static_cast<scalar_t>(s1_vectors(i, 2)));
+        s1_vectors_vec[i] = to_vector3d(s1_vectors, i);
     }
 
     // phi_positions_converted_data already contains phi values (column index 2 of xyzcal.mm)
@@ -538,13 +555,8 @@ int main(int argc, char **argv) {
     d_bboxes.assign(bboxes_flat.data());
 
     // Convert beam parameters to Vector3D
-    fastvec::Vector3D s0_vec = fastvec::make_vector3d(static_cast<scalar_t>(s0.x()),
-                                                      static_cast<scalar_t>(s0.y()),
-                                                      static_cast<scalar_t>(s0.z()));
-    fastvec::Vector3D rot_axis_vec =
-      fastvec::make_vector3d(static_cast<scalar_t>(rotation_axis.x()),
-                             static_cast<scalar_t>(rotation_axis.y()),
-                             static_cast<scalar_t>(rotation_axis.z()));
+    fastvec::Vector3D s0_vec = to_vector3d(s0);
+    fastvec::Vector3D rot_axis_vec = to_vector3d(rotation_axis);
     scalar_t wavelength = static_cast<scalar_t>(wl);
     scalar_t osc_start_scalar = static_cast<scalar_t>(osc_start);
     scalar_t osc_width_scalar = static_cast<scalar_t>(osc_width);
