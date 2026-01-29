@@ -241,6 +241,52 @@ void compute_kabsch_transform(const void *d_image,
 
 // DEPRECATED
 /**
+ * @brief CUDA kernel to compute pixel-to-Kabsch transformations for
+ * multiple voxels
+ * 
+ * This kernel transforms voxel coordinates from reciprocal space to
+ * Kabsch coordinates.
+ * Each thread processes one voxel, computing its Kabsch coordinates
+ * relative to a reflection center.
+ * 
+ * @param s_pixels Array of s_pixel vectors (different for each voxel)
+ * @param phi_pixels Array of phi_pixel angles (different for each voxel)
+ * @param s1_c Reflection center s1 vector (same for all voxels in this batch)
+ * @param phi_c Reflection center phi angle (same for all voxels in this batch)
+ * @param s0 Initial scattering vector
+ * @param rot_axis Rotation axis vector
+ * @param eps_array Output array for Kabsch coordinates
+ * @param s1_len_array Output array for s1 lengths
+ * @param n Number of voxels to process
+ */
+__global__ void kabsch_transform_flat(const Vector3D *__restrict__ s_pixels,
+                                      const scalar_t *__restrict__ phi_pixels,
+                                      Vector3D s1_c,
+                                      scalar_t phi_c,
+                                      Vector3D s0,
+                                      Vector3D rot_axis,
+                                      Vector3D *eps_array,
+                                      scalar_t *s1_len_array,
+                                      size_t n) {
+    // Calculate global thread index
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;  // Bounds check
+
+    // Get input data for this voxel
+    Vector3D s_pixel = s_pixels[i];
+    scalar_t phi_pixel = phi_pixels[i];
+
+    // Compute Kabsch transformation using the device function
+    scalar_t s1_len;
+    Vector3D eps =
+      pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_pixel, rot_axis, s1_len);
+
+    // Store results
+    eps_array[i] = eps;
+    s1_len_array[i] = s1_len;
+}
+
+/**
  * @brief Host wrapper function for voxel Kabsch computation
  * 
  * @param h_s_pixels Host array of s_pixel vectors (different for each voxel)
@@ -277,15 +323,15 @@ void compute_kabsch_transform(const Vector3D *h_s_pixels,
     int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
     // Launch kernel
-    kabsch_transform<<<blocksPerGrid, threadsPerBlock>>>(d_s_pixels.data(),
-                                                         d_phi_pixels.data(),
-                                                         s1_c,
-                                                         phi_c,
-                                                         s0,
-                                                         rot_axis,
-                                                         d_eps.data(),
-                                                         d_s1_len.data(),
-                                                         n);
+    kabsch_transform_flat<<<blocksPerGrid, threadsPerBlock>>>(d_s_pixels.data(),
+                                                              d_phi_pixels.data(),
+                                                              s1_c,
+                                                              phi_c,
+                                                              s0,
+                                                              rot_axis,
+                                                              d_eps.data(),
+                                                              d_s1_len.data(),
+                                                              n);
 
     // Check for kernel launch errors
     cudaError_t err = cudaGetLastError();
