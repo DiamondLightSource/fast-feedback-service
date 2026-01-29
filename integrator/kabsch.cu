@@ -153,8 +153,11 @@ __global__ void kabsch_transform(const void *d_image,
                                  const size_t *d_reflection_indices,
                                  size_t num_reflections_this_image) {
     // Calculate global thread index
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n) return;  // Bounds check
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // Bounds guard
+    if (x >= width + 1 || y >= height + 1) return;
 
     // Get input data for this voxel
     Vector3D s_pixel = s_pixels[i];
@@ -196,10 +199,6 @@ void compute_kabsch_transform(const void *d_image,
                               size_t num_reflections_this_image,
                               cudaStream_t stream) {
     // TODO: Implement the image-based kernel
-    //
-    // The kernel needs to:
-    // 1. Compute pixel coordinates (x, y) from thread index
-    //    - Grid size should be (width+1) x (height+1) for corner sampling
     //
     // 2. For each reflection touching this image (loop over d_reflection_indices):
     //    a. Load bounding box from d_bboxes[refl_idx * 6 + {0..5}]
