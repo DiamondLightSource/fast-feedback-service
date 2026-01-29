@@ -13,8 +13,8 @@ project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# Option to use 32-bit pixel data instead of 16-bit
-option(PIXEL_DATA_32BIT "Use 32-bit pixel data instead of 16-bit" OFF)
+# Option to use double precision for CUDA calculations
+option(USE_DOUBLE_PRECISION "Use double precision for CUDA calculations" OFF)
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
@@ -31,25 +31,28 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif()
 
 # Dependency fetching
+# Find packages that are in conda environment
+find_package(fmt REQUIRED)
+find_package(spdlog REQUIRED)
+find_package(nlohmann_json 3.11.3 REQUIRED)
+find_package(Eigen3 3.4 REQUIRED)
+
+# Dependency fetching - only for packages NOT in conda
 set(FETCHCONTENT_QUIET OFF)
 include(FetchContent)
+
 FetchContent_Declare(
   nanobind
   GIT_REPOSITORY https://github.com/wjakob/nanobind.git
   GIT_TAG        v2.8.0
 )
 FetchContent_MakeAvailable(nanobind)
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
-    FIND_PACKAGE_ARGS
-)
-FetchContent_MakeAvailable(nlohmann_json)
+
 FetchContent_Declare(
     argparse
     GIT_REPOSITORY  https://github.com/ndevenish/argparse
     GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
+    EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(argparse)
 
@@ -68,8 +71,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(ffbidx)
 
-find_package(fmt REQUIRED)
-find_package(spdlog REQUIRED)
+# GTest - try find_package first, fallback to FetchContent
+find_package(GTest QUIET)
+if(NOT GTest_FOUND AND NOT TARGET GTest::gtest_main)
+    FetchContent_Declare(
+        GTest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+        EXCLUDE_FROM_ALL
+    )
+    FetchContent_MakeAvailable(GTest)
+endif()
 
 # Handle inclusion of dx2 dependency using git submodule
 set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
@@ -88,15 +100,15 @@ project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
-# Create a header-only interface library for compile definitions
+# Create an interface library for compile definitions
 add_library(compile_options INTERFACE)
 
 # Add compile definitions if enabled
-if(PIXEL_DATA_32BIT)
-    target_compile_definitions(compile_options INTERFACE PIXEL_DATA_32BIT)
-    message(STATUS "Building with 32-bit pixel data support")
+if(USE_DOUBLE_PRECISION)
+    target_compile_definitions(compile_options INTERFACE USE_DOUBLE_PRECISION)
+    message(STATUS "Building with double precision")
 else()
-    message(STATUS "Building with 16-bit pixel data support")
+    message(STATUS "Building with single precision")
 endif()
 
 # Make a common C++ library for shared code
@@ -147,6 +159,7 @@ enable_testing()
 add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
+add_subdirectory(integrator)
 
 # define a ssx_index 'executable' that actually just runs the python code (for style consistency)
 configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx_index COPYONLY)

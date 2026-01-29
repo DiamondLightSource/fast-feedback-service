@@ -6,13 +6,15 @@ dependencies:
   - bitshuffle=0.5.2
   - boost-cpp=1.85.0
   - cmake=4.1.1
-  - compilers=1.10.0
+  - compilers
   - dials-data=2.4.134
+  - eigen=3.4.0
   - fmt=11.2.0
   - gemmi=0.7.3
   - gtest=1.17.0
   - hdf5=1.14.6
   - hdf5-external-filter-plugins=0.1.0
+  - nlohmann_json=3.12.0
   - pre-commit=4.3.0
   - pydantic=2.12.3
   - pytest=8.4.2

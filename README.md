@@ -92,25 +92,6 @@ make                        # Compile the code
 ```
 This will create the executable `spotfinder` in the [`build/bin/`] directory.
 
-**Configuring pixel data precision:**
-By default, the service is compiled to handle 16-bit pixel data. For detectors that produce 32-bit pixel data, you can enable 32-bit support using the `PIXEL_DATA_32BIT` option.
-
-*Using ccmake (recommended):*
-```bash
-cd build
-ccmake ..                   # Opens an interactive configuration interface
-# Navigate to PIXEL_DATA_32BIT and toggle it to ON
-# Press 'c' to configure, then 'g' to generate
-make                        # Compile with the new settings
-```
-
-*Using cmake command line:*
-```bash
-cd build
-cmake -DPIXEL_DATA_32BIT=ON ..  # Enable 32-bit pixel data support
-make                            # Compile with the new settings
-```
-
 ### Installing the python module (for indexing)
 This project defines a small python module, to provide functionality for indexing.
 To run indexing code, this needs to be installed into the python environment by

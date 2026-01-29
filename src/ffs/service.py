@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -28,7 +29,7 @@ from ffs.ssx_index import GPUIndexer
 logger = logging.getLogger(__name__)
 logger.level = logging.DEBUG
 
-DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
+DEFAULT_QUEUE_NAME = os.getenv("FFS_QUEUE", "per_image_analysis.gpu")
 
 
 class PiaRequest(BaseModel):
@@ -163,12 +164,24 @@ def _setup_rich_logging(level=logging.DEBUG):
         # We also want to lower the output level, so pin this to the existing
         handler.setLevel(rootLogger.level)
 
-    rootLogger.handlers.append(
-        RichHandler(level=level, log_time_format="[%Y-%m-%d %H:%M:%S]")
-    )
+    # Check if we're in a TTY (interactive) or not (k8s container)
+    is_tty = sys.stdout.isatty()
+
+    if is_tty:
+        # Interactive mode: use RichHandler with formatting
+        rootLogger.handlers.append(
+            RichHandler(level=level, log_time_format="[%Y-%m-%d %H:%M:%S]")
+        )
+    else:
+        # Container mode: simple output for Graylog
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(level)
+        # Simple format: just the message
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        rootLogger.handlers.append(handler)
 
 
-def _find_spotfinder() -> Path:
+def _find_spotfinder() -> tuple[Path, Path]:
     """
     Finds and sets the path to the spotfinder executable
 
@@ -180,9 +193,14 @@ def _find_spotfinder() -> Path:
     # Try to get the path from the environment
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
 
+    if not spotfinder_path:
+        spotfinder_path = shutil.which("spotfinder")
+
     # If environment variable is not set, check for directories
     if spotfinder_path is None:
-        logger.warning("SPOTFINDER environment variable not set")
+        logger.warning(
+            "SPOTFINDER environment variable not set, and cannot find in PATH"
+        )
 
         for path in {"build", "_build", "."}:
             if Path(path).exists():
@@ -209,7 +227,17 @@ def _find_spotfinder() -> Path:
         sys.exit(1)
 
     logger.info(f"Using spotfinder: {spotfinder_path}")
-    return spotfinder_path
+
+    # Make sure that we have a spotfinder32 at the same location
+    spotfinder_32 = spotfinder_path.parent / "spotfinder32"
+    if not spotfinder_32.is_file():
+        sys.exit("Could not find spotfinder32 variant")
+    if subprocess.run(
+        [spotfinder_32, "--list-devices"], capture_output=True, text=True
+    ).returncode:
+        sys.exit("Error: Found spotfinder32 but failed to enumerate devices")
+
+    return (spotfinder_path, spotfinder_32)
 
 
 class MessageOrderResolver:
@@ -260,7 +288,7 @@ class MessageOrderResolver:
 class GPUPerImageAnalysis(CommonService):
     _service_name = "GPU Per-Image-Analysis"
     _logger_name = "spotfinder.service"
-    _spotfinder_executable: Path
+    _spotfinder_executable: tuple[Path, Path]
     _spotfind_proc: subprocess.Popen | None = None
 
     def initializing(self):
@@ -357,23 +385,22 @@ class GPUPerImageAnalysis(CommonService):
         if parameters.filename.is_absolute():
             data_path = parameters.filename
         else:
-            # If we don't have a base path, then assume we don't have GPU mode turned on
-            # Ideally this would be tested directly, but I need to work out how to get PV
-            # access on the gpu-epu
-            if not Path(base_path).is_dir():
+            # If we have a base path directory (e.g., /dev/shm mode), use it
+            if Path(base_path).is_dir():
+                # Form the expected path for this dataset
+                data_path = base_path / parameters.filename
+            else:
+                # Otherwise, treat filename as relative to current directory or an H5 file path
                 self.log.info(
-                    f"Not running GPU analysis as parent dir {base_path} does not exist; Is DAQ in /dev/shm mode?"
+                    f"Base path {base_path} does not exist; treating {parameters.filename} as direct file path"
                 )
-                rw.transport.ack(header)
-                return
-
-            # Form the expected path for this dataset
-            data_path = base_path / parameters.filename
+                data_path = parameters.filename
 
         # Debugging: Reject messages that are "old", if the files are not on disk. This
         # should help avoid sitting spending hours running through all messages (meaning
         # that a manual purge is required).
-        if parameters.startTime:
+        # Only apply this check for /dev/shm directories (not for H5 files)
+        if parameters.startTime and Path(base_path).is_dir():
             age_seconds = (datetime.now() - parameters.startTime).total_seconds()
             if age_seconds > 60 and not data_path.is_dir():
                 self.log.warning(
@@ -390,7 +417,7 @@ class GPUPerImageAnalysis(CommonService):
 
         # Now run the spotfinder
         command = [
-            str(self._spotfinder_executable),
+            str(self._spotfinder_executable[0]),
             str(data_path),
             "--images",
             str(parameters.number_of_frames),
@@ -469,16 +496,20 @@ class GPUPerImageAnalysis(CommonService):
         # Run the spotfinder
         self._spotfind_proc = subprocess.Popen(command, pass_fds=[write_fd])
 
-        # Close the write end of the pipe (for this process)
-        # spotfind_process will hold the write end open until it is done
-        # This will allow the read end to detect the end of the output
-        os.close(write_fd)
-
         # Start the read thread
         read_and_send_data_thread.start()
 
         # Wait for the process to finish
-        self._spotfind_proc.wait()
+        if self._spotfind_proc.wait() == 32:
+            self.log.info("Spotfinder exited indicating data is 32-bit, relaunching")
+            # We need to run the 32-bit version of the spotfinder instead....
+            command[0] = str(self._spotfinder_executable[1])
+            self._spotfind_proc = subprocess.Popen(command, pass_fds=[write_fd])
+
+        # Close the write end of the pipe (for this process)
+        # spotfind_process will hold the write end open until it is done
+        # This will allow the read end to detect the end of the output
+        os.close(write_fd)
 
         # Log the duration
         duration = time.monotonic() - start_time

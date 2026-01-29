@@ -258,7 +258,34 @@ class PipeHandler {
 class SpotfinderArgumentParser : public CUDAArgumentParser {
   public:
     SpotfinderArgumentParser(std::string version) : CUDAArgumentParser(version) {
+        add_h5read_arguments();
         add_spotfinder_arguments();
+    }
+
+    // Override the HDF5 reading arguments
+    void add_h5read_arguments() override {
+        // Check if implicit sample is enable via environment variable
+        bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != nullptr;
+        // Create a mutually exclusive group for sample vs file input
+        auto &group = add_mutually_exclusive_group(!implicit_sample);
+
+        group.add_argument("--sample")
+          .help("Use generated test data (H5READ_IMPLICIT_SAMPLE)")
+          .implicit_value(true);
+
+        group.add_argument("file")
+          .metavar("FILE.nxs")
+          .help("Path to Nexus file")
+          .action([&](const std::string &val) { _filepath = val; });
+
+        _activated_h5read = true;
+    }
+
+    auto const file() const -> const std::string & {
+        if (!_activated_h5read) {
+            throw std::runtime_error("HDF5 reading arguments not activated");
+        }
+        return _filepath;
     }
 
     void add_spotfinder_arguments() {
@@ -357,6 +384,9 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
           .default_value(false)
           .implicit_value(true);
     }
+
+  private:
+    std::string _filepath;  ///< Path to the input file
 };
 #pragma endregion
 
@@ -368,6 +398,7 @@ int main(int argc, char **argv) {
     SpotfinderArgumentParser parser(FFS_VERSION);
 
     auto args = parser.parse_args(argc, argv);
+    auto const file = parser.file();
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
     int pipe_fd = parser.get<int>("pipe_fd");
@@ -396,33 +427,40 @@ int main(int argc, char **argv) {
 
     // Wait for read-readiness
     // Firstly: That the path exists at all
-    if (!std::filesystem::exists(args.file)) {
+    if (!std::filesystem::exists(file)) {
         wait_for_ready_for_read(
-          args.file,
+          file,
           [](const std::string &s) { return std::filesystem::exists(s); },
           wait_timeout);
     }
-    if (std::filesystem::is_directory(args.file)) {
-        wait_for_ready_for_read(args.file, is_ready_for_read<SHMRead>, wait_timeout);
-        reader_ptr = std::make_unique<SHMRead>(args.file);
-    } else if (args.file.ends_with(".cbf")) {
+    if (std::filesystem::is_directory(file)) {
+        wait_for_ready_for_read(file, is_ready_for_read<SHMRead>, wait_timeout);
+        reader_ptr = std::make_unique<SHMRead>(file);
+    } else if (file.ends_with(".cbf")) {
         if (!parser.is_used("images")) {
             fmt::print("Error: CBF reading must specify --images\n");
             std::exit(1);
         }
-        reader_ptr = std::make_unique<CBFRead>(args.file,
-                                               parser.get<uint32_t>("images"),
-                                               parser.get<uint32_t>("start-index"));
+        reader_ptr = std::make_unique<CBFRead>(
+          file, parser.get<uint32_t>("images"), parser.get<uint32_t>("start-index"));
     } else {
-        wait_for_ready_for_read(args.file, is_ready_for_read<H5Read>, wait_timeout);
-        reader_ptr = args.file.empty() ? std::make_unique<H5Read>()
-                                       : std::make_unique<H5Read>(args.file);
+        wait_for_ready_for_read(file, is_ready_for_read<H5Read>, wait_timeout);
+        reader_ptr =
+          file.empty() ? std::make_unique<H5Read>() : std::make_unique<H5Read>(file);
     }
     // Bind this as a reference
     Reader &reader = *reader_ptr;
 
     auto reader_mutex = std::mutex{};
-
+    size_t bytes_per_pixel = reader.get_element_size();
+    // Ensure this matches what we expect
+    if (bytes_per_pixel != sizeof(pixel_t)) {
+        fmt::print(
+          "Error: Data type mismatch; This executable only accepts {} bit != {}\n",
+          sizeof(pixel_t) * 8,
+          bytes_per_pixel * 8);
+        std::exit(bytes_per_pixel * 8);
+    }
     uint32_t num_images = parser.is_used("images") ? parser.get<uint32_t>("images")
                                                    : reader.get_number_of_images();
 
@@ -750,7 +788,7 @@ int main(int argc, char **argv) {
                 }
                 // Sized buffer for the actual data read from file
                 std::span<uint8_t> buffer;
-                // Fetch the image data from the reader
+                // Fetch the image data from the reader.. loop in case we need to wait
                 while (true) {
                     {
                         std::scoped_lock lock(reader_mutex);
@@ -946,7 +984,7 @@ int main(int argc, char **argv) {
                 if (pipeHandler != nullptr) {
                     // Create a JSON object to store the data
                     json json_data = {{"num_strong_pixels", num_strong_pixels},
-                                      {"file", args.file},
+                                      {"file", file},
                                       {"file-number", image_num},
                                       {"n_spots_total", boxes.size()}};
                     if (output_for_index) {
@@ -1105,9 +1143,9 @@ int main(int argc, char **argv) {
         //  - rotation axis (default +x?)
         std::array<int, 2> image_size = {static_cast<int>(width),
                                          static_cast<int>(height)};
-        Panel panel(detector.distance,
+        Panel panel(detector.distance * 1000,
                     {detector.beam_center_x, detector.beam_center_y},
-                    {detector.pixel_size_x, detector.pixel_size_y},
+                    {detector.pixel_size_x * 1000, detector.pixel_size_y * 1000},
                     image_size);
         Vector3d s0 = {0.0, 0.0, -1.0 / wavelength};
         Scan scan({1, static_cast<int>(num_images)},

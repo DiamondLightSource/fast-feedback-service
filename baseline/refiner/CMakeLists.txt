@@ -24,9 +24,5 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(mdspan)
 FetchContent_MakeAvailable(Eigen3)
 
-# GTest could have been made available under a different name
-if(NOT TARGET GTest::gtest_main)
-    FetchContent_MakeAvailable(GTest)
-endif()
 include_directories(${CMAKE_SOURCE_DIR}/baseline/predictor)
 add_subdirectory(tests)

@@ -1,0 +1,24 @@
+image:
+  repository: ghcr.io/diamondlightsource/fast-feedback-service
+  tag: test-v1.0.0
+
+zocalo:
+  config: "/dls_sw/apps/zocalo/test/configuration.yaml"
+  queue: "per_image_analysis.test"
+
+extraEnv:
+  SPOTFINDER: "/opt/ffs/bin/spotfinder"
+  TEST_MODE: "true"
+  LOG_LEVEL: "DEBUG"
+
+nodeSelector:
+  kubernetes.io/hostname: "test-gpu-node-01"
+
+# Pod-level security context
+podSecurityContext:
+  supplementalGroups:
+    - 1225471
+
+# Container-level security context
+containerSecurityContext:
+  runAsUser: 1225471

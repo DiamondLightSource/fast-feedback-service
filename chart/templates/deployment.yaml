@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  template:
+    metadata:
+      name: {{ .Release.Name }}
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- end }}
+      containers:
+        - image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: Always
+          name: {{ .Release.Name }}
+          env:
+            - name: ZOCALO_CONFIG
+              value: {{ .Values.zocalo.config | quote }}
+            - name: FFS_QUEUE
+              value: {{ .Values.zocalo.queue | quote }}
+            {{- range $key, $value := .Values.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          resources:
+            limits:
+              cpu: 40
+              memory: 100Gi
+              nvidia.com/gpu: 1
+          {{- if .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - mountPath: /dls/{{ .Values.beamline }}
+              name: dls
+              mountPropagation: HostToContainer
+              readOnly: true
+            - mountPath: /dls_sw/apps
+              name: dlssw
+              mountPropagation: HostToContainer
+              readOnly: true
+      nodeSelector:
+        {{- range $key, $value := .Values.nodeSelector }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+      tolerations:
+        - key: nodetype
+          value: gpu
+          effect: NoSchedule
+        - key: location
+          value: cs05r
+          effect: NoSchedule
+      volumes:
+        - name: dls
+          hostPath:
+            path: /dls/{{ .Values.beamline }}
+            type: Directory
+        - name: dlssw
+          hostPath:
+            path: /dls_sw/apps
+            type: Directory
