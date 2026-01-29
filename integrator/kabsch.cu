@@ -111,33 +111,47 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
 }
 
 /**
- * @brief CUDA kernel to compute pixel-to-Kabsch transformations for
- * multiple voxels
+ * @brief CUDA kernel to compute pixel-to-Kabsch transformations for an image
  * 
- * This kernel transforms voxel coordinates from reciprocal space to
- * Kabsch coordinates.
- * Each thread processes one voxel, computing its Kabsch coordinates
- * relative to a reflection center.
+ * This kernel transforms pixel coordinates from an image into Kabsch coordinates.
+ * Each thread processes one pixel, checking if it falls within any reflection's
+ * bounding box and computing Kabsch coordinates if so.
  * 
- * @param s_pixels Array of s_pixel vectors (different for each voxel)
- * @param phi_pixels Array of phi_pixel angles (different for each voxel)
- * @param s1_c Reflection center s1 vector (same for all voxels in this batch)
- * @param phi_c Reflection center phi angle (same for all voxels in this batch)
- * @param s0 Initial scattering vector
+ * @param d_image Pointer to image data
+ * @param image_pitch Pitch of the image data in bytes
+ * @param width Image width in pixels
+ * @param height Image height in pixels
+ * @param image_num Current image number in the sequence
+ * @param d_matrix Detector coordinate transformation matrix (3x3)
+ * @param wavelength X-ray wavelength in Angstroms
+ * @param osc_start Starting oscillation angle in radians
+ * @param osc_width Oscillation width per image in radians
+ * @param image_range_start First image number in the range
+ * @param s0 Incident beam vector
  * @param rot_axis Rotation axis vector
- * @param eps_array Output array for Kabsch coordinates
- * @param s1_len_array Output array for s1 lengths
- * @param n Number of voxels to process
+ * @param d_s1_vectors Array of s1 vectors for each reflection
+ * @param d_phi_values Array of phi values for each reflection
+ * @param d_bboxes Array of bounding boxes (6 ints per reflection: x0,x1,y0,y1,z0,z1)
+ * @param d_reflection_indices Indices of reflections touching this image
+ * @param num_reflections_this_image Number of reflections to process
  */
-__global__ void kabsch_transform(const Vector3D *__restrict__ s_pixels,
-                                 const scalar_t *__restrict__ phi_pixels,
-                                 Vector3D s1_c,
-                                 scalar_t phi_c,
+__global__ void kabsch_transform(const void *d_image,
+                                 size_t image_pitch,
+                                 uint32_t width,
+                                 uint32_t height,
+                                 int image_num,
+                                 const scalar_t *d_matrix,
+                                 scalar_t wavelength,
+                                 scalar_t osc_start,
+                                 scalar_t osc_width,
+                                 int image_range_start,
                                  Vector3D s0,
                                  Vector3D rot_axis,
-                                 Vector3D *eps_array,
-                                 scalar_t *s1_len_array,
-                                 size_t n) {
+                                 const Vector3D *d_s1_vectors,
+                                 const scalar_t *d_phi_values,
+                                 const int *d_bboxes,
+                                 const size_t *d_reflection_indices,
+                                 size_t num_reflections_this_image) {
     // Calculate global thread index
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;  // Bounds check
