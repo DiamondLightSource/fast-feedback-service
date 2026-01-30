@@ -25,9 +25,11 @@ using mdspan_2d_double =
  * reflection for integration.
  */
 struct BoundingBoxExtents {
-    double x_min, x_max;  ///< Detector x-pixel range (fast axis)
-    double y_min, y_max;  ///< Detector y-pixel range (slow axis)
-    int z_min, z_max;     ///< Image number range (rotation axis)
+    // x and y may need to be a double for extent calculations
+    // signed as some values are negative, but this should be clamped later
+    int x_min, x_max;  ///< Detector x-pixel range (fast axis)
+    int y_min, y_max;  ///< Detector y-pixel range (slow axis)
+    int z_min, z_max;  ///< Image number range (rotation axis)
 };
 
 /**

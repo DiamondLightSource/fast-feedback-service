@@ -148,10 +148,10 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
 
         BoundingBoxExtents bbox;
         // Use floor/ceil as specified in the paper: xmin = floor(min([x1,x2,x3,x4]))
-        bbox.x_min = std::floor(min_x_it->first);
-        bbox.x_max = std::ceil(max_x_it->first);
-        bbox.y_min = std::floor(min_y_it->second);
-        bbox.y_max = std::ceil(max_y_it->second);
+        bbox.x_min = static_cast<int>(std::floor(min_x_it->first));
+        bbox.x_max = static_cast<int>(std::ceil(max_x_it->first));
+        bbox.y_min = static_cast<int>(std::floor(min_y_it->second));
+        bbox.y_max = static_cast<int>(std::ceil(max_y_it->second));
 
         // Calculate the image range (z-direction) using mosaicity parameter Δm
         // The extent in φ depends on the geometry factor ζ = m₂ · e₁
@@ -172,10 +172,11 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
               image_range_start - 1 + ((phi_minus_deg - osc_start) / osc_width);
 
             // Clamp to the actual image range and use floor/ceil for integer bounds
-            bbox.z_min = std::max(image_range_start - 1,
-                                  (int)std::floor(std::min(z_plus, z_minus)));
-            bbox.z_max =
-              std::min(image_range_end, (int)std::ceil(std::max(z_plus, z_minus)));
+            bbox.z_min =
+              std::max(image_range_start - 1,
+                       static_cast<int>(std::floor(std::min(z_plus, z_minus))));
+            bbox.z_max = std::min(
+              image_range_end, static_cast<int>(std::ceil(std::max(z_plus, z_minus))));
         } else {
             // Handle degenerate case where reflection is parallel to rotation axis
             // In this case, the reflection spans the entire image range
