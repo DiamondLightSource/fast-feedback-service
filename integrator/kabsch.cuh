@@ -25,6 +25,7 @@
 
 #include <cstddef>
 
+#include "extent.hpp"
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
 
@@ -48,7 +49,7 @@
  * @param rot_axis Rotation axis vector
  * @param d_s1_vectors Device array of s1_c vectors for each reflection
  * @param d_phi_values Device array of phi_c values for each reflection
- * @param d_bboxes Device array of bounding boxes [x_min, x_max, y_min, y_max, z_min, z_max] per reflection
+ * @param d_bboxes Device array of BoundingBoxExtents structs for each reflection
  * @param d_reflection_indices Device array of reflection indices for this image
  * @param num_reflections_this_image Number of reflections touching this image
  * @param stream CUDA stream for async execution
@@ -67,7 +68,7 @@ void compute_kabsch_transform(const void *d_image,
                               fastvec::Vector3D rot_axis,
                               const fastvec::Vector3D *d_s1_vectors,
                               const scalar_t *d_phi_values,
-                              const int *d_bboxes,
+                              const BoundingBoxExtents *d_bboxes,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
                               cudaStream_t stream);

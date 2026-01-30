@@ -38,6 +38,7 @@
 #include <cstddef>
 
 #include "cuda_common.hpp"
+#include "extent.hpp"
 #include "integrator.cuh"
 #include "kabsch.cuh"
 #include "math/math_utils.cuh"
@@ -131,7 +132,7 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
  * @param rot_axis Rotation axis vector
  * @param d_s1_vectors Array of s1 vectors for each reflection
  * @param d_phi_values Array of phi values for each reflection
- * @param d_bboxes Array of bounding boxes (6 ints per reflection: x0,x1,y0,y1,z0,z1)
+ * @param d_bboxes Array of bounding box structs for each reflection
  * @param d_reflection_indices Indices of reflections touching this image
  * @param num_reflections_this_image Number of reflections to process
  */
@@ -149,7 +150,7 @@ __global__ void kabsch_transform(const void *d_image,
                                  Vector3D rot_axis,
                                  const Vector3D *d_s1_vectors,
                                  const scalar_t *d_phi_values,
-                                 const int *d_bboxes,
+                                 const BoundingBoxExtents *d_bboxes,
                                  const size_t *d_reflection_indices,
                                  size_t num_reflections_this_image) {
     // Calculate global thread index
@@ -159,18 +160,42 @@ __global__ void kabsch_transform(const void *d_image,
     // Bounds guard
     if (x >= width + 1 || y >= height + 1) return;
 
-    // Get input data for this voxel
-    Vector3D s_pixel = s_pixels[i];
-    scalar_t phi_pixel = phi_pixels[i];
+    // First pass: find all reflections whose bbox contains this pixel
+    // Use a small local array - typically very few reflections overlap at any pixel
+    constexpr size_t MAX_OVERLAPPING_REFLECTIONS = 16;
+    size_t matching_refl_indices[MAX_OVERLAPPING_REFLECTIONS];
+    size_t num_matches = 0;
 
-    // Compute Kabsch transformation using the device function
-    scalar_t s1_len;
-    Vector3D eps =
-      pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_pixel, rot_axis, s1_len);
+    for (size_t i = 0; i < num_reflections_this_image; ++i) {
+        const size_t refl_idx = d_reflection_indices[i];
+        const BoundingBoxExtents &bbox = d_bboxes[refl_idx];
 
-    // Store results
-    eps_array[i] = eps;
-    s1_len_array[i] = s1_len;
+        // Check if pixel is inside this reflection's bounding box
+        // Bbox is half-open: [min, max)
+        const bool inside_bbox = (x >= bbox.x_min && x < bbox.x_max)
+                                 && (y >= bbox.y_min && y < bbox.y_max)
+                                 && (image_num >= bbox.z_min && image_num < bbox.z_max);
+
+        if (inside_bbox) {
+            if (num_matches < MAX_OVERLAPPING_REFLECTIONS) {
+                matching_refl_indices[num_matches++] = refl_idx;
+            }
+            // If we exceed MAX_OVERLAPPING_REFLECTIONS, silently ignore extras
+            // This is a rare edge case - could add error handling if needed
+        }
+    }
+
+    // Exit early if pixel is not within any reflection's bounding box
+    if (num_matches == 0) return;
+
+    // Second pass: process only the matching reflections
+    for (size_t i = 0; i < num_matches; ++i) {
+        const size_t refl_idx = matching_refl_indices[i];
+
+        // Get reflection data
+        const Vector3D &s1_c = d_s1_vectors[refl_idx];
+        const scalar_t phi_c = d_phi_values[refl_idx];
+    }
 }
 
 /**
@@ -199,11 +224,6 @@ void compute_kabsch_transform(const void *d_image,
                               size_t num_reflections_this_image,
                               cudaStream_t stream) {
     // TODO: Implement the image-based kernel
-    //
-    // 2. For each reflection touching this image (loop over d_reflection_indices):
-    //    a. Load bounding box from d_bboxes[refl_idx * 6 + {0..5}]
-    //    b. Check if (x, y, image_num) is within the bounding box
-    //    c. If not inside any bbox, early exit
     //
     // 3. If inside a bbox, shift to corner coordinates (x - 0.5, y - 0.5)
     //

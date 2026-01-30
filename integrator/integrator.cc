@@ -508,27 +508,16 @@ int main(int argc, char **argv) {
         phi_values_vec[i] = static_cast<scalar_t>(phi_column(i, 2));
     }
 
-    // Flatten bounding boxes to int array [x_min, x_max, y_min, y_max, z_min, z_max] per reflection
-    std::vector<int> bboxes_flat(num_reflections * 6);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        bboxes_flat[i * 6 + 0] = computed_bboxes[i].x_min;
-        bboxes_flat[i * 6 + 1] = computed_bboxes[i].x_max;
-        bboxes_flat[i * 6 + 2] = computed_bboxes[i].y_min;
-        bboxes_flat[i * 6 + 3] = computed_bboxes[i].y_max;
-        bboxes_flat[i * 6 + 4] = computed_bboxes[i].z_min;
-        bboxes_flat[i * 6 + 5] = computed_bboxes[i].z_max;
-    }
-
     // Allocate and copy GPU buffers (shared across all threads)
     DeviceBuffer<scalar_t> d_d_matrix(9);
     DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
     DeviceBuffer<scalar_t> d_phi_values(num_reflections);
-    DeviceBuffer<int> d_bboxes(num_reflections * 6);
+    DeviceBuffer<BoundingBoxExtents> d_bboxes(num_reflections);
 
     d_d_matrix.assign(d_matrix_flat.data());
     d_s1_vectors.assign(s1_vectors_vec.data());
     d_phi_values.assign(phi_values_vec.data());
-    d_bboxes.assign(bboxes_flat.data());
+    d_bboxes.assign(computed_bboxes.data());
 
     // Convert beam parameters to Vector3D
     fastvec::Vector3D s0_vec = to_vector3d(s0);
