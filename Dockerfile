@@ -26,15 +26,30 @@ RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
 COPY . /opt/ffs_src
 
 # Build the C++/CUDA backend
+# Make Numpy headers available for ffbidx build (via -DPython3_EXECUTABLE=/opt/build_env/bin/python)
+# Make ffbidx install into runtime env (-DPython3_SITELIB=$RT_SITE \ -DPython3_SITEARCH=$RT_SITE)
 WORKDIR /opt/build
-RUN cmake /opt/ffs_src -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs -DHDF5_ROOT=/opt/ffs
+RUN RT_SITE=$(/opt/ffs/bin/python -c "import site; print(site.getsitepackages()[0])")
+RUN cmake /opt/ffs_src \
+  -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/opt/ffs \
+  -DHDF5_ROOT=/opt/ffs \
+  -DPython3_EXECUTABLE=/opt/build_env/bin/python \
+  -DPython3_SITELIB=$RT_SITE \
+  -DPython3_SITEARCH=$RT_SITE
+
 RUN cmake --build . --target spotfinder --target spotfinder32
 
 RUN cmake --install . --component Runtime
 
 # Build and install dx2 submodule
 WORKDIR /opt/build_dx2
-RUN cmake /opt/ffs_src/dx2 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs
+RUN cmake /opt/ffs_src/dx2 \
+  -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/opt/ffs \
+  -DHDF5_ROOT=/opt/ffs
 RUN cmake --build . && cmake --install .
 
 # Install Python package
