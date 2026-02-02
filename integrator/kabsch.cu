@@ -249,7 +249,7 @@ void compute_kabsch_transform(const void *d_image,
                               Vector3D rot_axis,
                               const Vector3D *d_s1_vectors,
                               const scalar_t *d_phi_values,
-                              const int *d_bboxes,
+                              const BoundingBoxExtents *d_bboxes,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
                               cudaStream_t stream) {
