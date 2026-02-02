@@ -218,6 +218,13 @@ __global__ void kabsch_transform(const void *d_image,
           osc_start
           + (static_cast<scalar_t>(image_num - image_range_start) + scalar_t(0.5))
               * osc_width;
+
+        // Compute Kabsch transformation
+        scalar_t s1_len;
+        Vector3D eps =
+          pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_pixel, rot_axis, s1_len);
+
+        // Store results. Output arrays?
     }
 }
 
@@ -246,14 +253,6 @@ void compute_kabsch_transform(const void *d_image,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
                               cudaStream_t stream) {
-    // TODO: Implement the image-based kernel
-    //
-    // 6. Call pixel_to_kabsch() with:
-    //    - s0, s1_c (from d_s1_vectors[refl_idx]), phi_c (from d_phi_values[refl_idx])
-    //    - s_pixel, phi_pixel, rot_axis
-    //
-    // 7. Store the result (eps, s1_len) - output storage TBD
-
     // Configure kernel launch parameters
 
     /*
