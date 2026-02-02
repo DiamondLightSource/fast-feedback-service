@@ -26,9 +26,7 @@ find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 include_directories(${Python3_INCLUDE_DIRS})
 
 # Make sure we can install ffbidx into correct location.
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Install path" FORCE)
-endif()
+set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Install path" FORCE)
 
 # Dependency fetching
 # Find packages that are in conda environment
