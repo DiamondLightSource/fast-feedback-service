@@ -212,6 +212,12 @@ __global__ void kabsch_transform(const void *d_image,
                         d_matrix[6] * x_corner + d_matrix[7] * y_corner + d_matrix[8]);
         // Normalize to get s_pixel and scale by 1/wavelength
         Vector3D s_pixel = normalized(lab_coord) / wavelength;
+
+        // Compute phi_pixel from image_num
+        scalar_t phi_pixel =
+          osc_start
+          + (static_cast<scalar_t>(image_num - image_range_start) + scalar_t(0.5))
+              * osc_width;
     }
 }
 
@@ -241,9 +247,6 @@ void compute_kabsch_transform(const void *d_image,
                               size_t num_reflections_this_image,
                               cudaStream_t stream) {
     // TODO: Implement the image-based kernel
-    //
-    // 5. Compute phi_pixel from image_num:
-    //    - phi_pixel = osc_start + (image_num - image_range_start + 0.5) * osc_width
     //
     // 6. Call pixel_to_kabsch() with:
     //    - s0, s1_c (from d_s1_vectors[refl_idx]), phi_c (from d_phi_values[refl_idx])
