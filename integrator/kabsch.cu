@@ -202,6 +202,16 @@ __global__ void kabsch_transform(const void *d_image,
         // Get reflection data
         const Vector3D &s1_c = d_s1_vectors[refl_idx];
         const scalar_t phi_c = d_phi_values[refl_idx];
+
+        // Compute s_pixel from corner coordinates
+        // Transform pixel corner to lab coordinates using detector matrix
+        // lab_coord = d_matrix * (x_corner, y_corner, 1)
+        Vector3D lab_coord =
+          make_vector3d(d_matrix[0] * x_corner + d_matrix[1] * y_corner + d_matrix[2],
+                        d_matrix[3] * x_corner + d_matrix[4] * y_corner + d_matrix[5],
+                        d_matrix[6] * x_corner + d_matrix[7] * y_corner + d_matrix[8]);
+        // Normalize to get s_pixel and scale by 1/wavelength
+        Vector3D s_pixel = normalized(lab_coord) / wavelength;
     }
 }
 
@@ -231,10 +241,6 @@ void compute_kabsch_transform(const void *d_image,
                               size_t num_reflections_this_image,
                               cudaStream_t stream) {
     // TODO: Implement the image-based kernel
-    //
-    // 4. Compute s_pixel from pixel coordinates:
-    //    - lab_coord = d_matrix * (x_corner, y_corner, 1)  (3x3 matrix multiply)
-    //    - s_pixel = normalize(lab_coord) / wavelength
     //
     // 5. Compute phi_pixel from image_num:
     //    - phi_pixel = osc_start + (image_num - image_range_start + 0.5) * osc_width
