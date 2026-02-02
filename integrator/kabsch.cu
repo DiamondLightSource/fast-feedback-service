@@ -171,9 +171,11 @@ __global__ void kabsch_transform(const void *d_image,
         const BoundingBoxExtents &bbox = d_bboxes[refl_idx];
 
         // Check if pixel is inside this reflection's bounding box
-        // Bbox is half-open: [min, max)
-        const bool inside_bbox = (x >= bbox.x_min && x < bbox.x_max)
-                                 && (y >= bbox.y_min && y < bbox.y_max)
+        // Bbox is half-open: [min, max), but we extend upper bounds by 1
+        // because pixel (x, y) contributes to corner (x - 0.5, y - 0.5)
+        // and we need to include corners at the far edges of the bbox
+        const bool inside_bbox = (x >= bbox.x_min && x <= bbox.x_max)
+                                 && (y >= bbox.y_min && y <= bbox.y_max)
                                  && (image_num >= bbox.z_min && image_num < bbox.z_max);
 
         if (inside_bbox) {
@@ -187,6 +189,11 @@ __global__ void kabsch_transform(const void *d_image,
 
     // Exit early if pixel is not within any reflection's bounding box
     if (num_matches == 0) return;
+
+    // Shift to corner coordinates
+    // Pixel centre are at integer (x, y), corners at (x - 0.5, y - 0.5)
+    const scalar_t x_corner = static_cast<scalar_t>(x) - scalar_t(0.5);
+    const scalar_t y_corner = static_cast<scalar_t>(y) - scalar_t(0.5);
 
     // Second pass: process only the matching reflections
     for (size_t i = 0; i < num_matches; ++i) {
@@ -224,8 +231,6 @@ void compute_kabsch_transform(const void *d_image,
                               size_t num_reflections_this_image,
                               cudaStream_t stream) {
     // TODO: Implement the image-based kernel
-    //
-    // 3. If inside a bbox, shift to corner coordinates (x - 0.5, y - 0.5)
     //
     // 4. Compute s_pixel from pixel coordinates:
     //    - lab_coord = d_matrix * (x_corner, y_corner, 1)  (3x3 matrix multiply)
