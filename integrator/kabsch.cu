@@ -172,8 +172,8 @@ __global__ void kabsch_transform(const void *d_image,
 
         // Check if pixel is inside this reflection's bounding box
         // Bbox is half-open: [min, max), but we extend upper bounds by 1
-        // because pixel (x, y) contributes to corner (x - 0.5, y - 0.5)
-        // and we need to include corners at the far edges of the bbox
+        // because pixel (x, y) maps to the corner at (x, y), thus we
+        // need to include the max edge to cover the far corners.
         const bool inside_bbox = (x >= bbox.x_min && x <= bbox.x_max)
                                  && (y >= bbox.y_min && y <= bbox.y_max)
                                  && (image_num >= bbox.z_min && image_num < bbox.z_max);
@@ -190,11 +190,6 @@ __global__ void kabsch_transform(const void *d_image,
     // Exit early if pixel is not within any reflection's bounding box
     if (num_matches == 0) return;
 
-    // Shift to corner coordinates
-    // Pixel centre are at integer (x, y), corners at (x - 0.5, y - 0.5)
-    const scalar_t x_corner = static_cast<scalar_t>(x) - scalar_t(0.5);
-    const scalar_t y_corner = static_cast<scalar_t>(y) - scalar_t(0.5);
-
     // Second pass: process only the matching reflections
     for (size_t i = 0; i < num_matches; ++i) {
         const size_t refl_idx = matching_refl_indices[i];
@@ -203,21 +198,20 @@ __global__ void kabsch_transform(const void *d_image,
         const Vector3D &s1_c = d_s1_vectors[refl_idx];
         const scalar_t phi_c = d_phi_values[refl_idx];
 
-        // Compute s_pixel from corner coordinates
-        // Transform pixel corner to lab coordinates using detector matrix
-        // lab_coord = d_matrix * (x_corner, y_corner, 1)
+        // Compute s_pixel
+        // Transform pixel to lab coordinates using detector matrix
+        // lab_coord = d_matrix * (x, y, 1)
         Vector3D lab_coord =
-          make_vector3d(d_matrix[0] * x_corner + d_matrix[1] * y_corner + d_matrix[2],
-                        d_matrix[3] * x_corner + d_matrix[4] * y_corner + d_matrix[5],
-                        d_matrix[6] * x_corner + d_matrix[7] * y_corner + d_matrix[8]);
+          make_vector3d(d_matrix[0] * x + d_matrix[1] * y + d_matrix[2],
+                        d_matrix[3] * x + d_matrix[4] * y + d_matrix[5],
+                        d_matrix[6] * x + d_matrix[7] * y + d_matrix[8]);
         // Normalize to get s_pixel and scale by 1/wavelength
         Vector3D s_pixel = normalized(lab_coord) / wavelength;
 
-        // Compute phi_pixel from image_num
-        scalar_t phi_pixel =
+        // Compute phi_pixel in radians from image_num
+        scalar_t phi_pixel = degrees_to_radians(
           osc_start
-          + (static_cast<scalar_t>(image_num - image_range_start) + scalar_t(0.5))
-              * osc_width;
+          + (static_cast<scalar_t>(image_num - image_range_start) * osc_width));
 
         // Compute Kabsch transformation
         scalar_t s1_len;
@@ -225,6 +219,7 @@ __global__ void kabsch_transform(const void *d_image,
           pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_pixel, rot_axis, s1_len);
 
         // Store results. Output arrays?
+        // Only output aggregated intensities. Summation needs to happen
     }
 }
 
