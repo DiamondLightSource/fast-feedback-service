@@ -291,8 +291,6 @@ class GPUPerImageAnalysis(CommonService):
             str(write_fd),
             "--detector",
             detector_geometry.to_json(),
-            "--timeout",
-            str(120),
         ]
         if parameters.wavelength is not None:
             command.extend(["--wavelength", str(parameters.wavelength)])
