@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/diamondlightsource/fast-feedback-service
-  tag: latest
+  tag: pr-71
 
 # Beamline configuration
 beamline: "i24"
