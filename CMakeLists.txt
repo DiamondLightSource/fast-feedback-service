@@ -21,12 +21,7 @@ include(AlwaysColourCompilation)
 
 include_directories(include)
 
-# Find Python
-find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-include_directories(${Python3_INCLUDE_DIRS})
-
-# Make sure we can install ffbidx into correct location.
-set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Install path" FORCE)
+find_package(Python COMPONENTS Interpreter Development.Module NumPy REQUIRED)
 
 # Dependency fetching
 # Find packages that are in conda environment
@@ -59,8 +54,8 @@ set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
 set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
 set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
 
-# Override install path for ffbidx to site-packages
-set(PYTHON_MODULE_PATH ${Python3_SITEARCH} CACHE PATH "Python install path" FORCE)
+# ffbidx uses this to find site-packages
+set(PYTHON_MODULE_PATH ${Python_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
 
 FetchContent_Declare(
   ffbidx
@@ -165,7 +160,7 @@ configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx
 # run 'pip install .' to install the c++ extension for ssx_index
 install(CODE "
   execute_process(
-    COMMAND ${Python3_EXECUTABLE} -m pip install .
+    COMMAND ${Python_EXECUTABLE} -m pip install .
     WORKING_DIRECTORY \"${CMAKE_SOURCE_DIR}\"
   )
 ")

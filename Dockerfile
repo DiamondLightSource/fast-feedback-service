@@ -24,37 +24,26 @@ RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
 
 # Copy source
 COPY . /opt/ffs_src
-
+ENV CMAKE_GENERATOR Ninja
 # Build the C++/CUDA backend
 # Make Numpy headers available for ffbidx build (via -DPython3_EXECUTABLE=/opt/build_env/bin/python)
 # Make ffbidx install into runtime env (-DPython3_SITELIB=$RT_SITE \ -DPython3_SITEARCH=$RT_SITE)
 WORKDIR /opt/build
-RUN RT_SITE=$(/opt/ffs/bin/python -c "import site; print(site.getsitepackages()[0])") && \
-  cmake /opt/ffs_src \
-    -G Ninja \
+RUN cmake /opt/ffs_src \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/opt/ffs \
     -DHDF5_ROOT=/opt/ffs \
-    -DPython3_EXECUTABLE=/opt/build_env/bin/python \
-    -DPython3_SITELIB=$RT_SITE \
-    -DPython3_SITEARCH=$RT_SITE
+    -DPython3_ROOT_DIR=/opt/ffs
 
-RUN cmake --build . --target spotfinder --target spotfinder32 --target index
+RUN cmake --build . --target spotfinder --target spotfinder32 --target index --target ffbidx --target fast_indexer
 
-RUN cmake --install . --component Runtime
-
-# Build and install dx2 submodule
-WORKDIR /opt/build_dx2
-RUN cmake /opt/ffs_src/dx2 \
-  -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/opt/ffs \
-  -DHDF5_ROOT=/opt/ffs
-RUN cmake --build . && cmake --install .
+RUN cmake --install . --component Runtime && \
+    cmake --install . --component ffbidx_python && \
+    cmake --install . --component ffbidx_libraries
 
 # Install Python package
-WORKDIR /opt/build
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
+
 
 # Now copy this into an isolated runtime container
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
