@@ -7,7 +7,6 @@ dependencies:
   - gemmi=0.7.3
   - hdf5=1.14.6
   - hdf5-external-filter-plugins=0.1.0
-  - numpy=2.3.4
   - python=3.13.7
   - pip
   - zocalo
