@@ -29,15 +29,15 @@ COPY . /opt/ffs_src
 # Make Numpy headers available for ffbidx build (via -DPython3_EXECUTABLE=/opt/build_env/bin/python)
 # Make ffbidx install into runtime env (-DPython3_SITELIB=$RT_SITE \ -DPython3_SITEARCH=$RT_SITE)
 WORKDIR /opt/build
-RUN RT_SITE=$(/opt/ffs/bin/python -c "import site; print(site.getsitepackages()[0])")
-RUN cmake /opt/ffs_src \
-  -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/opt/ffs \
-  -DHDF5_ROOT=/opt/ffs \
-  -DPython3_EXECUTABLE=/opt/build_env/bin/python \
-  -DPython3_SITELIB=$RT_SITE \
-  -DPython3_SITEARCH=$RT_SITE
+RUN RT_SITE=$(/opt/ffs/bin/python -c "import site; print(site.getsitepackages()[0])") && \
+  cmake /opt/ffs_src \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/opt/ffs \
+    -DHDF5_ROOT=/opt/ffs \
+    -DPython3_EXECUTABLE=/opt/build_env/bin/python \
+    -DPython3_SITELIB=$RT_SITE \
+    -DPython3_SITEARCH=$RT_SITE
 
 RUN cmake --build . --target spotfinder --target spotfinder32
 
