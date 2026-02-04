@@ -39,7 +39,7 @@ RUN RT_SITE=$(/opt/ffs/bin/python -c "import site; print(site.getsitepackages()[
     -DPython3_SITELIB=$RT_SITE \
     -DPython3_SITEARCH=$RT_SITE
 
-RUN cmake --build . --target spotfinder --target spotfinder32
+RUN cmake --build . --target spotfinder --target spotfinder32 --target index
 
 RUN cmake --install . --component Runtime
 
