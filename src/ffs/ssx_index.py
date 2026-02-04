@@ -240,7 +240,7 @@ class OutputAggregator:
             ## rlp, flags, xyzobs.mm.value
 
 
-def run(args):
+def run(args=None):
     st = time.time()
     parser = argparse.ArgumentParser(
         prog="index",

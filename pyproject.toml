@@ -22,6 +22,9 @@ dependencies = [
     "zocalo>=1.2.0",
 ]
 
+[project.scripts]
+ssx_index = "ffs.ssx_index:run"
+
 [dependency-groups]
 dev = [
     "pytest",

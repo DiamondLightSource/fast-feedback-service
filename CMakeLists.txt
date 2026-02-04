@@ -153,14 +153,3 @@ add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
 add_subdirectory(integrator)
-
-# define a ssx_index 'executable' that actually just runs the python code (for style consistency)
-configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx_index COPYONLY)
-
-# run 'pip install .' to install the c++ extension for ssx_index
-install(CODE "
-  execute_process(
-    COMMAND ${Python_EXECUTABLE} -m pip install .
-    WORKING_DIRECTORY \"${CMAKE_SOURCE_DIR}\"
-  )
-")

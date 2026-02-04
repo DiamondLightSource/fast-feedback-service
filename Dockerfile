@@ -25,9 +25,8 @@ RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
 # Copy source
 COPY . /opt/ffs_src
 ENV CMAKE_GENERATOR Ninja
+
 # Build the C++/CUDA backend
-# Make Numpy headers available for ffbidx build (via -DPython3_EXECUTABLE=/opt/build_env/bin/python)
-# Make ffbidx install into runtime env (-DPython3_SITELIB=$RT_SITE \ -DPython3_SITEARCH=$RT_SITE)
 WORKDIR /opt/build
 RUN cmake /opt/ffs_src \
     -DCMAKE_BUILD_TYPE=Release \
@@ -35,11 +34,9 @@ RUN cmake /opt/ffs_src \
     -DHDF5_ROOT=/opt/ffs \
     -DPython3_ROOT_DIR=/opt/ffs
 
-RUN cmake --build . --target spotfinder --target spotfinder32 --target index --target ffbidx --target fast_indexer
+RUN cmake --build .
 
-RUN cmake --install . --component Runtime && \
-    cmake --install . --component ffbidx_python && \
-    cmake --install . --component ffbidx_libraries
+RUN cmake --install .
 
 # Install Python package
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
