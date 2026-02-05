@@ -47,7 +47,7 @@ FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
 
 LABEL org.opencontainers.image.title="fast-feedback-service" \
       org.opencontainers.image.description="GPU-accelerated fast-feedback X-ray diffraction analysis service" \
-      org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitrios Vlachos <dimitrios.vlachos@diamond.ac.uk>" \
+      org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitrios Vlachos <dimitrios.vlachos@diamond.ac.uk>, James Beilsten-Edmands <james.beilsten-edmands@diamond.ac.uk>" \
       org.opencontainers.image.source="https://github.com/DiamondLightSource/fast-feedback-service" \
       org.opencontainers.image.licenses="BSD-3-Clause"
 
