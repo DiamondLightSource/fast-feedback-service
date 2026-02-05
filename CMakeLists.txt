@@ -8,6 +8,28 @@ include(ResolveGitVersion)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 20)
+
+# Set CUDA compute capability target
+# Override with just the number: cmake -DCUDA_ARCH=86 ..
+# Set default to 7.5 (Turing)
+set(CUDA_ARCH "75 - Turing (RTX 20xx, GTX 16xx)" CACHE STRING "CUDA compute capability target architecture")
+set_property(CACHE CUDA_ARCH PROPERTY STRINGS 
+    "52 - Maxwell (GTX 9xx, Titan X)"
+    "60 - Pascal (GTX 10xx, P100)"
+    "61 - Pascal (GTX 1050/1030)"
+    "70 - Volta (V100, Titan V100)"
+    "75 - Turing (RTX 20xx, GTX 16xx)"
+    "80 - Ampere (A100)"
+    "86 - Ampere (RTX 30xx)"
+    "89 - Ada Lovelace (RTX 40xx)"
+    "90 - Hopper (H100)" 
+)
+
+# Extract just the number from the selection (first two characters)
+string(SUBSTRING "${CUDA_ARCH}" 0 2 CUDA_ARCH_NUMBER)
+set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_NUMBER})
+message(STATUS "CUDA architecture set to: sm_${CMAKE_CUDA_ARCHITECTURES}")
+
 project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
@@ -111,6 +133,36 @@ find_package(CUDAToolkit)
 if (CUDAToolkit_FOUND)
     message(STATUS "CUDA found: Building CUDA components.")
     set(FFS_ENABLE_CUDA ON)
+    
+    # Try to detect GPU compute capability
+    execute_process(
+        COMMAND nvidia-smi --query-gpu=compute_cap --format=csv,noheader
+        OUTPUT_VARIABLE DETECTED_GPU_CAPS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    
+    if(DETECTED_GPU_CAPS)
+        # nvidia-smi returns "7.5" format, convert to "75"
+        string(REPLACE "." "" DETECTED_GPU_ARCH "${DETECTED_GPU_CAPS}")
+        # Get first GPU if multiple
+        string(REGEX MATCH "[0-9]+" DETECTED_GPU_ARCH "${DETECTED_GPU_ARCH}")
+        message(STATUS "Detected GPU compute capability: sm_${DETECTED_GPU_ARCH}")
+        
+        # Warn if configured architecture doesn't match detected GPU
+        if(NOT CUDA_ARCH_NUMBER STREQUAL DETECTED_GPU_ARCH)
+            message(WARNING 
+                "Target CUDA architecture (sm_${CUDA_ARCH_NUMBER}) differs from detected GPU (sm_${DETECTED_GPU_ARCH}).\n"
+                "   The compiled code may not run optimally or at all on this system.\n"
+                "   To build for the detected GPU: cmake -DCUDA_ARCH=${DETECTED_GPU_ARCH} ..\n"
+                "   To build for a different target: ensure the target system has sm_${CUDA_ARCH_NUMBER} or newer."
+            )
+        else()
+            message(STATUS "✓ Configured architecture matches detected GPU")
+        endif()
+    else()
+        message(STATUS "Could not detect GPU compute capability (nvidia-smi not available or no GPU present)")
+    endif()
 else()
     message(STATUS "CUDA not found: Skipping CUDA components.")
     set(FFS_ENABLE_CUDA OFF)
