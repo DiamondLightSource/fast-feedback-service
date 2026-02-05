@@ -31,6 +31,86 @@
  * 
  * References:
  * - Kabsch, W. (2010). Acta Cryst. D66, 133–144
+ *
+ * IMPLEMENTATION PLAN: 
+ *
+ * GOAL: Determine foreground/background pixels and atomically aggregate
+ * intensities per reflection within the kernel, avoiding the need to return
+ * all epsilon values (too much data).
+ *
+ * -----------------------------------------------------------------------------
+ * STEP 1: Add sigma parameters to GPU
+ * Pass σ_D (sigma_b / beam divergence) and σ_M (sigma_m / mosaicity) to the
+ * kernel. These define the extent of the reflection profile in Kabsch space.
+ * Options:
+ *   - Pass as kernel arguments
+ * Also pass n_sigma (default 3) which defines the foreground/background cutoff.
+ *
+ * -----------------------------------------------------------------------------
+ * STEP 2: Foreground/background classification in kernel
+ * After computing ε₁, ε₂, ε₃ via pixel_to_kabsch(), classify the pixel:
+ *
+ *   δ_B = n_sigma × σ_D    (extent in e₁ and e₂ directions)
+ *   δ_M = n_sigma × σ_M    (extent in e₃ direction)
+ *
+ *   Foreground if:  ε₁²/δ_B² + ε₂²/δ_B² + ε₃²/δ_M² ≤ 1.0
+ *   Background otherwise (but still within bounding box)
+ *
+ * -----------------------------------------------------------------------------
+ * STEP 3: Create per-reflection output buffers
+ * Allocate DeviceBuffer arrays indexed by reflection:
+ *
+ *   - d_foreground_sum[num_reflections] -> Sum of foreground pixel intensities
+ *   - d_foreground_count[num_reflections] -> Count of foreground pixels
+ *   - d_background_histogram[num_reflections × NUM_BINS] -> Histogram of background pixel values for robust mean estimation
+ *
+ * For background histogram:
+ *   - binning uint8/uint16 data?
+ *
+ * -----------------------------------------------------------------------------
+ * STEP 4: Atomic aggregation in kernel
+ * For each pixel classified as foreground:
+ *   atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
+ *   atomicAdd(&d_foreground_count[refl_idx], 1);
+ *
+ * For each pixel classified as background:
+ *   int bin = pixel_value / bin_width;  // or just pixel_value for uint8
+ *   atomicAdd(&d_background_histogram[refl_idx * NUM_BINS + bin], 1);
+ *
+ * OPTIMIZATION: Consider block-level reduction using shared memory before
+ * global atomics to reduce contention. This is more complex but may improve
+ * performance for reflections with many pixels.
+ *
+ * -----------------------------------------------------------------------------
+ * STEP 5: Host-side reduction and finalization
+ * After processing all images:
+ *   1. Copy accumulator buffers back to host
+ *   2. For each reflection:
+ *      a. Compute background mean from histogram (robust Poisson estimator)
+ *      b. background_total = background_mean × foreground_count
+ *      c. intensity = foreground_sum - background_total
+ *      d. variance = foreground_sum + background_variance_contribution
+ *   3. Write final intensities to reflection table
+ *
+ * The GLM (Generalised Linear Model) background estimator uses:
+ *   - constant3d: Robust Poisson estimate of mean from all background pixels
+ *   - This is the default in DIALS
+ *
+ * -----------------------------------------------------------------------------
+ * CONSIDERATIONS
+ * 1. Pixel voxel corners: Full 8-corner check for accurate foreground boundary
+ *    vs single pixel-centre check (simpler, slightly less accurate)
+ *
+ * 2. Histogram size: NUM_BINS = 256 for uint8, ~1024-4096 for uint16 with binning
+ *
+ * 3. Memory: For 100k reflections with 1024 bins × 4 bytes = 400 MB
+ *    May need to process in batches or use smaller histograms
+ *
+ * 4. Atomic contention: Most reflections span few pixels, so contention should
+ *    be manageable. Profile before optimizing with shared memory reduction.
+ *
+ * 5. Variance calculation: Need sum of squared values for proper variance
+ *    estimation. Add d_foreground_sum_sq buffer.
  */
 
 #include <cuda_runtime.h>
