@@ -39,20 +39,6 @@
  * all epsilon values (too much data).
  *
  * -----------------------------------------------------------------------------
- * STEP 4: Atomic aggregation in kernel
- * For each pixel classified as foreground:
- *   atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
- *   atomicAdd(&d_foreground_count[refl_idx], 1);
- *
- * For each pixel classified as background:
- *   int bin = pixel_value / bin_width;  // or just pixel_value for uint8
- *   atomicAdd(&d_background_histogram[refl_idx * NUM_BINS + bin], 1);
- *
- * OPTIMIZATION: Consider block-level reduction using shared memory before
- * global atomics to reduce contention. This is more complex but may improve
- * performance for reflections with many pixels.
- *
- * -----------------------------------------------------------------------------
  * STEP 5: Host-side reduction and finalization
  * After processing all images:
  *   1. Copy accumulator buffers back to host
@@ -304,8 +290,35 @@ __global__ void kabsch_transform(const void *d_image,
         Vector3D eps =
           pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_pixel, rot_axis, s1_len);
 
-        // Store results. Output arrays?
-        // Only output aggregated intensities. Summation needs to happen
+        // Read pixel value from image
+        // Need to update to Pitched2D type
+        // Note: x is fast axis (column), y is slow axis (row)
+        // Need to update uint16_t to dynamic precision type
+        const uint16_t *row_ptr = reinterpret_cast<const uint16_t *>(
+          static_cast<const char *>(d_image) + y * image_pitch);
+        double pixel_value = static_cast<double>(row_ptr[x]);
+
+        // Do corners on pixel intensities?
+
+        // Classify pixel as foreground or background using ellipsoid condition
+        // then atomically accumulate intensities
+        if (is_foreground(eps, delta_b, delta_m)) {
+            // Foreground pixel: accumulate intensity
+
+            //TODO: Add dynamic precision support for atomic adds
+            // -> consider compute compatability target?
+            // -> is double necessary here?
+
+            atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
+            atomicAdd(&d_foreground_count[refl_idx], 1u);
+        } else {
+            // Background pixel: accumulate for mean estimation
+            atomicAdd(&d_background_sum[refl_idx], pixel_value);
+            atomicAdd(&d_background_count[refl_idx], 1u);
+        }
+
+        // For future: block-level reduction using shared memory could be implemented here to
+        // reduce global atomic contention for reflections with many pixels.
     }
 }
 
