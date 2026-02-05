@@ -39,16 +39,6 @@
  * all epsilon values (too much data).
  *
  * -----------------------------------------------------------------------------
- * STEP 2: Foreground/background classification in kernel
- * After computing ε₁, ε₂, ε₃ via pixel_to_kabsch(), classify the pixel:
- *
- *   δ_B = n_sigma × σ_D    (extent in e₁ and e₂ directions)
- *   δ_M = n_sigma × σ_M    (extent in e₃ direction)
- *
- *   Foreground if:  ε₁²/δ_B² + ε₂²/δ_B² + ε₃²/δ_M² ≤ 1.0
- *   Background otherwise (but still within bounding box)
- *
- * -----------------------------------------------------------------------------
  * STEP 4: Atomic aggregation in kernel
  * For each pixel classified as foreground:
  *   atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
@@ -105,6 +95,33 @@
 #include "math/math_utils.cuh"
 
 using namespace fastvec;
+
+/**
+ * @brief Check if a pixel is in the foreground region of a reflection
+ *
+ * Uses the ellipsoid condition in Kabsch space to classify pixels:
+ *   ε₁²/δ_B² + ε₂²/δ_B² + ε₃²/δ_M² ≤ 1.0
+ *
+ * @param eps Kabsch coordinates (ε₁, ε₂, ε₃)
+ * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D)
+ * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M)
+ * @return true if pixel is foreground, false if background
+ */
+__device__ __forceinline__ bool is_foreground(const Vector3D &eps,
+                                              scalar_t delta_b,
+                                              scalar_t delta_m) {
+    // Precompute inverse squares to avoid repeated division
+    // Division is more expensive than multiplication on GPU
+    // -> Verify in profiler how compiler optimises this PTX
+    scalar_t inv_delta_b_sq = scalar_t(1.0) / (delta_b * delta_b);
+    scalar_t inv_delta_m_sq = scalar_t(1.0) / (delta_m * delta_m);
+
+    // Ellipsoid condition: ε₁²/δ_B² + ε₂²/δ_B² + ε₃²/δ_M² ≤ 1.0
+    scalar_t ellipsoid_val = (eps.x * eps.x + eps.y * eps.y) * inv_delta_b_sq
+                             + (eps.z * eps.z) * inv_delta_m_sq;
+
+    return ellipsoid_val <= scalar_t(1.0);
+}
 
 /**
  * @brief Transform a pixel from reciprocal space into the local Kabsch
