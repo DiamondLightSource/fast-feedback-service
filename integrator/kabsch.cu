@@ -39,14 +39,6 @@
  * all epsilon values (too much data).
  *
  * -----------------------------------------------------------------------------
- * STEP 1: Add sigma parameters to GPU
- * Pass σ_D (sigma_b / beam divergence) and σ_M (sigma_m / mosaicity) to the
- * kernel. These define the extent of the reflection profile in Kabsch space.
- * Options:
- *   - Pass as kernel arguments
- * Also pass n_sigma (default 3) which defines the foreground/background cutoff.
- *
- * -----------------------------------------------------------------------------
  * STEP 2: Foreground/background classification in kernel
  * After computing ε₁, ε₂, ε₃ via pixel_to_kabsch(), classify the pixel:
  *
@@ -55,17 +47,6 @@
  *
  *   Foreground if:  ε₁²/δ_B² + ε₂²/δ_B² + ε₃²/δ_M² ≤ 1.0
  *   Background otherwise (but still within bounding box)
- *
- * -----------------------------------------------------------------------------
- * STEP 3: Create per-reflection output buffers
- * Allocate DeviceBuffer arrays indexed by reflection:
- *
- *   - d_foreground_sum[num_reflections] -> Sum of foreground pixel intensities
- *   - d_foreground_count[num_reflections] -> Count of foreground pixels
- *   - d_background_histogram[num_reflections × NUM_BINS] -> Histogram of background pixel values for robust mean estimation
- *
- * For background histogram:
- *   - binning uint8/uint16 data?
  *
  * -----------------------------------------------------------------------------
  * STEP 4: Atomic aggregation in kernel
@@ -232,7 +213,15 @@ __global__ void kabsch_transform(const void *d_image,
                                  const scalar_t *d_phi_values,
                                  const BoundingBoxExtents *d_bboxes,
                                  const size_t *d_reflection_indices,
-                                 size_t num_reflections_this_image) {
+                                 size_t num_reflections_this_image,
+                                 // Summation integration parameters
+                                 scalar_t delta_b,
+                                 scalar_t delta_m,
+                                 // Output accumulators (atomically updated)
+                                 double *d_foreground_sum,
+                                 uint32_t *d_foreground_count,
+                                 double *d_background_sum,
+                                 uint32_t *d_background_count) {
     // Calculate global thread index
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -308,7 +297,8 @@ __global__ void kabsch_transform(const void *d_image,
  * 
  * Launches a kernel over the entire image grid (width+1 x height+1 for corners).
  * Each thread checks if its pixel falls within any reflection's bounding box,
- * and if so, computes the Kabsch transform.
+ * and if so, computes the Kabsch transform and accumulates foreground/background
+ * intensities for summation integration.
  */
 void compute_kabsch_transform(const void *d_image,
                               size_t image_pitch,
@@ -327,6 +317,12 @@ void compute_kabsch_transform(const void *d_image,
                               const BoundingBoxExtents *d_bboxes,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
+                              scalar_t delta_b,
+                              scalar_t delta_m,
+                              double *d_foreground_sum,
+                              uint32_t *d_foreground_count,
+                              double *d_background_sum,
+                              uint32_t *d_background_count,
                               cudaStream_t stream) {
     // Configure kernel launch parameters
 
@@ -345,12 +341,30 @@ void compute_kabsch_transform(const void *d_image,
     // Launch grid covers entire image + 1 for corner sampling
     dim3 gridDim(ceil_div(width + 1u, blockDim.x), ceil_div(height + 1u, blockDim.y));
 
-    // TODO: Launch the kernel
-    // kabsch_transform_image<<<gridDim, blockDim, 0, stream>>>(
-    //     d_image, image_pitch, width, height, image_num,
-    //     d_matrix, wavelength, osc_start, osc_width, image_range_start,
-    //     s0, rot_axis, d_s1_vectors, d_phi_values, d_bboxes,
-    //     d_reflection_indices, num_reflections_this_image);
+    // Launch the summation integration kernel
+    kabsch_transform<<<gridDim, blockDim, 0, stream>>>(d_image,
+                                                       image_pitch,
+                                                       width,
+                                                       height,
+                                                       image_num,
+                                                       d_matrix,
+                                                       wavelength,
+                                                       osc_start,
+                                                       osc_width,
+                                                       image_range_start,
+                                                       s0,
+                                                       rot_axis,
+                                                       d_s1_vectors,
+                                                       d_phi_values,
+                                                       d_bboxes,
+                                                       d_reflection_indices,
+                                                       num_reflections_this_image,
+                                                       delta_b,
+                                                       delta_m,
+                                                       d_foreground_sum,
+                                                       d_foreground_count,
+                                                       d_background_sum,
+                                                       d_background_count);
 
     // Check for kernel launch errors
     cudaError_t err = cudaGetLastError();

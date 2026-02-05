@@ -33,7 +33,9 @@
  * @brief Host wrapper function for image-based Kabsch computation
  * 
  * Launches a kernel over the entire image grid to compute Kabsch coordinates
- * for pixels that fall within reflection bounding boxes.
+ * for pixels that fall within reflection bounding boxes, classifying each
+ * pixel as foreground or background and atomically accumulating intensities
+ * for summation integration.
  * 
  * @param d_image Device pointer to image data (pitched allocation)
  * @param image_pitch Pitch in bytes of the device image allocation
@@ -52,6 +54,12 @@
  * @param d_bboxes Device array of BoundingBoxExtents structs for each reflection
  * @param d_reflection_indices Device array of reflection indices for this image
  * @param num_reflections_this_image Number of reflections touching this image
+ * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D), radians
+ * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M), radians
+ * @param d_foreground_sum Device array to accumulate foreground intensities per reflection
+ * @param d_foreground_count Device array to count foreground pixels per reflection
+ * @param d_background_sum Device array to accumulate background intensities per reflection
+ * @param d_background_count Device array to count background pixels per reflection
  * @param stream CUDA stream for async execution
  */
 void compute_kabsch_transform(const void *d_image,
@@ -71,6 +79,12 @@ void compute_kabsch_transform(const void *d_image,
                               const BoundingBoxExtents *d_bboxes,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
+                              scalar_t delta_b,
+                              scalar_t delta_m,
+                              double *d_foreground_sum,
+                              uint32_t *d_foreground_count,
+                              double *d_background_sum,
+                              uint32_t *d_background_count,
                               cudaStream_t stream);
 
 // DEPRECATED

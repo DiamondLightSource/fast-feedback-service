@@ -525,6 +525,30 @@ int main(int argc, char **argv) {
     scalar_t wavelength = static_cast<scalar_t>(wl);
     scalar_t osc_start_scalar = static_cast<scalar_t>(osc_start);
     scalar_t osc_width_scalar = static_cast<scalar_t>(osc_width);
+
+    // Summation integration parameters
+    // delta_b and delta_m define the foreground ellipsoid extent in Kabsch space
+    constexpr scalar_t n_sigma = 3.0;  // Default number of sigma for foreground cutoff
+    const scalar_t delta_b = n_sigma * static_cast<scalar_t>(sigma_b);
+    const scalar_t delta_m = n_sigma * static_cast<scalar_t>(sigma_m);
+    logger.info("Summation integration: delta_b={:.6f}, delta_m={:.6f} (n_sigma={})",
+                delta_b,
+                delta_m,
+                n_sigma);
+
+    // Allocate accumulator buffers for summation integration (shared across all threads)
+    // These persist across all images and accumulate atomically
+    DeviceBuffer<double> d_foreground_sum(num_reflections);
+    DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
+    DeviceBuffer<double> d_background_sum(num_reflections);
+    DeviceBuffer<uint32_t> d_background_count(num_reflections);
+
+    // Zero-initialize the accumulator buffers
+    cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(double));
+    cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(d_background_sum.data(), 0, num_reflections * sizeof(double));
+    cudaMemset(d_background_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cuda_throw_error();
 #pragma endregion Prep GPU Data Buffers
 
 #pragma region Thread launch
@@ -651,6 +675,8 @@ int main(int argc, char **argv) {
                 d_reflection_indices.assign(refl_indices.data());
 
                 // Launch Kabsch transform kernel for this image
+                // This computes Kabsch coordinates and atomically accumulates
+                // foreground/background intensities for summation integration
                 compute_kabsch_transform(device_image.get(),
                                          device_image.pitch_bytes(),
                                          width,
@@ -668,6 +694,12 @@ int main(int argc, char **argv) {
                                          d_bboxes.data(),
                                          d_reflection_indices.data(),
                                          num_refls_this_image,
+                                         delta_b,
+                                         delta_m,
+                                         d_foreground_sum.data(),
+                                         d_foreground_count.data(),
+                                         d_background_sum.data(),
+                                         d_background_count.data(),
                                          stream);
 
                 logger.trace("Thread {} loaded image {}", thread_id, image_num);
