@@ -27,7 +27,7 @@ COPY . /opt/ffs_src
 
 # Build the C++/CUDA backend
 WORKDIR /opt/build
-RUN cmake /opt/ffs_src -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs -DHDF5_ROOT=/opt/ffs
+RUN cmake /opt/ffs_src -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs -DHDF5_ROOT=/opt/ffs -DCUDA_ARCH=80
 RUN cmake --build . --target spotfinder --target spotfinder32
 
 RUN cmake --install . --component Runtime
