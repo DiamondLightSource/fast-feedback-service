@@ -39,19 +39,7 @@
  * all epsilon values (too much data).
  *
  * -----------------------------------------------------------------------------
- * STEP 5: Host-side reduction and finalization
- * After processing all images:
- *   1. Copy accumulator buffers back to host
- *   2. For each reflection:
- *      a. Compute background mean from histogram (robust Poisson estimator)
- *      b. background_total = background_mean × foreground_count
- *      c. intensity = foreground_sum - background_total
- *      d. variance = foreground_sum + background_variance_contribution
- *   3. Write final intensities to reflection table
- *
- * The GLM (Generalised Linear Model) background estimator uses:
- *   - constant3d: Robust Poisson estimate of mean from all background pixels
- *   - This is the default in DIALS
+ * STEP 6: Implement proper GLM background estimation
  *
  * -----------------------------------------------------------------------------
  * CONSIDERATIONS

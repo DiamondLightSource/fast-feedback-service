@@ -730,6 +730,87 @@ int main(int argc, char **argv) {
         logger.info("Total time waiting for images: {:.2f} s", time_waiting_for_images);
     }
 
+#pragma region Summation Integration Finalization
+    // Host-side reduction and finalization
+    // Copy accumulator buffers back from GPU and compute final intensities
+    logger.info("Finalizing summation integration for {} reflections", num_reflections);
+
+    // Allocate host buffers for results
+    std::vector<double> h_foreground_sum(num_reflections);
+    std::vector<uint32_t> h_foreground_count(num_reflections);
+    std::vector<double> h_background_sum(num_reflections);
+    std::vector<uint32_t> h_background_count(num_reflections);
+
+    // Copy results from device to host
+    d_foreground_sum.extract(h_foreground_sum.data());
+    d_foreground_count.extract(h_foreground_count.data());
+    d_background_sum.extract(h_background_sum.data());
+    d_background_count.extract(h_background_count.data());
+
+    // Compute final intensities for each reflection
+    std::vector<double> intensities(num_reflections);
+    std::vector<double> variances(num_reflections);
+    size_t valid_reflections = 0;
+
+    for (size_t i = 0; i < num_reflections; ++i) {
+        uint32_t fg_count = h_foreground_count[i];
+        uint32_t bg_count = h_background_count[i];
+
+        if (fg_count == 0) {
+            // No foreground pixels - reflection not measured
+            intensities[i] = 0.0;
+            variances[i] = -1.0;  // Flag as invalid
+            continue;
+        }
+
+        double fg_sum = h_foreground_sum[i];
+
+        // Compute background mean (simple mean for now, could use robust estimator)
+        double bg_mean = (bg_count > 0) ? h_background_sum[i] / bg_count : 0.0;
+
+        // Subtract background: I = sum(foreground) - n_foreground * bg_mean
+        double background_total = bg_mean * fg_count;
+        double intensity = fg_sum - background_total;
+
+        // Variance estimation (Poisson statistics)
+        // Var(I) = Var(fg_sum) + Var(background_total)
+        //        = fg_sum + (fg_count^2 / bg_count) * bg_mean  (if bg_count > 0)
+        double variance = fg_sum;  // Poisson variance of foreground
+        if (bg_count > 0) {
+            // Add background variance contribution
+            // Var(bg_mean) = bg_mean / bg_count, so Var(fg_count * bg_mean) = fg_count^2 * bg_mean / bg_count
+            variance += (static_cast<double>(fg_count) * fg_count * bg_mean) / bg_count;
+        }
+
+        intensities[i] = intensity;
+        variances[i] = variance;
+        valid_reflections++;
+    }
+
+    logger.info("Summation integration complete: {} valid reflections out of {}",
+                valid_reflections,
+                num_reflections);
+
+    // Log some statistics
+    if (valid_reflections > 0) {
+        double sum_intensity = 0.0;
+        double max_intensity = -std::numeric_limits<double>::infinity();
+        double min_intensity = std::numeric_limits<double>::infinity();
+        for (size_t i = 0; i < num_reflections; ++i) {
+            if (variances[i] >= 0) {
+                sum_intensity += intensities[i];
+                max_intensity = std::max(max_intensity, intensities[i]);
+                min_intensity = std::min(min_intensity, intensities[i]);
+            }
+        }
+        logger.info("Intensity statistics: min={:.1f}, max={:.1f}, mean={:.1f}",
+                    min_intensity,
+                    max_intensity,
+                    sum_intensity / valid_reflections);
+    }
+
+#pragma endregion Summation Integration Finalization
+
 #pragma endregion Image Reading and Threading
 
     return 0;
