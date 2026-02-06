@@ -43,10 +43,9 @@ include(AlwaysColourCompilation)
 
 include_directories(include)
 
-# Find Python
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-include_directories(${Python3_INCLUDE_DIRS})
+find_package(Python COMPONENTS Interpreter Development.Module NumPy REQUIRED)
 
+# Dependency fetching
 # Find packages that are in conda environment
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
@@ -71,6 +70,21 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(argparse)
+
+# Required for Python module build of ffbidx
+set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
+set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
+set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
+
+# ffbidx uses this to find site-packages
+set(PYTHON_MODULE_PATH ${Python_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+
+FetchContent_Declare(
+  ffbidx
+  GIT_REPOSITORY https://github.com/paulscherrerinstitute/fast-feedback-indexer.git
+  GIT_TAG main
+)
+FetchContent_MakeAvailable(ffbidx)
 
 # GTest - try find_package first, fallback to FetchContent
 find_package(GTest QUIET)
@@ -191,5 +205,3 @@ add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
 add_subdirectory(integrator)
-
-configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx_index COPYONLY)

@@ -24,21 +24,22 @@ RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
 
 # Copy source
 COPY . /opt/ffs_src
+ENV CMAKE_GENERATOR Ninja
 
 # Build the C++/CUDA backend
 WORKDIR /opt/build
-RUN cmake /opt/ffs_src -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs -DHDF5_ROOT=/opt/ffs -DCUDA_ARCH=80
-RUN cmake --build . --target spotfinder --target spotfinder32
+RUN cmake /opt/ffs_src \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/opt/ffs \
+    -DHDF5_ROOT=/opt/ffs \
+    -DPython3_ROOT_DIR=/opt/ffs \
+    -DCUDA_ARCH=80
 
-RUN cmake --install . --component Runtime
+RUN cmake --build .
 
-# Build and install dx2 submodule
-WORKDIR /opt/build_dx2
-RUN cmake /opt/ffs_src/dx2 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ffs
-RUN cmake --build . && cmake --install .
+RUN cmake --install .
 
 # Install Python package
-WORKDIR /opt/build
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
 
 # Now copy this into an isolated runtime container
@@ -46,7 +47,7 @@ FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
 
 LABEL org.opencontainers.image.title="fast-feedback-service" \
       org.opencontainers.image.description="GPU-accelerated fast-feedback X-ray diffraction analysis service" \
-      org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitrios Vlachos <dimitrios.vlachos@diamond.ac.uk>" \
+      org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitrios Vlachos <dimitrios.vlachos@diamond.ac.uk>, James Beilsten-Edmands <james.beilsten-edmands@diamond.ac.uk>" \
       org.opencontainers.image.source="https://github.com/DiamondLightSource/fast-feedback-service" \
       org.opencontainers.image.licenses="BSD-3-Clause"
 

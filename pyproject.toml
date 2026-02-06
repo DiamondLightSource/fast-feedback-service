@@ -10,6 +10,7 @@ readme = "README.md"
 authors = [
     { name = "Nicholas Devenish", email = "ndevenish@gmail.com" },
     { name = "Dimitri Vlachos", email = "dimitrios.vlachos@diamond.ac.uk" },
+    { name = "James Beilsten-Edmands", email = "james.beilsten-edmands@diamond.ac.uk"},
 ]
 
 requires-python = ">=3.12"
@@ -21,6 +22,9 @@ dependencies = [
     "watchdir>=1.0.0",
     "zocalo>=1.2.0",
 ]
+
+[project.scripts]
+ssx_index = "ffs.ssx_index:run"
 
 [dependency-groups]
 dev = [
