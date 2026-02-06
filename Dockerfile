@@ -32,7 +32,8 @@ RUN cmake /opt/ffs_src \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/opt/ffs \
     -DHDF5_ROOT=/opt/ffs \
-    -DPython3_ROOT_DIR=/opt/ffs
+    -DPython3_ROOT_DIR=/opt/ffs \
+    -DCUDA_ARCH=80
 
 RUN cmake --build .
 
@@ -40,7 +41,6 @@ RUN cmake --install .
 
 # Install Python package
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
-
 
 # Now copy this into an isolated runtime container
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
