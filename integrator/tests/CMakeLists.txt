@@ -17,6 +17,7 @@ target_include_directories(test_kabsch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(test_kabsch PRIVATE 
     ffs_common
     dx2
+    h5read
     GTest::gtest_main
     Eigen3::Eigen
     spdlog::spdlog

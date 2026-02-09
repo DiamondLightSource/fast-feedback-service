@@ -26,6 +26,7 @@
 #include <cstddef>
 
 #include "extent.hpp"
+#include "h5read.h"
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
 
@@ -62,7 +63,7 @@
  * @param d_background_count Device array to count background pixels per reflection
  * @param stream CUDA stream for async execution
  */
-void compute_kabsch_transform(const void *d_image,
+void compute_kabsch_transform(pixel_t *d_image,
                               size_t image_pitch,
                               uint32_t width,
                               uint32_t height,

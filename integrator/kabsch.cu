@@ -63,7 +63,9 @@
 #include <cstddef>
 
 #include "cuda_common.hpp"
+#include "device_common.cuh"
 #include "extent.hpp"
+#include "h5read.h"
 #include "integrator.cuh"
 #include "kabsch.cuh"
 #include "math/math_utils.cuh"
@@ -188,7 +190,7 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
  * @param d_reflection_indices Indices of reflections touching this image
  * @param num_reflections_this_image Number of reflections to process
  */
-__global__ void kabsch_transform(const void *d_image,
+__global__ void kabsch_transform(pixel_t *d_image,
                                  size_t image_pitch,
                                  uint32_t width,
                                  uint32_t height,
@@ -250,6 +252,11 @@ __global__ void kabsch_transform(const void *d_image,
     // Exit early if pixel is not within any reflection's bounding box
     if (num_matches == 0) return;
 
+    // Create pitched array for convenient image access
+    // Convert byte pitch to element pitch for PitchedArray2D
+    size_t elem_pitch = image_pitch / sizeof(pixel_t);
+    PitchedArray2D<pixel_t> image(d_image, &elem_pitch);
+
     // Second pass: process only the matching reflections
     for (size_t i = 0; i < num_matches; ++i) {
         const size_t refl_idx = matching_refl_indices[i];
@@ -279,12 +286,8 @@ __global__ void kabsch_transform(const void *d_image,
           pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_pixel, rot_axis, s1_len);
 
         // Read pixel value from image
-        // Need to update to Pitched2D type
         // Note: x is fast axis (column), y is slow axis (row)
-        // Need to update uint16_t to dynamic precision type
-        const uint16_t *row_ptr = reinterpret_cast<const uint16_t *>(
-          static_cast<const char *>(d_image) + y * image_pitch);
-        accumulator_t pixel_value = static_cast<accumulator_t>(row_ptr[x]);
+        accumulator_t pixel_value = static_cast<accumulator_t>(image(x, y));
 
         // Do corners on pixel intensities?
 
@@ -314,7 +317,7 @@ __global__ void kabsch_transform(const void *d_image,
  * and if so, computes the Kabsch transform and accumulates foreground/background
  * intensities for summation integration.
  */
-void compute_kabsch_transform(const void *d_image,
+void compute_kabsch_transform(pixel_t *d_image,
                               size_t image_pitch,
                               uint32_t width,
                               uint32_t height,
