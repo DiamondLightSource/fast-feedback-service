@@ -81,9 +81,9 @@ void compute_kabsch_transform(const void *d_image,
                               size_t num_reflections_this_image,
                               scalar_t delta_b,
                               scalar_t delta_m,
-                              double *d_foreground_sum,
+                              accumulator_t *d_foreground_sum,
                               uint32_t *d_foreground_count,
-                              double *d_background_sum,
+                              accumulator_t *d_background_sum,
                               uint32_t *d_background_count,
                               cudaStream_t stream);
 

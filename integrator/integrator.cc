@@ -538,15 +538,15 @@ int main(int argc, char **argv) {
 
     // Allocate accumulator buffers for summation integration (shared across all threads)
     // These persist across all images and accumulate atomically
-    DeviceBuffer<double> d_foreground_sum(num_reflections);
+    DeviceBuffer<accumulator_t> d_foreground_sum(num_reflections);
     DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
-    DeviceBuffer<double> d_background_sum(num_reflections);
+    DeviceBuffer<accumulator_t> d_background_sum(num_reflections);
     DeviceBuffer<uint32_t> d_background_count(num_reflections);
 
     // Zero-initialize the accumulator buffers
-    cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(double));
+    cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(d_background_sum.data(), 0, num_reflections * sizeof(double));
+    cudaMemset(d_background_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_background_count.data(), 0, num_reflections * sizeof(uint32_t));
     cuda_throw_error();
 #pragma endregion Prep GPU Data Buffers
@@ -736,9 +736,9 @@ int main(int argc, char **argv) {
     logger.info("Finalizing summation integration for {} reflections", num_reflections);
 
     // Allocate host buffers for results
-    std::vector<double> h_foreground_sum(num_reflections);
+    std::vector<accumulator_t> h_foreground_sum(num_reflections);
     std::vector<uint32_t> h_foreground_count(num_reflections);
-    std::vector<double> h_background_sum(num_reflections);
+    std::vector<accumulator_t> h_background_sum(num_reflections);
     std::vector<uint32_t> h_background_count(num_reflections);
 
     // Copy results from device to host

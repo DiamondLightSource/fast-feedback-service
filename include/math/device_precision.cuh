@@ -35,3 +35,17 @@ using scalar_t = float;
 #define CUDA_SQRT sqrtf
 #define CUDA_EXP expf
 #endif
+
+// Accumulator type for summation/reduction operations.
+// Currently follows scalar_t precision. This is acceptable because
+// accumulation happens per-reflection (not globally), and final
+// reduction to double is performed on the host.
+//
+// WARNING: float accumulators lose precision once the running sum
+// exceeds ~16.7M (2^24), at which point adding 1.0f is a no-op.
+// For strong reflections with large bounding boxes this can occur
+// (e.g. 500 bright pixels × 40k intensity ≈ 20M). If integration
+// accuracy degrades for strong reflections, change this to:
+//     using accumulator_t = double;
+// Note: double atomicAdd requires compute capability >= 6.0 (Pascal+).
+using accumulator_t = scalar_t;

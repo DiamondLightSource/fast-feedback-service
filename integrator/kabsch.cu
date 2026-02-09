@@ -209,9 +209,9 @@ __global__ void kabsch_transform(const void *d_image,
                                  scalar_t delta_b,
                                  scalar_t delta_m,
                                  // Output accumulators (atomically updated)
-                                 double *d_foreground_sum,
+                                 accumulator_t *d_foreground_sum,
                                  uint32_t *d_foreground_count,
-                                 double *d_background_sum,
+                                 accumulator_t *d_background_sum,
                                  uint32_t *d_background_count) {
     // Calculate global thread index
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -284,7 +284,7 @@ __global__ void kabsch_transform(const void *d_image,
         // Need to update uint16_t to dynamic precision type
         const uint16_t *row_ptr = reinterpret_cast<const uint16_t *>(
           static_cast<const char *>(d_image) + y * image_pitch);
-        double pixel_value = static_cast<double>(row_ptr[x]);
+        accumulator_t pixel_value = static_cast<accumulator_t>(row_ptr[x]);
 
         // Do corners on pixel intensities?
 
@@ -292,10 +292,6 @@ __global__ void kabsch_transform(const void *d_image,
         // then atomically accumulate intensities
         if (is_foreground(eps, delta_b, delta_m)) {
             // Foreground pixel: accumulate intensity
-
-            //TODO: Add dynamic precision support for atomic adds
-            // -> consider compute compatability target?
-            // -> is double necessary here?
 
             atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
             atomicAdd(&d_foreground_count[refl_idx], 1u);
@@ -337,9 +333,9 @@ void compute_kabsch_transform(const void *d_image,
                               size_t num_reflections_this_image,
                               scalar_t delta_b,
                               scalar_t delta_m,
-                              double *d_foreground_sum,
+                              accumulator_t *d_foreground_sum,
                               uint32_t *d_foreground_count,
-                              double *d_background_sum,
+                              accumulator_t *d_background_sum,
                               uint32_t *d_background_count,
                               cudaStream_t stream) {
     // Configure kernel launch parameters
