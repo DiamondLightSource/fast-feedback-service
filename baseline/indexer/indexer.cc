@@ -23,6 +23,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <sstream>
 
 #include "assign_indices.cc"
 #include "combinations.cc"
@@ -372,14 +373,6 @@ int main(int argc, char **argv) {
     expt.set_crystal(best_xtal);
     expt.beam().set_s0(best_beam.get_s0());
     expt.detector().update(best_panel.get_d_matrix());
-    gemmi::UnitCell bestcell = best_xtal.get_unit_cell();
-    logger.info("Best cell (P1): {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f}",
-                bestcell.a,
-                bestcell.b,
-                bestcell.c,
-                bestcell.alpha,
-                bestcell.beta,
-                bestcell.gamma);
 
     // Save the indexed experiment list.
     json elist_out = expt.to_json();
@@ -396,7 +389,7 @@ int main(int argc, char **argv) {
 
         // Recalculate the rlp and s1 vectors based on the updated models.
         xyz_to_rlp_results final_results =
-          xyz_to_rlp(xyzobs_px, detector.panels()[0], expt.beam(), scan, gonio);
+          xyz_to_rlp(xyzobs_px, expt.detector().panels()[0], expt.beam(), scan, gonio);
         strong_reflections.add_column(std::string("xyzobs.mm.value"),
                                       final_results.xyzobs_mm.extent(0),
                                       3,
@@ -432,9 +425,42 @@ int main(int argc, char **argv) {
         // Index the data with the refined models.
         assign_indices_results assign_results = assign_indices_global(
           expt.crystal().get_A_matrix(), final_results.rlp, final_results.xyzobs_mm);
-        logger.info("Indexed {}/{} reflections using the refined models",
-                    assign_results.number_indexed,
-                    xyzobs_px.extent(0));
+        
+        // Print useful log output of results.
+        int n_indexed = assign_results.number_indexed;
+        int n_total = xyzobs_px.extent(0);
+        double percentage_indexed = 100.0 * static_cast<double>(n_indexed) / n_total;
+        logger.info("Indexed {}/{} reflections using the refined models ({:.2f}\% indexed)",
+                    n_indexed, n_total, percentage_indexed);
+        gemmi::UnitCell cell = expt.crystal().get_unit_cell();
+        Matrix3d U = expt.crystal().get_U_matrix();
+        Matrix3d B = expt.crystal().get_B_matrix();
+        Matrix3d A = expt.crystal().get_A_matrix();
+
+        const std::string msg = fmt::format(
+            "Crystal:\n"
+            "  Unit cell: {:.4f} {:.4f} {:.4f} {:.4f} {:.4f} {:.4f}\n"
+            "  Space group: P 1\n"
+            "  U matrix: [[{:>7.4f}, {:>7.4f}, {:>7.4f}],\n"
+            "             [{:>7.4f}, {:>7.4f}, {:>7.4f}],\n"
+            "             [{:>7.4f}, {:>7.4f}, {:>7.4f}]]\n"
+            "  B matrix: [[{:>7.4f}, {:>7.4f}, {:>7.4f}],\n"
+            "             [{:>7.4f}, {:>7.4f}, {:>7.4f}],\n"
+            "             [{:>7.4f}, {:>7.4f}, {:>7.4f}]]\n"
+            "  A = UB:   [[{:>7.4f}, {:>7.4f}, {:>7.4f}],\n"
+            "             [{:>7.4f}, {:>7.4f}, {:>7.4f}],\n"
+            "             [{:>7.4f}, {:>7.4f}, {:>7.4f}]]",
+            cell.a, cell.b, cell.c, cell.alpha, cell.beta, cell.gamma,
+            U(0,0), U(0,1), U(0,2), U(1,0), U(1,1), U(1,2), U(2,0), U(2,1), U(2,2),
+            B(0,0), B(0,1), B(0,2), B(1,0), B(1,1), B(1,2), B(2,0), B(2,1), B(2,2),
+            A(0,0), A(0,1), A(0,2), A(1,0), A(1,1), A(1,2), A(2,0), A(2,1), A(2,2)
+        );
+        std::istringstream iss(msg);
+        std::string line;
+        while (std::getline(iss, line)) {
+            logger.info("{}", line);
+        }
+
         strong_reflections.add_column(std::string("miller_index"),
                                       assign_results.miller_indices.extent(0),
                                       assign_results.miller_indices.extent(1),
