@@ -14,6 +14,7 @@
 #include <atomic>
 #include <barrier>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <dx2/beam.hpp>
 #include <dx2/experiment.hpp>
@@ -750,6 +751,9 @@ int main(int argc, char **argv) {
     // Compute final intensities for each reflection
     std::vector<double> intensities(num_reflections);
     std::vector<double> variances(num_reflections);
+    std::vector<double> sigmas(num_reflections);       // σ(I) = √Var(I)
+    std::vector<double> backgrounds(num_reflections);  // b̄  (background mean per pixel)
+    std::vector<double> background_sigmas(num_reflections);  // σ(b̄)
     size_t valid_reflections = 0;
 
     for (size_t i = 0; i < num_reflections; ++i) {
@@ -760,30 +764,50 @@ int main(int argc, char **argv) {
             // No foreground pixels - reflection not measured
             intensities[i] = 0.0;
             variances[i] = -1.0;  // Flag as invalid
+            sigmas[i] = -1.0;
+            backgrounds[i] = 0.0;
+            background_sigmas[i] = -1.0;
             continue;
         }
 
         double fg_sum = h_foreground_sum[i];
 
-        // Compute background mean (simple mean for now, could use robust estimator)
+        // Background mean b̄ (simple mean for now
         double bg_mean = (bg_count > 0) ? h_background_sum[i] / bg_count : 0.0;
 
-        // Subtract background: I = sum(foreground) - n_foreground * bg_mean
+        // Subtract background:  I = Σcᵢ(fg) − n_fg · b̄
         double background_total = bg_mean * fg_count;
         double intensity = fg_sum - background_total;
 
-        // Variance estimation (Poisson statistics)
-        // Var(I) = Var(fg_sum) + Var(background_total)
-        //        = fg_sum + (fg_count^2 / bg_count) * bg_mean  (if bg_count > 0)
-        double variance = fg_sum;  // Poisson variance of foreground
+        // Variance estimation (Poisson)
+        //
+        //   I = Σcᵢ(fg) - n_fg · b̄
+        //
+        // Each pixel count cᵢ ~ Poisson(λᵢ), so Var(cᵢ) = λᵢ ≈ cᵢ.
+        //
+        //   Var(Σcᵢ(fg)) = Σcᵢ = fg_sum          (foreground term)
+        //
+        //   b̄ = Σcⱼ(bg) / n_bg
+        //   Var(b̄) = b̄ / n_bg                     (mean of n_bg Poisson r.v.s)
+        //
+        //   Var(n_fg · b̄) = n_fg² · Var(b̄)
+        //                 = n_fg² · b̄ / n_bg        (background term)
+        //
+        //   Var(I) = Σcᵢ + n_fg² · b̄ / n_bg
+        //
+        double variance = fg_sum;  // Poisson variance of foreground counts
+        double bg_variance = 0.0;  // Var(b̄) = b̄ / n_bg
         if (bg_count > 0) {
-            // Add background variance contribution
-            // Var(bg_mean) = bg_mean / bg_count, so Var(fg_count * bg_mean) = fg_count^2 * bg_mean / bg_count
-            variance += (static_cast<double>(fg_count) * fg_count * bg_mean) / bg_count;
+            bg_variance = bg_mean / bg_count;
+            // Propagated background contribution: n_fg² · Var(b̄)
+            variance += static_cast<double>(fg_count) * fg_count * bg_variance;
         }
 
         intensities[i] = intensity;
         variances[i] = variance;
+        sigmas[i] = (variance > 0.0) ? std::sqrt(variance) : 0.0;
+        backgrounds[i] = bg_mean;
+        background_sigmas[i] = (bg_variance > 0.0) ? std::sqrt(bg_variance) : 0.0;
         valid_reflections++;
     }
 
@@ -794,19 +818,37 @@ int main(int argc, char **argv) {
     // Log some statistics
     if (valid_reflections > 0) {
         double sum_intensity = 0.0;
+        double sum_sigma = 0.0;
+        double sum_bg = 0.0;
         double max_intensity = -std::numeric_limits<double>::infinity();
         double min_intensity = std::numeric_limits<double>::infinity();
+        size_t n_positive_isigma = 0;
+        double sum_i_over_sigma = 0.0;
         for (size_t i = 0; i < num_reflections; ++i) {
             if (variances[i] >= 0) {
                 sum_intensity += intensities[i];
+                sum_sigma += sigmas[i];
+                sum_bg += backgrounds[i];
                 max_intensity = std::max(max_intensity, intensities[i]);
                 min_intensity = std::min(min_intensity, intensities[i]);
+                if (sigmas[i] > 0.0) {
+                    sum_i_over_sigma += intensities[i] / sigmas[i];
+                    n_positive_isigma++;
+                }
             }
         }
         logger.info("Intensity statistics: min={:.1f}, max={:.1f}, mean={:.1f}",
                     min_intensity,
                     max_intensity,
                     sum_intensity / valid_reflections);
+        logger.info("Mean σ(I)={:.2f}, mean background={:.2f}",
+                    sum_sigma / valid_reflections,
+                    sum_bg / valid_reflections);
+        if (n_positive_isigma > 0) {
+            logger.info("Mean I/σ(I)={:.2f} ({} reflections with σ>0)",
+                        sum_i_over_sigma / n_positive_isigma,
+                        n_positive_isigma);
+        }
     }
 
 #pragma endregion Summation Integration Finalization
