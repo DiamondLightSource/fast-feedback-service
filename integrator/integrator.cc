@@ -779,29 +779,22 @@ int main(int argc, char **argv) {
         double background_total = bg_mean * fg_count;
         double intensity = fg_sum - background_total;
 
-        // Variance estimation (Poisson)
+        // Variance estimation
         //
-        //   I = Σcᵢ(fg) - n_fg · b̄
+        //   I = Σcᵢ(fg) - B,  where B = n_fg · b̄  (total background under foreground)
         //
-        // Each pixel count cᵢ ~ Poisson(λᵢ), so Var(cᵢ) = λᵢ ≈ cᵢ.
+        //   Var(I) = |I| + |B| · (1 + n_fg / n_bg)
         //
-        //   Var(Σcᵢ(fg)) = Σcᵢ = fg_sum          (foreground term)
+        // The |I| term is the Poisson variance of the net signal.
+        // The |B| term accounts for the Poisson variance of the background,
+        // with the (1 + n_fg/n_bg) factor propagating the uncertainty in
+        // the background estimate from n_bg pixels to n_fg pixels.
         //
-        //   b̄ = Σcⱼ(bg) / n_bg
-        //   Var(b̄) = b̄ / n_bg                     (mean of n_bg Poisson r.v.s)
-        //
-        //   Var(n_fg · b̄) = n_fg² · Var(b̄)
-        //                 = n_fg² · b̄ / n_bg        (background term)
-        //
-        //   Var(I) = Σcᵢ + n_fg² · b̄ / n_bg
-        //
-        double variance = fg_sum;  // Poisson variance of foreground counts
-        double bg_variance = 0.0;  // Var(b̄) = b̄ / n_bg
-        if (bg_count > 0) {
-            bg_variance = bg_mean / bg_count;
-            // Propagated background contribution: n_fg² · Var(b̄)
-            variance += static_cast<double>(fg_count) * fg_count * bg_variance;
-        }
+        double fg_bg_ratio =
+          (bg_count > 0) ? static_cast<double>(fg_count) / bg_count : 0.0;
+        double variance =
+          std::abs(intensity) + std::abs(background_total) * (1.0 + fg_bg_ratio);
+        double bg_variance = std::abs(background_total) * (1.0 + fg_bg_ratio);
 
         intensities[i] = intensity;
         variances[i] = variance;
