@@ -37,15 +37,12 @@ using scalar_t = float;
 #endif
 
 // Accumulator type for summation/reduction operations.
-// Currently follows scalar_t precision. This is acceptable because
-// accumulation happens per-reflection (not globally), and final
-// reduction to double is performed on the host.
+// Integer accumulation is used because:
+// 1. atomicAdd on uint32_t is a single native hardware instruction (fastest atomic)
+// 2. Maximum possible sum is well within uint32_t range (~20M << 4.3G)
+// 3. Final reduction to double is performed on the host
 //
-// WARNING: float accumulators lose precision once the running sum
-// exceeds ~16.7M (2^24), at which point adding 1.0f is a no-op.
-// For strong reflections with large bounding boxes this can occur
-// (e.g. 500 bright pixels × 40k intensity ≈ 20M). If integration
-// accuracy degrades for strong reflections, change this to:
-//     using accumulator_t = double;
-// Note: double atomicAdd requires compute capability >= 6.0 (Pascal+).
-using accumulator_t = scalar_t;
+// NOTE: If pixel_t can be negative (pedestal-subtracted data), change to int32_t.
+// NOTE: If pixel values are non-integer (e.g. gain-corrected floats), revert to:
+//     using accumulator_t = scalar_t;
+using accumulator_t = uint32_t;
