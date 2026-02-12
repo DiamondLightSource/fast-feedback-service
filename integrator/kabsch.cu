@@ -35,6 +35,19 @@
  * GOAL: Determine foreground/background pixels and atomically aggregate
  * intensities per reflection within the kernel, avoiding the need to return
  * all epsilon values (too much data).
+ * 
+ * TODO:
+ * 1. Handle reflections that peak between corners but taper off before
+ * reaching the next corner and/or are completely contained within a
+ * single voxel. The current 8-corner check may misclassify these as
+ * background if all 8 corners are outside the foreground region, even
+ * if the pixel centre is actually within
+ * 
+ * 2. Fix unit test
+ *     - Remove deprecated kernel
+ *     - Refactor unit test to utilise the new kernel and host wrapper
+ * 
+ * 3. Dials-data?
  */
 
 #include <cuda_runtime.h>
