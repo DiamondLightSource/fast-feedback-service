@@ -32,30 +32,9 @@
  * References:
  * - Kabsch, W. (2010). Acta Cryst. D66, 133–144
  *
- * IMPLEMENTATION PLAN: 
- *
  * GOAL: Determine foreground/background pixels and atomically aggregate
  * intensities per reflection within the kernel, avoiding the need to return
  * all epsilon values (too much data).
- *
- * -----------------------------------------------------------------------------
- * STEP 6: Implement proper GLM background estimation
- *
- * -----------------------------------------------------------------------------
- * CONSIDERATIONS
- * 1. Pixel voxel corners: Full 8-corner check for accurate foreground boundary
- *    vs single pixel-centre check (simpler, slightly less accurate)
- *
- * 2. Histogram size: NUM_BINS = 256 for uint8, ~1024-4096 for uint16 with binning
- *
- * 3. Memory: For 100k reflections with 1024 bins × 4 bytes = 400 MB
- *    May need to process in batches or use smaller histograms
- *
- * 4. Atomic contention: Most reflections span few pixels, so contention should
- *    be manageable. Profile before optimizing with shared memory reduction.
- *
- * 5. Variance calculation: Need sum of squared values for proper variance
- *    estimation. Add d_foreground_sum_sq buffer.
  */
 
 #include <cuda_runtime.h>
