@@ -22,7 +22,12 @@ set_property(CACHE CUDA_ARCH PROPERTY STRINGS
     "80 - Ampere (A100)"
     "86 - Ampere (RTX 30xx)"
     "89 - Ada Lovelace (RTX 40xx)"
-    "90 - Hopper (H100)" 
+    "90 - Hopper (H100)"
+    "100 - Blackwell (GB200, B200)"
+    "103 - Blackwell (GB300, B300)"
+    "110 - Blackwell Jetson (T5000, T4000)"
+    "120 - Blackwell (RTX 50xx, RTX PRO)"
+    "121 - Blackwell (DGX Spark GB10)"
 )
 
 # Extract just the number from the selection (digits before the " - " label)
