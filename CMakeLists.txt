@@ -25,8 +25,8 @@ set_property(CACHE CUDA_ARCH PROPERTY STRINGS
     "90 - Hopper (H100)" 
 )
 
-# Extract just the number from the selection (first two characters)
-string(SUBSTRING "${CUDA_ARCH}" 0 2 CUDA_ARCH_NUMBER)
+# Extract just the number from the selection (digits before the " - " label)
+string(REGEX MATCH "^[0-9]+" CUDA_ARCH_NUMBER "${CUDA_ARCH}")
 set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_NUMBER})
 message(STATUS "CUDA architecture set to: sm_${CMAKE_CUDA_ARCHITECTURES}")
 
