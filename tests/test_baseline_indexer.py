@@ -3,6 +3,8 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+import h5py
+import numpy as np
 
 
 def test_baseline_indexer(tmp_path, dials_data):
@@ -194,6 +196,16 @@ def test_baseline_indexer(tmp_path, dials_data):
     }
     assert candidate_crystals == expected_crystals_output
 
+    assert (tmp_path / "indexed.refl").is_file()
+    assert (tmp_path / "indexed.expt").is_file()
+    with h5py.File(tmp_path / "indexed.refl") as f:
+        flags = f["/dials/processing/group_0/flags"]
+        assert len(flags) == 703
+        n_indexed = np.sum(np.array(flags, dtype=int) == 36)
+        n_unindexed = np.sum(np.array(flags, dtype=int) == 32)
+        assert n_indexed == 55
+        assert n_unindexed == 648
+
 
 def test_baseline_indexer_c2sum(tmp_path, dials_data):
     indexer_path: str | Path | None = os.getenv("INDEXER")
@@ -367,3 +379,11 @@ def test_baseline_indexer_c2sum(tmp_path, dials_data):
         },
     }
     assert candidate_crystals == expected_crystals_output
+
+    with h5py.File(tmp_path / "indexed.refl") as f:
+        flags = f["/dials/processing/group_0/flags"]
+        assert len(flags) == 107999
+        n_indexed = np.sum(np.array(flags, dtype=int) == 36)
+        n_unindexed = np.sum(np.array(flags, dtype=int) == 32)
+        assert n_indexed == 107265
+        assert n_unindexed == 734

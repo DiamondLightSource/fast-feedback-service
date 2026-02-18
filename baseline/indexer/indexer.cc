@@ -582,7 +582,7 @@ int main(int argc, char **argv) {
             flags_ = strong_reflections.column<std::size_t>("flags");
             flag_span = flags_.value();
         } else {
-            auto flag_span = flags_.value();
+            flag_span = flags_.value();
             for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
                 if ((assign_results.miller_indices(i, 0)) != 0
                     | (assign_results.miller_indices(i, 1) != 0)
@@ -601,7 +601,7 @@ int main(int argc, char **argv) {
                                     strong_reflections);
         // reset the predicted flags as these are observed not predicted
         for (int i = 0; i < flag_span.extent(0); ++i) {
-            flag_span(i, 0) = flag_span(i, 0) & ~predicted_value;
+            flag_span(i, 0) &= ~predicted_value;
         }
 
         // Save the indexed reflection table.
