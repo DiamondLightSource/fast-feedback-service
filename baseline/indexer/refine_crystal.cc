@@ -11,12 +11,12 @@
 #include "refine_candidate.cc"
 #include "reflection_filter.cc"
 
-void refine_crystal(Crystal& crystal,
-                      ReflectionTable const &obs,
-                      Goniometer gonio,
-                      MonochromaticBeam& beam,
-                      Panel& panel,
-                      double scan_width) {
+void refine_crystal(Crystal &crystal,
+                    ReflectionTable const &obs,
+                    Goniometer gonio,
+                    MonochromaticBeam &beam,
+                    Panel &panel,
+                    double scan_width) {
     std::vector<int> miller_indices_data;
     int count;
     auto preassign = std::chrono::system_clock::now();
@@ -32,7 +32,9 @@ void refine_crystal(Crystal& crystal,
     std::chrono::duration<double> elapsed_time = t2 - preassign;
     logger.debug("Time for assigning indices: {:.5f}s", elapsed_time.count());
 
-    logger.info("Indexed {}/{} reflections", results.number_indexed, results.miller_indices.extent(0));
+    logger.info("Indexed {}/{} reflections",
+                results.number_indexed,
+                results.miller_indices.extent(0));
 
     auto t3 = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_time1 = t3 - t2;

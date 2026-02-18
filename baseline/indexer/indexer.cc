@@ -32,9 +32,9 @@
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
 #include "peaks_to_rlvs.cc"
+#include "refine_crystal.cc"
 #include "scan_static_predictor.cc"
 #include "score_crystals.cc"
-#include "refine_crystal.cc"
 #include "xyz_to_rlp.cc"
 
 using Eigen::Matrix3d;
@@ -70,7 +70,9 @@ int main(int argc, char **argv) {
       .default_value<size_t>(50)
       .scan<'u', size_t>();
     parser.add_argument("--macro-cycles")
-      .help("The number of macrocycles of refinement to run after the initial indexing. Set to zero for no post-indexing refinement.")
+      .help(
+        "The number of macrocycles of refinement to run after the initial indexing. "
+        "Set to zero for no post-indexing refinement.")
       .default_value<size_t>(5)
       .scan<'u', size_t>();
     parser.add_argument("--test")
@@ -395,51 +397,53 @@ int main(int argc, char **argv) {
     expt.detector().update(best_panel.get_d_matrix());
 
     // Now do macrocycles of refinement
-    if (macro_cycles){
-      std::vector<double> d_steps;
-      double d_min_step = (d_min - d_min_data) / macro_cycles;
-      logger.info("Performing {} macro cycles with a dmin step of {:.3f}", macro_cycles, d_min_step);
-      for (int i=0;i<macro_cycles;++i){
-        d_steps.push_back(d_min - (i+1)*d_min_step);
-      }
-      for (int i=0;i<macro_cycles;++i){
-        double d_min = d_steps[i];
-        logger.info("Performing macro cycle {} with d_min={:.3f}", i+1, d_min);
-        results = xyz_to_rlp(xyzobs_px, expt.detector().panels()[0], expt.beam(), scan, gonio);
-
-        // Make a selection on dmin and rotation angle like dials
-        std::vector<bool> selection(results.rlp.extent(0), true);
-        double osc_trim_limit = scan.get_oscillation()[0] + 360.0;
-        for (int i = 0; i < results.rlp.extent(0); ++i) {
-          Eigen::Map<Vector3d> rlp_i(&results.rlp(i, 0));
-            if (1.0 / rlp_i.norm() <= d_min) {
-              selection[i] = false;
-            } else if (results.xyzobs_mm(i, 2) * RAD2DEG > osc_trim_limit) {
-              selection[i] = false;
-            }
+    if (macro_cycles) {
+        std::vector<double> d_steps;
+        double d_min_step = (d_min - d_min_data) / macro_cycles;
+        logger.info("Performing {} macro cycles with a dmin step of {:.3f}",
+                    macro_cycles,
+                    d_min_step);
+        for (int i = 0; i < macro_cycles; ++i) {
+            d_steps.push_back(d_min - (i + 1) * d_min_step);
         }
-        ReflectionTable reflections;
-        reflections.add_column(std::string("flags"), flags.size(), 1, flags);
-        reflections.add_column(std::string("xyzobs.mm.value"),
-                              results.xyzobs_mm.extent(0),
-                              3,
-                              results.xyzobs_mm_data);
-        reflections.add_column(std::string("s1"), results.s1.extent(0), 3, results.s1_data);
-        reflections.add_column(
-          std::string("rlp"), results.rlp.extent(0), 3, results.rlp_data);
-        reflections.add_column(std::string("entering"), enterings);
-        const ReflectionTable filtered = reflections.select(selection);
+        for (int i = 0; i < macro_cycles; ++i) {
+            double d_min = d_steps[i];
+            logger.info("Performing macro cycle {} with d_min={:.3f}", i + 1, d_min);
+            results = xyz_to_rlp(
+              xyzobs_px, expt.detector().panels()[0], expt.beam(), scan, gonio);
 
-        refine_crystal(expt.crystal(),
-          filtered,
-          gonio,
-          expt.beam(),
-          expt.detector().panels()[0],
-          scan_width);
-      }
+            // Make a selection on dmin and rotation angle like dials
+            std::vector<bool> selection(results.rlp.extent(0), true);
+            double osc_trim_limit = scan.get_oscillation()[0] + 360.0;
+            for (int i = 0; i < results.rlp.extent(0); ++i) {
+                Eigen::Map<Vector3d> rlp_i(&results.rlp(i, 0));
+                if (1.0 / rlp_i.norm() <= d_min) {
+                    selection[i] = false;
+                } else if (results.xyzobs_mm(i, 2) * RAD2DEG > osc_trim_limit) {
+                    selection[i] = false;
+                }
+            }
+            ReflectionTable reflections;
+            reflections.add_column(std::string("flags"), flags.size(), 1, flags);
+            reflections.add_column(std::string("xyzobs.mm.value"),
+                                   results.xyzobs_mm.extent(0),
+                                   3,
+                                   results.xyzobs_mm_data);
+            reflections.add_column(
+              std::string("s1"), results.s1.extent(0), 3, results.s1_data);
+            reflections.add_column(
+              std::string("rlp"), results.rlp.extent(0), 3, results.rlp_data);
+            reflections.add_column(std::string("entering"), enterings);
+            const ReflectionTable filtered = reflections.select(selection);
+
+            refine_crystal(expt.crystal(),
+                           filtered,
+                           gonio,
+                           expt.beam(),
+                           expt.detector().panels()[0],
+                           scan_width);
+        }
     }
-
-
 
     // Save the indexed experiment list.
     json elist_out = expt.to_json();
