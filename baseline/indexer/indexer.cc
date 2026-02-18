@@ -32,6 +32,7 @@
 #include "flood_fill.cc"
 #include "gemmi/symmetry.hpp"
 #include "peaks_to_rlvs.cc"
+#include "refine_crystal.cc"
 #include "scan_static_predictor.cc"
 #include "score_crystals.cc"
 #include "xyz_to_rlp.cc"
@@ -67,6 +68,12 @@ int main(int argc, char **argv) {
     parser.add_argument("--max-refine")
       .help("The maximum number of candidate lattices to refine during indexing")
       .default_value<size_t>(50)
+      .scan<'u', size_t>();
+    parser.add_argument("--macro-cycles")
+      .help(
+        "The number of macrocycles of refinement to run after the initial indexing. "
+        "Set to zero for no post-indexing refinement.")
+      .default_value<size_t>(5)
       .scan<'u', size_t>();
     parser.add_argument("--test")
       .help("Enable additional output for testing")
@@ -115,6 +122,7 @@ int main(int argc, char **argv) {
     std::string filename = parser.get<std::string>("refl");
     double max_cell = parser.get<float>("max-cell");
     size_t max_refine = parser.get<size_t>("max-refine");
+    size_t macro_cycles = parser.get<size_t>("macro-cycles");
 
     // Parse the experiment list (a json file) and load the models.
     // Will be moved to dx2.
@@ -161,25 +169,39 @@ int main(int argc, char **argv) {
     // coordinates on the detector into reciprocal space.
     xyz_to_rlp_results results = xyz_to_rlp(xyzobs_px, panel, beam, scan, gonio);
     logger.info("Number of reflections: {}", results.rlp.extent(0));
+    uint32_t n_points = parser.get<uint32_t>("fft-npoints");
 
-    // If a resolution limit was not specified, determine from the highest resolution spot.
+    // Determine the d_min limit of the data, will be used in macrocycles of refinement.
+    double d_min_data;
+    std::vector<double> d_values(results.rlp.extent(0), 0);
+    for (int i = 0; i < results.rlp.extent(0); ++i) {
+        d_values[i] = 1.0 / Eigen::Map<Vector3d>(&results.rlp(i, 0)).norm();
+    }
+    d_min_data = *std::min_element(d_values.begin(), d_values.end());
+    logger.debug("dmin of highest resolution spot: {:.5f}", d_min_data);
+
     double d_min;
     if (parser.is_used("dmin")) {
         d_min = parser.get<float>("dmin");
     } else {
-        std::vector<double> d_values(results.rlp.extent(0), 0);
-        for (int i = 0; i < results.rlp.extent(0); ++i) {
-            d_values[i] = 1.0 / Eigen::Map<Vector3d>(&results.rlp(i, 0)).norm();
-        }
-        d_min = *std::min_element(d_values.begin(), d_values.end());
-        logger.info("Setting dmin based on highest resolution spot: {:.5f}", d_min);
+        /* rough calculation of suitable d_min based on max cell
+         see also Campbell, J. (1998). J. Appl. Cryst., 31(3), 407-413.
+         fft_cell should be greater than twice max_cell, so say:
+           fft_cell = 2.5 * max_cell
+         then:
+           fft_cell = n_points * d_min/2
+           2.5 * max_cell = n_points * d_min/2
+         a little bit of rearrangement:
+           d_min = 5 * max_cell/n_points.   */
+        d_min = 5.0 * max_cell / n_points;
+        d_min = std::max(d_min, d_min_data);
+        logger.info("Setting dmin to {:.5f}", d_min);
     }
 
     // b_iso is an isotropic b-factor used to weight the points when doing the fft.
     // i.e. high resolution (weaker) spots are downweighted by the expected
     // intensity fall-off as as function of resolution.
     double b_iso = -4.0 * std::pow(d_min, 2) * log(0.05);
-    uint32_t n_points = parser.get<uint32_t>("fft-npoints");
     logger.info("Setting b_iso = {:.3f}", b_iso);
 
     // Create an array to store the fft result. This is a 3D grid of points, typically 256^3.
@@ -374,6 +396,55 @@ int main(int argc, char **argv) {
     expt.beam().set_s0(best_beam.get_s0());
     expt.detector().update(best_panel.get_d_matrix());
 
+    // Now do macrocycles of refinement
+    if (macro_cycles) {
+        std::vector<double> d_steps;
+        double d_min_step = (d_min - d_min_data) / macro_cycles;
+        logger.info("Performing {} macro cycles with a dmin step of {:.3f}",
+                    macro_cycles,
+                    d_min_step);
+        for (int i = 0; i < macro_cycles; ++i) {
+            d_steps.push_back(d_min - (i + 1) * d_min_step);
+        }
+        for (int i = 0; i < macro_cycles; ++i) {
+            double d_min = d_steps[i];
+            logger.info("Performing macro cycle {} with d_min={:.3f}", i + 1, d_min);
+            results = xyz_to_rlp(
+              xyzobs_px, expt.detector().panels()[0], expt.beam(), scan, gonio);
+
+            // Make a selection on dmin and rotation angle like dials
+            std::vector<bool> selection(results.rlp.extent(0), true);
+            double osc_trim_limit = scan.get_oscillation()[0] + 360.0;
+            for (int i = 0; i < results.rlp.extent(0); ++i) {
+                Eigen::Map<Vector3d> rlp_i(&results.rlp(i, 0));
+                if (1.0 / rlp_i.norm() <= d_min) {
+                    selection[i] = false;
+                } else if (results.xyzobs_mm(i, 2) * RAD2DEG > osc_trim_limit) {
+                    selection[i] = false;
+                }
+            }
+            ReflectionTable reflections;
+            reflections.add_column(std::string("flags"), flags.size(), 1, flags);
+            reflections.add_column(std::string("xyzobs.mm.value"),
+                                   results.xyzobs_mm.extent(0),
+                                   3,
+                                   results.xyzobs_mm_data);
+            reflections.add_column(
+              std::string("s1"), results.s1.extent(0), 3, results.s1_data);
+            reflections.add_column(
+              std::string("rlp"), results.rlp.extent(0), 3, results.rlp_data);
+            reflections.add_column(std::string("entering"), enterings);
+            const ReflectionTable filtered = reflections.select(selection);
+
+            refine_crystal(expt.crystal(),
+                           filtered,
+                           gonio,
+                           expt.beam(),
+                           expt.detector().panels()[0],
+                           scan_width);
+        }
+    }
+
     // Save the indexed experiment list.
     json elist_out = expt.to_json();
     std::string efile_name = "indexed.expt";
@@ -511,7 +582,7 @@ int main(int argc, char **argv) {
             flags_ = strong_reflections.column<std::size_t>("flags");
             flag_span = flags_.value();
         } else {
-            auto flag_span = flags_.value();
+            flag_span = flags_.value();
             for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
                 if ((assign_results.miller_indices(i, 0)) != 0
                     | (assign_results.miller_indices(i, 1) != 0)
@@ -530,7 +601,7 @@ int main(int argc, char **argv) {
                                     strong_reflections);
         // reset the predicted flags as these are observed not predicted
         for (int i = 0; i < flag_span.extent(0); ++i) {
-            flag_span(i, 0) = flag_span(i, 0) & ~predicted_value;
+            flag_span(i, 0) &= ~predicted_value;
         }
 
         // Save the indexed reflection table.

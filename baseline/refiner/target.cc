@@ -1,3 +1,4 @@
+#pragma once
 
 #include <cmath>
 #include <dx2/beam.hpp>
