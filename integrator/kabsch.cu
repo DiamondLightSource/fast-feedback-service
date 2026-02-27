@@ -238,8 +238,9 @@ __global__ void kabsch_transform(pixel_t *d_image,
                                  accumulator_t *d_background_sum,
                                  uint32_t *d_background_count) {
     // ── Shared Memory ──────────────────────────────────────────────
-    // Foreground status for each corner at two phi values (lower/upper z-face)
-    __shared__ bool s_fg[2][KABSCH_BLOCK_Y][KABSCH_BLOCK_X];
+    // Foreground status for each corner at three phi values:
+    //   [0] = phi_low, [1] = phi_high, [2] = phi_c (centre-in-slice override)
+    __shared__ bool s_fg[3][KABSCH_BLOCK_Y][KABSCH_BLOCK_X];
 
     // Block-level reflection list: indices into the global reflection arrays
     __shared__ size_t s_block_refl[MAX_BLOCK_REFLECTIONS];
@@ -353,28 +354,35 @@ __global__ void kabsch_transform(pixel_t *d_image,
             Vector3D eps_hi =
               pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_high, rot_axis, s1_len);
             s_fg[1][ty][tx] = is_foreground(eps_hi, delta_b, delta_m);
+
+            // Centre z-slice: evaluate at phi_c where ε₃ = 0
+            // This catches reflections entirely contained within the voxel's
+            // z-extent — the xy ellipsoid check still applies, so only pixels
+            // spatially close to the reflection centre are marked foreground.
+            const bool centre_in_z_slice = (phi_c >= phi_low && phi_c <= phi_high);
+            if (centre_in_z_slice) {
+                Vector3D eps_c =
+                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_c, rot_axis, s1_len);
+                // eps_c.z should be ~0; check only ε₁²/δ_B² + ε₂²/δ_B² ≤ 1
+                s_fg[2][ty][tx] = is_foreground(eps_c, delta_b, delta_m);
+            } else {
+                s_fg[2][ty][tx] = false;
+            }
         } else {
             s_fg[0][ty][tx] = false;
             s_fg[1][ty][tx] = false;
+            s_fg[2][ty][tx] = false;
         }
 
         __syncthreads();
 
-        // Interior threads check all 8 voxel corners for foreground classification
+        // Interior threads check all 12 voxel corners (8 original + 4 at phi_c)
         if (pixel_in_image) {
-            // Special case: if the reflection centre (phi_c) lies between the
-            // lower and upper z-faces of this voxel, the reflection may be
-            // entirely contained within the z-extent and missed by the corner
-            // checks at phi_low / phi_high.  In this case we fix all epsilon
-            // values to zero — which is always inside the foreground ellipsoid
-            // — so the pixel is unconditionally classified as foreground.
-            const bool centre_in_z_slice = (phi_c >= phi_low && phi_c <= phi_high);
-
-            // Union of all 8 corners OR centre-in-z-slice override
             const bool any_fg =
-              centre_in_z_slice || s_fg[0][ty][tx] || s_fg[0][ty][tx + 1]
-              || s_fg[0][ty + 1][tx] || s_fg[0][ty + 1][tx + 1] || s_fg[1][ty][tx]
-              || s_fg[1][ty][tx + 1] || s_fg[1][ty + 1][tx] || s_fg[1][ty + 1][tx + 1];
+              s_fg[0][ty][tx] || s_fg[0][ty][tx + 1] || s_fg[0][ty + 1][tx]
+              || s_fg[0][ty + 1][tx + 1] || s_fg[1][ty][tx] || s_fg[1][ty][tx + 1]
+              || s_fg[1][ty + 1][tx] || s_fg[1][ty + 1][tx + 1] || s_fg[2][ty][tx]
+              || s_fg[2][ty][tx + 1] || s_fg[2][ty + 1][tx] || s_fg[2][ty + 1][tx + 1];
 
             // Only accumulate if the pixel centre is within the bbox
             // (pixels outside the bbox are irrelevant to this reflection)
