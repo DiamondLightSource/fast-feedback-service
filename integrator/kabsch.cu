@@ -378,11 +378,13 @@ __global__ void kabsch_transform(pixel_t *d_image,
 
         // Interior threads check all 12 voxel corners (8 original + 4 at phi_c)
         if (pixel_in_image) {
-            const bool any_fg =
-              s_fg[0][ty][tx] || s_fg[0][ty][tx + 1] || s_fg[0][ty + 1][tx]
-              || s_fg[0][ty + 1][tx + 1] || s_fg[1][ty][tx] || s_fg[1][ty][tx + 1]
-              || s_fg[1][ty + 1][tx] || s_fg[1][ty + 1][tx + 1] || s_fg[2][ty][tx]
-              || s_fg[2][ty][tx + 1] || s_fg[2][ty + 1][tx] || s_fg[2][ty + 1][tx + 1];
+            bool any_fg = false;
+#pragma unroll
+            for (int z = 0; z < 3; ++z) {
+                // if any corner at this z-slice is foreground, the pixel is foreground
+                any_fg |= s_fg[z][ty][tx] | s_fg[z][ty][tx + 1] | s_fg[z][ty + 1][tx]
+                          | s_fg[z][ty + 1][tx + 1];
+            }
 
             // Only accumulate if the pixel centre is within the bbox
             // (pixels outside the bbox are irrelevant to this reflection)
