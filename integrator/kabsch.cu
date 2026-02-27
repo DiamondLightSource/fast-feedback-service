@@ -37,12 +37,6 @@
  * all epsilon values (too much data).
  * 
  * TODO:
- * 1. Handle reflections that peak between corners but taper off before
- * reaching the next corner and/or are completely contained within a
- * single voxel. The current 8-corner check may misclassify these as
- * background if all 8 corners are outside the foreground region, even
- * if the pixel centre is actually within
- * 
  * 2. Fix unit test
  *     - Remove deprecated kernel
  *     - Refactor unit test to utilise the new kernel and host wrapper
@@ -368,11 +362,19 @@ __global__ void kabsch_transform(pixel_t *d_image,
 
         // Interior threads check all 8 voxel corners for foreground classification
         if (pixel_in_image) {
-            // Union of all 8 corners: any foreground -> pixel is foreground
-            const bool any_fg = s_fg[0][ty][tx] || s_fg[0][ty][tx + 1]
-                                || s_fg[0][ty + 1][tx] || s_fg[0][ty + 1][tx + 1]
-                                || s_fg[1][ty][tx] || s_fg[1][ty][tx + 1]
-                                || s_fg[1][ty + 1][tx] || s_fg[1][ty + 1][tx + 1];
+            // Special case: if the reflection centre (phi_c) lies between the
+            // lower and upper z-faces of this voxel, the reflection may be
+            // entirely contained within the z-extent and missed by the corner
+            // checks at phi_low / phi_high.  In this case we fix all epsilon
+            // values to zero — which is always inside the foreground ellipsoid
+            // — so the pixel is unconditionally classified as foreground.
+            const bool centre_in_z_slice = (phi_c >= phi_low && phi_c <= phi_high);
+
+            // Union of all 8 corners OR centre-in-z-slice override
+            const bool any_fg =
+              centre_in_z_slice || s_fg[0][ty][tx] || s_fg[0][ty][tx + 1]
+              || s_fg[0][ty + 1][tx] || s_fg[0][ty + 1][tx + 1] || s_fg[1][ty][tx]
+              || s_fg[1][ty][tx + 1] || s_fg[1][ty + 1][tx] || s_fg[1][ty + 1][tx + 1];
 
             // Only accumulate if the pixel centre is within the bbox
             // (pixels outside the bbox are irrelevant to this reflection)
