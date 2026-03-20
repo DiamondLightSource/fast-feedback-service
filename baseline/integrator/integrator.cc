@@ -360,21 +360,40 @@ int main(int argc, char **argv) {
     logger.info("Processing {} reflections", num_reflections);
 
     // Compute bounding boxes using baseline CPU algorithms
-    logger.info("Computing Kabsch bounding boxes using baseline CPU algorithms...");
-    auto computed_bounding_boxes = compute_kabsch_bounding_boxes(s0,
-                                                                 rotation_axis,
-                                                                 s1_vectors,
-                                                                 phi_column,
-                                                                 num_reflections,
-                                                                 sigma_b,
-                                                                 sigma_m,
-                                                                 panel,
-                                                                 scan,
-                                                                 beam);
+    auto computed_bounding_boxes_opt = reflections.column<int>("bbox");
+    std::vector<BoundingBoxExtents> computed_bounding_boxes;
+    if (!computed_bounding_boxes_opt.has_value()) {
+        logger.info("Computing Kabsch bounding boxes using baseline CPU algorithms...");
+        computed_bounding_boxes = compute_kabsch_bounding_boxes(s0,
+                                                                    rotation_axis,
+                                                                    s1_vectors,
+                                                                    phi_column,
+                                                                    num_reflections,
+                                                                    sigma_b,
+                                                                    sigma_m,
+                                                                    panel,
+                                                                    scan,
+                                                                    beam);
 
-    logger.info("Successfully computed {} bounding boxes",
-                computed_bounding_boxes.size());
-
+        logger.info("Successfully computed {} bounding boxes",
+                    computed_bounding_boxes.size());
+        }
+    else {
+        std::vector<int> bbox_data = std::vector<int>(
+          computed_bounding_boxes_opt.value().data_handle(), 
+          computed_bounding_boxes_opt.value().data_handle() + computed_bounding_boxes_opt.value().size());
+        for (int i=0;i<bbox_data.size();i+=6){
+          BoundingBoxExtents bbox;
+          bbox.x_min = bbox_data[i];
+          bbox.x_max = bbox_data[i+1];
+          bbox.y_min = bbox_data[i+2];
+          bbox.y_max = bbox_data[i+3];
+          bbox.z_min = bbox_data[i+4];
+          bbox.z_max = bbox_data[i+5];
+          computed_bounding_boxes.push_back(bbox);
+        }
+    }
+    
     // Map reflections by z layer (image number)
     logger.info("Mapping reflections by image number (z layer)");
     std::unordered_map<int, std::vector<size_t>> reflections_by_image;
