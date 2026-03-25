@@ -1,402 +1,295 @@
+/**
+ * @file test_extent.cc
+ * @brief Unit tests for compute_kabsch_bounding_boxes (CPU, extent.cc)
+ *
+ * Tests the Kabsch bounding box computation against DIALS integrator
+ * stage dumps. Input reflection geometry comes from bbox_before.h5
+ * (pre-compute_bbox), and expected bounding boxes from bbox_after.h5
+ * (post-compute_bbox). All HDF5 datasets are under the internal group
+ * "dials/processing/group_0".
+ */
+
 #include <gtest/gtest.h>
+#include <hdf5.h>
 
 #include <Eigen/Dense>
 #include <dx2/beam.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
-#include <dx2/reflection.hpp>
+#include <dx2/h5/h5read_processed.hpp>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <map>
 #include <nlohmann/json.hpp>
+#include <tuple>
 #include <vector>
 
 #include "extent.hpp"
 #include "ffs_logger.hpp"
 #include "math/math_utils.cuh"
 
-/**
- * @brief Validate computed bounding boxes against existing bbox column
- * 
- * Compares the first N bounding boxes and writes results to a validation file.
- * 
- * @param reflections The reflection table containing existing bbox column
- * @param computed_bbox_data Flat array of computed bounding boxes (6 values per reflection)
- * @param num_reflections Total number of reflections
- * @param num_to_display Number of bounding boxes to display for comparison
- * @return 0 on success, 1 on error
- */
-int validate_bounding_boxes(ReflectionTable &reflections,
-                            const std::vector<double> &computed_bbox_data,
-                            size_t num_reflections,
-                            size_t num_to_display = 10,
-                            const std::string &data_path = "") {
-    logger.info(
-      "Validation mode: comparing computed bounding boxes with existing bbox column");
+namespace fs = std::filesystem;
 
-    // Load existing bounding boxes
-    auto bbox_column_opt = reflections.column<int>(data_path + "bbox");
-    if (!bbox_column_opt) {
-        logger.error("Column 'bbox' not found in reflection data for validation.");
-        return 1;
-    }
-    auto bbox_column = *bbox_column_opt;
+/// HDF5 group path prefix for DIALS reflection table datasets
+static const std::string G = "dials/processing/group_0/";
 
-    // Statistics for comparison
-    double total_x_min_diff = 0.0, total_x_max_diff = 0.0;
-    double total_y_min_diff = 0.0, total_y_max_diff = 0.0;
-    double total_z_min_diff = 0.0, total_z_max_diff = 0.0;
-    double max_x_min_diff = 0.0, max_x_max_diff = 0.0;
-    double max_y_min_diff = 0.0, max_y_max_diff = 0.0;
-    double max_z_min_diff = 0.0, max_z_max_diff = 0.0;
-
-    logger.info("First {} bounding box comparisons:", num_to_display);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        // Existing bbox
-        double ex_x_min = bbox_column(i, 0);
-        double ex_x_max = bbox_column(i, 1);
-        double ex_y_min = bbox_column(i, 2);
-        double ex_y_max = bbox_column(i, 3);
-        int ex_z_min = static_cast<int>(bbox_column(i, 4));
-        int ex_z_max = static_cast<int>(bbox_column(i, 5));
-
-        // Computed bbox (from flat array)
-        double comp_x_min = computed_bbox_data[i * 6 + 0];
-        double comp_x_max = computed_bbox_data[i * 6 + 1];
-        double comp_y_min = computed_bbox_data[i * 6 + 2];
-        double comp_y_max = computed_bbox_data[i * 6 + 3];
-        int comp_z_min = static_cast<int>(computed_bbox_data[i * 6 + 4]);
-        int comp_z_max = static_cast<int>(computed_bbox_data[i * 6 + 5]);
-
-        // Compute differences
-        double diff_x_min = std::abs(comp_x_min - ex_x_min);
-        double diff_x_max = std::abs(comp_x_max - ex_x_max);
-        double diff_y_min = std::abs(comp_y_min - ex_y_min);
-        double diff_y_max = std::abs(comp_y_max - ex_y_max);
-        double diff_z_min = std::abs(comp_z_min - ex_z_min);
-        double diff_z_max = std::abs(comp_z_max - ex_z_max);
-
-        // Accumulate statistics
-        total_x_min_diff += diff_x_min;
-        total_x_max_diff += diff_x_max;
-        total_y_min_diff += diff_y_min;
-        total_y_max_diff += diff_y_max;
-        total_z_min_diff += diff_z_min;
-        total_z_max_diff += diff_z_max;
-
-        max_x_min_diff = std::max(max_x_min_diff, diff_x_min);
-        max_x_max_diff = std::max(max_x_max_diff, diff_x_max);
-        max_y_min_diff = std::max(max_y_min_diff, diff_y_min);
-        max_y_max_diff = std::max(max_y_max_diff, diff_y_max);
-        max_z_min_diff = std::max(max_z_min_diff, diff_z_min);
-        max_z_max_diff = std::max(max_z_max_diff, diff_z_max);
-
-        // Display first N comparisons
-        if (i < num_to_display) {
-            logger.info(
-              "bbox[{}]: existing x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
-              i,
-              ex_x_min,
-              ex_x_max,
-              ex_y_min,
-              ex_y_max,
-              ex_z_min,
-              ex_z_max);
-            logger.info(
-              "bbox[{}]: computed x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
-              i,
-              comp_x_min,
-              comp_x_max,
-              comp_y_min,
-              comp_y_max,
-              comp_z_min,
-              comp_z_max);
-            logger.info(
-              "bbox[{}]: diff     x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] "
-              "z=[{:.1f},{:.1f}]",
-              i,
-              diff_x_min,
-              diff_x_max,
-              diff_y_min,
-              diff_y_max,
-              diff_z_min,
-              diff_z_max);
-        }
-    }
-
-    // Compute and display average differences
-    double n = static_cast<double>(num_reflections);
-    logger.info("\n=== Bounding Box Comparison Statistics ===");
-    logger.info("Mean absolute differences:");
-    logger.info("  x_min: {:.3f} pixels, x_max: {:.3f} pixels",
-                total_x_min_diff / n,
-                total_x_max_diff / n);
-    logger.info("  y_min: {:.3f} pixels, y_max: {:.3f} pixels",
-                total_y_min_diff / n,
-                total_y_max_diff / n);
-    logger.info("  z_min: {:.3f} frames,  z_max: {:.3f} frames",
-                total_z_min_diff / n,
-                total_z_max_diff / n);
-    logger.info("Maximum absolute differences:");
-    logger.info(
-      "  x_min: {:.3f} pixels, x_max: {:.3f} pixels", max_x_min_diff, max_x_max_diff);
-    logger.info(
-      "  y_min: {:.3f} pixels, y_max: {:.3f} pixels", max_y_min_diff, max_y_max_diff);
-    logger.info(
-      "  z_min: {:.3f} frames,  z_max: {:.3f} frames", max_z_min_diff, max_z_max_diff);
-
-    // Add computed bounding boxes to reflection table for comparison
-    reflections.add_column(
-      "computed_bbox", std::vector<size_t>{num_reflections, 6}, computed_bbox_data);
-
-    // Write output file with comparison
-    reflections.write("validation_reflections.h5");
-    logger.info("Validation results saved to validation_reflections.h5");
-
-    return 0;
-}
-
-// Test fixture for integrator tests with file paths
-class ExtentValidationTest : public ::testing::Test {
+class ExtentTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        // Get paths relative to test directory
-        test_dir = std::filesystem::path(__FILE__).parent_path();
-        predicted_refl = test_dir / "data" / "predicted.refl";
-        indexed_expt = test_dir / "data" / "indexed.expt";
-        integrated_truth_refl = test_dir / "data" / "simple_integrated.refl";
+        test_dir = fs::path(__FILE__).parent_path();
+        data_dir = test_dir / "data";
     }
 
-    std::filesystem::path test_dir;
-    std::filesystem::path predicted_refl;
-    std::filesystem::path indexed_expt;
-    std::filesystem::path integrated_truth_refl;
+    fs::path test_dir;
+    fs::path data_dir;
+
+    void assert_file_exists(const fs::path &p) {
+        ASSERT_TRUE(fs::exists(p)) << "Required test file not found: " << p;
+    }
 };
 
-TEST_F(ExtentValidationTest, ComputeKabschBoundingBoxes) {
-    // Check if test files exist
-    ASSERT_TRUE(std::filesystem::exists(predicted_refl))
-      << "Reflection file not found: " << predicted_refl;
-    ASSERT_TRUE(std::filesystem::exists(indexed_expt))
-      << "Experiment file not found: " << indexed_expt;
-    ASSERT_TRUE(std::filesystem::exists(integrated_truth_refl))
-      << "Integrated reflection file not found: " << integrated_truth_refl;
+/*
+ * Bounding Box Computation
+ *
+ * Computes Kabsch integration bounding boxes for each reflection.
+ * The detector-plane extents (x, y) are determined by projecting
+ * the beam divergence envelope (±Δb in Kabsch e₁/e₂ directions)
+ * back onto the Ewald sphere and then onto the detector via
+ * ray-intersection. The rotation-axis extent (z) is derived from
+ * the mosaicity parameter: φ′ = φᶜ ± Δm/ζ, where ζ = m₂ · e₁.
+ *
+ * Input (bbox_before.h5, group dials/processing/group_0):
+ *   - s1            (N×3 double) - predicted s₁ vectors
+ *   - xyzcal.mm     (N×3 double) - predicted positions (x, y, φ)
+ *   - Attributes on root: σ_b, σ_m (radians)
+ *
+ * Geometry (indexed.expt):
+ *   - s₀ from MonochromaticBeam, m₂ from Goniometer
+ *
+ * Output (bbox_after.h5, group dials/processing/group_0):
+ *   - bbox          (N×6 int)    - [x_min, x_max, y_min, y_max, z_min, z_max]
+ */
 
-    // Load source reflection data (indexed reflections for computing)
-    logger.info("Loading indexed data from file: {}", predicted_refl.string());
-    ReflectionTable reflections(predicted_refl.string());
+TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
+    auto before_file = data_dir / "bbox_before.h5";
+    auto after_file = data_dir / "bbox_after.h5";
+    auto expt_file = data_dir / "indexed.expt";
+    assert_file_exists(before_file);
+    assert_file_exists(after_file);
+    assert_file_exists(expt_file);
 
-    // Load integrated reflections for comparison (contains bbox)
-    logger.info("Loading integrated data for comparison from: {}",
-                integrated_truth_refl.string());
-    ReflectionTable integrated_reflections(integrated_truth_refl.string());
+    // Helper: print the actual HDF5 type size for a dataset
+    auto print_h5_type_size = [](const std::string &filepath,
+                                 const std::string &dataset_path) {
+        hid_t file = H5Fopen(filepath.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+        if (file < 0) {
+            std::cout << "  [could not open file]\n";
+            return;
+        }
+        hid_t dset = H5Dopen(file, dataset_path.c_str(), H5P_DEFAULT);
+        if (dset < 0) {
+            H5Fclose(file);
+            std::cout << "  [could not open dataset]\n";
+            return;
+        }
+        hid_t dtype = H5Dget_type(dset);
+        std::cout << "  HDF5 type size = " << H5Tget_size(dtype) << " bytes"
+                  << ", class = " << H5Tget_class(dtype) << "\n";
+        H5Tclose(dtype);
+        H5Dclose(dset);
+        H5Fclose(file);
+    };
 
-    // Log available columns in integrated reflections
-    // logger.info("Available columns in integrated reflections:");
-    // for (const auto &name : integrated_reflections.get_column_names()) {
-    //     logger.info("  - {}", name);
-    // }
+    // Load predicted s₁ vectors and calculated positions from the pre-bbox reflection table
+    auto before_path = before_file.string();
 
-    // HDF5 data path prefixes for reflection columns
-    const std::string indexed_data_path = "";
-    const std::string integrated_data_path = "";
+    // std::cout << "Reading " << G + "s1" << " as double (sizeof=" << sizeof(double) << ")...\n";
+    // print_h5_type_size(before_path, G + "s1");
+    auto s1_flat = read_array_from_h5_file<double>(before_path, G + "s1");
+    // std::cout << "  -> read " << s1_flat.size() << " elements\n";
 
-    // Extract required columns from indexed reflections
-    auto s1_vectors_opt = reflections.column<double>(indexed_data_path + "s1");
-    ASSERT_TRUE(s1_vectors_opt.has_value())
-      << "Column 's1' not found in reflection data.";
-    auto s1_vectors = *s1_vectors_opt;
+    // std::cout << "Reading " << G + "xyzcal.mm" << " as double (sizeof=" << sizeof(double) << ")...\n";
+    // print_h5_type_size(before_path, G + "xyzcal.mm");
+    auto xyzcal_flat = read_array_from_h5_file<double>(before_path, G + "xyzcal.mm");
+    // std::cout << "  -> read " << xyzcal_flat.size() << " elements\n";
 
-    auto phi_column_opt = reflections.column<double>(indexed_data_path + "xyzcal.mm");
-    ASSERT_TRUE(phi_column_opt.has_value())
-      << "Column 'xyzcal.mm' not found for phi positions.";
-    auto phi_column = *phi_column_opt;
+    // σ_b (beam divergence) and σ_m (mosaicity) - fixed test values
+    // double sigma_b = degrees_to_radians(0.03);
+    // double sigma_m = degrees_to_radians(0.03);
 
-    // Extract bbox from integrated reflections for comparison
-    auto bbox_column_opt =
-      integrated_reflections.column<int>(integrated_data_path + "bbox");
-    ASSERT_TRUE(bbox_column_opt.has_value())
-      << "Column 'bbox' not found in integrated reflection data.";
-    auto bbox_column = *bbox_column_opt;
+    size_t num_reflections = s1_flat.size() / 3;
+    ASSERT_EQ(xyzcal_flat.size(), num_reflections * 3);
 
-    size_t num_reflections = s1_vectors.extent(0);
-    logger.info("Processing {} reflections", num_reflections);
+    // Wrap flat arrays as 2D mdspan views for compute_kabsch_bounding_boxes
+    using mdspan_2d_double =
+      std::experimental::mdspan<double, std::experimental::dextents<size_t, 2>>;
+    mdspan_2d_double s1_vectors(s1_flat.data(), num_reflections, 3);
+    mdspan_2d_double phi_column(xyzcal_flat.data(), num_reflections, 3);
 
-    // Parse experiment list from JSON
-    std::ifstream f(indexed_expt);
-    nlohmann::json elist_json_obj;
-    try {
-        elist_json_obj = nlohmann::json::parse(f);
-    } catch (nlohmann::json::parse_error &ex) {
-        FAIL() << "Failed to parse experiment file: " << ex.what();
-    }
-
-    // Construct Experiment object
-    Experiment<MonochromaticBeam> expt;
-    try {
-        expt = Experiment<MonochromaticBeam>(elist_json_obj);
-    } catch (const std::invalid_argument &ex) {
-        FAIL() << "Failed to construct Experiment: " << ex.what();
-    }
-
-    // Extract experimental components
-    MonochromaticBeam beam = expt.beam();
-    Goniometer gonio = expt.goniometer();
+    // Extract detector panel, scan, and beam parameters from the experiment
+    std::ifstream f(expt_file);
+    auto elist_json = nlohmann::json::parse(f);
+    Experiment<MonochromaticBeam> expt(elist_json);
     const Panel &panel = expt.detector().panels()[0];
     const Scan &scan = expt.scan();
+    MonochromaticBeam beam = expt.beam();
 
+    // σ_b (beam divergence) and σ_m (mosaicity) from the experiment JSON
+    double sigma_b =
+      degrees_to_radians(elist_json["profile"][0]["sigma_b"].get<double>());
+    double sigma_m =
+      degrees_to_radians(elist_json["profile"][0]["sigma_m"].get<double>());
+
+    // s₀ and rotation axis come from the experiment geometry
     Eigen::Vector3d s0 = beam.get_s0();
-    Eigen::Vector3d rotation_axis = gonio.get_rotation_axis();
+    Eigen::Vector3d rotation_axis = expt.goniometer().get_rotation_axis();
 
-    // Use baseline values for sigma_b and sigma_m
-    double sigma_b = degrees_to_radians(0.01);
-    double sigma_m = degrees_to_radians(0.01);
+    // Compute Kabsch bounding boxes using σ_b, σ_m and the Ewald sphere geometry
+    auto computed_bboxes = compute_kabsch_bounding_boxes(s0,
+                                                         rotation_axis,
+                                                         s1_vectors,
+                                                         phi_column,
+                                                         num_reflections,
+                                                         sigma_b,
+                                                         sigma_m,
+                                                         panel,
+                                                         scan,
+                                                         beam);
 
-    // Compute bounding boxes using CPU-based Kabsch coordinate system
-    logger.info("Computing Kabsch bounding boxes for {} reflections", num_reflections);
+    ASSERT_EQ(computed_bboxes.size(), num_reflections);
 
-    std::vector<BoundingBoxExtents> computed_bboxes =
-      compute_kabsch_bounding_boxes(s0,
-                                    rotation_axis,
-                                    s1_vectors,
-                                    phi_column,
-                                    num_reflections,
-                                    sigma_b,
-                                    sigma_m,
-                                    panel,
-                                    scan,
-                                    beam);
+    // Load Miller indices (h, k, l) for matching computed bboxes to expected
+    auto before_hkl_flat =
+      read_array_from_h5_file<int64_t>(before_path, G + "miller_index");
+    ASSERT_EQ(before_hkl_flat.size(), num_reflections * 3);
 
-    ASSERT_EQ(computed_bboxes.size(), num_reflections)
-      << "Computed bboxes size mismatch";
+    // Load expected bounding boxes and their Miller indices from the post-bbox file
+    auto after_path = after_file.string();
+    auto expected_bbox = read_array_from_h5_file<int64_t>(after_path, G + "bbox");
+    auto after_hkl_flat =
+      read_array_from_h5_file<int64_t>(after_path, G + "miller_index");
+    size_t num_expected = after_hkl_flat.size() / 3;
+    ASSERT_EQ(expected_bbox.size(), num_expected * 6);
 
-    // Convert BoundingBoxExtents to flat array format
-    std::vector<double> computed_bbox_data(num_reflections * 6);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        computed_bbox_data[i * 6 + 0] = computed_bboxes[i].x_min;
-        computed_bbox_data[i * 6 + 1] = computed_bboxes[i].x_max;
-        computed_bbox_data[i * 6 + 2] = computed_bboxes[i].y_min;
-        computed_bbox_data[i * 6 + 3] = computed_bboxes[i].y_max;
-        computed_bbox_data[i * 6 + 4] = static_cast<double>(computed_bboxes[i].z_min);
-        computed_bbox_data[i * 6 + 5] = static_cast<double>(computed_bboxes[i].z_max);
+    // (h,k,l) → row index in the after file; multimap because the
+    // same HKL can appear on adjacent images
+    using HKL = std::tuple<int64_t, int64_t, int64_t>;
+    std::multimap<HKL, size_t> after_hkl_to_row;
+    for (size_t i = 0; i < num_expected; ++i) {
+        HKL key{after_hkl_flat[i * 3 + 0],
+                after_hkl_flat[i * 3 + 1],
+                after_hkl_flat[i * 3 + 2]};
+        after_hkl_to_row.emplace(key, i);
     }
 
-    // Validate against existing bounding boxes from integrated reflections
-    int result = validate_bounding_boxes(integrated_reflections,
-                                         computed_bbox_data,
-                                         num_reflections,
-                                         10,
-                                         integrated_data_path);
-    EXPECT_EQ(result, 0) << "Validation failed";
+    // Match computed bboxes to expected by HKL; consume first exact
+    // match to avoid ordering dependence
+    size_t mismatches = 0;
+    size_t not_found = 0;
+    size_t exact_matches = 0;
+    size_t compared = 0;
 
-    // Check for verbose mode via environment variable
-    bool verbose = std::getenv("VERBOSE_TEST") != nullptr;
+    // Per-component error accumulators: [x_min, x_max, y_min, y_max, z_min, z_max]
+    const char *comp_names[] = {"x_min", "x_max", "y_min", "y_max", "z_min", "z_max"};
+    std::array<double, 6> sum_abs_err = {};  // Σ|computed − expected|
+    std::array<double, 6> sum_signed_err =
+      {};  // Σ(computed − expected) - detect systematic bias
+    std::array<int, 6> max_abs_err = {};    // max |computed − expected|
+    std::array<size_t, 6> off_by_one = {};  // count of |error| == 1 (rounding boundary)
 
-    // Track mismatches for summary
-    size_t total_mismatches = 0;
-    size_t x_min_mismatches = 0, x_max_mismatches = 0;
-    size_t y_min_mismatches = 0, y_max_mismatches = 0;
-    size_t z_min_mismatches = 0, z_max_mismatches = 0;
-
-    // Compare computed bounding boxes with existing ones - fail if any differences
     for (size_t i = 0; i < num_reflections; ++i) {
+        HKL key{before_hkl_flat[i * 3 + 0],
+                before_hkl_flat[i * 3 + 1],
+                before_hkl_flat[i * 3 + 2]};
+
+        auto [it, end] = after_hkl_to_row.equal_range(key);
+        if (it == end) {
+            not_found++;
+            ADD_FAILURE() << "Reflection " << i << " with HKL (" << std::get<0>(key)
+                          << ", " << std::get<1>(key) << ", " << std::get<2>(key)
+                          << ") not found in expected file";
+            continue;
+        }
+
         const auto &bbox = computed_bboxes[i];
+        std::array<int, 6> got = {
+          bbox.x_min, bbox.x_max, bbox.y_min, bbox.y_max, bbox.z_min, bbox.z_max};
 
-        // Check that bounding boxes are reasonable
-        EXPECT_LE(bbox.x_min, bbox.x_max) << "Invalid x bounds for reflection " << i;
-        EXPECT_LE(bbox.y_min, bbox.y_max) << "Invalid y bounds for reflection " << i;
-        EXPECT_LE(bbox.z_min, bbox.z_max) << "Invalid z bounds for reflection " << i;
-
-        // Check that bounding boxes have non-zero size
-        EXPECT_GT(bbox.x_max - bbox.x_min, 0) << "Zero width x for reflection " << i;
-        EXPECT_GT(bbox.y_max - bbox.y_min, 0) << "Zero width y for reflection " << i;
-        EXPECT_GT(bbox.z_max - bbox.z_min, 0) << "Zero width z for reflection " << i;
-
-        // Compare with existing bbox - fail on any difference
-        double ex_x_min = bbox_column(i, 0);
-        double ex_x_max = bbox_column(i, 1);
-        double ex_y_min = bbox_column(i, 2);
-        double ex_y_max = bbox_column(i, 3);
-        int ex_z_min = static_cast<int>(bbox_column(i, 4));
-        int ex_z_max = static_cast<int>(bbox_column(i, 5));
-
-        bool has_mismatch = false;
-
-        if (bbox.x_min != ex_x_min) {
-            x_min_mismatches++;
-            has_mismatch = true;
-            if (verbose) {
-                EXPECT_EQ(bbox.x_min, ex_x_min)
-                  << "x_min mismatch for reflection " << i;
-            }
-        }
-        if (bbox.x_max != ex_x_max) {
-            x_max_mismatches++;
-            has_mismatch = true;
-            if (verbose) {
-                EXPECT_EQ(bbox.x_max, ex_x_max)
-                  << "x_max mismatch for reflection " << i;
-            }
-        }
-        if (bbox.y_min != ex_y_min) {
-            y_min_mismatches++;
-            has_mismatch = true;
-            if (verbose) {
-                EXPECT_EQ(bbox.y_min, ex_y_min)
-                  << "y_min mismatch for reflection " << i;
-            }
-        }
-        if (bbox.y_max != ex_y_max) {
-            y_max_mismatches++;
-            has_mismatch = true;
-            if (verbose) {
-                EXPECT_EQ(bbox.y_max, ex_y_max)
-                  << "y_max mismatch for reflection " << i;
-            }
-        }
-        if (bbox.z_min != ex_z_min) {
-            z_min_mismatches++;
-            has_mismatch = true;
-            if (verbose) {
-                EXPECT_EQ(bbox.z_min, ex_z_min)
-                  << "z_min mismatch for reflection " << i;
-            }
-        }
-        if (bbox.z_max != ex_z_max) {
-            z_max_mismatches++;
-            has_mismatch = true;
-            if (verbose) {
-                EXPECT_EQ(bbox.z_max, ex_z_max)
-                  << "z_max mismatch for reflection " << i;
+        // Search for an exact match among all after-file rows sharing this HKL
+        auto match_it = end;
+        for (auto candidate = it; candidate != end; ++candidate) {
+            size_t j = candidate->second;
+            bool equal = true;
+            for (int c = 0; c < 6; ++c)
+                equal &= (got[c] == static_cast<int>(expected_bbox[j * 6 + c]));
+            if (equal) {
+                match_it = candidate;
+                break;
             }
         }
 
-        if (has_mismatch) {
-            total_mismatches++;
+        if (match_it != end) {
+            // Consume the matched row so it cannot be reused by another reflection
+            after_hkl_to_row.erase(match_it);
+            exact_matches++;
+        } else {
+            // No exact match - accumulate error statistics against the first candidate
+            mismatches++;
+            size_t j = it->second;
+            std::array<int, 6> exp;
+            for (int c = 0; c < 6; ++c)
+                exp[c] = static_cast<int>(expected_bbox[j * 6 + c]);
+
+            for (int c = 0; c < 6; ++c) {
+                int diff = got[c] - exp[c];
+                int absdiff = std::abs(diff);
+                sum_abs_err[c] += absdiff;
+                sum_signed_err[c] += diff;
+                max_abs_err[c] = std::max(max_abs_err[c], absdiff);
+                if (absdiff == 1) off_by_one[c]++;
+            }
+
+            auto hkl_str = "(" + std::to_string(std::get<0>(key)) + ", "
+                           + std::to_string(std::get<1>(key)) + ", "
+                           + std::to_string(std::get<2>(key)) + ")";
+            EXPECT_EQ(bbox.x_min, exp[0]) << "x_min mismatch at HKL " << hkl_str;
+            EXPECT_EQ(bbox.x_max, exp[1]) << "x_max mismatch at HKL " << hkl_str;
+            EXPECT_EQ(bbox.y_min, exp[2]) << "y_min mismatch at HKL " << hkl_str;
+            EXPECT_EQ(bbox.y_max, exp[3]) << "y_max mismatch at HKL " << hkl_str;
+            EXPECT_EQ(bbox.z_min, exp[4]) << "z_min mismatch at HKL " << hkl_str;
+            EXPECT_EQ(bbox.z_max, exp[5]) << "z_max mismatch at HKL " << hkl_str;
         }
+        compared++;
     }
 
-    // Print summary
-    logger.info("\n=== Bounding Box Comparison Summary ===");
-    logger.info("Total reflections checked: {}", num_reflections);
-    logger.info("Reflections with mismatches: {}", total_mismatches);
-    if (total_mismatches > 0) {
-        logger.info("Mismatches by component:");
-        logger.info("  x_min: {} mismatches", x_min_mismatches);
-        logger.info("  x_max: {} mismatches", x_max_mismatches);
-        logger.info("  y_min: {} mismatches", y_min_mismatches);
-        logger.info("  y_max: {} mismatches", y_max_mismatches);
-        logger.info("  z_min: {} mismatches", z_min_mismatches);
-        logger.info("  z_max: {} mismatches", z_max_mismatches);
-        logger.info("\nSet VERBOSE_TEST=1 to see detailed mismatch output");
+    // Summary statistics
+    std::cout << "\n=== Bounding Box Comparison Summary ===\n";
+    std::cout << "  Reflections compared : " << compared << "\n";
+    std::cout << "  Exact matches        : " << exact_matches << " ("
+              << (compared ? 100.0 * exact_matches / compared : 0) << "%)\n";
+    std::cout << "  Mismatches           : " << mismatches << "\n";
+    std::cout << "  Not found in expected: " << not_found << "\n";
+
+    if (mismatches > 0) {
+        std::cout << "\n  Per-component error breakdown (over " << mismatches
+                  << " mismatched reflections):\n";
+        std::cout << "  Component  MeanAbsErr  MeanSignedErr  MaxAbsErr  OffByOne\n";
+        for (int c = 0; c < 6; ++c) {
+            double mean_abs = sum_abs_err[c] / mismatches;
+            double mean_signed = sum_signed_err[c] / mismatches;
+            std::cout << "  " << std::setw(9) << std::left << comp_names[c] << "  "
+                      << std::setw(10) << std::fixed << std::setprecision(3) << mean_abs
+                      << "  " << std::setw(13) << std::fixed << std::setprecision(3)
+                      << mean_signed << "  " << std::setw(9) << max_abs_err[c] << "  "
+                      << off_by_one[c] << "\n";
+        }
     }
+    std::cout << "=======================================\n";
 
-    // Fail test if any mismatches found
-    EXPECT_EQ(total_mismatches, 0)
-      << "Found " << total_mismatches << " reflections with bounding box mismatches";
-
-    logger.info("Validation complete for {} reflections", num_reflections);
-}
-
-TEST(IntegratorTest, BasicTest) {
-    EXPECT_TRUE(true);
+    EXPECT_EQ(not_found, 0) << not_found
+                            << " reflections had no HKL match in expected file";
+    EXPECT_EQ(mismatches, 0) << mismatches << " of " << num_reflections
+                             << " bounding boxes mismatched";
 }

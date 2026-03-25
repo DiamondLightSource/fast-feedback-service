@@ -11,9 +11,13 @@ target_link_libraries(test_extent PRIVATE
     nlohmann_json::nlohmann_json
 )
 
-add_executable(test_kabsch test_kabsch.cc ../kabsch.cu)
+add_executable(test_kabsch test_kabsch.cc ../kabsch.cu ../extent.cc)
 set_source_files_properties(../kabsch.cu PROPERTIES LANGUAGE CUDA)
-target_include_directories(test_kabsch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_include_directories(test_kabsch PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../baseline/integrator
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../baseline/predictor
+)
 target_link_libraries(test_kabsch PRIVATE 
     ffs_common
     dx2

@@ -1,189 +1,582 @@
+/**
+ * @file test_kabsch.cc
+ * @brief Unit tests for the GPU-accelerated Kabsch integration pipeline
+ *
+ * Each test loads a DIALS integration dump, runs one pipeline step,
+ * and compares against the post-stage dump.
+ *
+ * Test data is sourced from DIALS integrator stage dumps produced with
+ * DIALS_INTEGRATION_DUMP_DIR. All HDF5 datasets live under the
+ * internal group "dials/processing/group_0". Before/after state is
+ * captured in separate files:
+ *
+ *   bbox_before.h5 / bbox_after.h5             → BoundingBoxComputation
+ *   background_before.h5 (+ bbox_after.h5)     → KabschTransformSingleImage
+ *   background_before.h5 / summation_after.h5  → SummationFinalization
+ *
+ * Expected test data directory layout (under tests/data/):
+ *   indexed.expt          - experiment geometry (beam, detector, goniometer, scan)
+ *   bbox_before.h5        - reflection table before compute_bbox (s1, xyzcal.mm, …)
+ *   bbox_after.h5         - reflection table after  compute_bbox (+ bbox column)
+ *   background_before.h5  - pixel statistics before compute_background
+ *                           (foreground_pixel_sum, n_foreground, …)
+ *                           also stores /image_data and kernel attributes
+ *   summation_after.h5    - integrated results (intensity.sum.value, …)
+ */
+
 #include <gtest/gtest.h>
+#include <hdf5.h>
 
 #include <Eigen/Dense>
+#include <cmath>
 #include <dx2/beam.hpp>
+#include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
-#include <dx2/reflection.hpp>
+#include <dx2/h5/h5read_processed.hpp>
+#include <dx2/h5/h5utils.hpp>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
 #include <nlohmann/json.hpp>
+#include <numeric>
 #include <vector>
 
+#include "cuda_common.hpp"
+#include "extent.hpp"
 #include "ffs_logger.hpp"
 #include "kabsch.cuh"
+#include "math/math_utils.cuh"
 #include "math/vector3d.cuh"
 
-// Test fixture for Kabsch tests with file paths
-class KabschTest : public ::testing::Test {
+namespace fs = std::filesystem;
+
+/// HDF5 group path prefix for DIALS reflection table datasets
+static const std::string G = "dials/processing/group_0/";
+
+#pragma region Helpers
+
+/* Scalar attribute readers (dx2 only covers datasets) */
+
+/// Read a scalar double attribute from an HDF5 location
+static double read_double_attr(hid_t loc, const char *name) {
+    h5utils::H5Attr attr(H5Aopen(loc, name, H5P_DEFAULT));
+    EXPECT_TRUE(static_cast<bool>(attr)) << "Failed to open attribute: " << name;
+    double val;
+    H5Aread(attr, H5T_NATIVE_DOUBLE, &val);
+    return val;
+}
+
+/// Read a scalar int attribute from an HDF5 location
+static int read_int_attr(hid_t loc, const char *name) {
+    h5utils::H5Attr attr(H5Aopen(loc, name, H5P_DEFAULT));
+    EXPECT_TRUE(static_cast<bool>(attr)) << "Failed to open attribute: " << name;
+    int val;
+    H5Aread(attr, H5T_NATIVE_INT, &val);
+    return val;
+}
+
+/// Check whether a dataset exists in a file
+static bool dataset_exists(const std::string &filename, const char *name) {
+    h5utils::H5File file(H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+    if (!file) return false;
+    return H5Lexists(file, name, H5P_DEFAULT) > 0;
+}
+
+#pragma endregion Helpers
+
+#pragma region Test Fixture
+
+// Test fixture - resolves test data paths relative to this source file
+
+class IntegrationStepTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        // Get paths relative to test directory
-        test_dir = std::filesystem::path(__FILE__).parent_path();
-        predicted_refl = test_dir / "data" / "predicted.refl";
-        indexed_expt = test_dir / "data" / "indexed.expt";
+        test_dir = fs::path(__FILE__).parent_path();
+        data_dir = test_dir / "data";
     }
 
-    std::filesystem::path test_dir;
-    std::filesystem::path predicted_refl;
-    std::filesystem::path indexed_expt;
+    fs::path test_dir;
+    fs::path data_dir;
+
+    /// Convenience: assert a file exists
+    void assert_file_exists(const fs::path &p) {
+        ASSERT_TRUE(fs::exists(p)) << "Required test file not found: " << p;
+    }
 };
 
-TEST_F(KabschTest, ComputeKabschTransform) {
-    // Check if test files exist
-    ASSERT_TRUE(std::filesystem::exists(predicted_refl))
-      << "Reflection file not found: " << predicted_refl;
-    ASSERT_TRUE(std::filesystem::exists(indexed_expt))
-      << "Experiment file not found: " << indexed_expt;
+#pragma endregion Test Fixture
 
-    // Load reflection data
-    logger.info("Loading reflection data from file: {}", predicted_refl.string());
-    ReflectionTable reflections(predicted_refl.string());
+#pragma region GPU Kabsch Transform
 
-    const std::string data_path = "";
+/*
+ * GPU Kabsch Transform + Summation Accumulation
+ *
+ * Runs the Kabsch transform kernel on a single image. For each
+ * pixel (x, y) that falls within a reflection's bounding box, the
+ * kernel computes the Kabsch coordinate distance from the reflection
+ * centroid and classifies the pixel as foreground (within the
+ * nσ-ellipsoid) or background. Pixel values are then accumulated
+ * into per-reflection foreground and background sum/count buffers.
+ *
+ * Reflection geometry (bbox_after.h5, group dials/processing/group_0):
+ *   - s1              (N×3 double)  - predicted s₁ vectors
+ *   - xyzcal.mm       (N×3 double)  - predicted positions (x, y, φ)
+ *   - bbox            (N×6 int)     - Kabsch bounding boxes
+ *
+ * Experiment geometry (indexed.expt):
+ *   - s₀, m₂, d-matrix, wavelength, oscillation, image range
+ *
+ * Image + kernel parameters (background_before.h5):
+ *   - /image_data     (H×W uint16)  - raw detector image
+ *   - Attributes: image_num, delta_b, delta_m
+ *
+ * Expected output (background_before.h5, group dials/processing/group_0):
+ *   - foreground_pixel_sum  (N double)
+ *   - n_foreground          (N double)
+ *   - background_pixel_sum  (N double)
+ *   - n_background          (N double)
+ */
 
-    // Extract required columns
-    auto s1_vectors_opt = reflections.column<double>(data_path + "s1");
-    ASSERT_TRUE(s1_vectors_opt.has_value())
-      << "Column 's1' not found in reflection data.";
-    auto s1_vectors = *s1_vectors_opt;
+TEST_F(IntegrationStepTest, KabschTransformSingleImage) {
+    auto bbox_file = data_dir / "bbox_after.h5";
+    auto bg_file = data_dir / "background_before.h5";
+    auto expt_file = data_dir / "indexed.expt";
+    assert_file_exists(bbox_file);
+    assert_file_exists(bg_file);
+    assert_file_exists(expt_file);
 
-    auto phi_column_opt = reflections.column<double>(data_path + "xyzcal.mm");
-    ASSERT_TRUE(phi_column_opt.has_value())
-      << "Column 'xyzcal.mm' not found for phi positions.";
-    auto phi_column = *phi_column_opt;
-
-    size_t num_reflections = s1_vectors.extent(0);
-    logger.info("Processing {} reflections for Kabsch transformation", num_reflections);
-
-    // Parse experiment file
-    std::ifstream f(indexed_expt);
-    nlohmann::json elist_json_obj;
-    try {
-        elist_json_obj = nlohmann::json::parse(f);
-    } catch (nlohmann::json::parse_error &ex) {
-        FAIL() << "Failed to parse experiment file: " << ex.what();
-    }
-
-    // Construct Experiment object
-    Experiment<MonochromaticBeam> expt;
-    try {
-        expt = Experiment<MonochromaticBeam>(elist_json_obj);
-    } catch (const std::invalid_argument &ex) {
-        FAIL() << "Failed to construct Experiment: " << ex.what();
-    }
-
-    // Extract experimental components
-    MonochromaticBeam beam = expt.beam();
-    Goniometer gonio = expt.goniometer();
+    // Load experiment geometry: beam, detector, goniometer, scan
+    std::ifstream f(expt_file);
+    auto elist_json = nlohmann::json::parse(f);
+    Experiment<MonochromaticBeam> expt(elist_json);
     const Panel &panel = expt.detector().panels()[0];
     const Scan &scan = expt.scan();
+    MonochromaticBeam beam = expt.beam();
 
     Eigen::Vector3d s0_eigen = beam.get_s0();
-    Eigen::Vector3d rotation_axis_eigen = gonio.get_rotation_axis();
-    double wl = beam.get_wavelength();
-    double osc_start = scan.get_oscillation()[0];
-    double osc_width = scan.get_oscillation()[1];
+    Eigen::Vector3d rot_axis_eigen = expt.goniometer().get_rotation_axis();
+    scalar_t wavelength = static_cast<scalar_t>(beam.get_wavelength());
+    auto oscillation = scan.get_oscillation();
+    scalar_t osc_start = static_cast<scalar_t>(oscillation[0]);
+    scalar_t osc_width = static_cast<scalar_t>(oscillation[1]);
     int image_range_start = scan.get_image_range()[0];
 
-    // Convert to CUDA format
-    fastvec::Vector3D s0_cuda =
-      fastvec::make_vector3d(s0_eigen.x(), s0_eigen.y(), s0_eigen.z());
-    fastvec::Vector3D rotation_axis_cuda = fastvec::make_vector3d(
-      rotation_axis_eigen.x(), rotation_axis_eigen.y(), rotation_axis_eigen.z());
+    // Flatten detector d-matrix (3×3 → 9-element row-major) for GPU
+    Eigen::Matrix3d d_matrix_eigen = panel.get_d_matrix();
+    std::vector<scalar_t> d_matrix_scalar(9);
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            d_matrix_scalar[i * 3 + j] = static_cast<scalar_t>(d_matrix_eigen(i, j));
 
-    logger.info("Testing Kabsch transformation for first reflection");
+    fastvec::Vector3D s0_vec =
+      fastvec::make_vector3d(static_cast<scalar_t>(s0_eigen[0]),
+                             static_cast<scalar_t>(s0_eigen[1]),
+                             static_cast<scalar_t>(s0_eigen[2]));
+    fastvec::Vector3D rot_axis_vec =
+      fastvec::make_vector3d(static_cast<scalar_t>(rot_axis_eigen[0]),
+                             static_cast<scalar_t>(rot_axis_eigen[1]),
+                             static_cast<scalar_t>(rot_axis_eigen[2]));
 
-    // Test on the first reflection
-    size_t refl_id = 0;
-
-    // Get reflection centroid data
-    Eigen::Vector3d s1_c_eigen(
-      s1_vectors(refl_id, 0), s1_vectors(refl_id, 1), s1_vectors(refl_id, 2));
-    fastvec::Vector3D s1_c_cuda =
-      fastvec::make_vector3d(s1_c_eigen.x(), s1_c_eigen.y(), s1_c_eigen.z());
-    double phi_c = phi_column(refl_id, 2);
-
-    logger.info("Reflection {} centroid: s1=({:.6f}, {:.6f}, {:.6f}), phi={:.6f}",
-                refl_id,
-                s1_c_eigen.x(),
-                s1_c_eigen.y(),
-                s1_c_eigen.z(),
-                phi_c);
-
-    // Create test voxels around the reflection centroid
-    std::vector<fastvec::Vector3D> test_s_pixels;
-    std::vector<scalar_t> test_phi_pixels;
-
-    // Test with a few voxel positions
-    const int num_test_voxels = 5;
-    for (int i = 0; i < num_test_voxels; ++i) {
-        // Create slight variations around the centroid
-        double x_offset = 100.0 + i * 10.0;  // pixels
-        double y_offset = 200.0 + i * 10.0;  // pixels
-        int z_offset = i;                    // frames
-
-        // Convert pixel coordinates to lab frame
-        std::array<double, 2> xy_mm = panel.px_to_mm(x_offset, y_offset);
-        Eigen::Vector3d lab_coord =
-          panel.get_d_matrix() * Eigen::Vector3d(xy_mm[0], xy_mm[1], 1.0);
-
-        // Convert to reciprocal space vector
-        Eigen::Vector3d s_pixel_eigen = lab_coord.normalized() / wl;
-        fastvec::Vector3D s_pixel_cuda = fastvec::make_vector3d(
-          s_pixel_eigen.x(), s_pixel_eigen.y(), s_pixel_eigen.z());
-
-        // Calculate phi for this voxel
-        double phi_pixel =
-          osc_start + (z_offset - image_range_start + 1.5) * osc_width / 180.0 * M_PI;
-
-        test_s_pixels.push_back(s_pixel_cuda);
-        test_phi_pixels.push_back(static_cast<scalar_t>(phi_pixel));
-
-        logger.info("Test voxel {}: pixel=({:.1f}, {:.1f}, {}), phi={:.6f}",
-                    i,
-                    x_offset,
-                    y_offset,
-                    z_offset,
-                    phi_pixel);
+    // Load kernel parameters stored as root-level attributes on background_before.h5
+    auto bg_path = bg_file.string();
+    int image_num;
+    scalar_t delta_b, delta_m;
+    {
+        h5utils::H5File file(H5Fopen(bg_path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
+        ASSERT_TRUE(static_cast<bool>(file));
+        h5utils::H5Group root(H5Gopen2(file, "/", H5P_DEFAULT));
+        image_num = read_int_attr(root, "image_num");
+        delta_b = static_cast<scalar_t>(read_double_attr(root, "delta_b"));
+        delta_m = static_cast<scalar_t>(read_double_attr(root, "delta_m"));
     }
 
-    // Allocate output arrays
-    std::vector<fastvec::Vector3D> kabsch_results(num_test_voxels);
-    std::vector<scalar_t> s1_len_results(num_test_voxels);
+    // Load the raw detector image from background_before.h5
+    auto image_data = read_array_from_h5_file<uint16_t>(bg_path, "/image_data");
 
-    // Call CUDA Kabsch transformation
-    logger.info("Calling compute_kabsch_transform with {} test voxels",
-                num_test_voxels);
-    compute_kabsch_transform(test_s_pixels.data(),
-                             test_phi_pixels.data(),
-                             s1_c_cuda,
-                             static_cast<scalar_t>(phi_c),
-                             s0_cuda,
-                             rotation_axis_cuda,
-                             kabsch_results.data(),
-                             s1_len_results.data(),
-                             num_test_voxels);
+    // Derive image dimensions from the panel geometry
+    auto image_size_mm = panel.get_image_size_mm();
+    auto pixel_size = panel.get_pixel_size();
+    uint32_t width =
+      static_cast<uint32_t>(std::round(image_size_mm[0] / pixel_size[0]));
+    uint32_t height =
+      static_cast<uint32_t>(std::round(image_size_mm[1] / pixel_size[1]));
+    ASSERT_EQ(image_data.size(), static_cast<size_t>(width) * height);
 
-    logger.info("Kabsch transformation completed successfully");
+    // Load reflection geometry from the post-bbox reflection table
+    auto bbox_path = bbox_file.string();
+    auto s1_flat = read_array_from_h5_file<double>(bbox_path, G + "s1");
+    auto xyzcal_flat = read_array_from_h5_file<double>(bbox_path, G + "xyzcal.mm");
+    auto bbox_flat = read_array_from_h5_file<int64_t>(bbox_path, G + "bbox");
 
-    // Validate results
-    for (int i = 0; i < num_test_voxels; ++i) {
-        const auto &eps = kabsch_results[i];
-        scalar_t s1_len = s1_len_results[i];
+    size_t num_reflections = s1_flat.size() / 3;
+    ASSERT_EQ(xyzcal_flat.size(), num_reflections * 3);
+    ASSERT_EQ(bbox_flat.size(), num_reflections * 6);
 
-        logger.info("Voxel {}: Kabsch coords ε=({:.6f}, {:.6f}, {:.6f}), |s₁|={:.6f}",
-                    i,
-                    eps.x,
-                    eps.y,
-                    eps.z,
-                    s1_len);
+    // Load the subset of reflection indices that overlap this image
+    std::vector<size_t> refl_indices;
+    if (dataset_exists(bg_path, "/reflection_indices")) {
+        auto ri_int = read_array_from_h5_file<int64_t>(bg_path, "/reflection_indices");
+        refl_indices.assign(ri_int.begin(), ri_int.end());
+    } else {
+        // If no index subset is specified, assume all reflections overlap this image
+        refl_indices.resize(num_reflections);
+        std::iota(refl_indices.begin(), refl_indices.end(), 0);
+    }
+    size_t num_refls_this_image = refl_indices.size();
 
-        // Check results
-
-        // Check that s1 length is positive
-        EXPECT_GT(s1_len, 0.0f) << "|s₁| should be positive for voxel " << i;
+    // Convert double-precision host data to GPU-compatible types
+    // (scalar_t precision, fastvec::Vector3D format)
+    std::vector<fastvec::Vector3D> s1_vecs(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        s1_vecs[i] = fastvec::make_vector3d(static_cast<scalar_t>(s1_flat[i * 3 + 0]),
+                                            static_cast<scalar_t>(s1_flat[i * 3 + 1]),
+                                            static_cast<scalar_t>(s1_flat[i * 3 + 2]));
     }
 
-    logger.info("Kabsch transformation test completed successfully");
+    // Extract φ from column 2 of xyzcal.mm (the rotation angle)
+    std::vector<scalar_t> phi_vals(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        phi_vals[i] = static_cast<scalar_t>(xyzcal_flat[i * 3 + 2]);
+    }
+
+    std::vector<BoundingBoxExtents> bboxes(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        bboxes[i].x_min = static_cast<int>(bbox_flat[i * 6 + 0]);
+        bboxes[i].x_max = static_cast<int>(bbox_flat[i * 6 + 1]);
+        bboxes[i].y_min = static_cast<int>(bbox_flat[i * 6 + 2]);
+        bboxes[i].y_max = static_cast<int>(bbox_flat[i * 6 + 3]);
+        bboxes[i].z_min = static_cast<int>(bbox_flat[i * 6 + 4]);
+        bboxes[i].z_max = static_cast<int>(bbox_flat[i * 6 + 5]);
+    }
+
+    // Allocate pitched device memory for the image - pitched layout
+    // ensures coalesced 2D access on the GPU
+    auto d_image = PitchedMalloc<pixel_t>(width, height);
+    cudaMemcpy2D(d_image.get(),
+                 d_image.pitch_bytes(),
+                 image_data.data(),
+                 width * sizeof(pixel_t),
+                 width * sizeof(pixel_t),
+                 height,
+                 cudaMemcpyHostToDevice);
+    cuda_throw_error();
+
+    DeviceBuffer<scalar_t> d_d_matrix(9);
+    DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
+    DeviceBuffer<scalar_t> d_phi_values(num_reflections);
+    DeviceBuffer<BoundingBoxExtents> d_bboxes(num_reflections);
+    DeviceBuffer<size_t> d_reflection_indices(num_refls_this_image);
+
+    d_d_matrix.assign(d_matrix_scalar.data());
+    d_s1_vectors.assign(s1_vecs.data());
+    d_phi_values.assign(phi_vals.data());
+    d_bboxes.assign(bboxes.data());
+    d_reflection_indices.assign(refl_indices.data());
+
+    // Allocate and zero per-reflection accumulator buffers for
+    // foreground/background sums and pixel counts
+    DeviceBuffer<accumulator_t> d_fg_sum(num_reflections);
+    DeviceBuffer<uint32_t> d_fg_count(num_reflections);
+    DeviceBuffer<accumulator_t> d_bg_sum(num_reflections);
+    DeviceBuffer<uint32_t> d_bg_count(num_reflections);
+    cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
+    cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(d_bg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
+    cudaMemset(d_bg_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cuda_throw_error();
+
+    // Run the Kabsch kernel over this image's reflections
+    compute_kabsch_transform(d_image.get(),
+                             d_image.pitch_bytes(),
+                             width,
+                             height,
+                             image_num,
+                             d_d_matrix.data(),
+                             wavelength,
+                             osc_start,
+                             osc_width,
+                             image_range_start,
+                             s0_vec,
+                             rot_axis_vec,
+                             d_s1_vectors.data(),
+                             d_phi_values.data(),
+                             d_bboxes.data(),
+                             d_reflection_indices.data(),
+                             num_refls_this_image,
+                             delta_b,
+                             delta_m,
+                             d_fg_sum.data(),
+                             d_fg_count.data(),
+                             d_bg_sum.data(),
+                             d_bg_count.data(),
+                             nullptr);  // default stream
+    cudaDeviceSynchronize();
+    cuda_throw_error();
+
+    // Transfer accumulated results back to host memory
+    std::vector<accumulator_t> h_fg_sum(num_reflections);
+    std::vector<uint32_t> h_fg_count(num_reflections);
+    std::vector<accumulator_t> h_bg_sum(num_reflections);
+    std::vector<uint32_t> h_bg_count(num_reflections);
+    d_fg_sum.extract(h_fg_sum.data());
+    d_fg_count.extract(h_fg_count.data());
+    d_bg_sum.extract(h_bg_sum.data());
+    d_bg_count.extract(h_bg_count.data());
+
+    // Load expected accumulator values from background_before.h5
+    auto exp_fg_sum =
+      read_array_from_h5_file<double>(bg_path, G + "foreground_pixel_sum");
+    auto exp_fg_count = read_array_from_h5_file<double>(bg_path, G + "n_foreground");
+    auto exp_bg_sum =
+      read_array_from_h5_file<double>(bg_path, G + "background_pixel_sum");
+    auto exp_bg_count = read_array_from_h5_file<double>(bg_path, G + "n_background");
+
+    ASSERT_EQ(exp_fg_sum.size(), num_refls_this_image);
+    ASSERT_EQ(exp_fg_count.size(), num_refls_this_image);
+    ASSERT_EQ(exp_bg_sum.size(), num_refls_this_image);
+    ASSERT_EQ(exp_bg_count.size(), num_refls_this_image);
+
+    // Verify accumulated foreground and background values match exactly.
+    // The accumulator buffers are indexed by the full reflection table,
+    // so map each local subset entry back to its global slot via refl_indices.
+    // (integer comparison - no tolerance needed)
+    const char *kabsch_comp_names[] = {"fg_sum", "n_fg", "bg_sum", "n_bg"};
+    size_t kabsch_exact = 0;
+    size_t kabsch_mismatches = 0;
+    std::array<double, 4> kabsch_sum_abs_err = {};
+    std::array<double, 4> kabsch_max_abs_err = {};
+
+    for (size_t i = 0; i < num_refls_this_image; ++i) {
+        size_t gi = refl_indices[i];
+
+        std::array<double, 4> got = {static_cast<double>(h_fg_sum[gi]),
+                                     static_cast<double>(h_fg_count[gi]),
+                                     static_cast<double>(h_bg_sum[gi]),
+                                     static_cast<double>(h_bg_count[gi])};
+        std::array<double, 4> exp = {
+          exp_fg_sum[i], exp_fg_count[i], exp_bg_sum[i], exp_bg_count[i]};
+
+        bool all_match = true;
+        for (int c = 0; c < 4; ++c) {
+            double diff = std::abs(got[c] - exp[c]);
+            if (diff > 0) {
+                all_match = false;
+                kabsch_sum_abs_err[c] += diff;
+                kabsch_max_abs_err[c] = std::max(kabsch_max_abs_err[c], diff);
+            }
+        }
+
+        if (all_match) {
+            kabsch_exact++;
+        } else {
+            kabsch_mismatches++;
+            EXPECT_EQ(h_fg_sum[gi], static_cast<accumulator_t>(exp_fg_sum[i]))
+              << "foreground_pixel_sum mismatch at reflection " << gi << " (local " << i
+              << ")";
+            EXPECT_EQ(h_fg_count[gi], static_cast<uint32_t>(exp_fg_count[i]))
+              << "n_foreground mismatch at reflection " << gi << " (local " << i << ")";
+            EXPECT_EQ(h_bg_sum[gi], static_cast<accumulator_t>(exp_bg_sum[i]))
+              << "background_pixel_sum mismatch at reflection " << gi << " (local " << i
+              << ")";
+            EXPECT_EQ(h_bg_count[gi], static_cast<uint32_t>(exp_bg_count[i]))
+              << "n_background mismatch at reflection " << gi << " (local " << i << ")";
+        }
+    }
+
+    std::cout << "\n=== Kabsch Transform Comparison Summary ==="
+              << "\n  Reflections compared : " << num_refls_this_image << " (of "
+              << num_reflections << " total)"
+              << "\n  Exact matches        : " << kabsch_exact << " ("
+              << (num_refls_this_image ? 100.0 * kabsch_exact / num_refls_this_image
+                                       : 0)
+              << "%)"
+              << "\n  Mismatches           : " << kabsch_mismatches << "\n";
+    if (kabsch_mismatches > 0) {
+        std::cout << "\n  Per-component error breakdown (over " << kabsch_mismatches
+                  << " mismatched reflections):\n"
+                  << "  Component   MeanAbsErr    MaxAbsErr\n";
+        for (int c = 0; c < 4; ++c) {
+            double mean_abs = kabsch_sum_abs_err[c] / kabsch_mismatches;
+            std::cout << "  " << std::setw(11) << std::left << kabsch_comp_names[c]
+                      << " " << std::setw(13) << std::fixed << std::setprecision(1)
+                      << mean_abs << " " << std::setw(9) << kabsch_max_abs_err[c]
+                      << "\n";
+        }
+    }
+    std::cout << "==========================================\n";
+
+    EXPECT_EQ(kabsch_mismatches, 0)
+      << kabsch_mismatches << " of " << num_refls_this_image
+      << " reflections had accumulator mismatches";
 }
+
+#pragma endregion GPU Kabsch Transform
+
+#pragma region Summation Finalization
+
+/*
+ * Summation Integration Finalization
+ *
+ * Converts the accumulated foreground/background pixel sums into
+ * integrated intensities using the summation formula:
+ *
+ *   b̄ = Σ(bg) / n_bg           (mean background per pixel)
+ *   I = Σ(fg) − n_fg × b̄        (background-subtracted intensity)
+ *   Var(I) = |I| + |B| × (1 + n_fg/n_bg)
+ *
+ * where B = n_fg × b̄ is the total background contribution under the
+ * peak. This is a purely host-side operation with no GPU involvement.
+ *
+ * Input (background_before.h5, group dials/processing/group_0):
+ *   - foreground_pixel_sum  (N double)
+ *   - n_foreground          (N double)
+ *   - background_pixel_sum  (N double)
+ *   - n_background          (N double)
+ *
+ * Output (summation_after.h5, group dials/processing/group_0):
+ *   - intensity.sum.value      (N double) - I
+ *   - intensity.sum.variance   (N double) - Var(I)
+ *   - background.sum.value     (N double) - B = n_fg × b̄
+ */
+
+TEST_F(IntegrationStepTest, SummationFinalization) {
+    auto input_file = data_dir / "background_before.h5";
+    auto output_file = data_dir / "summation_after.h5";
+    assert_file_exists(input_file);
+    assert_file_exists(output_file);
+
+    // Load accumulated foreground/background pixel sums and counts
+    auto input_path = input_file.string();
+    auto h_fg_sum_dbl =
+      read_array_from_h5_file<double>(input_path, G + "foreground_pixel_sum");
+    auto h_fg_count_dbl =
+      read_array_from_h5_file<double>(input_path, G + "n_foreground");
+    auto h_bg_sum_dbl =
+      read_array_from_h5_file<double>(input_path, G + "background_pixel_sum");
+    auto h_bg_count_dbl =
+      read_array_from_h5_file<double>(input_path, G + "n_background");
+
+    size_t num_reflections = h_fg_sum_dbl.size();
+    ASSERT_EQ(h_fg_count_dbl.size(), num_reflections);
+    ASSERT_EQ(h_bg_sum_dbl.size(), num_reflections);
+    ASSERT_EQ(h_bg_count_dbl.size(), num_reflections);
+
+    // Compute intensity, variance, and background using the summation
+    // integration formulas. This mirrors the host-side reduction in
+    // integrator.cc.
+    std::vector<double> intensities(num_reflections);
+    std::vector<double> variances(num_reflections);
+    std::vector<double> background_totals(num_reflections);
+
+    for (size_t i = 0; i < num_reflections; ++i) {
+        uint32_t fg_count = static_cast<uint32_t>(h_fg_count_dbl[i]);
+        uint32_t bg_count = static_cast<uint32_t>(h_bg_count_dbl[i]);
+
+        if (fg_count == 0) {
+            intensities[i] = 0.0;
+            variances[i] = -1.0;
+            background_totals[i] = 0.0;
+            continue;
+        }
+
+        double fg_sum = h_fg_sum_dbl[i];
+        // b̄ = Σ(bg) / n_bg
+        double bg_mean = (bg_count > 0) ? h_bg_sum_dbl[i] / bg_count : 0.0;
+
+        // B = b̄ × n_fg (total background contribution under the peak)
+        double background_total = bg_mean * fg_count;
+        // I = Σ(fg) − B
+        double intensity = fg_sum - background_total;
+
+        // Var(I) = |I| + |B| × (1 + n_fg/n_bg)
+        double fg_bg_ratio =
+          (bg_count > 0) ? static_cast<double>(fg_count) / bg_count : 0.0;
+        double variance =
+          std::abs(intensity) + std::abs(background_total) * (1.0 + fg_bg_ratio);
+
+        intensities[i] = intensity;
+        variances[i] = variance;
+        background_totals[i] = background_total;
+    }
+
+    // Load expected integrated results from the post-summation reflection table
+    auto output_path = output_file.string();
+    auto exp_intensity =
+      read_array_from_h5_file<double>(output_path, G + "intensity.sum.value");
+    auto exp_variance =
+      read_array_from_h5_file<double>(output_path, G + "intensity.sum.variance");
+    auto exp_background =
+      read_array_from_h5_file<double>(output_path, G + "background.sum.value");
+
+    ASSERT_EQ(exp_intensity.size(), num_reflections);
+    ASSERT_EQ(exp_variance.size(), num_reflections);
+    ASSERT_EQ(exp_background.size(), num_reflections);
+
+    // Compare computed values against truth with tolerance (1e-6) to
+    // account for floating-point reduction order differences
+    const char *sum_comp_names[] = {"intensity", "variance", "background"};
+    size_t sum_exact = 0;
+    size_t sum_mismatches = 0;
+    std::array<double, 3> sum_sum_abs_err = {};
+    std::array<double, 3> sum_sum_signed_err = {};
+    std::array<double, 3> sum_max_abs_err = {};
+    constexpr double tol = 1e-6;
+
+    for (size_t i = 0; i < num_reflections; ++i) {
+        std::array<double, 3> got = {
+          intensities[i], variances[i], background_totals[i]};
+        std::array<double, 3> exp = {
+          exp_intensity[i], exp_variance[i], exp_background[i]};
+
+        bool all_match = true;
+        for (int c = 0; c < 3; ++c) {
+            double diff = got[c] - exp[c];
+            double absdiff = std::abs(diff);
+            if (absdiff > tol) {
+                all_match = false;
+                sum_sum_abs_err[c] += absdiff;
+                sum_sum_signed_err[c] += diff;
+                sum_max_abs_err[c] = std::max(sum_max_abs_err[c], absdiff);
+            }
+        }
+
+        if (all_match) {
+            sum_exact++;
+        } else {
+            sum_mismatches++;
+            EXPECT_NEAR(intensities[i], exp_intensity[i], tol)
+              << "intensity.sum.value mismatch at reflection " << i;
+            EXPECT_NEAR(variances[i], exp_variance[i], tol)
+              << "intensity.sum.variance mismatch at reflection " << i;
+            EXPECT_NEAR(background_totals[i], exp_background[i], tol)
+              << "background.sum.value mismatch at reflection " << i;
+        }
+    }
+
+    std::cout << "\n=== Summation Finalization Comparison Summary ==="
+              << "\n  Reflections compared : " << num_reflections
+              << "\n  Exact matches        : " << sum_exact << " ("
+              << (num_reflections ? 100.0 * sum_exact / num_reflections : 0) << "%)"
+              << "\n  Mismatches (>" << tol << "): " << sum_mismatches << "\n";
+    if (sum_mismatches > 0) {
+        std::cout << "\n  Per-component error breakdown (over " << sum_mismatches
+                  << " mismatched reflections):\n"
+                  << "  Component    MeanAbsErr   MeanSignedErr  MaxAbsErr\n";
+        for (int c = 0; c < 3; ++c) {
+            double mean_abs = sum_sum_abs_err[c] / sum_mismatches;
+            double mean_signed = sum_sum_signed_err[c] / sum_mismatches;
+            std::cout << "  " << std::setw(12) << std::left << sum_comp_names[c] << " "
+                      << std::setw(12) << std::fixed << std::setprecision(6) << mean_abs
+                      << " " << std::setw(14) << mean_signed << " " << std::setw(9)
+                      << sum_max_abs_err[c] << "\n";
+        }
+    }
+    std::cout << "=================================================\n";
+
+    EXPECT_EQ(sum_mismatches, 0) << sum_mismatches << " of " << num_reflections
+                                 << " reflections exceeded tolerance " << tol;
+}
+
+#pragma endregion Summation Finalization
