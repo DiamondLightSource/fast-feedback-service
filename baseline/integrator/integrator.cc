@@ -412,6 +412,10 @@ int main(int argc, char **argv) {
     }
     logger.info("Reflections mapped across {} unique images",
                 reflections_by_image.size());
+    
+    for (const auto& [image, refl_list] : reflections_by_image) {
+        logger.info("Image {} has {} reflections", image, refl_list.size());
+    }
 
     // Now load some image data:
     std::string filename = expt.imagesequence().filename();
@@ -491,8 +495,8 @@ int main(int argc, char **argv) {
           }
         }
         //std::cout << "Made dxy array" << std::endl;
-        for (int x = bbox.x_min; x<bbox.x_max-1; x++){
-          for (int y = bbox.y_min; y<bbox.y_max-1; y++){
+        for (int x = bbox.x_min; x<bbox.x_max; x++){
+          for (int y = bbox.y_min; y<bbox.y_max; y++){
             if (x >=0 && x < image_fast && y >=0 && y < image_slow){
               int index = x + (y * image_fast);
               //std::cout << x << " " << y << " " << index << std::endl;
@@ -523,7 +527,6 @@ int main(int argc, char **argv) {
                 }
               }
             }
-              
           }
         }
         
@@ -641,7 +644,7 @@ int main(int argc, char **argv) {
     std::vector<double> intensities(num_reflections);
     for (int i=0;i<num_reflections;i++){
       if (nbg_accumulators[i]){
-        intensities[i] = intensity_accumulators[i] - (nfg_accumulators[i] * bg_accumulators[i] / nbg_accumulators[i]);
+        intensities[i] = intensity_accumulators[i] - (nfg_accumulators[i] * bg_accumulators[i] / static_cast<double>(nbg_accumulators[i]));
       }
       
     }
