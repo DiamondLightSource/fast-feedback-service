@@ -31,9 +31,6 @@
 
 using json = nlohmann::json;
 
-// Define a 2D mdspan type alias for convenience
-using mdspan_2d =
-  std::experimental::mdspan<double, std::experimental::dextents<size_t, 2>>;
 
 #pragma region Argument Parsing
 class BaselineIntegratorArgumentParser : public FFSArgumentParser {
@@ -98,8 +95,8 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
 
         add_argument("output")
           .help("Output file path")
-          .metavar("output.h5")
-          .default_value<std::string>("output.h5");
+          .metavar("integrated.refl")
+          .default_value<std::string>("integrated.refl");
     }
 };
 #pragma endregion Argument Parsing
@@ -392,6 +389,8 @@ int main(int argc, char **argv) {
           bbox.z_max = bbox_data[i+5];
           computed_bounding_boxes.push_back(bbox);
         }
+        logger.info("Successfully loaded {} bounding boxes from input reflections",
+                    computed_bounding_boxes.size());
     }
     
     // Map reflections by z layer (image number)
@@ -413,9 +412,20 @@ int main(int argc, char **argv) {
     logger.info("Reflections mapped across {} unique images",
                 reflections_by_image.size());
     
-    for (const auto& [image, refl_list] : reflections_by_image) {
-        logger.info("Image {} has {} reflections", image, refl_list.size());
+
+    std::vector<int> keys;
+    keys.reserve(reflections_by_image.size());
+    for (const auto& kv : reflections_by_image) {
+        keys.push_back(kv.first);
     }
+    std::sort(keys.begin(), keys.end());
+
+    
+    for (int image : keys) {
+        const auto& refl_list = reflections_by_image.at(image);
+        logger.info("Image {} has {} reflections", image+1, refl_list.size());
+    }
+
 
     // Now load some image data:
     std::string filename = expt.imagesequence().filename();
@@ -426,9 +436,7 @@ int main(int argc, char **argv) {
     double s0_length = beam.get_s0().norm();
     double phi0 = scan.get_oscillation()[0];
     double dphi = scan.get_oscillation()[1];
-    std::cout << "Phi0 " << phi0 << " dphi " << dphi << std::endl;
     // make a vector of coordinate systems for each reflection.
-    std::cout << "Making CS vector" << std::endl;
     std::vector<CoordinateSystem> coord_system_vector = {};
     coord_system_vector.reserve(num_reflections);
     const Vector3d m2 = gonio.get_rotation_axis();
@@ -437,12 +445,10 @@ int main(int argc, char **argv) {
       coord_system_vector.push_back(CoordinateSystem(
         m2, s0, s1_this, phi_column(i,2)));
     }
-    std::cout << "Made CS vector" << std::endl;
     double delta_b = sigma_b * 3.0;
     double delta_b_r2 = 1.0 / (delta_b * delta_b);
     double delta_m = sigma_m * 3.0;
     double delta_m_r2 = 1.0 / (delta_m * delta_m);
-    std::cout << "delta_b_r2 " << delta_b_r2 << " delta_m_r2 " << delta_m_r2 << std::endl;
 
     for (size_t j = 0; j < n_images; j++) {
       image_t *image = h5read_get_image(obj, j);
@@ -451,12 +457,8 @@ int main(int argc, char **argv) {
       size_t masked = 0;
       size_t total = 0;
       size_t signal = 0;
-      //for (size_t k=0;k<1;k++){
       for (size_t k=0;k<reflections_by_image[j].size();k++){
         size_t refl_id = reflections_by_image[j][k];
-        //std::cout << "Image " << j << " refl_id " << refl_id << std::endl;
-        //std::cout << "Image fast " << image_fast << std::endl;
-        //std::cout << "Image slow " << image_slow << std::endl;
         const auto &bbox = computed_bounding_boxes[refl_id];
         
         // calculate dxy array
@@ -467,7 +469,6 @@ int main(int argc, char **argv) {
         double phidash_start = (phi0 + (j * dphi)) * DEG2RAD;
         double phidash_end = (phi0 + ((j + 1) * dphi)) * DEG2RAD;
         double phi_c = phi_column(refl_id,2);
-        //std::cout << "Phis s e c: "<< phidash_start << ' ' << phidash_end << " " << phi_c << std::endl;
         CoordinateSystem cs = coord_system_vector[refl_id];
         Vector3d s1_this = Eigen::Map<Vector3d>(&s1_vectors(refl_id,0));
         for (int x = 0; x<n_x; x++){
@@ -477,8 +478,6 @@ int main(int argc, char **argv) {
             Vector3d s1_ = panel.get_lab_coord(px_mm[0], px_mm[1]);
             s1_.normalize();
             Vector3d s1dash = s1_ * s0_length;
-            //std::cout << "s1dash " << s1dash[0] << " " << s1dash[1] << " " << s1dash[2] << std::endl;
-            //std::cout << "s1c " << s1_this[0] << " " << s1_this[1] << " " << s1_this[2] << std::endl;
             Vector3d epsilon_coords_start = cs.coords_from_s1vector(s1dash, phidash_start);
             Vector3d epsilon_coords_end = cs.coords_from_s1vector(s1dash, phidash_end);
             if ((phidash_start > phi_c) && (phi_c < phidash_end)) {
@@ -494,12 +493,10 @@ int main(int argc, char **argv) {
                  * delta_b_r2) + ((epsilon_coords_end[2] * epsilon_coords_end[2]) * delta_m_r2);
           }
         }
-        //std::cout << "Made dxy array" << std::endl;
         for (int x = bbox.x_min; x<bbox.x_max; x++){
           for (int y = bbox.y_min; y<bbox.y_max; y++){
             if (x >=0 && x < image_fast && y >=0 && y < image_slow){
               int index = x + (y * image_fast);
-              //std::cout << x << " " << y << " " << index << std::endl;
               if (image->mask[index] != 0){
                 int data = image->data[index];
                 // Need to work out if foreground or background.
@@ -516,7 +513,6 @@ int main(int argc, char **argv) {
                 double d8 = dxy_end[dxyindex+n_x+1];
                 double d = std::min(std::min(std::min(d1, d2), std::min(d3, d4)),
                                     std::min(std::min(d5, d6), std::min(d7, d8)));
-                //std::cout << "Pixel x y d: " << x << " " << y  << " " << d << std::endl;
                 if (d > 1.0){
                   bg_accumulators[refl_id] += data;
                   nbg_accumulators[refl_id] += 1;
@@ -529,8 +525,6 @@ int main(int argc, char **argv) {
             }
           }
         }
-        
-        //std::cout << "Done fg/bg calc" << std::endl;
       }
       h5read_free_image(image);
     }
@@ -549,92 +543,6 @@ int main(int argc, char **argv) {
                                    static_cast<double>(bbox.z_max)});
     }
 
-    // Display some sample results
-    /*logger.info("Sample bounding box results (first 5 reflections):");
-    for (size_t i = 0; i < std::min<size_t>(5, num_reflections); ++i) {
-        const auto &bbox = computed_bounding_boxes[i];
-        logger.info("  bbox[{}]: x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
-                    i,
-                    bbox.x_min,
-                    bbox.x_max,
-                    bbox.y_min,
-                    bbox.y_max,
-                    bbox.z_min,
-                    bbox.z_max);
-    }
-
-    // Compute Kabsch coordinates for sample voxel centers within bounding boxes
-    logger.info(
-      "Computing Kabsch coordinates for voxel centers using baseline CPU "
-      "algorithms...");
-
-    std::vector<double> voxel_kabsch_coords;  // ε₁, ε₂, ε₃ for each voxel center
-    std::vector<int> voxel_reflection_ids;    // Which reflection each voxel belongs to
-    std::vector<double> voxel_positions;      // x, y, z positions for each voxel center
-    std::vector<double> voxel_s1_lengths;     // |s₁| for each voxel center
-
-    // Process a subset of reflections for demonstration (to avoid excessive computation)
-    size_t max_reflections_to_process = std::min<size_t>(10, num_reflections);
-    logger.info("Processing voxels for first {} reflections as demonstration",
-                max_reflections_to_process);
-
-    for (size_t refl_id = 0; refl_id < max_reflections_to_process; ++refl_id) {
-        const auto &bbox = computed_bounding_boxes[refl_id];
-
-        // Get reflection centroid data
-        Eigen::Vector3d s1_c(
-          s1_vectors(refl_id, 0), s1_vectors(refl_id, 1), s1_vectors(refl_id, 2));
-        double phi_c = phi_column(refl_id, 2);
-
-        // Process a sample of voxels in the bounding box (every 5th voxel to keep computation manageable)
-        int step = 5;
-        int voxel_count = 0;
-
-        for (int z = bbox.z_min; z < bbox.z_max; z += step) {
-            double phi_pixel =
-              osc_start + (z - image_range_start + 1.5) * osc_width / 180.0 * M_PI;
-
-            for (int y = static_cast<int>(bbox.y_min); y < static_cast<int>(bbox.y_max);
-                 y += step) {
-                for (int x = static_cast<int>(bbox.x_min);
-                     x < static_cast<int>(bbox.x_max);
-                     x += step) {
-                    // Convert pixel coordinates to lab coordinates
-                    std::array<double, 2> xy_mm = panel.px_to_mm(
-                      static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5);
-
-                    Vector3d lab_coord =
-                      panel.get_d_matrix() * Vector3d(xy_mm[0], xy_mm[1], 1.0);
-
-                    // Convert lab coordinate to reciprocal space vector
-                    Eigen::Vector3d s_pixel = lab_coord.normalized() / wl;
-
-                    // Use baseline CPU pixel_to_kabsch algorithm
-                    double s1_len_out;
-                    Eigen::Vector3d kabsch_coords = pixel_to_kabsch(
-                      s0, s1_c, phi_c, s_pixel, phi_pixel, rotation_axis, s1_len_out);
-
-                    // Store results
-                    voxel_kabsch_coords.insert(
-                      voxel_kabsch_coords.end(),
-                      {kabsch_coords.x(), kabsch_coords.y(), kabsch_coords.z()});
-                    voxel_reflection_ids.push_back(static_cast<int>(refl_id));
-                    voxel_positions.insert(
-                      voxel_positions.end(),
-                      {xy_mm[0], xy_mm[1], static_cast<double>(z)});
-                    voxel_s1_lengths.push_back(s1_len_out);
-
-                    voxel_count++;
-                }
-            }
-        }
-
-        logger.debug("Processed {} voxels for reflection {}", voxel_count, refl_id);
-    }
-
-    size_t actual_voxels = voxel_reflection_ids.size();
-    logger.info("Processed {} voxel centers total", actual_voxels);
-    */
     // Create results and save to HDF5
     logger.info("Saving results to: {}", output_file);
 
@@ -655,37 +563,12 @@ int main(int argc, char **argv) {
       "miller_index", num_reflections,3, hkl_vectors
     );
 
-    // Create voxel data table
-    /*ReflectionTable voxel_table;
-    if (actual_voxels > 0) {
-        voxel_table.add_column("kabsch_coordinates",
-                               std::vector<size_t>{actual_voxels, 3},
-                               voxel_kabsch_coords);
-        voxel_table.add_column("reflection_id",
-                               std::vector<size_t>{actual_voxels, 1},
-                               std::vector<double>(voxel_reflection_ids.begin(),
-                                                   voxel_reflection_ids.end()));
-        voxel_table.add_column(
-          "pixel_coordinates", std::vector<size_t>{actual_voxels, 3}, voxel_positions);
-        voxel_table.add_column(
-          "voxel_s1_length", std::vector<size_t>{actual_voxels, 1}, voxel_s1_lengths);
-    }*/
-
-    // Write output files
     integrated_data.write(output_file);
-    /*if (actual_voxels > 0) {
-        std::string voxel_output =
-          output_file.substr(0, output_file.find_last_of('.')) + "_voxels.h5";
-        voxel_table.write(voxel_output);
-        logger.info("Voxel data saved to: {}", voxel_output);
-    }
-    */
     logger.info("Baseline integration complete!");
     logger.info("Summary:");
     logger.info("  {} reflections processed", num_reflections);
     logger.info("  {} bounding boxes computed", computed_bounding_boxes.size());
-    //logger.info("  {} voxel centers processed", actual_voxels);
-    //logger.info("Results saved to: {}", output_file);
+    logger.info("Results saved to: {}", output_file);
 
     return 0;
 }
