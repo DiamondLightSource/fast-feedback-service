@@ -16,6 +16,8 @@ add_library(h5read STATIC src/h5read.c src/h5read.cc)
 target_include_directories(h5read PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include )
 target_link_libraries(h5read PUBLIC $<TARGET_NAME_IF_EXISTS:hdf5::hdf5> $<TARGET_NAME_IF_EXISTS:compile_options>)
   
+add_subdirectory(tests)
+
 if (TARGET hdf5::hdf5)
   add_compile_definitions(HAVE_HDF5)
   # Problem:
@@ -50,3 +52,5 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR OR H5READ_BUILD_EXE)
         target_link_libraries(read_chunks_cpp PUBLIC h5read LZ4::LZ4 Bitshuffle::bitshuffle)
     endif()
 endif()
+
+
