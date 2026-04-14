@@ -29,6 +29,7 @@
 #include "math/math_utils.cuh"
 #include "predict.cc"
 #include "sigma_estimation.cc"
+#include "background.cc"
 #include "version.hpp"
 
 using json = nlohmann::json;
@@ -103,6 +104,12 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .help(
             "Foreground algorithm choice - dials or ellipsoid.")
           .default_value<std::string>("ellipsoid");
+
+        add_argument("--min_zeta")
+          .help(
+            "Reflections close to the rotation axis, with a zeta below this threshold will not be integrated.")
+          .default_value<float>(0.05)
+          .scan<'f', float>();
 
         add_argument("output")
           .help("Output file path")
@@ -213,6 +220,7 @@ int main(int argc, char **argv) {
     // code in this program.
     float sigma_b = 0.0;
     float sigma_m = 0.0;
+    float min_zeta = parser.get<float>("min_zeta");
     if (parser.is_used("sigma_m")) {
         sigma_m = degrees_to_radians(
           parser.get<float>("sigma_m"));  // Use radians for calculations
@@ -416,7 +424,7 @@ int main(int argc, char **argv) {
     // Set up data arrays to fill during accumulation
     std::vector<int> intensity_accumulators(num_reflections);
     std::vector<Vector3d> intensity_times_coord_accumulators(num_reflections);
-    std::vector<int> bg_accumulators(num_reflections);
+    std::vector<BackgroundAggregator> bg_accumulators(num_reflections);
     std::vector<int> nbg_accumulators(num_reflections);
     std::vector<int> nfg_accumulators(num_reflections);
     std::vector<bool> success(num_reflections, true);
@@ -428,11 +436,17 @@ int main(int argc, char **argv) {
     double phi0 = scan.get_oscillation()[0];
     double dphi = scan.get_oscillation()[1];
     const Vector3d m2 = gonio.get_rotation_axis();
+    std::vector<bool> dont_integrate(num_reflections, false);
     for (int i = 0; i < num_reflections; i++) {
         Vector3d s1_this = Eigen::Map<Vector3d>(&s1_vectors(i, 0));
-        coord_system_vector.push_back(
-          CoordinateSystem(m2, s0, s1_this, phi_column(i, 2)));
+        CoordinateSystem cs(m2, s0, s1_this, phi_column(i, 2));
+        coord_system_vector.push_back(cs);
+        if (std::abs(cs.zeta()) < min_zeta){
+            dont_integrate[i] = true;
+            success[i] = false;
+        }
     }
+
     double delta_b = sigma_b * 3.0;
     double delta_b_r2 = 1.0 / (delta_b * delta_b);
     double delta_m = sigma_m * 3.0;
@@ -453,6 +467,9 @@ int main(int argc, char **argv) {
         logger.info("Processing image {}", j + 1);
         for (size_t k = 0; k < reflections_by_image[j].size(); k++) {
             size_t refl_id = reflections_by_image[j][k];
+            if (dont_integrate[refl_id]){
+                continue;
+            }
             const auto &bbox = computed_bounding_boxes[refl_id];
             if (fg_algorithm == "ellipsoid"){
                 // calculate dxy array (arrays of distances in kabsch space from pixel corners to xyzcal)
@@ -530,16 +547,16 @@ int main(int argc, char **argv) {
                                     intensity_times_coord_accumulators[refl_id] +=
                                     I_times_c;
                                 }
-                            } else { // NB dials doesn't seem to do this check.
+                            } else {
                                 success[refl_id] = false;
                             }
                         } else {  // d>1.0
                             // Background
                             if (in_image) {
                                 if (mask[index] != 0) {
-                                    // In image, not masked=
-                                    uint16_t data = image.data.data()[index];
-                                    bg_accumulators[refl_id] += data;
+                                    // In image, not masked
+                                    auto data = image.data.data()[index];
+                                    bg_accumulators[refl_id].add(data);
                                     nbg_accumulators[refl_id] += 1;
                                 }
                             }
@@ -602,16 +619,16 @@ int main(int argc, char **argv) {
                                     intensity_times_coord_accumulators[refl_id] +=
                                     I_times_c;
                                 }
-                            }// else { // NB dials doesn't seem to do this check?
-                            //    success[refl_id] = false;
-                            //}
+                            } else {
+                                success[refl_id] = false;
+                            }
                         } else {  // d>1.0
                             // Background
                             if (in_image) {
                                 if (mask[index] != 0) {
                                     // In image, not masked
                                     auto data = image.data.data()[index];
-                                    bg_accumulators[refl_id] += data;
+                                    bg_accumulators[refl_id].add(data);
                                     nbg_accumulators[refl_id] += 1;
                                 }
                             }
@@ -649,13 +666,13 @@ int main(int argc, char **argv) {
     std::vector<double> xyzobs_px(num_reflections * 3);
     std::vector<double> d_values(num_reflections);
     std::vector<double> mean_bg(num_reflections);
+    std::vector<double> bg_sum_value(num_reflections);
     // FIXME need to include robust outlier rejection in background calculation (glm, constant3dmodel)
     for (int i = 0; i < num_reflections; i++) {
         if (nbg_accumulators[i]) {
-            double bg =
-              nfg_accumulators[i] * bg_accumulators[i]
-              / static_cast<double>(nbg_accumulators[i]);  // average bg * num fg pixels
+            auto [bg, total_bg_counts] = compute_background_constant_3d(bg_accumulators[i]);
             mean_bg[i] = bg;
+            bg_sum_value[i] = total_bg_counts;
             double I = intensity_accumulators[i] - bg;
             intensities[i] = I;
             double m_n = nfg_accumulators[i] / nbg_accumulators[i];
@@ -666,8 +683,10 @@ int main(int argc, char **argv) {
                 xyzobs_px[i * 3] = com[0];
                 xyzobs_px[i * 3 + 1] = com[1];
                 xyzobs_px[i * 3 + 2] = com[2];
-            } else {
-                success[i] = false;
+            } else { // zero intensity, so com is just centre of box (dials convention from centroid/simple/algorithm.h).
+                xyzobs_px[i * 3] = 0.5 * (computed_bounding_boxes[i].x_min + computed_bounding_boxes[i].x_max);
+                xyzobs_px[i * 3 + 1] = 0.5 * (computed_bounding_boxes[i].y_min + computed_bounding_boxes[i].y_max);
+                xyzobs_px[i * 3 + 2] = 0.5 * (computed_bounding_boxes[i].z_min + computed_bounding_boxes[i].z_max);
             }
         } else {
             success[i] = false;
@@ -720,7 +739,7 @@ int main(int argc, char **argv) {
     integrated_data.add_column("id", num_reflections, 1, id);
     integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_accumulators); // Useful for debug but not required for downstream
     integrated_data.add_column("num_pixels.foreground", num_reflections, 1, nfg_accumulators); // Useful for debug but not required for downstream
-    integrated_data.add_column("background.sum.value", num_reflections, 1, bg_accumulators); // Useful for debug but not required for downstream
+    integrated_data.add_column("background.sum.value", num_reflections, 1, bg_sum_value); // Useful for debug but not required for downstream
     integrated_data.add_column("background.mean", num_reflections, 1, mean_bg); // Useful for debug but not required for downstream
     std::vector<std::size_t> final_flags(num_reflections, IntegratedSum);
     integrated_data.add_column(std::string("flags"), num_reflections, 1, final_flags);
