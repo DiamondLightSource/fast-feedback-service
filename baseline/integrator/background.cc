@@ -27,6 +27,9 @@ class BackgroundAggregator {
     }
 
   private:
+    // Use two data structures for the histogram
+    // - a small vector for small counts (< VECTOR_LIMIT) (vast majority of pixels, efficient for adding a large number of low-value pixels)
+    // - an unordered map for large counts (sparse, infrequent, efficient for adding a low number of high-value pixels (perhaps outliers))
     std::vector<std::size_t> _small_hist = std::vector<std::size_t>(VECTOR_LIMIT, 0);
     std::unordered_map<int, std::size_t> _large_hist;
     int n_pixels = 0;
