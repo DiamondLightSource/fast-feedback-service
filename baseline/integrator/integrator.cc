@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "arg_parser.hpp"
+#include "background.cc"
 #include "common.hpp"
 #include "extent.cc"
 #include "ffs_logger.hpp"
@@ -29,7 +30,6 @@
 #include "math/math_utils.cuh"
 #include "predict.cc"
 #include "sigma_estimation.cc"
-#include "background.cc"
 #include "version.hpp"
 
 using json = nlohmann::json;
@@ -100,14 +100,14 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .default_value<int>(6)
           .scan<'i', int>();
 
-        add_argument("-a","--algorithm")
-          .help(
-            "Foreground algorithm choice - dials or ellipsoid.")
+        add_argument("-a", "--algorithm")
+          .help("Foreground algorithm choice - dials or ellipsoid.")
           .default_value<std::string>("ellipsoid");
 
         add_argument("--min_zeta")
           .help(
-            "Reflections close to the rotation axis, with a zeta below this threshold will not be integrated.")
+            "Reflections close to the rotation axis, with a zeta below this threshold "
+            "will not be integrated.")
           .default_value<float>(0.05)
           .scan<'f', float>();
 
@@ -132,8 +132,9 @@ int main(int argc, char **argv) {
     float timeout = parser.get<float>("timeout");
     std::string output_file = parser.get<std::string>("output");
     std::string fg_algorithm = parser.get<std::string>("algorithm");
-    if ((fg_algorithm != "dials") && (fg_algorithm != "ellipsoid")){
-        throw std::invalid_argument("Invalid algorithm specified (must be 'dials' or 'ellipsoid')");
+    if ((fg_algorithm != "dials") && (fg_algorithm != "ellipsoid")) {
+        throw std::invalid_argument(
+          "Invalid algorithm specified (must be 'dials' or 'ellipsoid')");
     }
 
     // Guard against missing files
@@ -441,7 +442,7 @@ int main(int argc, char **argv) {
         Vector3d s1_this = Eigen::Map<Vector3d>(&s1_vectors(i, 0));
         CoordinateSystem cs(m2, s0, s1_this, phi_column(i, 2));
         coord_system_vector.push_back(cs);
-        if (std::abs(cs.zeta()) < min_zeta){
+        if (std::abs(cs.zeta()) < min_zeta) {
             dont_integrate[i] = true;
             success[i] = false;
         }
@@ -467,16 +468,17 @@ int main(int argc, char **argv) {
         logger.info("Processing image {}", j + 1);
         for (size_t k = 0; k < reflections_by_image[j].size(); k++) {
             size_t refl_id = reflections_by_image[j][k];
-            if (dont_integrate[refl_id]){
+            if (dont_integrate[refl_id]) {
                 continue;
             }
             const auto &bbox = computed_bounding_boxes[refl_id];
-            if (fg_algorithm == "ellipsoid"){
+            if (fg_algorithm == "ellipsoid") {
                 // calculate dxy array (arrays of distances in kabsch space from pixel corners to xyzcal)
                 int n_x = bbox.x_max - bbox.x_min + 1;
                 int n_y = bbox.y_max - bbox.y_min + 1;
-                std::vector<double> dxy_start(n_x * n_y);  // start of image (in rotation)
-                std::vector<double> dxy_end(n_x * n_y);    // end of image (in rotation)
+                std::vector<double> dxy_start(n_x
+                                              * n_y);    // start of image (in rotation)
+                std::vector<double> dxy_end(n_x * n_y);  // end of image (in rotation)
                 double phidash_start = (phi0 + (j * dphi)) * DEG2RAD;
                 double phidash_end = (phi0 + ((j + 1) * dphi)) * DEG2RAD;
                 double phi_c = phi_column(refl_id, 2);
@@ -486,30 +488,31 @@ int main(int argc, char **argv) {
                     for (int y = 0; y < n_y; y++) {
                         int index = x + (y * (n_x));
                         std::array<double, 2> px_mm =
-                        panel.px_to_mm(x + bbox.x_min, y + bbox.y_min);
+                          panel.px_to_mm(x + bbox.x_min, y + bbox.y_min);
                         Vector3d s1_ = panel.get_lab_coord(px_mm[0], px_mm[1]);
                         s1_.normalize();
                         Vector3d s1dash = s1_ * s0_length;
                         Vector3d epsilon_coords_start =
-                        cs.coords_from_s1vector(s1dash, phidash_start);
+                          cs.coords_from_s1vector(s1dash, phidash_start);
                         Vector3d epsilon_coords_end =
-                        cs.coords_from_s1vector(s1dash, phidash_end);
+                          cs.coords_from_s1vector(s1dash, phidash_end);
                         if ((phidash_start > phi_c) && (phi_c < phidash_end)) {
                             epsilon_coords_start[2] = 0.0;
                             epsilon_coords_end[2] = 0.0;
                         }
 
                         dxy_start[index] =
-                        ((epsilon_coords_start[0] * epsilon_coords_start[0]
+                          ((epsilon_coords_start[0] * epsilon_coords_start[0]
                             + epsilon_coords_start[1] * epsilon_coords_start[1])
-                        * delta_b_r2)
-                        + ((epsilon_coords_start[2] * epsilon_coords_start[2])
-                            * delta_m_r2);
+                           * delta_b_r2)
+                          + ((epsilon_coords_start[2] * epsilon_coords_start[2])
+                             * delta_m_r2);
                         dxy_end[index] =
-                        ((epsilon_coords_end[0] * epsilon_coords_end[0]
+                          ((epsilon_coords_end[0] * epsilon_coords_end[0]
                             + epsilon_coords_end[1] * epsilon_coords_end[1])
-                        * delta_b_r2)
-                        + ((epsilon_coords_end[2] * epsilon_coords_end[2]) * delta_m_r2);
+                           * delta_b_r2)
+                          + ((epsilon_coords_end[2] * epsilon_coords_end[2])
+                             * delta_m_r2);
                     }
                 }
                 // Now loop through pixels in bbox, adding to foreground or background if unmasked and in image.
@@ -528,11 +531,12 @@ int main(int argc, char **argv) {
                         double d6 = dxy_end[dxyindex + 1];
                         double d7 = dxy_end[dxyindex + n_x];
                         double d8 = dxy_end[dxyindex + n_x + 1];
-                        double d = std::min(std::min(std::min(d1, d2), std::min(d3, d4)),
-                                            std::min(std::min(d5, d6), std::min(d7, d8)));
+                        double d =
+                          std::min(std::min(std::min(d1, d2), std::min(d3, d4)),
+                                   std::min(std::min(d5, d6), std::min(d7, d8)));
                         int index = x + (y * image_fast);
                         bool in_image =
-                        x >= 0 && x < image_fast && y >= 0 && y < image_slow;
+                          x >= 0 && x < image_fast && y >= 0 && y < image_slow;
                         if (d <= 1.0) {
                             // Foreground
                             if (in_image) {
@@ -542,10 +546,11 @@ int main(int argc, char **argv) {
                                     auto data = image.data.data()[index];
                                     intensity_accumulators[refl_id] += data;
                                     nfg_accumulators[refl_id] += 1;
-                                    Vector3d I_times_c = {
-                                    data * (x + 0.5), data * (y + 0.5), data * (j + 0.5)};
+                                    Vector3d I_times_c = {data * (x + 0.5),
+                                                          data * (y + 0.5),
+                                                          data * (j + 0.5)};
                                     intensity_times_coord_accumulators[refl_id] +=
-                                    I_times_c;
+                                      I_times_c;
                                 }
                             } else {
                                 success[refl_id] = false;
@@ -568,24 +573,25 @@ int main(int argc, char **argv) {
                 int n_x = bbox.x_max - bbox.x_min + 1;
                 int n_y = bbox.y_max - bbox.y_min + 1;
                 std::vector<double> dxy(n_x * n_y);
-                double phi = phi0 + (j * dphi) * DEG2RAD; // Required for calls but not actually used as don't use e3.
+                double phi =
+                  phi0
+                  + (j * dphi)
+                      * DEG2RAD;  // Required for calls but not actually used as don't use e3.
                 CoordinateSystem cs = coord_system_vector[refl_id];
                 Vector3d s1_this = Eigen::Map<Vector3d>(&s1_vectors(refl_id, 0));
                 for (int x = 0; x < n_x; x++) {
                     for (int y = 0; y < n_y; y++) {
                         int index = x + (y * (n_x));
                         std::array<double, 2> px_mm =
-                        panel.px_to_mm(x + bbox.x_min, y + bbox.y_min);
+                          panel.px_to_mm(x + bbox.x_min, y + bbox.y_min);
                         Vector3d s1_ = panel.get_lab_coord(px_mm[0], px_mm[1]);
                         s1_.normalize();
                         Vector3d s1dash = s1_ * s0_length;
-                        Vector3d epsilon_coords =
-                        cs.coords_from_s1vector(s1dash, phi);
+                        Vector3d epsilon_coords = cs.coords_from_s1vector(s1dash, phi);
 
-                        dxy[index] =
-                        ((epsilon_coords[0] * epsilon_coords[0]
-                            + epsilon_coords[1] * epsilon_coords[1])
-                        * delta_b_r2);
+                        dxy[index] = ((epsilon_coords[0] * epsilon_coords[0]
+                                       + epsilon_coords[1] * epsilon_coords[1])
+                                      * delta_b_r2);
                     }
                 }
                 // Now loop through pixels in bbox, adding to foreground or background if unmasked and in image.
@@ -603,7 +609,7 @@ int main(int argc, char **argv) {
                         double d = std::min(std::min(d1, d2), std::min(d3, d4));
                         int index = x + (y * image_fast);
                         bool in_image =
-                        x >= 0 && x < image_fast && y >= 0 && y < image_slow;
+                          x >= 0 && x < image_fast && y >= 0 && y < image_slow;
 
                         if (d <= 1.0) {
                             // Foreground
@@ -614,10 +620,11 @@ int main(int argc, char **argv) {
                                     auto data = image.data.data()[index];
                                     intensity_accumulators[refl_id] += data;
                                     nfg_accumulators[refl_id] += 1;
-                                    Vector3d I_times_c = {
-                                    data * (x + 0.5), data * (y + 0.5), data * (j + 0.5)};
+                                    Vector3d I_times_c = {data * (x + 0.5),
+                                                          data * (y + 0.5),
+                                                          data * (j + 0.5)};
                                     intensity_times_coord_accumulators[refl_id] +=
-                                    I_times_c;
+                                      I_times_c;
                                 }
                             } else {
                                 success[refl_id] = false;
@@ -670,7 +677,8 @@ int main(int argc, char **argv) {
     // FIXME need to include robust outlier rejection in background calculation (glm, constant3dmodel)
     for (int i = 0; i < num_reflections; i++) {
         if (nbg_accumulators[i]) {
-            auto [bg, total_bg_counts] = compute_background_constant_3d(bg_accumulators[i]);
+            auto [bg, total_bg_counts] =
+              compute_background_constant_3d(bg_accumulators[i]);
             mean_bg[i] = bg;
             bg_sum_value[i] = total_bg_counts;
             double I = intensity_accumulators[i] - bg;
@@ -683,10 +691,16 @@ int main(int argc, char **argv) {
                 xyzobs_px[i * 3] = com[0];
                 xyzobs_px[i * 3 + 1] = com[1];
                 xyzobs_px[i * 3 + 2] = com[2];
-            } else { // zero intensity, so com is just centre of box (dials convention from centroid/simple/algorithm.h).
-                xyzobs_px[i * 3] = 0.5 * (computed_bounding_boxes[i].x_min + computed_bounding_boxes[i].x_max);
-                xyzobs_px[i * 3 + 1] = 0.5 * (computed_bounding_boxes[i].y_min + computed_bounding_boxes[i].y_max);
-                xyzobs_px[i * 3 + 2] = 0.5 * (computed_bounding_boxes[i].z_min + computed_bounding_boxes[i].z_max);
+            } else {  // zero intensity, so com is just centre of box (dials convention from centroid/simple/algorithm.h).
+                xyzobs_px[i * 3] = 0.5
+                                   * (computed_bounding_boxes[i].x_min
+                                      + computed_bounding_boxes[i].x_max);
+                xyzobs_px[i * 3 + 1] = 0.5
+                                       * (computed_bounding_boxes[i].y_min
+                                          + computed_bounding_boxes[i].y_max);
+                xyzobs_px[i * 3 + 2] = 0.5
+                                       * (computed_bounding_boxes[i].z_min
+                                          + computed_bounding_boxes[i].z_max);
             }
         } else {
             success[i] = false;
@@ -737,10 +751,26 @@ int main(int argc, char **argv) {
     integrated_data.add_column("xyzobs.px.value", num_reflections, 3, xyzobs_px);
     integrated_data.add_column("s1", num_reflections, 3, s1);
     integrated_data.add_column("id", num_reflections, 1, id);
-    integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_accumulators); // Useful for debug but not required for downstream
-    integrated_data.add_column("num_pixels.foreground", num_reflections, 1, nfg_accumulators); // Useful for debug but not required for downstream
-    integrated_data.add_column("background.sum.value", num_reflections, 1, bg_sum_value); // Useful for debug but not required for downstream
-    integrated_data.add_column("background.mean", num_reflections, 1, mean_bg); // Useful for debug but not required for downstream
+    integrated_data.add_column(
+      "num_pixels.background",
+      num_reflections,
+      1,
+      nbg_accumulators);  // Useful for debug but not required for downstream
+    integrated_data.add_column(
+      "num_pixels.foreground",
+      num_reflections,
+      1,
+      nfg_accumulators);  // Useful for debug but not required for downstream
+    integrated_data.add_column(
+      "background.sum.value",
+      num_reflections,
+      1,
+      bg_sum_value);  // Useful for debug but not required for downstream
+    integrated_data.add_column(
+      "background.mean",
+      num_reflections,
+      1,
+      mean_bg);  // Useful for debug but not required for downstream
     std::vector<std::size_t> final_flags(num_reflections, IntegratedSum);
     integrated_data.add_column(std::string("flags"), num_reflections, 1, final_flags);
 

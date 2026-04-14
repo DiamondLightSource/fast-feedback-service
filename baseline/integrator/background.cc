@@ -1,47 +1,47 @@
-#include <vector>
-#include <unordered_map>
 #include <algorithm>
 #include <cstddef>
+#include <unordered_map>
+#include <vector>
 
 constexpr std::size_t VECTOR_LIMIT = 64;
 
 class BackgroundAggregator {
-    public:
-        BackgroundAggregator(){}
-        void add(int x){
-            if (x >= 0 && x < VECTOR_LIMIT) {
-                ++_small_hist[x];
-            } else {
-                ++_large_hist[x];
-            }
-            ++n_pixels;
+  public:
+    BackgroundAggregator() {}
+    void add(int x) {
+        if (x >= 0 && x < VECTOR_LIMIT) {
+            ++_small_hist[x];
+        } else {
+            ++_large_hist[x];
         }
-        int num_pixels() const {
-            return n_pixels;
-        }
-        std::vector<std::size_t> small_hist() const {
-            return _small_hist;
-        }
-        std::unordered_map<int, std::size_t> large_hist() const {
-            return _large_hist;
-        }
-    private:
-        std::vector<std::size_t> _small_hist = std::vector<std::size_t>(VECTOR_LIMIT, 0);
-        std::unordered_map<int, std::size_t> _large_hist;
-        int n_pixels = 0;
-};
+        ++n_pixels;
+    }
+    int num_pixels() const {
+        return n_pixels;
+    }
+    std::vector<std::size_t> small_hist() const {
+        return _small_hist;
+    }
+    std::unordered_map<int, std::size_t> large_hist() const {
+        return _large_hist;
+    }
 
+  private:
+    std::vector<std::size_t> _small_hist = std::vector<std::size_t>(VECTOR_LIMIT, 0);
+    std::unordered_map<int, std::size_t> _large_hist;
+    int n_pixels = 0;
+};
 
 // Compute constant 3d glm background model
 // int min_pixels=10
 
 // Actually do simple with tukey outlier
 
-std::tuple<double, double> compute_background_constant_3d(BackgroundAggregator data){
+std::tuple<double, double> compute_background_constant_3d(BackgroundAggregator data) {
     // first do tukey outlier rejection based on 1.5 IQR multiplier.
     double iqr_multiplier = 1.5;
     int N = data.num_pixels();
-    
+
     std::size_t p25 = (N + 3) / 4;
     std::size_t p50 = (N + 1) / 2;
     std::size_t p75 = (3 * N + 1) / 4;
@@ -59,15 +59,14 @@ std::tuple<double, double> compute_background_constant_3d(BackgroundAggregator d
         if (median < 0 && cumulative >= p50) median = value;
         if (q3 < 0 && cumulative >= p75) {
             q3 = value;
-            break; // may be able to stop early
+            break;  // may be able to stop early
         }
     }
     // iterate the hist if not all found.
     if (q3 < 0) {
         std::vector<int> keys;
         keys.reserve(large_hist.size());
-        for (auto& [k, _] : large_hist)
-            keys.push_back(k);
+        for (auto &[k, _] : large_hist) keys.push_back(k);
 
         std::sort(keys.begin(), keys.end());
 
@@ -91,8 +90,7 @@ std::tuple<double, double> compute_background_constant_3d(BackgroundAggregator d
 
     // ---- Small values (vector) ----
     for (std::size_t value = 0; value < small_hist.size(); ++value) {
-        if (value < lower_bound || value > upper_bound)
-            continue;
+        if (value < lower_bound || value > upper_bound) continue;
 
         std::size_t count = small_hist[value];
         included_count += count;
@@ -100,16 +98,17 @@ std::tuple<double, double> compute_background_constant_3d(BackgroundAggregator d
     }
 
     // ---- Large outliers (unordered_map) ----
-    for (const auto& [value, count] : large_hist) {
-        if (value < lower_bound || value > upper_bound)
-            continue;
+    for (const auto &[value, count] : large_hist) {
+        if (value < lower_bound || value > upper_bound) continue;
 
         included_count += count;
         weighted_sum += value * static_cast<double>(count);
     }
 
     // Avoid division by zero if everything was excluded
-    if (included_count == 0) throw std::runtime_error("No counts included in background calculation");
+    if (included_count == 0)
+        throw std::runtime_error("No counts included in background calculation");
 
-    return std::make_tuple(weighted_sum / static_cast<double>(included_count), weighted_sum);
+    return std::make_tuple(weighted_sum / static_cast<double>(included_count),
+                           weighted_sum);
 }
