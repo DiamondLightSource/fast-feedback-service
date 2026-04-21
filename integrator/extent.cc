@@ -43,6 +43,7 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
     // Calculate the angular divergence parameters:
     // Δb = nσ × σb × m (beam divergence extent)
     // Δm = nσ × σm (mosaicity extent)
+    // ** IN RADIANS **
     double delta_b = n_sigma * sigma_b * sigma_b_multiplier;
     double delta_m = n_sigma * sigma_m;
 
@@ -129,7 +130,7 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
             }
             std::array<double, 2> xy_mm = *xy_mm_opt;
 
-            // Convert from mm to pixels using the new mm_to_px function
+            // Convert from mm to pixels
             std::array<double, 2> xy_pixels = panel.mm_to_px(xy_mm[0], xy_mm[1]);
 
             detector_coords.push_back({xy_pixels[0], xy_pixels[1]});
