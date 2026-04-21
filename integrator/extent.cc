@@ -119,19 +119,23 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
             s_prime_vectors.push_back(s_prime);
         }
 
-        // Transform s′ vectors back to detector coordinates using Panel's get_ray_intersection
+        // Transform s′ vectors back to detector coordinates.
+        // Use unconstrained intersection (no bounds check), like DIALS
+        // the bbox is allowed to extend beyond the physical detector edge.
+        // d_matrix_inv is D = d⁻¹; v = D·s′ gives panel-frame coords where
+        // (v[0]/v[2], v[1]/v[2]) are mm coordinates on the detector plane.
+        // Perhaps this should be pushed upstream to DX2?
         std::vector<std::pair<double, double>> detector_coords;
         for (const auto &s_prime : s_prime_vectors) {
-            // Direct conversion from s′ vector to detector coordinates
-            // get_ray_intersection returns coordinates in mm
-            auto xy_mm_opt = panel.get_ray_intersection(s_prime);
-            if (!xy_mm_opt) {
-                continue;  // Skip this corner if no intersection
+            Eigen::Vector3d v = d_matrix_inv * s_prime;
+            if (v[2] <= 0) {
+                continue;  // Ray going backwards, no valid intersection
             }
-            std::array<double, 2> xy_mm = *xy_mm_opt;
+            double x_mm = v[0] / v[2];
+            double y_mm = v[1] / v[2];
 
             // Convert from mm to pixels
-            std::array<double, 2> xy_pixels = panel.mm_to_px(xy_mm[0], xy_mm[1]);
+            std::array<double, 2> xy_pixels = panel.mm_to_px(x_mm, y_mm);
 
             detector_coords.push_back({xy_pixels[0], xy_pixels[1]});
         }
@@ -172,12 +176,18 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
             double z_minus =
               image_range_start - 1 + ((phi_minus_deg - osc_start) / osc_width);
 
-            // Clamp to the actual image range and use floor/ceil for integer bounds
+            // Clamp to the actual image range and use floor/ceil for integer bounds.
+            // Mirrors DIALS array_range = [image_range_start-1, image_range_end]:
+            //   z_min in [array_range[0],   array_range[1]-1]
+            //   z_max in [array_range[0]+1, array_range[1]  ]
+            int z_min_unclamped =
+              static_cast<int>(std::floor(std::min(z_plus, z_minus)));
+            int z_max_unclamped =
+              static_cast<int>(std::ceil(std::max(z_plus, z_minus)));
             bbox.z_min =
-              std::max(image_range_start - 1,
-                       static_cast<int>(std::floor(std::min(z_plus, z_minus))));
-            bbox.z_max = std::min(
-              image_range_end, static_cast<int>(std::ceil(std::max(z_plus, z_minus))));
+              std::clamp(z_min_unclamped, image_range_start - 1, image_range_end - 1);
+            bbox.z_max =
+              std::clamp(z_max_unclamped, image_range_start, image_range_end);
         } else {
             // Handle degenerate case where reflection is parallel to rotation axis
             // In this case, the reflection spans the entire image range
