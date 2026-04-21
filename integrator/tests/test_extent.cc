@@ -13,6 +13,7 @@
 #include <hdf5.h>
 
 #include <Eigen/Dense>
+#include <algorithm>
 #include <dx2/beam.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
@@ -198,6 +199,8 @@ TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
       {};  // Σ(computed − expected) - detect systematic bias
     std::array<int, 6> max_abs_err = {};    // max |computed − expected|
     std::array<size_t, 6> off_by_one = {};  // count of |error| == 1 (rounding boundary)
+    // signed-difference histogram per component: diff → count
+    std::array<std::map<int, int>, 6> diff_hist;
 
     for (size_t i = 0; i < num_reflections; ++i) {
         HKL key{before_hkl_flat[i * 3 + 0],
@@ -249,6 +252,7 @@ TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
                 sum_signed_err[c] += diff;
                 max_abs_err[c] = std::max(max_abs_err[c], absdiff);
                 if (absdiff == 1) off_by_one[c]++;
+                diff_hist[c][diff]++;
             }
 
             auto hkl_str = "(" + std::to_string(std::get<0>(key)) + ", "
@@ -284,6 +288,28 @@ TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
                       << "  " << std::setw(13) << std::fixed << std::setprecision(3)
                       << mean_signed << "  " << std::setw(9) << max_abs_err[c] << "  "
                       << off_by_one[c] << "\n";
+        }
+
+        // Signed-difference histograms: top-5 most frequent
+        // values per component, sorted by descending frequency.
+        constexpr int TOP_N = 5;
+        std::cout << "\n  Top-" << TOP_N
+                  << " signed differences per component (computed - expected):\n";
+        for (int c = 0; c < 6; ++c) {
+            if (diff_hist[c].empty()) continue;
+            // Collect and sort by descending count
+            std::vector<std::pair<int, int>> entries(diff_hist[c].begin(),
+                                                     diff_hist[c].end());
+            std::sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) {
+                return b.second < a.second;
+            });
+            std::cout << "  " << comp_names[c] << ":\n";
+            int shown = 0;
+            for (const auto &[diff, count] : entries) {
+                if (shown++ >= TOP_N) break;
+                std::cout << "    " << std::setw(6) << std::right << diff << " : "
+                          << count << "\n";
+            }
         }
     }
     std::cout << "=======================================\n";
