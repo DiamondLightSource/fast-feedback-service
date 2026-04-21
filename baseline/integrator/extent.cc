@@ -134,7 +134,7 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
             // Project Δb divergences onto Kabsch basis vectors
             // p represents the displacement in reciprocal space
             Eigen::Vector3d p =
-              (e1_sign * delta_b * e1 / s1_len) + (e2_sign * delta_b * e2 / s1_len);
+              (e1_sign * delta_b * e1 * s1_len) + (e2_sign * delta_b * e2 * s1_len);
 
             // Debug output for the Ewald sphere calculation
             double p_magnitude = p.norm();
