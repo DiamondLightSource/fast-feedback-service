@@ -119,23 +119,19 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
             s_prime_vectors.push_back(s_prime);
         }
 
-        // Transform s′ vectors back to detector coordinates.
-        // Use unconstrained intersection (no bounds check), like DIALS
-        // the bbox is allowed to extend beyond the physical detector edge.
-        // d_matrix_inv is D = d⁻¹; v = D·s′ gives panel-frame coords where
-        // (v[0]/v[2], v[1]/v[2]) are mm coordinates on the detector plane.
-        // Perhaps this should be pushed upstream to DX2?
+        // Transform s′ vectors back to detector coordinates using Panel's get_ray_intersection_unbounded
         std::vector<std::pair<double, double>> detector_coords;
         for (const auto &s_prime : s_prime_vectors) {
-            Eigen::Vector3d v = d_matrix_inv * s_prime;
-            if (v[2] <= 0) {
-                continue;  // Ray going backwards, no valid intersection
+            // Direct conversion from s′ vector to detector coordinates
+            // get_ray_intersection_unbounded returns coordinates in mm
+            auto xy_mm_opt = panel.get_ray_intersection_unbounded(s_prime);
+            if (!xy_mm_opt) {
+                continue;  // Skip this corner if no intersection
             }
-            double x_mm = v[0] / v[2];
-            double y_mm = v[1] / v[2];
+            std::array<double, 2> xy_mm = *xy_mm_opt;
 
             // Convert from mm to pixels
-            std::array<double, 2> xy_pixels = panel.mm_to_px(x_mm, y_mm);
+            std::array<double, 2> xy_pixels = panel.mm_to_px(xy_mm[0], xy_mm[1]);
 
             detector_coords.push_back({xy_pixels[0], xy_pixels[1]});
         }
