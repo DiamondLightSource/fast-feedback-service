@@ -154,10 +154,11 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
     scalar_t dphi = phi_pixel - phi_c;
 
     // Compute the predicted diffracted vector at φ′
-    Vector3D s1_phi_prime = s1_c + e3 * dphi;
+    // Vector3D s1_phi_prime = s1_c + e3 * dphi; // Temporarily disable improved calculation
 
     // Difference vector between pixel's s′ and the φ′-adjusted centroid
-    Vector3D deltaS = s_pixel - s1_phi_prime;
+    // Vector3D deltaS = s_pixel - s1_phi_prime; // Temporarily disable improved calculation
+    Vector3D deltaS = s_pixel - s1_c;  // Temporarily disable improved calculation
 
     // ε₁: displacement along e1, normalised by |s₁|
     scalar_t eps1 = dot(e1, deltaS) / s1_len;
