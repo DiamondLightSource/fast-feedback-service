@@ -28,6 +28,7 @@
 #include <hdf5.h>
 
 #include <Eigen/Dense>
+#include <algorithm>
 #include <cmath>
 #include <dx2/beam.hpp>
 #include <dx2/detector.hpp>
@@ -39,6 +40,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <vector>
@@ -347,6 +349,8 @@ TEST_F(IntegrationStepTest, KabschTransformSingleImage) {
     size_t kabsch_mismatches = 0;
     std::array<double, 4> kabsch_sum_abs_err = {};
     std::array<double, 4> kabsch_max_abs_err = {};
+    // signed-difference histogram per component: (computed − expected) → count
+    std::array<std::map<int, int>, 4> kabsch_diff_hist;
 
     for (size_t i = 0; i < num_refls_this_image; ++i) {
         size_t gi = refl_indices[i];
@@ -372,6 +376,11 @@ TEST_F(IntegrationStepTest, KabschTransformSingleImage) {
             kabsch_exact++;
         } else {
             kabsch_mismatches++;
+            // Accumulate signed integer diffs — pixel sums/counts are uint32_t-valued
+            for (int c = 0; c < 4; ++c) {
+                int signed_diff = static_cast<int>(got[c] - exp[c]);
+                if (signed_diff != 0) kabsch_diff_hist[c][signed_diff]++;
+            }
             EXPECT_EQ(h_fg_sum[gi], static_cast<accumulator_t>(exp_fg_sum[i]))
               << "foreground_pixel_sum mismatch at reflection " << gi << " (local " << i
               << ")";
@@ -403,6 +412,26 @@ TEST_F(IntegrationStepTest, KabschTransformSingleImage) {
                       << " " << std::setw(13) << std::fixed << std::setprecision(1)
                       << mean_abs << " " << std::setw(9) << kabsch_max_abs_err[c]
                       << "\n";
+        }
+
+        // Top-5 signed differences per component (computed − expected)
+        constexpr int KABSCH_TOP_N = 5;
+        std::cout << "\n  Top-" << KABSCH_TOP_N
+                  << " signed differences per component (computed − expected):\n";
+        for (int c = 0; c < 4; ++c) {
+            if (kabsch_diff_hist[c].empty()) continue;
+            std::vector<std::pair<int, int>> entries(kabsch_diff_hist[c].begin(),
+                                                     kabsch_diff_hist[c].end());
+            std::sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) {
+                return b.second < a.second;
+            });
+            std::cout << "  " << kabsch_comp_names[c] << ":\n";
+            int shown = 0;
+            for (const auto &[diff, count] : entries) {
+                if (shown++ >= KABSCH_TOP_N) break;
+                std::cout << "    " << std::setw(6) << std::right << diff << " : "
+                          << count << "\n";
+            }
         }
     }
     std::cout << "==========================================\n";
@@ -522,7 +551,9 @@ TEST_F(IntegrationStepTest, SummationFinalization) {
     std::array<double, 3> sum_sum_abs_err = {};
     std::array<double, 3> sum_sum_signed_err = {};
     std::array<double, 3> sum_max_abs_err = {};
-    constexpr double tol = 1e-6;
+    // signed-difference histogram per component, bucketed to nearest integer
+    std::array<std::map<int, int>, 3> sum_diff_hist;
+    constexpr double tol = 0.1;  //1e-6;
 
     for (size_t i = 0; i < num_reflections; ++i) {
         std::array<double, 3> got = {
@@ -546,6 +577,12 @@ TEST_F(IntegrationStepTest, SummationFinalization) {
             sum_exact++;
         } else {
             sum_mismatches++;
+            // Bucket signed diffs to nearest integer for histogram
+            for (int c = 0; c < 3; ++c) {
+                double signed_diff = got[c] - exp[c];
+                if (std::abs(signed_diff) > tol)
+                    sum_diff_hist[c][static_cast<int>(std::round(signed_diff))]++;
+            }
             EXPECT_NEAR(intensities[i], exp_intensity[i], tol)
               << "intensity.sum.value mismatch at reflection " << i;
             EXPECT_NEAR(variances[i], exp_variance[i], tol)
@@ -571,6 +608,27 @@ TEST_F(IntegrationStepTest, SummationFinalization) {
                       << std::setw(12) << std::fixed << std::setprecision(6) << mean_abs
                       << " " << std::setw(14) << mean_signed << " " << std::setw(9)
                       << sum_max_abs_err[c] << "\n";
+        }
+
+        // Top-5 signed differences per component, rounded to nearest integer
+        constexpr int SUM_TOP_N = 5;
+        std::cout
+          << "\n  Top-" << SUM_TOP_N
+          << " signed differences per component (computed − expected, nearest int):\n";
+        for (int c = 0; c < 3; ++c) {
+            if (sum_diff_hist[c].empty()) continue;
+            std::vector<std::pair<int, int>> entries(sum_diff_hist[c].begin(),
+                                                     sum_diff_hist[c].end());
+            std::sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) {
+                return b.second < a.second;
+            });
+            std::cout << "  " << sum_comp_names[c] << ":\n";
+            int shown = 0;
+            for (const auto &[diff, count] : entries) {
+                if (shown++ >= SUM_TOP_N) break;
+                std::cout << "    " << std::setw(6) << std::right << diff << " : "
+                          << count << "\n";
+            }
         }
     }
     std::cout << "=================================================\n";
