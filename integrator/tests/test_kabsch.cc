@@ -10,9 +10,9 @@
  * internal group "dials/processing/group_0". Before/after state is
  * captured in separate files:
  *
- *   bbox_before.h5 / bbox_after.h5             → BoundingBoxComputation
- *   background_before.h5 (+ bbox_after.h5)     → KabschTransformSingleImage
- *   background_before.h5 / summation_after.h5  → SummationFinalization
+ *   bbox_before.h5 / bbox_after.h5             -> BoundingBoxComputation
+ *   background_before.h5 (+ bbox_after.h5)     -> KabschTransformSingleImage
+ *   background_before.h5 / summation_after.h5  -> SummationFinalization
  *
  * Expected test data directory layout (under tests/data/):
  *   indexed.expt          - experiment geometry (beam, detector, goniometer, scan)
@@ -165,7 +165,7 @@ TEST_F(IntegrationStepTest, KabschTransformSingleImage) {
     scalar_t osc_width = static_cast<scalar_t>(oscillation[1]);
     int image_range_start = scan.get_image_range()[0];
 
-    // Flatten detector d-matrix (3×3 → 9-element row-major) for GPU
+    // Flatten detector d-matrix (3×3 -> 9-element row-major) for GPU
     Eigen::Matrix3d d_matrix_eigen = panel.get_d_matrix();
     std::vector<scalar_t> d_matrix_scalar(9);
     for (int i = 0; i < 3; ++i)
@@ -349,7 +349,7 @@ TEST_F(IntegrationStepTest, KabschTransformSingleImage) {
     size_t kabsch_mismatches = 0;
     std::array<double, 4> kabsch_sum_abs_err = {};
     std::array<double, 4> kabsch_max_abs_err = {};
-    // signed-difference histogram per component: (computed − expected) → count
+    // signed-difference histogram per component: (computed − expected) -> count
     std::array<std::map<int, int>, 4> kabsch_diff_hist;
 
     for (size_t i = 0; i < num_refls_this_image; ++i) {
