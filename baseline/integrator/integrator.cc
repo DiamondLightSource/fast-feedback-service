@@ -362,9 +362,9 @@ int main(int argc, char **argv) {
     // But indexed.refl data can also have bbox from spotfinding. So load
     // and check the length compared to size of predictions
     bool need_to_calc_bbox = true;
-    if (computed_bounding_boxes_opt.has_value()){
+    if (computed_bounding_boxes_opt.has_value()) {
         int n_refls = computed_bounding_boxes_opt.value().size() / 6;
-        if (n_refls == num_reflections){
+        if (n_refls == num_reflections) {
             need_to_calc_bbox = false;
         }
     }
