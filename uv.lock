@@ -107,6 +107,7 @@ source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
     { name = "pyepics" },
+    { name = "pygments" },
     { name = "requests" },
     { name = "rich" },
     { name = "watchdir" },
@@ -122,7 +123,8 @@ dev = [
 requires-dist = [
     { name = "pydantic", specifier = ">2" },
     { name = "pyepics", specifier = ">=3.5.7" },
-    { name = "requests", specifier = ">=2.32.3" },
+    { name = "pygments", specifier = ">=2.20.0" },
+    { name = "requests", specifier = ">=2.33.0" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "watchdir", specifier = ">=1.0.0" },
     { name = "zocalo", specifier = ">=1.2.0" },
