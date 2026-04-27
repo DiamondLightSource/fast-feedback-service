@@ -358,7 +358,17 @@ int main(int argc, char **argv) {
     // Compute bounding boxes using baseline CPU algorithms
     auto computed_bounding_boxes_opt = reflections.column<int>("bbox");
     std::vector<BoundingBoxExtents> computed_bounding_boxes;
-    if (!computed_bounding_boxes_opt.has_value()) {
+    // For testing, we want to be able to load data with calculated bboxes
+    // But indexed.refl data can also have bbox from spotfinding. So load
+    // and check the length compared to size of predictions
+    bool need_to_calc_bbox = true;
+    if (computed_bounding_boxes_opt.has_value()){
+        int n_refls = computed_bounding_boxes_opt.value().size() / 6;
+        if (n_refls == num_reflections){
+            need_to_calc_bbox = false;
+        }
+    }
+    if (need_to_calc_bbox) {
         logger.info("Computing Kabsch bounding boxes using baseline CPU algorithms...");
         computed_bounding_boxes = compute_kabsch_bounding_boxes(s0,
                                                                 rotation_axis,
