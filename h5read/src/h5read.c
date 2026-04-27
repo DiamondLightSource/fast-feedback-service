@@ -88,9 +88,7 @@ static void _validate_data_type_size(hid_t datatype) {
 #endif
 }
 
-h5read_dtype h5read_get_dtype(h5read_handle *obj) {
-    return obj->dtype;
-}
+h5read_dtype h5read_get_dtype(h5read_handle *obj) { return obj->dtype; }
 
 void h5read_free(h5read_handle *obj) {
 #ifdef HAVE_HDF5
@@ -112,17 +110,11 @@ void h5read_free(h5read_handle *obj) {
 }
 
 /// Get the number of frames available
-size_t h5read_get_number_of_images(h5read_handle *obj) {
-    return obj->frames;
-}
+size_t h5read_get_number_of_images(h5read_handle *obj) { return obj->frames; }
 
-size_t h5read_get_image_slow(h5read_handle *obj) {
-    return obj->slow;
-}
+size_t h5read_get_image_slow(h5read_handle *obj) { return obj->slow; }
 
-size_t h5read_get_image_fast(h5read_handle *obj) {
-    return obj->fast;
-}
+size_t h5read_get_image_fast(h5read_handle *obj) { return obj->fast; }
 
 void h5read_free_image(image_t *i) {
     free(i->data);
@@ -130,9 +122,7 @@ void h5read_free_image(image_t *i) {
     free(i);
 }
 
-uint8_t *h5read_get_mask(h5read_handle *obj) {
-    return obj->mask;
-}
+uint8_t *h5read_get_mask(h5read_handle *obj) { return obj->mask; }
 
 /// blit the relevent pixel data across from a single image into a collection
 /// of image modules - will allocate the latter
@@ -319,7 +309,8 @@ h5_data_file *get_data_file(h5read_handle *obj, size_t index) {
             printf("Opening data file %s\n", current->filename);
             hid_t file = H5Fopen(
               current->filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
-            // Failing to open a data file isn't necessarily an error - it could not exist yet
+            // Failing to open a data file isn't necessarily an error - it could not
+            // exist yet
             if (file > 0) {
                 current->file = file;
             }
@@ -364,21 +355,21 @@ h5_data_file *get_data_file(h5read_handle *obj, size_t index) {
             exit(1);
         }
         if (dims[1] != obj->slow) {
-            fprintf(
-              stderr,
-              "Validation Error: Data file %s slow data has %ld pixels, expected %ld\n",
-              current->filename,
-              dims[1],
-              obj->slow);
+            fprintf(stderr,
+                    "Validation Error: Data file %s slow data has %ld pixels, "
+                    "expected %ld\n",
+                    current->filename,
+                    dims[1],
+                    obj->slow);
             exit(1);
         }
         if (dims[2] != obj->fast) {
-            fprintf(
-              stderr,
-              "Validation Error: Data file %s fast data has %ld pixels, expected %ld\n",
-              current->filename,
-              dims[2],
-              obj->fast);
+            fprintf(stderr,
+                    "Validation Error: Data file %s fast data has %ld pixels, "
+                    "expected %ld\n",
+                    current->filename,
+                    dims[2],
+                    obj->fast);
             exit(1);
         }
     }
@@ -427,11 +418,8 @@ size_t h5read_get_chunk_size(h5read_handle *obj, size_t index) {
 #endif
 }
 
-void h5read_get_raw_chunk(h5read_handle *obj,
-                          size_t index,
-                          size_t *size,
-                          uint8_t *data,
-                          size_t max_size) {
+void h5read_get_raw_chunk(
+  h5read_handle *obj, size_t index, size_t *size, uint8_t *data, size_t max_size) {
     if (obj->data_files == 0) {
         fprintf(stderr, "Error: Cannot do direct chunk read with sample data\n", index);
         exit(1);
@@ -484,7 +472,7 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
 
 #ifdef HAVE_HDF5
     /* first find the right data file - having to do this lookup is annoying
-     but probably cheap */
+   but probably cheap */
     int data_file = _find_data_file_for_image(obj, &index);
 
     if (data_file == obj->data_file_count) {
@@ -553,25 +541,15 @@ int64_t h5read_get_trusted_range_max(h5read_handle *obj) {
     return obj->trusted_range_max;
 }
 
-float h5read_get_wavelength(h5read_handle *obj) {
-    return obj->wavelength;
-}
+float h5read_get_wavelength(h5read_handle *obj) { return obj->wavelength; }
 
-float h5read_get_pixel_size_slow(h5read_handle *obj) {
-    return obj->pixel_size_x;
-}
-float h5read_get_pixel_size_fast(h5read_handle *obj) {
-    return obj->pixel_size_y;
-}
+float h5read_get_pixel_size_slow(h5read_handle *obj) { return obj->pixel_size_x; }
+float h5read_get_pixel_size_fast(h5read_handle *obj) { return obj->pixel_size_y; }
 float h5read_get_detector_distance(h5read_handle *obj) {
     return obj->detector_distance;
 }
-float h5read_get_beam_center_x(h5read_handle *obj) {
-    return obj->beam_center_x;
-}
-float h5read_get_beam_center_y(h5read_handle *obj) {
-    return obj->beam_center_y;
-}
+float h5read_get_beam_center_x(h5read_handle *obj) { return obj->beam_center_x; }
+float h5read_get_beam_center_y(h5read_handle *obj) { return obj->beam_center_y; }
 float h5read_get_oscillation_start(h5read_handle *obj) {
     return obj->oscillation_start;
 }
@@ -991,11 +969,11 @@ int vds_info(char *root, hid_t master, hid_t dataset, h5_data_file **data_files_
                   buffer, info.u.val_size, &flags, &nameptr, &dsetptr);
 
                 /* assumptions herein:
-            - external link references are local paths
-            - only need to worry about UNIX paths e.g. pathsep is /
-            - ASCII so chars are ... chars
-           so manually assemble...
-         */
+    - external link references are local paths
+    - only need to worry about UNIX paths e.g. pathsep is /
+    - ASCII so chars are ... chars
+   so manually assemble...
+ */
 
                 strcpy(scr, root);
                 scr[strlen(root)] = '/';
