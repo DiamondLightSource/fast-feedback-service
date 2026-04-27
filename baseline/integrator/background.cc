@@ -26,6 +26,21 @@ class BackgroundAggregator {
         return _large_hist;
     }
 
+    void add(const BackgroundAggregator& other) {
+        // Combine small histogram
+        for (size_t i = 0; i < _small_hist.size(); ++i) {
+            _small_hist[i] += other._small_hist[i];
+        }
+
+        // Combine large histogram
+        for (const auto& kv : other._large_hist) {
+            _large_hist[kv.first] += kv.second;
+        }
+
+        // Combine pixel count
+        n_pixels += other.n_pixels;
+    }
+
   private:
     // Use two data structures for the histogram
     // - a small vector for small counts (< VECTOR_LIMIT) (vast majority of pixels, efficient for adding a large number of low-value pixels)

@@ -240,10 +240,10 @@ struct SharedConstants {
 Accumulator process_image_range(
     ImageRange range,
     Experiment<MonochromaticBeam>& expt,
-    const std::vector<std::vector<size_t>>& reflections_by_image,
+    std::unordered_map<int, std::vector<size_t>>& reflections_by_image,
     const SharedConstants& constants
 ) {
-    Accumulator acc(constants.n_reflections);
+    Accumulator accumulator(constants.n_reflections);
 
     std::string filename = expt.imagesequence().filename();
     H5Read reader(filename);
@@ -256,12 +256,189 @@ Accumulator process_image_range(
             continue;
 
         auto image = reader.get_image(j);
+        logger.info("Processing image {}", j + 1);
+        for (size_t k = 0; k < reflections_by_image[j].size(); k++) {
+            size_t refl_id = reflections_by_image[j][k];
+            if (constants.dont_integrate[refl_id]) {
+                continue;
+            }
+            const auto &bbox = constants.computed_bounding_boxes[refl_id];
+            if (constants.fg_algorithm == "ellipsoid") {
+                // calculate dxy array (arrays of distances in kabsch space from pixel corners to xyzcal)
+                int n_x = bbox.x_max - bbox.x_min + 1;
+                int n_y = bbox.y_max - bbox.y_min + 1;
+                std::vector<double> dxy_start(n_x
+                                              * n_y);    // start of image (in rotation)
+                std::vector<double> dxy_end(n_x * n_y);  // end of image (in rotation)
+                double phidash_start = (constants.phi0 + (j * constants.dphi)) * constants.DEG2RAD;
+                double phidash_end = (constants.phi0 + ((j + 1) * constants.dphi)) * constants.DEG2RAD;
+                double phi_c = constants.phi_column(refl_id, 2);
+                CoordinateSystem cs = constants.coord_system_vector[refl_id];
+                Vector3d s1_this = Eigen::Map<Vector3d>(&constants.s1_vectors(refl_id, 0));
+                for (int x = 0; x < n_x; x++) {
+                    for (int y = 0; y < n_y; y++) {
+                        int index = x + (y * (n_x));
+                        std::array<double, 2> px_mm =
+                          constants.panel.px_to_mm(x + bbox.x_min, y + bbox.y_min);
+                        Vector3d s1_ = constants.panel.get_lab_coord(px_mm[0], px_mm[1]);
+                        s1_.normalize();
+                        Vector3d s1dash = s1_ * constants.s0_length;
+                        Vector3d epsilon_coords_start =
+                          cs.coords_from_s1vector(s1dash, phidash_start);
+                        Vector3d epsilon_coords_end =
+                          cs.coords_from_s1vector(s1dash, phidash_end);
+                        if ((phidash_start > phi_c) && (phi_c < phidash_end)) {
+                            epsilon_coords_start[2] = 0.0;
+                            epsilon_coords_end[2] = 0.0;
+                        }
 
-        // ---- your existing inner loops go here ----
-        // Replace all writes to global accumulators with acc.*
+                        dxy_start[index] =
+                          ((epsilon_coords_start[0] * epsilon_coords_start[0]
+                            + epsilon_coords_start[1] * epsilon_coords_start[1])
+                           * constants.delta_b_r2)
+                          + ((epsilon_coords_start[2] * epsilon_coords_start[2])
+                             * constants.delta_m_r2);
+                        dxy_end[index] =
+                          ((epsilon_coords_end[0] * epsilon_coords_end[0]
+                            + epsilon_coords_end[1] * epsilon_coords_end[1])
+                           * constants.delta_b_r2)
+                          + ((epsilon_coords_end[2] * epsilon_coords_end[2])
+                             * constants.delta_m_r2);
+                    }
+                }
+                // Now loop through pixels in bbox, adding to foreground or background if unmasked and in image.
+                for (int x = bbox.x_min; x < bbox.x_max; x++) {
+                    for (int y = bbox.y_min; y < bbox.y_max; y++) {
+                        // The bounding box may extend beyond the image - if so, this is ok if it is only background
+                        // but not if it is foreground.
+                        int x_index = x - bbox.x_min;
+                        int y_index = y - bbox.y_min;
+                        int dxyindex = x_index + (y_index * n_x);
+                        double d1 = dxy_start[dxyindex];
+                        double d2 = dxy_start[dxyindex + 1];
+                        double d3 = dxy_start[dxyindex + n_x];
+                        double d4 = dxy_start[dxyindex + n_x + 1];
+                        double d5 = dxy_end[dxyindex];
+                        double d6 = dxy_end[dxyindex + 1];
+                        double d7 = dxy_end[dxyindex + n_x];
+                        double d8 = dxy_end[dxyindex + n_x + 1];
+                        double d =
+                          std::min(std::min(std::min(d1, d2), std::min(d3, d4)),
+                                   std::min(std::min(d5, d6), std::min(d7, d8)));
+                        int index = x + (y * image_fast);
+                        bool in_image =
+                          x >= 0 && x < image_fast && y >= 0 && y < image_slow;
+                        if (d <= 1.0) {
+                            // Foreground
+                            if (in_image) {
+                                if (mask[index] == 0) {  // masked
+                                    accumulator.success[refl_id] = false;
+                                } else {
+                                    auto data = image.data.data()[index];
+                                    accumulator.intensity[refl_id] += data;
+                                    accumulator.nfg[refl_id] += 1;
+                                    Vector3d I_times_c = {data * (x + 0.5),
+                                                          data * (y + 0.5),
+                                                          data * (j + 0.5)};
+                                    accumulator.intensity_times_coord[refl_id] +=
+                                      I_times_c;
+                                }
+                            } else {
+                                accumulator.success[refl_id] = false;
+                            }
+                        } else {  // d>1.0
+                            // Background
+                            if (in_image) {
+                                if (mask[index] != 0) {
+                                    // In image, not masked
+                                    auto data = image.data.data()[index];
+                                    accumulator.bg[refl_id].add(data);
+                                    accumulator.nbg[refl_id] += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // dials algorithm - a fixed ellipse (2D) across all images in the bbox
+                int n_x = bbox.x_max - bbox.x_min + 1;
+                int n_y = bbox.y_max - bbox.y_min + 1;
+                std::vector<double> dxy(n_x * n_y);
+                double phi =
+                  constants.phi0
+                  + (j * constants.dphi)
+                      * constants.DEG2RAD;  // Required for calls but not actually used as don't use e3.
+                CoordinateSystem cs = constants.coord_system_vector[refl_id];
+                Vector3d s1_this = Eigen::Map<Vector3d>(&constants.s1_vectors(refl_id, 0));
+                for (int x = 0; x < n_x; x++) {
+                    for (int y = 0; y < n_y; y++) {
+                        int index = x + (y * (n_x));
+                        std::array<double, 2> px_mm =
+                          constants.panel.px_to_mm(x + bbox.x_min, y + bbox.y_min);
+                        Vector3d s1_ = constants.panel.get_lab_coord(px_mm[0], px_mm[1]);
+                        s1_.normalize();
+                        Vector3d s1dash = s1_ * constants.s0_length;
+                        Vector3d epsilon_coords = cs.coords_from_s1vector(s1dash, phi);
+
+                        dxy[index] = ((epsilon_coords[0] * epsilon_coords[0]
+                                       + epsilon_coords[1] * epsilon_coords[1])
+                                      * constants.delta_b_r2);
+                    }
+                }
+                // Now loop through pixels in bbox, adding to foreground or background if unmasked and in image.
+                for (int x = bbox.x_min; x < bbox.x_max; x++) {
+                    for (int y = bbox.y_min; y < bbox.y_max; y++) {
+                        // The bounding box may extend beyond the image - if so, this is ok if it iis only background
+                        // but not if it is foreground.
+                        int x_index = x - bbox.x_min;
+                        int y_index = y - bbox.y_min;
+                        int dxyindex = x_index + (y_index * n_x);
+                        double d1 = dxy[dxyindex];
+                        double d2 = dxy[dxyindex + 1];
+                        double d3 = dxy[dxyindex + n_x];
+                        double d4 = dxy[dxyindex + n_x + 1];
+                        double d = std::min(std::min(d1, d2), std::min(d3, d4));
+                        int index = x + (y * image_fast);
+                        bool in_image =
+                          x >= 0 && x < image_fast && y >= 0 && y < image_slow;
+
+                        if (d <= 1.0) {
+                            // Foreground
+                            if (in_image) {
+                                if (mask[index] == 0) {  // masked)
+                                    accumulator.success[refl_id] = false;
+                                } else {
+                                    auto data = image.data.data()[index];
+                                    accumulator.intensity[refl_id] += data;
+                                    accumulator.nfg[refl_id] += 1;
+                                    Vector3d I_times_c = {data * (x + 0.5),
+                                                          data * (y + 0.5),
+                                                          data * (j + 0.5)};
+                                    accumulator.intensity_times_coord[refl_id] +=
+                                      I_times_c;
+                                }
+                            } else {
+                                accumulator.success[refl_id] = false;
+                            }
+                        } else {  // d>1.0
+                            // Background
+                            if (in_image) {
+                                if (mask[index] != 0) {
+                                    // In image, not masked
+                                    auto data = image.data.data()[index];
+                                    accumulator.bg[refl_id].add(data);
+                                    accumulator.nbg[refl_id] += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
     }
 
-    return acc;
+    return accumulator;
 }
 
 
@@ -622,9 +799,24 @@ int main(int argc, char **argv) {
     auto [image_slow, image_fast] = reader.image_shape();
     auto mask = reader.get_mask().value();
 
-    /*std::vector<ImageRange> = split_ranges(n_images, nthreads);
+    SharedConstants constants = SharedConstants(
+        num_reflections, dont_integrate,
+        computed_bounding_boxes,
+        coord_system_vector,
+        phi_column, s1_vectors, panel,
+        phi0, dphi, s0_length, fg_algorithm, delta_b_r2, delta_m_r2);
+
+    std::vector<ImageRange> ranges = split_ranges(n_images, nthreads);
     std::vector<std::thread> workers;
-    std::vector<Accumulator> thread_accs(nthreads);
+    //std::vector<Accumulator> thread_accs(nthreads);
+
+    std::vector<Accumulator> thread_accs;
+    thread_accs.reserve(nthreads);
+
+    for (size_t t = 0; t < nthreads; t++) {
+        thread_accs.emplace_back(num_reflections);
+    }
+
 
     for (size_t t = 0; t < nthreads; t++) {
         workers.emplace_back([&, t] {
@@ -636,26 +828,21 @@ int main(int argc, char **argv) {
     for (auto& th : workers)
         th.join();
 
-    for (const auto& acc : partials) {
-        for (size_t r = 0; r < n_reflections; r++) {
+    for (const auto& acc : thread_accs) {
+        for (size_t r = 0; r < num_reflections; r++) {
             intensity_accumulators[r] += acc.intensity[r];
             nfg_accumulators[r] += acc.nfg[r];
             nbg_accumulators[r] += acc.nbg[r];
-            bg_accumulators[r].merge(acc.bg[r]);
+            bg_accumulators[r].add(acc.bg[r]);
             intensity_times_coord_accumulators[r] += acc.intensity_times_coord[r];
             success[r] = success[r] && acc.success[r];
         }
-    }*/
+    }
 
 
-    SharedConstants constants = SharedConstants(
-        num_reflections, dont_integrate,
-        computed_bounding_boxes,
-        coord_system_vector,
-        phi_column, s1_vectors, panel,
-        phi0, dphi, s0_length, fg_algorithm, delta_b_r2, delta_m_r2);
+    
 
-    Accumulator accumulator = Accumulator(num_reflections);
+    /*Accumulator accumulator = Accumulator(num_reflections);
 
     for (size_t j = 0; j < n_images; j++) {
         if (!reader.is_image_available(j)) {
@@ -841,7 +1028,7 @@ int main(int argc, char **argv) {
                 }
             }
         }
-    }
+    }*/
 #pragma endregion Loop over images and perform summation
 
 #pragma region Finalize calculations
@@ -873,18 +1060,18 @@ int main(int argc, char **argv) {
     std::vector<double> bg_sum_value(num_reflections);
     // FIXME need to include robust outlier rejection in background calculation (glm, constant3dmodel)
     for (int i = 0; i < num_reflections; i++) {
-        if (accumulator.nbg[i]) {
+        if (nbg_accumulators[i]) {
             auto [bg, total_bg_counts] =
-              compute_background_constant_3d(accumulator.bg[i]);
+              compute_background_constant_3d(bg_accumulators[i]);
             mean_bg[i] = bg;
             bg_sum_value[i] = total_bg_counts;
-            double I = accumulator.intensity[i] - bg;
+            double I = intensity_accumulators[i] - bg;
             intensities[i] = I;
-            double m_n = accumulator.nfg[i] / accumulator.nbg[i];
+            double m_n = nfg_accumulators[i] / nbg_accumulators[i];
             variances[i] = std::abs(I) + (std::abs(bg) * (1.0 + m_n));
-            if ((accumulator.nfg[i] > 0) && (accumulator.intensity[i] > 0)) {
+            if ((nfg_accumulators[i] > 0) && (intensity_accumulators[i] > 0)) {
                 Vector3d com =
-                  accumulator.intensity_times_coord[i] / accumulator.intensity[i];
+                  intensity_times_coord_accumulators[i] / intensity_accumulators[i];
                 xyzobs_px[i * 3] = com[0];
                 xyzobs_px[i * 3 + 1] = com[1];
                 xyzobs_px[i * 3 + 2] = com[2];
@@ -900,7 +1087,7 @@ int main(int argc, char **argv) {
                                           + computed_bounding_boxes[i].z_max);
             }
         } else {
-            accumulator.success[i] = false;
+            success[i] = false;
         }
     }
     // Calculate the partiality, LP, d of all reflections
@@ -972,9 +1159,9 @@ int main(int argc, char **argv) {
     integrated_data.add_column(std::string("flags"), num_reflections, 1, final_flags);
 
     // Only output successfully integrated reflections.
-    for (int i=0;i<accumulator.success.size();i++){
+    /*for (int i=0;i<accumulator.success.size();i++){
         success[i] = success[i] && accumulator.success[i];
-    }
+    }*/
 
     ReflectionTable success_data = integrated_data.select(success);
     int n_integrated =
