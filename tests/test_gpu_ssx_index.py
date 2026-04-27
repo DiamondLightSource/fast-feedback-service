@@ -157,8 +157,8 @@ def test_gpu_ssx_index(dials_data, tmp_path):
         cwd=tmp_path,
     )
     assert not proc.stderr
-    assert tmp_path / "indexed.refl"
-    assert tmp_path / "indexed_crystals.json"
+    assert (tmp_path / "indexed.refl").exists()
+    assert (tmp_path / "indexed_crystals.json").exists()
     with open(tmp_path / "indexed_crystals.json", "r") as f:
         crystals = json.load(f)
         for i, (crystal, expected) in enumerate(

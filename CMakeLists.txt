@@ -22,11 +22,16 @@ set_property(CACHE CUDA_ARCH PROPERTY STRINGS
     "80 - Ampere (A100)"
     "86 - Ampere (RTX 30xx)"
     "89 - Ada Lovelace (RTX 40xx)"
-    "90 - Hopper (H100)" 
+    "90 - Hopper (H100)"
+    "100 - Blackwell (GB200, B200)"
+    "103 - Blackwell (GB300, B300)"
+    "110 - Blackwell Jetson (T5000, T4000)"
+    "120 - Blackwell (RTX 50xx, RTX PRO)"
+    "121 - Blackwell (DGX Spark GB10)"
 )
 
-# Extract just the number from the selection (first two characters)
-string(SUBSTRING "${CUDA_ARCH}" 0 2 CUDA_ARCH_NUMBER)
+# Extract just the number from the selection (digits before the " - " label)
+string(REGEX MATCH "^[0-9]+" CUDA_ARCH_NUMBER "${CUDA_ARCH}")
 set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_NUMBER})
 message(STATUS "CUDA architecture set to: sm_${CMAKE_CUDA_ARCHITECTURES}")
 
@@ -43,10 +48,9 @@ include(AlwaysColourCompilation)
 
 include_directories(include)
 
-# Find Python
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-include_directories(${Python3_INCLUDE_DIRS})
+find_package(Python COMPONENTS Interpreter Development.Module NumPy REQUIRED)
 
+# Dependency fetching
 # Find packages that are in conda environment
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
@@ -71,6 +75,21 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(argparse)
+
+# Required for Python module build of ffbidx
+set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
+set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
+set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
+
+# ffbidx uses this to find site-packages
+set(PYTHON_MODULE_PATH ${Python_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+
+FetchContent_Declare(
+  ffbidx
+  GIT_REPOSITORY https://github.com/paulscherrerinstitute/fast-feedback-indexer.git
+  GIT_TAG main
+)
+FetchContent_MakeAvailable(ffbidx)
 
 # GTest - try find_package first, fallback to FetchContent
 find_package(GTest QUIET)
@@ -191,5 +210,3 @@ add_subdirectory(h5read)
 add_subdirectory(baseline)
 add_subdirectory(spotfinder)
 add_subdirectory(integrator)
-
-configure_file(${CMAKE_SOURCE_DIR}/scripts/ssx_index ${CMAKE_BINARY_DIR}/bin/ssx_index COPYONLY)

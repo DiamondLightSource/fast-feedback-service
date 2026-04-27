@@ -161,6 +161,17 @@ build_directory() {
             make -j"$JOBS"
         fi
     )
+
+    # Install
+    print_status "Installing $description..."
+    (
+        cd "$build_dir"
+        if [[ "$BUILD_CMD" == "ninja" ]]; then
+            ninja "install"
+        else
+            make "install" -j"$JOBS"
+        fi
+    )
     
     print_success "Successfully built $description"
 }

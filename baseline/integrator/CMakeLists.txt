@@ -13,6 +13,7 @@ target_link_libraries(baseline_integrator
     PRIVATE
     fmt
     dx2
+    h5read
     Eigen3::Eigen
     argparse
     nlohmann_json::nlohmann_json

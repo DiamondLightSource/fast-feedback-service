@@ -5,6 +5,7 @@
 
 #include <Eigen/Dense>
 #include <dx2/beam.hpp>
+#include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
@@ -12,15 +13,19 @@
 #include <experimental/mdspan>
 #include <filesystem>
 #include <fstream>
+#include <gemmi/unitcell.hpp>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
 #include "arg_parser.hpp"
+#include "background.cc"
 #include "common.hpp"
 #include "extent.cc"
 #include "ffs_logger.hpp"
+#include "h5read.h"
+#include "integration_calculations.cc"
 #include "kabsch.cc"
 #include "math/math_utils.cuh"
 #include "predict.cc"
@@ -28,10 +33,11 @@
 #include "version.hpp"
 
 using json = nlohmann::json;
+using Eigen::Vector3i;
 
-// Define a 2D mdspan type alias for convenience
-using mdspan_2d =
-  std::experimental::mdspan<double, std::experimental::dextents<size_t, 2>>;
+constexpr size_t IntegratedSum = (1 << 8);
+constexpr double DEG2RAD = M_PI / 180.0;
+constexpr double RAD2DEG = 180.0 / M_PI;
 
 #pragma region Argument Parsing
 class BaselineIntegratorArgumentParser : public FFSArgumentParser {
@@ -94,10 +100,21 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .default_value<int>(6)
           .scan<'i', int>();
 
+        add_argument("-a", "--algorithm")
+          .help("Foreground algorithm choice - dials or ellipsoid.")
+          .default_value<std::string>("ellipsoid");
+
+        add_argument("--min_zeta")
+          .help(
+            "Reflections close to the rotation axis, with a zeta below this threshold "
+            "will not be integrated.")
+          .default_value<float>(0.05)
+          .scan<'f', float>();
+
         add_argument("output")
           .help("Output file path")
-          .metavar("output.h5")
-          .default_value<std::string>("output.h5");
+          .metavar("integrated.refl")
+          .default_value<std::string>("integrated.refl");
     }
 };
 #pragma endregion Argument Parsing
@@ -114,6 +131,11 @@ int main(int argc, char **argv) {
 
     float timeout = parser.get<float>("timeout");
     std::string output_file = parser.get<std::string>("output");
+    std::string fg_algorithm = parser.get<std::string>("algorithm");
+    if ((fg_algorithm != "dials") && (fg_algorithm != "ellipsoid")) {
+        throw std::invalid_argument(
+          "Invalid algorithm specified (must be 'dials' or 'ellipsoid')");
+    }
 
     // Guard against missing files
     if (!std::filesystem::exists(reflection_file)) {
@@ -170,6 +192,7 @@ int main(int argc, char **argv) {
     Goniometer gonio = expt.goniometer();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
     const Scan &scan = expt.scan();
+    const Crystal &crystal = expt.crystal();
 
     // Extract vectors and parameters
     Eigen::Vector3d s0 = beam.get_s0();
@@ -178,6 +201,7 @@ int main(int argc, char **argv) {
     int image_range_start = scan.get_image_range()[0];
     int image_range_end = scan.get_image_range()[1];
     double wl = beam.get_wavelength();
+    gemmi::UnitCell cell = crystal.get_unit_cell();
 
     logger.info("Experimental parameters:");
     logger.info("  Beam s0: ({:.6f}, {:.6f}, {:.6f})", s0.x(), s0.y(), s0.z());
@@ -197,6 +221,7 @@ int main(int argc, char **argv) {
     // code in this program.
     float sigma_b = 0.0;
     float sigma_m = 0.0;
+    float min_zeta = parser.get<float>("min_zeta");
     if (parser.is_used("sigma_m")) {
         sigma_m = degrees_to_radians(
           parser.get<float>("sigma_m"));  // Use radians for calculations
@@ -262,6 +287,7 @@ int main(int argc, char **argv) {
 
     mdspan_type<double> phi_column;
     mdspan_type<double> s1_vectors;
+    std::vector<int> hkl_vectors;
     size_t num_reflections;
     predicted_data_rotation output_data;  // Define here so that members stay in scope
     if (!all_predicted) {
@@ -293,6 +319,7 @@ int main(int argc, char **argv) {
         phi_column = mdspan_type<double>(
           output_data.xyz_mm.data(), output_data.xyz_mm.size() / 3, 3);
         num_reflections = output_data.enter.size();
+        hkl_vectors = output_data.hkl;
     } else {
         // is already predicted, so just extract required data.
         auto s1_vectors_opt = reflections.column<double>("s1");
@@ -306,11 +333,21 @@ int main(int argc, char **argv) {
             logger.error("Column 'xyzcal.mm' not found for phi positions.");
             return 1;
         }
+        auto hkl_vectors_opt = reflections.column<int>("miller_index");
+        if (!hkl_vectors_opt) {
+            logger.error("Column 'miller_index' not found in reflection data.");
+            return 1;
+        }
         phi_column = *phi_column_opt;
         num_reflections = s1_vectors.extent(0);
+        hkl_vectors = std::vector<int>(
+          hkl_vectors_opt.value().data_handle(),
+          hkl_vectors_opt.value().data_handle() + hkl_vectors_opt.value().size());
     }
 
 #pragma endregion Predict or extract predictions
+
+#pragma region Calculate or extract bounding boxes
     // Create a new reflection table for the output.
     std::vector<std::string> identifiers = reflections.get_identifiers();
     std::vector<uint64_t> ids = reflections.get_experiment_ids();
@@ -319,22 +356,309 @@ int main(int argc, char **argv) {
     logger.info("Processing {} reflections", num_reflections);
 
     // Compute bounding boxes using baseline CPU algorithms
-    logger.info("Computing Kabsch bounding boxes using baseline CPU algorithms...");
-    auto computed_bounding_boxes = compute_kabsch_bounding_boxes(s0,
-                                                                 rotation_axis,
-                                                                 s1_vectors,
-                                                                 phi_column,
-                                                                 num_reflections,
-                                                                 sigma_b,
-                                                                 sigma_m,
-                                                                 panel,
-                                                                 scan,
-                                                                 beam);
+    auto computed_bounding_boxes_opt = reflections.column<int>("bbox");
+    std::vector<BoundingBoxExtents> computed_bounding_boxes;
+    // For testing, we want to be able to load data with calculated bboxes
+    // But indexed.refl data can also have bbox from spotfinding. So load
+    // and check the length compared to size of predictions
+    bool need_to_calc_bbox = true;
+    if (computed_bounding_boxes_opt.has_value()) {
+        int n_refls = computed_bounding_boxes_opt.value().size() / 6;
+        if (n_refls == num_reflections) {
+            need_to_calc_bbox = false;
+        }
+    }
+    if (need_to_calc_bbox) {
+        logger.info("Computing Kabsch bounding boxes using baseline CPU algorithms...");
+        computed_bounding_boxes = compute_kabsch_bounding_boxes(s0,
+                                                                rotation_axis,
+                                                                s1_vectors,
+                                                                phi_column,
+                                                                num_reflections,
+                                                                sigma_b,
+                                                                sigma_m,
+                                                                panel,
+                                                                scan,
+                                                                beam);
 
-    logger.info("Successfully computed {} bounding boxes",
-                computed_bounding_boxes.size());
+        logger.info("Successfully computed {} bounding boxes",
+                    computed_bounding_boxes.size());
+    } else {
+        std::vector<int> bbox_data =
+          std::vector<int>(computed_bounding_boxes_opt.value().data_handle(),
+                           computed_bounding_boxes_opt.value().data_handle()
+                             + computed_bounding_boxes_opt.value().size());
+        for (int i = 0; i < bbox_data.size(); i += 6) {
+            BoundingBoxExtents bbox;
+            bbox.x_min = bbox_data[i];
+            bbox.x_max = bbox_data[i + 1];
+            bbox.y_min = bbox_data[i + 2];
+            bbox.y_max = bbox_data[i + 3];
+            bbox.z_min = bbox_data[i + 4];
+            bbox.z_max = bbox_data[i + 5];
+            computed_bounding_boxes.push_back(bbox);
+        }
+        logger.info("Successfully loaded {} bounding boxes from input reflections",
+                    computed_bounding_boxes.size());
+    }
 
-    // Convert to reflection table format
+#pragma endregion Calculate or extract bounding boxes
+
+#pragma region Map reflections to images
+    // Map reflections by z layer (image number)
+    logger.info("Mapping reflections by image number (z layer)");
+    std::unordered_map<int, std::vector<size_t>> reflections_by_image;
+    for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
+        const auto &bbox = computed_bounding_boxes[refl_id];
+        // Add this reflection to all images it spans
+        for (int z = bbox.z_min; z < bbox.z_max; ++z) {
+            reflections_by_image[z].push_back(refl_id);
+        }
+    }
+    logger.info("Reflections mapped across {} unique images",
+                reflections_by_image.size());
+
+    std::vector<int> keys;
+    keys.reserve(reflections_by_image.size());
+    for (const auto &kv : reflections_by_image) {
+        keys.push_back(kv.first);
+    }
+    std::sort(keys.begin(), keys.end());
+
+    for (int image : keys) {
+        const auto &refl_list = reflections_by_image.at(image);
+        logger.info("Image {} has {} reflections", image + 1, refl_list.size());
+    }
+#pragma endregion Map reflections to images
+
+#pragma region Loop over images and perform summation
+    // Set up data arrays to fill during accumulation
+    std::vector<int> intensity_accumulators(num_reflections);
+    std::vector<Vector3d> intensity_times_coord_accumulators(num_reflections);
+    std::vector<BackgroundAggregator> bg_accumulators(num_reflections);
+    std::vector<int> nbg_accumulators(num_reflections);
+    std::vector<int> nfg_accumulators(num_reflections);
+    std::vector<bool> success(num_reflections, true);
+    std::vector<CoordinateSystem> coord_system_vector =
+      {};  // a vector of coordinate systems for each reflection.
+    coord_system_vector.reserve(num_reflections);
+    // Precalculate a few things
+    double s0_length = beam.get_s0().norm();
+    double phi0 = scan.get_oscillation()[0];
+    double dphi = scan.get_oscillation()[1];
+    const Vector3d m2 = gonio.get_rotation_axis();
+    std::vector<bool> dont_integrate(num_reflections, false);
+    for (int i = 0; i < num_reflections; i++) {
+        Vector3d s1_this = Eigen::Map<Vector3d>(&s1_vectors(i, 0));
+        CoordinateSystem cs(m2, s0, s1_this, phi_column(i, 2));
+        coord_system_vector.push_back(cs);
+        if (std::abs(cs.zeta()) < min_zeta) {
+            dont_integrate[i] = true;
+            success[i] = false;
+        }
+    }
+
+    double delta_b = sigma_b * 3.0;
+    double delta_b_r2 = 1.0 / (delta_b * delta_b);
+    double delta_m = sigma_m * 3.0;
+    double delta_m_r2 = 1.0 / (delta_m * delta_m);
+
+    // Now load some image data and loop through:
+    std::string filename = expt.imagesequence().filename();
+    auto reader = H5Read(filename);
+    size_t n_images = reader.get_number_of_images();
+    auto [image_slow, image_fast] = reader.image_shape();
+    auto mask = reader.get_mask().value();
+
+    for (size_t j = 0; j < n_images; j++) {
+        if (!reader.is_image_available(j)) {
+            continue;
+        }
+        auto image = reader.get_image(j);
+        logger.info("Processing image {}", j + 1);
+        for (size_t k = 0; k < reflections_by_image[j].size(); k++) {
+            size_t refl_id = reflections_by_image[j][k];
+            if (dont_integrate[refl_id]) {
+                continue;
+            }
+            const auto &bbox = computed_bounding_boxes[refl_id];
+            if (fg_algorithm == "ellipsoid") {
+                // calculate dxy array (arrays of distances in kabsch space from pixel corners to xyzcal)
+                int n_x = bbox.x_max - bbox.x_min + 1;
+                int n_y = bbox.y_max - bbox.y_min + 1;
+                std::vector<double> dxy_start(n_x
+                                              * n_y);    // start of image (in rotation)
+                std::vector<double> dxy_end(n_x * n_y);  // end of image (in rotation)
+                double phidash_start = (phi0 + (j * dphi)) * DEG2RAD;
+                double phidash_end = (phi0 + ((j + 1) * dphi)) * DEG2RAD;
+                double phi_c = phi_column(refl_id, 2);
+                CoordinateSystem cs = coord_system_vector[refl_id];
+                Vector3d s1_this = Eigen::Map<Vector3d>(&s1_vectors(refl_id, 0));
+                for (int x = 0; x < n_x; x++) {
+                    for (int y = 0; y < n_y; y++) {
+                        int index = x + (y * (n_x));
+                        std::array<double, 2> px_mm =
+                          panel.px_to_mm(x + bbox.x_min, y + bbox.y_min);
+                        Vector3d s1_ = panel.get_lab_coord(px_mm[0], px_mm[1]);
+                        s1_.normalize();
+                        Vector3d s1dash = s1_ * s0_length;
+                        Vector3d epsilon_coords_start =
+                          cs.coords_from_s1vector(s1dash, phidash_start);
+                        Vector3d epsilon_coords_end =
+                          cs.coords_from_s1vector(s1dash, phidash_end);
+                        if ((phidash_start > phi_c) && (phi_c < phidash_end)) {
+                            epsilon_coords_start[2] = 0.0;
+                            epsilon_coords_end[2] = 0.0;
+                        }
+
+                        dxy_start[index] =
+                          ((epsilon_coords_start[0] * epsilon_coords_start[0]
+                            + epsilon_coords_start[1] * epsilon_coords_start[1])
+                           * delta_b_r2)
+                          + ((epsilon_coords_start[2] * epsilon_coords_start[2])
+                             * delta_m_r2);
+                        dxy_end[index] =
+                          ((epsilon_coords_end[0] * epsilon_coords_end[0]
+                            + epsilon_coords_end[1] * epsilon_coords_end[1])
+                           * delta_b_r2)
+                          + ((epsilon_coords_end[2] * epsilon_coords_end[2])
+                             * delta_m_r2);
+                    }
+                }
+                // Now loop through pixels in bbox, adding to foreground or background if unmasked and in image.
+                for (int x = bbox.x_min; x < bbox.x_max; x++) {
+                    for (int y = bbox.y_min; y < bbox.y_max; y++) {
+                        // The bounding box may extend beyond the image - if so, this is ok if it is only background
+                        // but not if it is foreground.
+                        int x_index = x - bbox.x_min;
+                        int y_index = y - bbox.y_min;
+                        int dxyindex = x_index + (y_index * n_x);
+                        double d1 = dxy_start[dxyindex];
+                        double d2 = dxy_start[dxyindex + 1];
+                        double d3 = dxy_start[dxyindex + n_x];
+                        double d4 = dxy_start[dxyindex + n_x + 1];
+                        double d5 = dxy_end[dxyindex];
+                        double d6 = dxy_end[dxyindex + 1];
+                        double d7 = dxy_end[dxyindex + n_x];
+                        double d8 = dxy_end[dxyindex + n_x + 1];
+                        double d =
+                          std::min(std::min(std::min(d1, d2), std::min(d3, d4)),
+                                   std::min(std::min(d5, d6), std::min(d7, d8)));
+                        int index = x + (y * image_fast);
+                        bool in_image =
+                          x >= 0 && x < image_fast && y >= 0 && y < image_slow;
+                        if (d <= 1.0) {
+                            // Foreground
+                            if (in_image) {
+                                if (mask[index] == 0) {  // masked
+                                    success[refl_id] = false;
+                                } else {
+                                    auto data = image.data.data()[index];
+                                    intensity_accumulators[refl_id] += data;
+                                    nfg_accumulators[refl_id] += 1;
+                                    Vector3d I_times_c = {data * (x + 0.5),
+                                                          data * (y + 0.5),
+                                                          data * (j + 0.5)};
+                                    intensity_times_coord_accumulators[refl_id] +=
+                                      I_times_c;
+                                }
+                            } else {
+                                success[refl_id] = false;
+                            }
+                        } else {  // d>1.0
+                            // Background
+                            if (in_image) {
+                                if (mask[index] != 0) {
+                                    // In image, not masked
+                                    auto data = image.data.data()[index];
+                                    bg_accumulators[refl_id].add(data);
+                                    nbg_accumulators[refl_id] += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // dials algorithm - a fixed ellipse (2D) across all images in the bbox
+                int n_x = bbox.x_max - bbox.x_min + 1;
+                int n_y = bbox.y_max - bbox.y_min + 1;
+                std::vector<double> dxy(n_x * n_y);
+                double phi =
+                  phi0
+                  + (j * dphi)
+                      * DEG2RAD;  // Required for calls but not actually used as don't use e3.
+                CoordinateSystem cs = coord_system_vector[refl_id];
+                Vector3d s1_this = Eigen::Map<Vector3d>(&s1_vectors(refl_id, 0));
+                for (int x = 0; x < n_x; x++) {
+                    for (int y = 0; y < n_y; y++) {
+                        int index = x + (y * (n_x));
+                        std::array<double, 2> px_mm =
+                          panel.px_to_mm(x + bbox.x_min, y + bbox.y_min);
+                        Vector3d s1_ = panel.get_lab_coord(px_mm[0], px_mm[1]);
+                        s1_.normalize();
+                        Vector3d s1dash = s1_ * s0_length;
+                        Vector3d epsilon_coords = cs.coords_from_s1vector(s1dash, phi);
+
+                        dxy[index] = ((epsilon_coords[0] * epsilon_coords[0]
+                                       + epsilon_coords[1] * epsilon_coords[1])
+                                      * delta_b_r2);
+                    }
+                }
+                // Now loop through pixels in bbox, adding to foreground or background if unmasked and in image.
+                for (int x = bbox.x_min; x < bbox.x_max; x++) {
+                    for (int y = bbox.y_min; y < bbox.y_max; y++) {
+                        // The bounding box may extend beyond the image - if so, this is ok if it iis only background
+                        // but not if it is foreground.
+                        int x_index = x - bbox.x_min;
+                        int y_index = y - bbox.y_min;
+                        int dxyindex = x_index + (y_index * n_x);
+                        double d1 = dxy[dxyindex];
+                        double d2 = dxy[dxyindex + 1];
+                        double d3 = dxy[dxyindex + n_x];
+                        double d4 = dxy[dxyindex + n_x + 1];
+                        double d = std::min(std::min(d1, d2), std::min(d3, d4));
+                        int index = x + (y * image_fast);
+                        bool in_image =
+                          x >= 0 && x < image_fast && y >= 0 && y < image_slow;
+
+                        if (d <= 1.0) {
+                            // Foreground
+                            if (in_image) {
+                                if (mask[index] == 0) {  // masked)
+                                    success[refl_id] = false;
+                                } else {
+                                    auto data = image.data.data()[index];
+                                    intensity_accumulators[refl_id] += data;
+                                    nfg_accumulators[refl_id] += 1;
+                                    Vector3d I_times_c = {data * (x + 0.5),
+                                                          data * (y + 0.5),
+                                                          data * (j + 0.5)};
+                                    intensity_times_coord_accumulators[refl_id] +=
+                                      I_times_c;
+                                }
+                            } else {
+                                success[refl_id] = false;
+                            }
+                        } else {  // d>1.0
+                            // Background
+                            if (in_image) {
+                                if (mask[index] != 0) {
+                                    // In image, not masked
+                                    auto data = image.data.data()[index];
+                                    bg_accumulators[refl_id].add(data);
+                                    nbg_accumulators[refl_id] += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+#pragma endregion Loop over images and perform summation
+
+#pragma region Finalize calculations
+    // Convert bbox data to reflection table format
     std::vector<double> computed_bbox_data;
     computed_bbox_data.reserve(num_reflections * 6);
     for (const auto &bbox : computed_bounding_boxes) {
@@ -346,131 +670,136 @@ int main(int argc, char **argv) {
                                    static_cast<double>(bbox.z_min),
                                    static_cast<double>(bbox.z_max)});
     }
-
-    // Display some sample results
-    logger.info("Sample bounding box results (first 5 reflections):");
-    for (size_t i = 0; i < std::min<size_t>(5, num_reflections); ++i) {
-        const auto &bbox = computed_bounding_boxes[i];
-        logger.info("  bbox[{}]: x=[{:.1f},{:.1f}] y=[{:.1f},{:.1f}] z=[{},{}]",
-                    i,
-                    bbox.x_min,
-                    bbox.x_max,
-                    bbox.y_min,
-                    bbox.y_max,
-                    bbox.z_min,
-                    bbox.z_max);
-    }
-
-    // Compute Kabsch coordinates for sample voxel centers within bounding boxes
-    logger.info(
-      "Computing Kabsch coordinates for voxel centers using baseline CPU "
-      "algorithms...");
-
-    std::vector<double> voxel_kabsch_coords;  // ε₁, ε₂, ε₃ for each voxel center
-    std::vector<int> voxel_reflection_ids;    // Which reflection each voxel belongs to
-    std::vector<double> voxel_positions;      // x, y, z positions for each voxel center
-    std::vector<double> voxel_s1_lengths;     // |s₁| for each voxel center
-
-    // Process a subset of reflections for demonstration (to avoid excessive computation)
-    size_t max_reflections_to_process = std::min<size_t>(10, num_reflections);
-    logger.info("Processing voxels for first {} reflections as demonstration",
-                max_reflections_to_process);
-
-    for (size_t refl_id = 0; refl_id < max_reflections_to_process; ++refl_id) {
-        const auto &bbox = computed_bounding_boxes[refl_id];
-
-        // Get reflection centroid data
-        Eigen::Vector3d s1_c(
-          s1_vectors(refl_id, 0), s1_vectors(refl_id, 1), s1_vectors(refl_id, 2));
-        double phi_c = phi_column(refl_id, 2);
-
-        // Process a sample of voxels in the bounding box (every 5th voxel to keep computation manageable)
-        int step = 5;
-        int voxel_count = 0;
-
-        for (int z = bbox.z_min; z < bbox.z_max; z += step) {
-            double phi_pixel =
-              osc_start + (z - image_range_start + 1.5) * osc_width / 180.0 * M_PI;
-
-            for (int y = static_cast<int>(bbox.y_min); y < static_cast<int>(bbox.y_max);
-                 y += step) {
-                for (int x = static_cast<int>(bbox.x_min);
-                     x < static_cast<int>(bbox.x_max);
-                     x += step) {
-                    // Convert pixel coordinates to lab coordinates
-                    std::array<double, 2> xy_mm = panel.px_to_mm(
-                      static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5);
-
-                    Vector3d lab_coord =
-                      panel.get_d_matrix() * Vector3d(xy_mm[0], xy_mm[1], 1.0);
-
-                    // Convert lab coordinate to reciprocal space vector
-                    Eigen::Vector3d s_pixel = lab_coord.normalized() / wl;
-
-                    // Use baseline CPU pixel_to_kabsch algorithm
-                    double s1_len_out;
-                    Eigen::Vector3d kabsch_coords = pixel_to_kabsch(
-                      s0, s1_c, phi_c, s_pixel, phi_pixel, rotation_axis, s1_len_out);
-
-                    // Store results
-                    voxel_kabsch_coords.insert(
-                      voxel_kabsch_coords.end(),
-                      {kabsch_coords.x(), kabsch_coords.y(), kabsch_coords.z()});
-                    voxel_reflection_ids.push_back(static_cast<int>(refl_id));
-                    voxel_positions.insert(
-                      voxel_positions.end(),
-                      {xy_mm[0], xy_mm[1], static_cast<double>(z)});
-                    voxel_s1_lengths.push_back(s1_len_out);
-
-                    voxel_count++;
-                }
-            }
-        }
-
-        logger.debug("Processed {} voxels for reflection {}", voxel_count, refl_id);
-    }
-
-    size_t actual_voxels = voxel_reflection_ids.size();
-    logger.info("Processed {} voxel centers total", actual_voxels);
-
-    // Create results and save to HDF5
-    logger.info("Saving results to: {}", output_file);
-
+    // FIXME - these are not yet output as seems to cause an issue with dials?
     // Add computed bounding boxes to reflection table
+    //integrated_data.add_column(
+    //  "baseline_bbox", std::vector<size_t>{num_reflections, 6}, computed_bbox_data);
+
+    // Do the calculations to determine the background-subtracted intensities as well as other quantities of interest.
+    std::vector<double> intensities(num_reflections);
+    std::vector<double> variances(num_reflections);
+    std::vector<double> partialities(num_reflections);
+    std::vector<double> lp_corrections(num_reflections);
+    std::vector<double> xyzobs_px(num_reflections * 3);
+    std::vector<double> d_values(num_reflections);
+    std::vector<double> mean_bg(num_reflections);
+    std::vector<double> bg_sum_value(num_reflections);
+    // FIXME need to include robust outlier rejection in background calculation (glm, constant3dmodel)
+    for (int i = 0; i < num_reflections; i++) {
+        if (nbg_accumulators[i]) {
+            auto [bg, total_bg_counts] =
+              compute_background_constant_3d(bg_accumulators[i]);
+            mean_bg[i] = bg;
+            bg_sum_value[i] = total_bg_counts;
+            double I = intensity_accumulators[i] - bg;
+            intensities[i] = I;
+            double m_n = nfg_accumulators[i] / nbg_accumulators[i];
+            variances[i] = std::abs(I) + (std::abs(bg) * (1.0 + m_n));
+            if ((nfg_accumulators[i] > 0) && (intensity_accumulators[i] > 0)) {
+                Vector3d com =
+                  intensity_times_coord_accumulators[i] / intensity_accumulators[i];
+                xyzobs_px[i * 3] = com[0];
+                xyzobs_px[i * 3 + 1] = com[1];
+                xyzobs_px[i * 3 + 2] = com[2];
+            } else {  // zero intensity, so com is just centre of box (dials convention from centroid/simple/algorithm.h).
+                xyzobs_px[i * 3] = 0.5
+                                   * (computed_bounding_boxes[i].x_min
+                                      + computed_bounding_boxes[i].x_max);
+                xyzobs_px[i * 3 + 1] = 0.5
+                                       * (computed_bounding_boxes[i].y_min
+                                          + computed_bounding_boxes[i].y_max);
+                xyzobs_px[i * 3 + 2] = 0.5
+                                       * (computed_bounding_boxes[i].z_min
+                                          + computed_bounding_boxes[i].z_max);
+            }
+        } else {
+            success[i] = false;
+        }
+    }
+    // Calculate the partiality, LP, d of all reflections
+    Vector3d pn = beam.get_polarization_normal();
+    double pf = beam.get_polarization_fraction();
+    LPCorrection lpcalculator(s0, pn, pf, rotation_axis);
+    for (int i = 0; i < num_reflections; i++) {
+        double xyzcal_px_z = phi_column(i, 2) * RAD2DEG / osc_width;
+        double phi = osc_start + ((xyzcal_px_z + 1 - image_range_start) * osc_width);
+        double phia =
+          osc_start
+          + ((computed_bounding_boxes[i].z_min + 1 - image_range_start) * osc_width);
+        double phib =
+          osc_start
+          + ((computed_bounding_boxes[i].z_max + 1 - image_range_start) * osc_width);
+        double zeta = coord_system_vector[i].zeta();
+        // Partiality calculation
+        double c = std::abs(zeta) / (std::sqrt(2.0) * sigma_m);
+        double p = 0.5 * (std::erf(c * (phib - phi)) - std::erf(c * (phia - phi)));
+        partialities[i] = p;
+        // LP calculation
+        Vector3d s1_this = Eigen::Map<Vector3d>(&s1_vectors(i, 0));
+        lp_corrections[i] = lpcalculator.calculate(s1_this);
+        // resolution calculation
+        std::array<int, 3> hkl_this = {
+          hkl_vectors[i * 3], hkl_vectors[i * 3 + 1], hkl_vectors[i * 3 + 2]};
+        d_values[i] = cell.calculate_d(hkl_this);
+    }
+#pragma endregion Finalize calculations
+
+#pragma region Make output table and save
+    // Add data to reflection table.
+    integrated_data.add_column("intensity.sum.value", num_reflections, 1, intensities);
+    integrated_data.add_column("intensity.sum.variance", num_reflections, 1, variances);
+    integrated_data.add_column("partiality", num_reflections, 1, partialities);
+    integrated_data.add_column("miller_index", num_reflections, 3, hkl_vectors);
+    integrated_data.add_column("lp", num_reflections, 1, lp_corrections);
+    integrated_data.add_column("d", num_reflections, 1, d_values);
+    std::vector<double> xyzcal_mm = std::vector<double>(
+      phi_column.data_handle(), phi_column.data_handle() + phi_column.size());
+    std::vector<double> s1 = std::vector<double>(
+      s1_vectors.data_handle(), s1_vectors.data_handle() + s1_vectors.size());
+    std::vector<int> id = std::vector<int>(num_reflections, 0);
+    integrated_data.add_column("xyzcal.mm", num_reflections, 3, xyzcal_mm);
+    integrated_data.add_column("xyzobs.px.value", num_reflections, 3, xyzobs_px);
+    integrated_data.add_column("s1", num_reflections, 3, s1);
+    integrated_data.add_column("id", num_reflections, 1, id);
     integrated_data.add_column(
-      "baseline_bbox", std::vector<size_t>{num_reflections, 6}, computed_bbox_data);
+      "num_pixels.background",
+      num_reflections,
+      1,
+      nbg_accumulators);  // Useful for debug but not required for downstream
+    integrated_data.add_column(
+      "num_pixels.foreground",
+      num_reflections,
+      1,
+      nfg_accumulators);  // Useful for debug but not required for downstream
+    integrated_data.add_column(
+      "background.sum.value",
+      num_reflections,
+      1,
+      bg_sum_value);  // Useful for debug but not required for downstream
+    integrated_data.add_column(
+      "background.mean",
+      num_reflections,
+      1,
+      mean_bg);  // Useful for debug but not required for downstream
+    std::vector<std::size_t> final_flags(num_reflections, IntegratedSum);
+    integrated_data.add_column(std::string("flags"), num_reflections, 1, final_flags);
 
-    // Create voxel data table
-    ReflectionTable voxel_table;
-    if (actual_voxels > 0) {
-        voxel_table.add_column("kabsch_coordinates",
-                               std::vector<size_t>{actual_voxels, 3},
-                               voxel_kabsch_coords);
-        voxel_table.add_column("reflection_id",
-                               std::vector<size_t>{actual_voxels, 1},
-                               std::vector<double>(voxel_reflection_ids.begin(),
-                                                   voxel_reflection_ids.end()));
-        voxel_table.add_column(
-          "pixel_coordinates", std::vector<size_t>{actual_voxels, 3}, voxel_positions);
-        voxel_table.add_column(
-          "voxel_s1_length", std::vector<size_t>{actual_voxels, 1}, voxel_s1_lengths);
-    }
+    // Only output successfully integrated reflections.
+    ReflectionTable success_data = integrated_data.select(success);
+    int n_integrated =
+      success_data.column<double>("intensity.sum.value").value().extent(0);
+    // Other things to potentially output xyzcal.px, xyzobs.mm.value, xyzobs.mm.variance, xyzobs.px.variance?
 
-    // Write output files
-    integrated_data.write(output_file);
-    if (actual_voxels > 0) {
-        std::string voxel_output =
-          output_file.substr(0, output_file.find_last_of('.')) + "_voxels.h5";
-        voxel_table.write(voxel_output);
-        logger.info("Voxel data saved to: {}", voxel_output);
-    }
-
+    logger.info("Saving results to: {}", output_file);
+    success_data.write(output_file);
     logger.info("Baseline integration complete!");
     logger.info("Summary:");
     logger.info("  {} reflections processed", num_reflections);
     logger.info("  {} bounding boxes computed", computed_bounding_boxes.size());
-    logger.info("  {} voxel centers processed", actual_voxels);
+    logger.info("  {} reflections successfully integrated", n_integrated);
     logger.info("Results saved to: {}", output_file);
+
+#pragma endregion Make output table and save
 
     return 0;
 }

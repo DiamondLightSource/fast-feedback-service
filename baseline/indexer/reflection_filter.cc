@@ -1,3 +1,4 @@
+#pragma once
 #include <Eigen/Dense>
 #include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>

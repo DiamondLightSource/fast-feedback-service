@@ -1,3 +1,5 @@
+#pragma once
+
 #include <dx2/beam.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
@@ -88,5 +90,7 @@ double refine_indexing_candidate(Crystal &crystal,
     // updated during the refinement
     crystal.set_A_matrix(target.orientation_parameterisation().get_state()
                          * target.cell_parameterisation().get_state());
+    panel.update(target.detector_parameterisation().get_state());
+    beam.set_s0(target.beam_parameterisation().get_state());
     return xyrmsd;
 }
