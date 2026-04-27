@@ -24,3 +24,7 @@ compile_commands.json
 a.out
 
 _build*/
+
+# Python build artifacts
+*.egg-info/
+.venv/
