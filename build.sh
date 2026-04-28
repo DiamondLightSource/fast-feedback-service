@@ -148,7 +148,7 @@ build_directory() {
     print_status "Configuring $description..."
     (
         cd "$build_dir"
-        cmake .. -G "$BUILD_SYSTEM" $cmake_args
+        cmake .. -G "$BUILD_SYSTEM" $cmake_args -DCMAKE_INSTALL_PREFIX="${CONDA_PREFIX}"
     )
     
     # Build
@@ -186,6 +186,13 @@ main() {
         print_error "CMakeLists.txt not found. Please run this script from the project root."
         exit 1
     fi
+
+    # Require an active conda/mamba environment so installs go to the right prefix
+    if [[ -z "${CONDA_PREFIX:-}" ]]; then
+        print_error "No conda/mamba environment is active. Activate your environment first."
+        exit 1
+    fi
+    print_status "Installing into conda environment: ${CONDA_PREFIX}"
     
     # Initialize submodules
     init_submodules
