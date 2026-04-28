@@ -93,8 +93,12 @@ constexpr size_t MAX_BLOCK_REFLECTIONS = 64;
 __device__ __forceinline__ bool is_foreground(const Vector3D &eps,
                                               scalar_t delta_b,
                                               scalar_t delta_m) {
-    // Precompute inverse squares to avoid repeated division
-    // Division is more expensive than multiplication on GPU
+    // Precompute inverse squares to avoid repeated division.
+    // δ_B² appears in two terms (ε₁² and ε₂²); compute 1/δ_B² once and
+    // multiply both. Division is much more expensive than
+    // multiplication on the GPU. Rather than dividing three times, we
+    // compute the inverse squares once and multiply, which should be
+    // more efficient.
     // -> Verify in profiler how compiler optimises this PTX
     scalar_t inv_delta_b_sq = scalar_t(1.0) / (delta_b * delta_b);
     scalar_t inv_delta_m_sq = scalar_t(1.0) / (delta_m * delta_m);
