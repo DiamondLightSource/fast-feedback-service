@@ -329,6 +329,9 @@ bool is_ready_for_read(const std::string &path);
 
 template <>
 inline bool is_ready_for_read<H5Read>(const std::string &path) {
+    auto obj = h5read_open(path.c_str());
+    if (obj == nullptr) return false;
+    h5read_free(obj);
     return true;
 }
 #endif
