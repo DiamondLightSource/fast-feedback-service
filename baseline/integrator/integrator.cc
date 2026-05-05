@@ -39,6 +39,13 @@ constexpr size_t IntegratedSum = (1 << 8);
 constexpr double DEG2RAD = M_PI / 180.0;
 constexpr double RAD2DEG = 180.0 / M_PI;
 
+
+enum class FGAlgorithm : uint8_t {
+    Ellipsoid,
+    Dials
+};
+
+
 #pragma region Argument Parsing
 class BaselineIntegratorArgumentParser : public FFSArgumentParser {
   public:
@@ -141,16 +148,6 @@ struct Accumulator {
         bg(n_reflections),
         success(n_reflections, true) {}
 
-    /*(const Accumulator& other) {
-        for (size_t r = 0; r < intensity.size(); r++) {
-            intensity[r] += other.intensity[r];
-            nfg[r] += other.nfg[r];
-            nbg[r] += other.nbg[r];
-            intensity_times_coord[r] += other.intensity_times_coord[r];
-            bg[r].merge(other.bg[r]);
-            success[r] = success[r] && other.success[r];
-        }
-    }*/
 };
 
 
@@ -200,7 +197,7 @@ struct SharedConstants {
     double s0_length;
 
     // --- Foreground/background model ---
-    std::string fg_algorithm;   // "ellipsoid" or "dials"
+    FGAlgorithm fg_algorithm;   // "ellipsoid" or "dials"
 
     double delta_b_r2;
     double delta_m_r2;
@@ -216,7 +213,7 @@ struct SharedConstants {
         double phi0_,
         double dphi_,
         double s0_length_,
-        std::string fg_algorithm_,
+        FGAlgorithm fg_algorithm_,
         double delta_b_r2_,
         double delta_m_r2_
     )
@@ -257,27 +254,50 @@ Accumulator process_image_range(
 
         auto image = reader.get_image(j);
         logger.info("Processing image {}", j + 1);
-        for (size_t k = 0; k < reflections_by_image[j].size(); k++) {
-            size_t refl_id = reflections_by_image[j][k];
-            if (constants.dont_integrate[refl_id]) {
-                continue;
-            }
-            const auto &bbox = constants.computed_bounding_boxes[refl_id];
-            if (constants.fg_algorithm == "ellipsoid") {
+
+        std::vector<double> dxy_start;// start of image (in rotation)
+        std::vector<double> dxy_end;// end of image (in rotation)
+        std::vector<double> dxy;
+        double phidash_start = (constants.phi0 + (j * constants.dphi)) * constants.DEG2RAD;
+        double phidash_end = (constants.phi0 + ((j + 1) * constants.dphi)) * constants.DEG2RAD;
+
+        switch (constants.fg_algorithm){
+        case FGAlgorithm::Ellipsoid:
+
+            for (size_t k = 0; k < reflections_by_image[j].size(); k++) {
+                size_t refl_id = reflections_by_image[j][k];
+                if (constants.dont_integrate[refl_id]) {
+                    continue;
+                }
+                const auto &bbox = constants.computed_bounding_boxes[refl_id];
+                
                 // calculate dxy array (arrays of distances in kabsch space from pixel corners to xyzcal)
                 int n_x = bbox.x_max - bbox.x_min + 1;
                 int n_y = bbox.y_max - bbox.y_min + 1;
-                std::vector<double> dxy_start(n_x
-                                              * n_y);    // start of image (in rotation)
-                std::vector<double> dxy_end(n_x * n_y);  // end of image (in rotation)
-                double phidash_start = (constants.phi0 + (j * constants.dphi)) * constants.DEG2RAD;
-                double phidash_end = (constants.phi0 + ((j + 1) * constants.dphi)) * constants.DEG2RAD;
+                //std::vector<double> dxy_start(n_x
+                //                              * n_y);    // start of image (in rotation)
+                //std::vector<double> dxy_end(n_x * n_y);  // end of image (in rotation)
+
+                size_t required = static_cast<size_t>(n_x) * n_y;
+                if (dxy_start.size() < required) {
+                    dxy_start.resize(required);
+                    dxy_end.resize(required);
+                }
+
+                
                 double phi_c = constants.phi_column(refl_id, 2);
                 CoordinateSystem cs = constants.coord_system_vector[refl_id];
-                Vector3d s1_this = Eigen::Map<Vector3d>(&constants.s1_vectors(refl_id, 0));
-                for (int x = 0; x < n_x; x++) {
-                    for (int y = 0; y < n_y; y++) {
-                        int index = x + (y * (n_x));
+                //Vector3d s1_this = Eigen::Map<Vector3d>(&constants.s1_vectors(refl_id, 0));
+                
+                for (int y = 0; y < n_y; ++y) {
+                    int row = y * n_x;
+                    for (int x = 0; x < n_x; ++x) {
+                        int index = row + x;
+
+
+                        //for (int x = 0; x < n_x; x++) {
+                        //for (int y = 0; y < n_y; y++) {
+                        //int index = x + (y * (n_x));
                         std::array<double, 2> px_mm =
                           constants.panel.px_to_mm(x + bbox.x_min, y + bbox.y_min);
                         Vector3d s1_ = constants.panel.get_lab_coord(px_mm[0], px_mm[1]);
@@ -322,9 +342,17 @@ Accumulator process_image_range(
                         double d6 = dxy_end[dxyindex + 1];
                         double d7 = dxy_end[dxyindex + n_x];
                         double d8 = dxy_end[dxyindex + n_x + 1];
-                        double d =
+                        double d = d1;
+                        d = std::min(d, d2);
+                        d = std::min(d, d3);
+                        d = std::min(d, d4);
+                        d = std::min(d, d5);
+                        d = std::min(d, d6);
+                        d = std::min(d, d7);
+                        d = std::min(d, d8);
+                        /*double d =
                           std::min(std::min(std::min(d1, d2), std::min(d3, d4)),
-                                   std::min(std::min(d5, d6), std::min(d7, d8)));
+                                   std::min(std::min(d5, d6), std::min(d7, d8)));*/
                         int index = x + (y * image_fast);
                         bool in_image =
                           x >= 0 && x < image_fast && y >= 0 && y < image_slow;
@@ -359,17 +387,31 @@ Accumulator process_image_range(
                         }
                     }
                 }
-            } else {
+            }
+            break;
+
+        case FGAlgorithm::Dials:
+
+            for (size_t k = 0; k < reflections_by_image[j].size(); k++) {
+                size_t refl_id = reflections_by_image[j][k];
+                if (constants.dont_integrate[refl_id]) {
+                    continue;
+                }
+                const auto &bbox = constants.computed_bounding_boxes[refl_id];
                 // dials algorithm - a fixed ellipse (2D) across all images in the bbox
                 int n_x = bbox.x_max - bbox.x_min + 1;
                 int n_y = bbox.y_max - bbox.y_min + 1;
-                std::vector<double> dxy(n_x * n_y);
+                //std::vector<double> dxy(n_x * n_y);
+                size_t required = static_cast<size_t>(n_x) * n_y;
+                if (dxy.size() < required) {
+                    dxy.resize(required);
+                }
                 double phi =
                   constants.phi0
                   + (j * constants.dphi)
                       * constants.DEG2RAD;  // Required for calls but not actually used as don't use e3.
                 CoordinateSystem cs = constants.coord_system_vector[refl_id];
-                Vector3d s1_this = Eigen::Map<Vector3d>(&constants.s1_vectors(refl_id, 0));
+                //Vector3d s1_this = Eigen::Map<Vector3d>(&constants.s1_vectors(refl_id, 0));
                 for (int x = 0; x < n_x; x++) {
                     for (int y = 0; y < n_y; y++) {
                         int index = x + (y * (n_x));
@@ -397,7 +439,11 @@ Accumulator process_image_range(
                         double d2 = dxy[dxyindex + 1];
                         double d3 = dxy[dxyindex + n_x];
                         double d4 = dxy[dxyindex + n_x + 1];
-                        double d = std::min(std::min(d1, d2), std::min(d3, d4));
+                        double d = d1;
+                        d = std::min(d, d2);
+                        d = std::min(d, d3);
+                        d = std::min(d, d4);
+                        //double d = std::min(std::min(d1, d2), std::min(d3, d4));
                         int index = x + (y * image_fast);
                         bool in_image =
                           x >= 0 && x < image_fast && y >= 0 && y < image_slow;
@@ -434,11 +480,16 @@ Accumulator process_image_range(
                     }
                 }
             }
+            break;
         }
-
     }
-
     return accumulator;
+}
+
+FGAlgorithm parse_fg_algorithm(const std::string& name) {
+    if (name == "ellipsoid") return FGAlgorithm::Ellipsoid;
+    if (name == "dials")     return FGAlgorithm::Dials;
+    throw std::runtime_error("Unknown foreground algorithm: " + name);
 }
 
 
@@ -454,11 +505,8 @@ int main(int argc, char **argv) {
 
     float timeout = parser.get<float>("timeout");
     std::string output_file = parser.get<std::string>("output");
-    std::string fg_algorithm = parser.get<std::string>("algorithm");
-    if ((fg_algorithm != "dials") && (fg_algorithm != "ellipsoid")) {
-        throw std::invalid_argument(
-          "Invalid algorithm specified (must be 'dials' or 'ellipsoid')");
-    }
+    
+    FGAlgorithm fg_algorithm = parse_fg_algorithm(parser.get<std::string>("algorithm"));
 
     // Guard against missing files
     if (!std::filesystem::exists(reflection_file)) {
@@ -792,6 +840,8 @@ int main(int argc, char **argv) {
     double delta_m = sigma_m * 3.0;
     double delta_m_r2 = 1.0 / (delta_m * delta_m);
 
+    logger.info("Calculated coordinate systems");
+
     // Now load some image data and loop through:
     std::string filename = expt.imagesequence().filename();
     auto reader = H5Read(filename);
@@ -805,6 +855,7 @@ int main(int argc, char **argv) {
         coord_system_vector,
         phi_column, s1_vectors, panel,
         phi0, dphi, s0_length, fg_algorithm, delta_b_r2, delta_m_r2);
+    logger.info("Made shared constants");
 
     std::vector<ImageRange> ranges = split_ranges(n_images, nthreads);
     std::vector<std::thread> workers;
@@ -817,11 +868,11 @@ int main(int argc, char **argv) {
         thread_accs.emplace_back(num_reflections);
     }
 
-
+    logger.info("About to start parallelisation");
     for (size_t t = 0; t < nthreads; t++) {
         workers.emplace_back([&, t] {
             thread_accs[t] =
-                process_image_range(ranges[t], expt, reflections_by_image, constants);
+                std::move(process_image_range(ranges[t], expt, reflections_by_image, constants));
         });
     }
 
@@ -835,7 +886,7 @@ int main(int argc, char **argv) {
             nbg_accumulators[r] += acc.nbg[r];
             bg_accumulators[r].add(acc.bg[r]);
             intensity_times_coord_accumulators[r] += acc.intensity_times_coord[r];
-            success[r] = success[r] && acc.success[r];
+            success[r] = static_cast<bool>(success[r]) && acc.success[r];
         }
     }
 
