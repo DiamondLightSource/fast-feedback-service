@@ -132,7 +132,33 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
 };
 #pragma endregion Argument Parsing
 
+struct ReflectionAccum {
+    double intensity = 0.0;
+    size_t nfg = 0;
+    size_t nbg = 0;
+    Vector3d intensity_times_coord = Vector3d::Zero();
+    BackgroundAggregator bg;
+    bool success = true;
+
+    void merge(const ReflectionAccum& other) {
+        intensity += other.intensity;
+        nfg += other.nfg;
+        nbg += other.nbg;
+        intensity_times_coord += other.intensity_times_coord;
+        bg.add(other.bg);
+        success = success && other.success;
+    }
+};
+
 struct Accumulator {
+    std::unordered_map<size_t, ReflectionAccum> data;
+
+    ReflectionAccum& operator[](size_t r) {
+        return data[r];  // default-constructs if missing
+    }
+};
+
+/*struct Accumulator {
     std::vector<double> intensity;
     std::vector<size_t> nfg;
     std::vector<size_t> nbg;
@@ -148,7 +174,7 @@ struct Accumulator {
         bg(n_reflections),
         success(n_reflections, true) {}
 
-};
+};*/
 
 
 struct ImageRange {
@@ -240,7 +266,7 @@ Accumulator process_image_range(
     std::unordered_map<int, std::vector<size_t>>& reflections_by_image,
     const SharedConstants& constants
 ) {
-    Accumulator accumulator(constants.n_reflections);
+    Accumulator accumulator;//(constants.n_reflections);
 
     std::string filename = expt.imagesequence().filename();
     H5Read reader(filename);
@@ -287,6 +313,7 @@ Accumulator process_image_range(
                 
                 double phi_c = constants.phi_column(refl_id, 2);
                 CoordinateSystem cs = constants.coord_system_vector[refl_id];
+                auto& a = accumulator[refl_id];
                 //Vector3d s1_this = Eigen::Map<Vector3d>(&constants.s1_vectors(refl_id, 0));
                 
                 for (int y = 0; y < n_y; ++y) {
@@ -356,23 +383,24 @@ Accumulator process_image_range(
                         int index = x + (y * image_fast);
                         bool in_image =
                           x >= 0 && x < image_fast && y >= 0 && y < image_slow;
+                        
                         if (d <= 1.0) {
                             // Foreground
                             if (in_image) {
                                 if (mask[index] == 0) {  // masked
-                                    accumulator.success[refl_id] = false;
+                                    a.success = false;
                                 } else {
                                     auto data = image.data.data()[index];
-                                    accumulator.intensity[refl_id] += data;
-                                    accumulator.nfg[refl_id] += 1;
+                                    a.intensity += data;
+                                    a.nfg += 1;
                                     Vector3d I_times_c = {data * (x + 0.5),
                                                           data * (y + 0.5),
                                                           data * (j + 0.5)};
-                                    accumulator.intensity_times_coord[refl_id] +=
+                                    a.intensity_times_coord +=
                                       I_times_c;
                                 }
                             } else {
-                                accumulator.success[refl_id] = false;
+                                a.success = false;
                             }
                         } else {  // d>1.0
                             // Background
@@ -380,8 +408,8 @@ Accumulator process_image_range(
                                 if (mask[index] != 0) {
                                     // In image, not masked
                                     auto data = image.data.data()[index];
-                                    accumulator.bg[refl_id].add(data);
-                                    accumulator.nbg[refl_id] += 1;
+                                    a.bg.add(data);
+                                    a.nbg += 1;
                                 }
                             }
                         }
@@ -411,6 +439,7 @@ Accumulator process_image_range(
                   + (j * constants.dphi)
                       * constants.DEG2RAD;  // Required for calls but not actually used as don't use e3.
                 CoordinateSystem cs = constants.coord_system_vector[refl_id];
+                auto& a = accumulator[refl_id];
                 //Vector3d s1_this = Eigen::Map<Vector3d>(&constants.s1_vectors(refl_id, 0));
                 for (int x = 0; x < n_x; x++) {
                     for (int y = 0; y < n_y; y++) {
@@ -452,19 +481,19 @@ Accumulator process_image_range(
                             // Foreground
                             if (in_image) {
                                 if (mask[index] == 0) {  // masked)
-                                    accumulator.success[refl_id] = false;
+                                    a.success = false;
                                 } else {
                                     auto data = image.data.data()[index];
-                                    accumulator.intensity[refl_id] += data;
-                                    accumulator.nfg[refl_id] += 1;
+                                    a.intensity += data;
+                                    a.nfg += 1;
                                     Vector3d I_times_c = {data * (x + 0.5),
                                                           data * (y + 0.5),
                                                           data * (j + 0.5)};
-                                    accumulator.intensity_times_coord[refl_id] +=
+                                    a.intensity_times_coord +=
                                       I_times_c;
                                 }
                             } else {
-                                accumulator.success[refl_id] = false;
+                                a.success = false;
                             }
                         } else {  // d>1.0
                             // Background
@@ -472,8 +501,8 @@ Accumulator process_image_range(
                                 if (mask[index] != 0) {
                                     // In image, not masked
                                     auto data = image.data.data()[index];
-                                    accumulator.bg[refl_id].add(data);
-                                    accumulator.nbg[refl_id] += 1;
+                                    a.bg.add(data);
+                                    a.nbg += 1;
                                 }
                             }
                         }
@@ -810,11 +839,7 @@ int main(int argc, char **argv) {
 
 #pragma region Loop over images and perform summation
     // Set up data arrays to fill during accumulation
-    std::vector<int> intensity_accumulators(num_reflections);
-    std::vector<Vector3d> intensity_times_coord_accumulators(num_reflections);
-    std::vector<BackgroundAggregator> bg_accumulators(num_reflections);
-    std::vector<int> nbg_accumulators(num_reflections);
-    std::vector<int> nfg_accumulators(num_reflections);
+    
     std::vector<bool> success(num_reflections, true);
     std::vector<CoordinateSystem> coord_system_vector =
       {};  // a vector of coordinate systems for each reflection.
@@ -865,7 +890,7 @@ int main(int argc, char **argv) {
     thread_accs.reserve(nthreads);
 
     for (size_t t = 0; t < nthreads; t++) {
-        thread_accs.emplace_back(num_reflections);
+        thread_accs.emplace_back();
     }
 
     logger.info("About to start parallelisation");
@@ -879,7 +904,27 @@ int main(int argc, char **argv) {
     for (auto& th : workers)
         th.join();
 
+    std::vector<int> intensity_accumulators(num_reflections);
+    std::vector<Vector3d> intensity_times_coord_accumulators(num_reflections);
+    std::vector<BackgroundAggregator> bg_accumulators(num_reflections);
+    std::vector<int> nbg_accumulators(num_reflections);
+    std::vector<int> nfg_accumulators(num_reflections);
+
+
     for (const auto& acc : thread_accs) {
+        for (const auto& [r, partial] : acc.data) {
+            intensity_accumulators[r] += partial.intensity;
+            nfg_accumulators[r] += partial.nfg;
+            nbg_accumulators[r] += partial.nbg;
+            intensity_times_coord_accumulators[r] +=
+                partial.intensity_times_coord;
+            bg_accumulators[r].add(partial.bg);
+            success[r] = static_cast<bool>(partial.success) && success[r];
+        }
+    }
+
+
+    /*for (const auto& acc : thread_accs) {
         for (size_t r = 0; r < num_reflections; r++) {
             intensity_accumulators[r] += acc.intensity[r];
             nfg_accumulators[r] += acc.nfg[r];
@@ -888,7 +933,7 @@ int main(int argc, char **argv) {
             intensity_times_coord_accumulators[r] += acc.intensity_times_coord[r];
             success[r] = static_cast<bool>(success[r]) && acc.success[r];
         }
-    }
+    }*/
 
 
     
