@@ -1,10 +1,10 @@
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <stdexcept>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
-#include <array>
-#include <tuple>
-#include <stdexcept>
 
 static constexpr std::size_t VECTOR_LIMIT = 64;
 
@@ -20,10 +20,9 @@ class BackgroundAggregator {
         if (x >= 0 && x < VECTOR_LIMIT) {
             ++_small_hist[x];
         } else {
-
             if (!_large_hist) {
-                    _large_hist = new std::unordered_map<int, std::size_t>();
-                }
+                _large_hist = new std::unordered_map<int, std::size_t>();
+            }
             ++(*_large_hist)[x];
         }
         ++n_pixels;
@@ -32,41 +31,42 @@ class BackgroundAggregator {
     int num_pixels() const {
         return n_pixels;
     }
-    const auto& small_hist()  const { return _small_hist; }
-    const auto* large_hist()  const { return _large_hist; }
-
-    void add(const BackgroundAggregator& other) {
-            for (std::size_t i = 0; i < VECTOR_LIMIT; ++i) {
-                _small_hist[i] += other._small_hist[i];
-            }
-
-            if (other._large_hist) {
-                if (!_large_hist) {
-                    _large_hist = new std::unordered_map<int, std::size_t>();
-                }
-                for (const auto& [k, v] : *other._large_hist) {
-                    (*_large_hist)[k] += v;
-                }
-            }
-
-            n_pixels += other.n_pixels;
+    const auto &small_hist() const {
+        return _small_hist;
+    }
+    const auto *large_hist() const {
+        return _large_hist;
     }
 
+    void add(const BackgroundAggregator &other) {
+        for (std::size_t i = 0; i < VECTOR_LIMIT; ++i) {
+            _small_hist[i] += other._small_hist[i];
+        }
+
+        if (other._large_hist) {
+            if (!_large_hist) {
+                _large_hist = new std::unordered_map<int, std::size_t>();
+            }
+            for (const auto &[k, v] : *other._large_hist) {
+                (*_large_hist)[k] += v;
+            }
+        }
+
+        n_pixels += other.n_pixels;
+    }
 
   private:
     // Use two data structures for the histogram
     // - a small array for small counts (< VECTOR_LIMIT) (vast majority of pixels, efficient for adding a large number of low-value pixels)
     // - an unordered map pointer for large counts (sparse, infrequent, efficient for adding a low number of high-value pixels (perhaps outliers))
     std::array<std::size_t, VECTOR_LIMIT> _small_hist{};
-    std::unordered_map<int, std::size_t>* _large_hist = nullptr;
+    std::unordered_map<int, std::size_t> *_large_hist = nullptr;
     int n_pixels = 0;
 };
 
-
 // Simple background with tukey outlier for now.
-std::tuple<double, double>
-compute_background_constant_3d(const BackgroundAggregator& data)
-{
+std::tuple<double, double> compute_background_constant_3d(
+  const BackgroundAggregator &data) {
     constexpr double iqr_multiplier = 1.5;
 
     const int N = data.num_pixels();
@@ -79,8 +79,8 @@ compute_background_constant_3d(const BackgroundAggregator& data)
     const std::size_t p50 = (N + 1) / 2;
     const std::size_t p75 = (3 * N + 1) / 4;
 
-    const auto& small_hist = data.small_hist();
-    const auto* large_hist = data.large_hist();  // may be nullptr
+    const auto &small_hist = data.small_hist();
+    const auto *large_hist = data.large_hist();  // may be nullptr
 
     std::size_t cumulative = 0;
     int q1 = -1, median = -1, q3 = -1;
@@ -101,7 +101,7 @@ compute_background_constant_3d(const BackgroundAggregator& data)
     if (q3 < 0 && large_hist != nullptr) {
         std::vector<int> keys;
         keys.reserve(large_hist->size());
-        for (const auto& [k, _] : *large_hist) {
+        for (const auto &[k, _] : *large_hist) {
             keys.push_back(k);
         }
         std::sort(keys.begin(), keys.end());
@@ -144,7 +144,7 @@ compute_background_constant_3d(const BackgroundAggregator& data)
 
     // Large histogram (if present)
     if (large_hist != nullptr) {
-        for (const auto& [value, count] : *large_hist) {
+        for (const auto &[value, count] : *large_hist) {
             if (value < lower_bound || value > upper_bound) {
                 continue;
             }
@@ -155,7 +155,8 @@ compute_background_constant_3d(const BackgroundAggregator& data)
     }
 
     if (included_count == 0) {
-        throw std::runtime_error("No background data remaining after outlier rejection");
+        throw std::runtime_error(
+          "No background data remaining after outlier rejection");
     }
 
     const double mean = weighted_sum / static_cast<double>(included_count);
