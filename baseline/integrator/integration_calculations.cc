@@ -54,7 +54,7 @@ class CoordinateSystem {
         scaled_e2_ = e2_ / s1_length;
         zeta_ = m2_.dot(e1_);
     }
-    Vector3d coords_from_s1vector(const Vector3d s_dash, double phi_dash) {
+    Vector3d coords_from_s1vector(const Vector3d s_dash, double phi_dash) const {
         Vector3d coord = {scaled_e1_.dot(s_dash - s1_),
                           scaled_e2_.dot(s_dash - s1_),
                           zeta_ * (phi_dash - phi_)};

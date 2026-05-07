@@ -181,16 +181,14 @@ std::vector<ImageRange> split_ranges(size_t n_images, size_t n_threads) {
     return ranges;
 }
 
-using PixelGeomBuffer = std::vector<Vector3d>;
+using PixelToS1Buffer = std::vector<Vector3d>;
 
 struct SharedConstants {
-    // --- Sizes ---
-    size_t n_reflections;
 
     // --- Reflection selection ---
     const std::vector<bool>& dont_integrate;
     const std::vector<BoundingBoxExtents>& computed_bounding_boxes;
-    std::vector<CoordinateSystem>& coord_system_vector;
+    const std::vector<CoordinateSystem>& coord_system_vector;
 
     // --- Reflection geometry ---
     const mdspan_type<double> phi_column;     // shape: [n_reflections, 3]
@@ -200,54 +198,47 @@ struct SharedConstants {
     double dphi;
     double DEG2RAD;
 
-    // --- Beam ---
-    double s0_length;
-
     // --- Foreground/background model ---
     FGAlgorithm fg_algorithm;   // "ellipsoid" or "dials"
 
     double delta_b_r2;
     double delta_m_r2;
 
-    const PixelGeomBuffer& pixel_geom;
+    const PixelToS1Buffer& pixel_to_s1_map;
 
-    int geom_width;
-    int geom_height;
+    int bbox_extent_width;
     int global_x_min;
     int global_y_min;
 
     SharedConstants(
-        size_t n_reflections_,
         const std::vector<bool>& dont_integrate_,
         const std::vector<BoundingBoxExtents>& computed_bounding_boxes_,
-        std::vector<CoordinateSystem>& coord_system_vector_,
+        const std::vector<CoordinateSystem>& coord_system_vector_,
         const mdspan_type<double> phi_column_,
         double phi0_,
         double dphi_,
-        double s0_length_,
         FGAlgorithm fg_algorithm_,
         double delta_b_r2_,
         double delta_m_r2_,
-        const PixelGeomBuffer& pixel_geom_,
-        int geom_width_,
-        int geom_height_,
+        const PixelToS1Buffer& pixel_to_s1_map_,
+        int bbox_extent_width_,
         int global_x_min_,
         int global_y_min_
     )
-      : n_reflections(n_reflections_),
-        dont_integrate(dont_integrate_),
+      : dont_integrate(dont_integrate_),
         computed_bounding_boxes(computed_bounding_boxes_),
         coord_system_vector(coord_system_vector_),
         phi_column(phi_column_),
         phi0(phi0_),
         dphi(dphi_),
         DEG2RAD(M_PI / 180.0),
-        s0_length(s0_length_),
         fg_algorithm(std::move(fg_algorithm_)),
         delta_b_r2(delta_b_r2_),
         delta_m_r2(delta_m_r2_),
-        pixel_geom(pixel_geom_),
-        geom_width(geom_width_), geom_height(geom_height_), global_x_min(global_x_min_), global_y_min(global_y_min_) {}
+        pixel_to_s1_map(pixel_to_s1_map_),
+        bbox_extent_width(bbox_extent_width_),
+        global_x_min(global_x_min_),
+        global_y_min(global_y_min_) {}
 };
 
 
@@ -267,12 +258,12 @@ Accumulator process_image_range(
 
     int global_x_min = constants.global_x_min;
     int global_y_min = constants.global_y_min;
-    int geom_width = constants.geom_width;
+    int bbox_extent_width = constants.bbox_extent_width;
 
     auto geom_index = [&](int x, int y) -> size_t {
         return static_cast<size_t>(
             (x - global_x_min) +
-            (y - global_y_min) * geom_width
+            (y - global_y_min) * bbox_extent_width
         );
     };
 
@@ -315,14 +306,14 @@ Accumulator process_image_range(
                 }
                 
                 double phi_c = constants.phi_column(refl_id, 2);
-                CoordinateSystem& cs = constants.coord_system_vector[refl_id];
+                const CoordinateSystem& cs = constants.coord_system_vector[refl_id];
 
                 for (int y = 0; y < n_y; ++y) {
                     int row = y * n_x;
                     for (int x = 0; x < n_x; ++x) {
                         int index = row + x;
                         const Vector3d& s1dash =
-                            constants.pixel_geom[
+                            constants.pixel_to_s1_map[
                                 geom_index(x+bbox.x_min,y+ bbox.y_min)
                             ];
 
@@ -433,13 +424,13 @@ Accumulator process_image_range(
                   constants.phi0
                   + (j * constants.dphi)
                       * constants.DEG2RAD;  // Required for calls but not actually used as don't use e3.
-                CoordinateSystem& cs = constants.coord_system_vector[refl_id];
+                const CoordinateSystem& cs = constants.coord_system_vector[refl_id];
 
                 for (int x = 0; x < n_x; x++) {
                     for (int y = 0; y < n_y; y++) {
                         int index = x + (y * (n_x));
                         const Vector3d& s1dash =
-                            constants.pixel_geom[
+                            constants.pixel_to_s1_map[
                                 (x + bbox.x_min) + (y + bbox.y_min) * image_fast
                             ];
                         Vector3d epsilon_coords = cs.coords_from_s1vector(s1dash, phi);
@@ -883,15 +874,15 @@ int main(int argc, char **argv) {
     auto [image_slow, image_fast] = reader.image_shape();
     auto mask = reader.get_mask().value();
 
-    int geom_width  = global_x_max - global_x_min + 1;
-    int geom_height = global_y_max - global_y_min + 1;
+    int bbox_extent_width  = global_x_max - global_x_min + 1;
+    int bbox_extent_height = global_y_max - global_y_min + 1;
 
-    PixelGeomBuffer pixel_geom(geom_width * geom_height);
+    PixelToS1Buffer pixel_to_s1_map(bbox_extent_width * bbox_extent_height);
 
     auto geom_index = [&](int x, int y) -> size_t {
         return static_cast<size_t>(
             (x - global_x_min) +
-            (y - global_y_min) * geom_width
+            (y - global_y_min) * bbox_extent_width
         );
     };
     
@@ -900,18 +891,18 @@ int main(int argc, char **argv) {
             auto px_mm = panel.px_to_mm(x, y);
             Vector3d s1 = panel.get_lab_coord(px_mm[0], px_mm[1]);
             s1.normalize();
-            pixel_geom[geom_index(x, y)] =
+            pixel_to_s1_map[geom_index(x, y)] =
                 s1 * s0_length;
         }
     }
 
     SharedConstants constants = SharedConstants(
-        num_reflections, dont_integrate,
+        dont_integrate,
         computed_bounding_boxes,
         coord_system_vector,
         phi_column,
-        phi0, dphi, s0_length, fg_algorithm, delta_b_r2, delta_m_r2, pixel_geom,
-        geom_width, geom_height, global_x_min, global_y_min);
+        phi0, dphi, fg_algorithm, delta_b_r2, delta_m_r2, pixel_to_s1_map,
+        bbox_extent_width, global_x_min, global_y_min);
     
     logger.info("Made shared constants");
 
