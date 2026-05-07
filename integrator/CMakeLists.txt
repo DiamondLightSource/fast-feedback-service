@@ -6,6 +6,8 @@ find_package(Bitshuffle REQUIRED)
 
 add_executable(integrator
     integrator.cc
+    integrator.cu
+    extent.cc
     ../spotfinder/shmread.cc
     ../spotfinder/cbfread.cc
 )
