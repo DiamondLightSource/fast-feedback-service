@@ -3,83 +3,27 @@
  * @brief Extent and bounding box algorithms for baseline CPU implementation
  */
 
-#include <Eigen/Dense>
+#include "integrator/extent.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <dx2/beam.hpp>
-#include <dx2/experiment.hpp>
-#include <dx2/goniometer.hpp>
-#include <dx2/reflection.hpp>
-#include <experimental/mdspan>
 
 #include "ffs_logger.hpp"
 
-// Define a 2D mdspan type alias for convenience
-using mdspan_2d =
-  std::experimental::mdspan<double, std::experimental::dextents<size_t, 2>>;
-
-/**
- * @brief Structure to hold pixel coordinate extents for reflection bounding
- * boxes.
- *
- * Contains the minimum and maximum bounds in detector pixel coordinates (x, y)
- * and image numbers (z) that define the region of interest around each
- * reflection for integration.
- */
-struct BoundingBoxExtents {
-    double x_min, x_max;  ///< Detector x-pixel range (fast axis)
-    double y_min, y_max;  ///< Detector y-pixel range (slow axis)
-    int z_min, z_max;     ///< Image number range (rotation axis)
-};
-
-/**
- * @brief Compute bounding box extents for reflection integration using the
- * Kabsch coordinate system.
- *
- * 1. Calculates angular divergence parameters Δb and Δm
- * 2. Projects these divergences onto the Kabsch coordinate system to find
- *    the corners of the integration region in reciprocal space
- * 3. Transforms these reciprocal space coordinates back to detector pixel
- *    coordinates and image numbers to define practical bounding boxes
- *
- * The method accounts for the non-orthonormal nature of the Kabsch basis
- * and ensures that the bounding boxes encompass the full extent of each
- * reflection's diffraction profile.
- *
- * @param s0 Incident beam vector (s₀), units of 1/Å
- * @param rot_axis Unit goniometer rotation axis vector (m₂)
- * @param s1_vectors Matrix of predicted s₁ vectors for all reflections,
- *                   shape (num_reflections, 3)
- * @param phi_positions Matrix containing reflection positions, where the third
- *                      column contains φᶜ values in radians
- * @param num_reflections Number of reflections to process
- * @param sigma_b Beam divergence standard deviation (σb), in reciprocal space
- *                units
- * @param sigma_m Mosaicity standard deviation (σm), in reciprocal space units
- * @param panel Detector panel object for coordinate transformations
- * @param scan Scan object containing oscillation and image range information
- * @param beam Beam object for wavelength and other beam properties
- * @param n_sigma Number of standard deviations to include in the bounding box
- *                (default: 3.0)
- * @param sigma_b_multiplier Additional multiplier for beam divergence
- *                           (default: 2.0, called 'm' in DIALS)
- * @return Vector of BoundingBoxExtents structures, one per reflection
- */
 std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
   const Eigen::Vector3d &s0,
   const Eigen::Vector3d &rot_axis,
-  const mdspan_2d &s1_vectors,
-  const mdspan_2d &phi_positions,
+  const mdspan_2d_double &s1_vectors,
+  const mdspan_2d_double &phi_positions,
   const size_t num_reflections,
-  const double sigma_b,                     // σb in radians
-  const double sigma_m,                     // σm in radians
-  const Panel &panel,                       // Panel for coordinate transformations
-  const Scan &scan,                         // Scan for oscillation and image range data
-  const MonochromaticBeam &beam,            // Beam for wavelength
-  const double n_sigma = 3.0,               // Number of standard deviations
-  const double sigma_b_multiplier = 2.0) {  // m parameter from DIALS
-
+  const double sigma_b,
+  const double sigma_m,
+  const Panel &panel,
+  const Scan &scan,
+  const MonochromaticBeam &beam,
+  const double n_sigma,
+  const double sigma_b_multiplier) {
     std::vector<BoundingBoxExtents> extents;
     extents.reserve(num_reflections);
 
@@ -99,6 +43,7 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
     // Calculate the angular divergence parameters:
     // Δb = nσ × σb × m (beam divergence extent)
     // Δm = nσ × σm (mosaicity extent)
+    // ** IN RADIANS **
     double delta_b = n_sigma * sigma_b * sigma_b_multiplier;
     double delta_m = n_sigma * sigma_m;
 
@@ -134,7 +79,7 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
             // Project Δb divergences onto Kabsch basis vectors
             // p represents the displacement in reciprocal space
             Eigen::Vector3d p =
-              (e1_sign * delta_b * e1 / s1_len) + (e2_sign * delta_b * e2 / s1_len);
+              (e1_sign * delta_b * e1 * s1_len) + (e2_sign * delta_b * e2 * s1_len);
 
             // Debug output for the Ewald sphere calculation
             double p_magnitude = p.norm();
@@ -174,18 +119,18 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
             s_prime_vectors.push_back(s_prime);
         }
 
-        // Transform s′ vectors back to detector coordinates using Panel's get_ray_intersection
+        // Transform s′ vectors back to detector coordinates using Panel's get_ray_intersection_unbounded
         std::vector<std::pair<double, double>> detector_coords;
         for (const auto &s_prime : s_prime_vectors) {
             // Direct conversion from s′ vector to detector coordinates
-            // get_ray_intersection returns coordinates in mm
-            auto xy_mm_opt = panel.get_ray_intersection(s_prime);
+            // get_ray_intersection_unbounded returns coordinates in mm
+            auto xy_mm_opt = panel.get_ray_intersection_unbounded(s_prime);
             if (!xy_mm_opt) {
                 continue;  // Skip this corner if no intersection
             }
             std::array<double, 2> xy_mm = *xy_mm_opt;
 
-            // Convert from mm to pixels using the new mm_to_px function
+            // Convert from mm to pixels
             std::array<double, 2> xy_pixels = panel.mm_to_px(xy_mm[0], xy_mm[1]);
 
             detector_coords.push_back({xy_pixels[0], xy_pixels[1]});
@@ -204,10 +149,10 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
 
         BoundingBoxExtents bbox;
         // Use floor/ceil as specified in the paper: xmin = floor(min([x1,x2,x3,x4]))
-        bbox.x_min = std::floor(min_x_it->first);
-        bbox.x_max = std::ceil(max_x_it->first);
-        bbox.y_min = std::floor(min_y_it->second);
-        bbox.y_max = std::ceil(max_y_it->second);
+        bbox.x_min = static_cast<int>(std::floor(min_x_it->first));
+        bbox.x_max = static_cast<int>(std::ceil(max_x_it->first));
+        bbox.y_min = static_cast<int>(std::floor(min_y_it->second));
+        bbox.y_max = static_cast<int>(std::ceil(max_y_it->second));
 
         // Calculate the image range (z-direction) using mosaicity parameter Δm
         // The extent in φ depends on the geometry factor ζ = m₂ · e₁
@@ -227,11 +172,18 @@ std::vector<BoundingBoxExtents> compute_kabsch_bounding_boxes(
             double z_minus =
               image_range_start - 1 + ((phi_minus_deg - osc_start) / osc_width);
 
-            // Clamp to the actual image range and use floor/ceil for integer bounds
+            // Clamp to the actual image range and use floor/ceil for integer bounds.
+            // Mirrors DIALS array_range = [image_range_start-1, image_range_end]:
+            //   z_min in [array_range[0],   array_range[1]-1]
+            //   z_max in [array_range[0]+1, array_range[1]  ]
+            int z_min_unclamped =
+              static_cast<int>(std::floor(std::min(z_plus, z_minus)));
+            int z_max_unclamped =
+              static_cast<int>(std::ceil(std::max(z_plus, z_minus)));
             bbox.z_min =
-              std::max(image_range_start, (int)std::floor(std::min(z_plus, z_minus)));
+              std::clamp(z_min_unclamped, image_range_start - 1, image_range_end - 1);
             bbox.z_max =
-              std::min(image_range_end, (int)std::ceil(std::max(z_plus, z_minus)));
+              std::clamp(z_max_unclamped, image_range_start, image_range_end);
         } else {
             // Handle degenerate case where reflection is parallel to rotation axis
             // In this case, the reflection spans the entire image range
