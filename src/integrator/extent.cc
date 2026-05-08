@@ -3,7 +3,7 @@
  * @brief Extent and bounding box algorithms for baseline CPU implementation
  */
 
-#include "extent.hpp"
+#include "integrator/extent.hpp"
 
 #include <algorithm>
 #include <array>
