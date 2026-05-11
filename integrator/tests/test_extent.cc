@@ -3,17 +3,21 @@
  * @brief Unit tests for compute_kabsch_bounding_boxes (CPU, extent.cc)
  *
  * Tests the Kabsch bounding box computation against DIALS integrator
- * stage dumps. Input reflection geometry comes from bbox_before.h5
- * (pre-compute_bbox), and expected bounding boxes from bbox_after.h5
- * (post-compute_bbox). All HDF5 datasets are under the internal group
- * "dials/processing/group_0".
+ * stage dumps. Input reflection geometry comes from predicted.refl
+ * (pre-compute_bbox), and expected bounding boxes from
+ * predicted_withbbox.refl (post-compute_bbox). All HDF5 datasets are
+ * under the internal group "dials/processing/group_0".
+ *
+ * The data directory is taken from the FFS_INTEGRATE_TEST_DATA env var,
+ * falling back to /scratch/ffs_integrate_test_data. If the directory
+ * does not exist the test is skipped.
  */
 
 #include <gtest/gtest.h>
-#include <hdf5.h>
 
 #include <Eigen/Dense>
 #include <algorithm>
+#include <cstdlib>
 #include <dx2/beam.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
@@ -27,7 +31,6 @@
 #include <tuple>
 #include <vector>
 
-#include "ffs_logger.hpp"
 #include "integrator/extent.hpp"
 #include "math/math_utils.cuh"
 
@@ -39,82 +42,53 @@ static const std::string G = "dials/processing/group_0/";
 class ExtentTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        data_dir = "/scratch/ffs_integrate_test_data";
+        if (const char *env = std::getenv("FFS_INTEGRATE_TEST_DATA")) {
+            data_dir = env;
+        } else {
+            data_dir = "/scratch/ffs_integrate_test_data";
+        }
+        if (!fs::exists(data_dir)) {
+            GTEST_SKIP() << "Integrator test data directory not found: " << data_dir
+                         << " (set FFS_INTEGRATE_TEST_DATA to override)";
+        }
     }
 
     fs::path data_dir;
-
-    void assert_file_exists(const fs::path &p) {
-        ASSERT_TRUE(fs::exists(p)) << "Required test file not found: " << p;
-    }
 };
 
 /*
- * Bounding Box Computation
+ * Bounding Box Computation Test
  *
- * Computes Kabsch integration bounding boxes for each reflection.
- * The detector-plane extents (x, y) are determined by projecting
- * the beam divergence envelope (±Δb in Kabsch e₁/e₂ directions)
- * back onto the Ewald sphere and then onto the detector via
- * ray-intersection. The rotation-axis extent (z) is derived from
- * the mosaicity parameter: φ′ = φᶜ ± Δm/ζ, where ζ = m₂ · e₁.
- *
- * Input (bbox_before.h5, group dials/processing/group_0):
+ * Input (predicted.refl, group dials/processing/group_0):
  *   - s1            (N×3 double) - predicted s₁ vectors
  *   - xyzcal.mm     (N×3 double) - predicted positions (x, y, φ)
- *   - Attributes on root: σ_b, σ_m (radians)
+ *   - miller_index  (N×3 int32)  - Miller indices for matching
  *
  * Geometry (indexed.expt):
  *   - s₀ from MonochromaticBeam, m₂ from Goniometer
  *
- * Output (bbox_after.h5, group dials/processing/group_0):
- *   - bbox          (N×6 int)    - [x_min, x_max, y_min, y_max, z_min, z_max]
+ * Output (predicted_withbbox.refl, group dials/processing/group_0):
+ *   - bbox          (N×6 int32)  - [x_min, x_max, y_min, y_max, z_min, z_max]
+ *   - miller_index  (N×3 int32)
+ *
+ * σ_b and σ_m are fixed test values, since the indexed.expt used here
+ * has no fitted profile model.
  */
 
 TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
     auto before_file = data_dir / "predicted.refl";
     auto after_file = data_dir / "predicted_withbbox.refl";
     auto expt_file = data_dir / "indexed.expt";
-    assert_file_exists(before_file);
-    assert_file_exists(after_file);
-    assert_file_exists(expt_file);
+    ASSERT_TRUE(fs::exists(before_file)) << "Missing input file: " << before_file;
+    ASSERT_TRUE(fs::exists(after_file)) << "Missing input file: " << after_file;
+    ASSERT_TRUE(fs::exists(expt_file)) << "Missing input file: " << expt_file;
 
-    // Helper: print the actual HDF5 type size for a dataset
-    auto print_h5_type_size = [](const std::string &filepath,
-                                 const std::string &dataset_path) {
-        hid_t file = H5Fopen(filepath.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
-        if (file < 0) {
-            std::cout << "  [could not open file]\n";
-            return;
-        }
-        hid_t dset = H5Dopen(file, dataset_path.c_str(), H5P_DEFAULT);
-        if (dset < 0) {
-            H5Fclose(file);
-            std::cout << "  [could not open dataset]\n";
-            return;
-        }
-        hid_t dtype = H5Dget_type(dset);
-        std::cout << "  HDF5 type size = " << H5Tget_size(dtype) << " bytes"
-                  << ", class = " << H5Tget_class(dtype) << "\n";
-        H5Tclose(dtype);
-        H5Dclose(dset);
-        H5Fclose(file);
-    };
-
-    // Load predicted s₁ vectors and calculated positions from the pre-bbox reflection table
+    // Load predicted s₁ vectors and calculated positions
     auto before_path = before_file.string();
-
-    // std::cout << "Reading " << G + "s1" << " as double (sizeof=" << sizeof(double) << ")...\n";
-    // print_h5_type_size(before_path, G + "s1");
     auto s1_flat = read_array_from_h5_file<double>(before_path, G + "s1");
-    // std::cout << "  -> read " << s1_flat.size() << " elements\n";
-
-    // std::cout << "Reading " << G + "xyzcal.mm" << " as double (sizeof=" << sizeof(double) << ")...\n";
-    // print_h5_type_size(before_path, G + "xyzcal.mm");
     auto xyzcal_flat = read_array_from_h5_file<double>(before_path, G + "xyzcal.mm");
-    // std::cout << "  -> read " << xyzcal_flat.size() << " elements\n";
 
-    // σ_b (beam divergence) and σ_m (mosaicity) - fixed test values
+    // Fixed test values for σ_b (beam divergence) and σ_m (mosaicity)
     double sigma_b = degrees_to_radians(0.03);
     double sigma_m = degrees_to_radians(0.1);
 
@@ -166,7 +140,7 @@ TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
     size_t num_expected = after_hkl_flat.size() / 3;
     ASSERT_EQ(expected_bbox.size(), num_expected * 6);
 
-    // (h,k,l) → row index in the after file; multimap because the
+    // (h,k,l) row index in the after file; multimap because the
     // same HKL can appear on adjacent images
     using HKL = std::tuple<int64_t, int64_t, int64_t>;
     std::multimap<HKL, size_t> after_hkl_to_row;
