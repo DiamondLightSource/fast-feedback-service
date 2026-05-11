@@ -7,8 +7,8 @@ find_package(Bitshuffle REQUIRED)
 add_executable(integrator
     integrator.cc
     integrator.cu
+    ${CMAKE_SOURCE_DIR}/src/integrator/extent.cc
     kabsch.cu
-    extent.cc
     ../spotfinder/shmread.cc
     ../spotfinder/cbfread.cc
 )

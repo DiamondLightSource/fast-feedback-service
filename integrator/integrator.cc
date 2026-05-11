@@ -37,7 +37,7 @@
 #include "extent.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
-#include "kabsch.cuh"
+#include "math/device_precision.cuh"
 #include "math/math_utils.cuh"
 #include "math/vector3d.cuh"
 #include "predict.cc"
@@ -678,6 +678,13 @@ int main(int argc, char **argv) {
                 // Launch Kabsch transform kernel for this image
                 // This computes Kabsch coordinates and atomically accumulates
                 // foreground/background intensities for summation integration
+                logger.debug("Launching GPU kernel for image {} with {} reflections",
+                             image_num,
+                             num_refls_this_image);
+                logger.info(
+                  "Kabsch kernel not yet implemented, skipping GPU processing for "
+                  "image {}",
+                  image_num);
                 compute_kabsch_transform(device_image.get(),
                                          device_image.pitch_bytes(),
                                          width,

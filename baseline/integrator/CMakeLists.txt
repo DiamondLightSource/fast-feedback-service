@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_executable(baseline_integrator
     integrator.cc
+    ${CMAKE_SOURCE_DIR}/src/integrator/extent.cc
 )
 
 target_include_directories(baseline_integrator PRIVATE ${CMAKE_SOURCE_DIR}/baseline/predictor)
