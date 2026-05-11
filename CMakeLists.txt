@@ -141,8 +141,8 @@ target_include_directories(ffs_common PUBLIC
 )
 target_link_libraries(ffs_common PUBLIC
     compile_options
-    spdlog
-    fmt
+    spdlog::spdlog
+    fmt::fmt
     argparse
 )
 
