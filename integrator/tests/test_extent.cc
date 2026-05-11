@@ -27,8 +27,8 @@
 #include <tuple>
 #include <vector>
 
-#include "extent.hpp"
 #include "ffs_logger.hpp"
+#include "integrator/extent.hpp"
 #include "math/math_utils.cuh"
 
 namespace fs = std::filesystem;

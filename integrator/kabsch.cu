@@ -50,9 +50,9 @@
 
 #include "cuda_common.hpp"
 #include "device_common.cuh"
-#include "extent.hpp"
 #include "h5read.h"
 #include "integrator.cuh"
+#include "integrator/extent.hpp"
 #include "kabsch.cuh"
 #include "math/math_utils.cuh"
 

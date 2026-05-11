@@ -25,8 +25,8 @@
 
 #include <cstddef>
 
-#include "extent.hpp"
 #include "h5read.h"
+#include "integrator/extent.hpp"
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
 

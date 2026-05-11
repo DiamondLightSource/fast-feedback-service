@@ -1,6 +1,6 @@
 include(GoogleTest)
 
-add_executable(test_extent test_extent.cc ../extent.cc)
+add_executable(test_extent test_extent.cc ${CMAKE_SOURCE_DIR}/src/integrator/extent.cc)
 target_include_directories(test_extent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(test_extent PRIVATE 
     ffs_common
@@ -11,7 +11,7 @@ target_link_libraries(test_extent PRIVATE
     nlohmann_json::nlohmann_json
 )
 
-add_executable(test_kabsch test_kabsch.cc ../kabsch.cu ../extent.cc)
+add_executable(test_kabsch test_kabsch.cc ../kabsch.cu ${CMAKE_SOURCE_DIR}/src/integrator/extent.cc)
 set_source_files_properties(../kabsch.cu PROPERTIES LANGUAGE CUDA)
 target_include_directories(test_kabsch PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..

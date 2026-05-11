@@ -46,8 +46,8 @@
 #include <vector>
 
 #include "cuda_common.hpp"
-#include "extent.hpp"
 #include "ffs_logger.hpp"
+#include "integrator/extent.hpp"
 #include "kabsch.cuh"
 #include "math/math_utils.cuh"
 #include "math/vector3d.cuh"
