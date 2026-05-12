@@ -405,8 +405,8 @@ Accumulator process_image_range(
                     dxy.resize(required);
                 }
                 double phi =
-                  constants.phi0
-                  + (j * constants.dphi)
+                  (constants.phi0
+                  + (j * constants.dphi))
                       * constants
                           .DEG2RAD;  // Required for calls but not actually used as don't use e3.
                 const CoordinateSystem &cs = constants.coord_system_vector[refl_id];
@@ -414,9 +414,11 @@ Accumulator process_image_range(
                 for (int x = 0; x < n_x; x++) {
                     for (int y = 0; y < n_y; y++) {
                         int index = x + (y * (n_x));
-                        const Vector3d &s1dash =
-                          constants.pixel_to_s1_map[(x + bbox.x_min)
-                                                    + (y + bbox.y_min) * image_fast];
+                        //const Vector3d &s1dash =
+                        //  constants.pixel_to_s1_map[(x + bbox.x_min)
+                        //                            + (y + bbox.y_min) * image_fast];
+                        const Vector3d &s1dash = constants.pixel_to_s1_map[geom_index(
+                          x + bbox.x_min, y + bbox.y_min)];
                         Vector3d epsilon_coords = cs.coords_from_s1vector(s1dash, phi);
 
                         dxy[index] = ((epsilon_coords[0] * epsilon_coords[0]
