@@ -404,21 +404,15 @@ Accumulator process_image_range(
                 if (dxy.size() < required) {
                     dxy.resize(required);
                 }
-                double phi =
-                  (constants.phi0 + (j * constants.dphi))
-                  * constants
-                      .DEG2RAD;  // Required for calls but not actually used as don't use e3.
                 const CoordinateSystem &cs = constants.coord_system_vector[refl_id];
 
                 for (int x = 0; x < n_x; x++) {
                     for (int y = 0; y < n_y; y++) {
                         int index = x + (y * (n_x));
-                        //const Vector3d &s1dash =
-                        //  constants.pixel_to_s1_map[(x + bbox.x_min)
-                        //                            + (y + bbox.y_min) * image_fast];
                         const Vector3d &s1dash = constants.pixel_to_s1_map[geom_index(
                           x + bbox.x_min, y + bbox.y_min)];
-                        Vector3d epsilon_coords = cs.coords_from_s1vector(s1dash, phi);
+                        // Phi value required for calls but not actually used as don't use e3.
+                        Vector3d epsilon_coords = cs.coords_from_s1vector(s1dash, phidash_start);
 
                         dxy[index] = ((epsilon_coords[0] * epsilon_coords[0]
                                        + epsilon_coords[1] * epsilon_coords[1])
@@ -428,7 +422,7 @@ Accumulator process_image_range(
                 // Now loop through pixels in bbox, adding to foreground or background if unmasked and in image.
                 for (int x = bbox.x_min; x < bbox.x_max; x++) {
                     for (int y = bbox.y_min; y < bbox.y_max; y++) {
-                        // The bounding box may extend beyond the image - if so, this is ok if it iis only background
+                        // The bounding box may extend beyond the image - if so, this is ok if it is only background
                         // but not if it is foreground.
                         int x_index = x - bbox.x_min;
                         int y_index = y - bbox.y_min;
@@ -936,7 +930,9 @@ int main(int argc, char **argv) {
 
 #pragma region Finalize calculations
     // Convert bbox data to reflection table format
-    std::vector<double> computed_bbox_data;
+    // FIXME - these are not yet output as seems to cause an issue with dials?
+    /*
+    std::vector<int> computed_bbox_data;
     computed_bbox_data.reserve(num_reflections * 6);
     for (const auto &bbox : computed_bounding_boxes) {
         computed_bbox_data.insert(computed_bbox_data.end(),
@@ -944,13 +940,12 @@ int main(int argc, char **argv) {
                                    bbox.x_max,
                                    bbox.y_min,
                                    bbox.y_max,
-                                   static_cast<double>(bbox.z_min),
-                                   static_cast<double>(bbox.z_max)});
+                                   bbox.z_min,
+                                   bbox.z_max});
     }
-    // FIXME - these are not yet output as seems to cause an issue with dials?
     // Add computed bounding boxes to reflection table
     //integrated_data.add_column(
-    //  "baseline_bbox", std::vector<size_t>{num_reflections, 6}, computed_bbox_data);
+    //  "baseline_bbox", std::vector<size_t>{num_reflections, 6}, computed_bbox_data);*/
 
     // Do the calculations to determine the background-subtracted intensities as well as other quantities of interest.
     std::vector<double> intensities(num_reflections);
