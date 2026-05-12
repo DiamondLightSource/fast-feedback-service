@@ -405,10 +405,9 @@ Accumulator process_image_range(
                     dxy.resize(required);
                 }
                 double phi =
-                  (constants.phi0
-                  + (j * constants.dphi))
-                      * constants
-                          .DEG2RAD;  // Required for calls but not actually used as don't use e3.
+                  (constants.phi0 + (j * constants.dphi))
+                  * constants
+                      .DEG2RAD;  // Required for calls but not actually used as don't use e3.
                 const CoordinateSystem &cs = constants.coord_system_vector[refl_id];
 
                 for (int x = 0; x < n_x; x++) {
