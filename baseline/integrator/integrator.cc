@@ -412,7 +412,8 @@ Accumulator process_image_range(
                         const Vector3d &s1dash = constants.pixel_to_s1_map[geom_index(
                           x + bbox.x_min, y + bbox.y_min)];
                         // Phi value required for calls but not actually used as don't use e3.
-                        Vector3d epsilon_coords = cs.coords_from_s1vector(s1dash, phidash_start);
+                        Vector3d epsilon_coords =
+                          cs.coords_from_s1vector(s1dash, phidash_start);
 
                         dxy[index] = ((epsilon_coords[0] * epsilon_coords[0]
                                        + epsilon_coords[1] * epsilon_coords[1])
