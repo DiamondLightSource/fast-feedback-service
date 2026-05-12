@@ -37,6 +37,8 @@
 #include "ffs_logger.hpp"
 #include "h5read.h"
 #include "integrator/extent.hpp"
+#include "kabsch.cuh"
+#include "math/device_precision.cuh"
 #include "math/math_utils.cuh"
 #include "math/vector3d.cuh"
 #include "predict.cc"
@@ -684,30 +686,30 @@ int main(int argc, char **argv) {
                   "Kabsch kernel not yet implemented, skipping GPU processing for "
                   "image {}",
                   image_num);
-                // compute_kabsch_transform(device_image.get(),
-                //                          device_image.pitch_bytes(),
-                //                          width,
-                //                          height,
-                //                          image_num,
-                //                          d_d_matrix.data(),
-                //                          wavelength,
-                //                          osc_start_scalar,
-                //                          osc_width_scalar,
-                //                          image_range_start,
-                //                          s0_vec,
-                //                          rot_axis_vec,
-                //                          d_s1_vectors.data(),
-                //                          d_phi_values.data(),
-                //                          d_bboxes.data(),
-                //                          d_reflection_indices.data(),
-                //                          num_refls_this_image,
-                //                          delta_b,
-                //                          delta_m,
-                //                          d_foreground_sum.data(),
-                //                          d_foreground_count.data(),
-                //                          d_background_sum.data(),
-                //                          d_background_count.data(),
-                //                          stream);
+                compute_kabsch_transform(device_image.get(),
+                                         device_image.pitch_bytes(),
+                                         width,
+                                         height,
+                                         image_num,
+                                         d_d_matrix.data(),
+                                         wavelength,
+                                         osc_start_scalar,
+                                         osc_width_scalar,
+                                         image_range_start,
+                                         s0_vec,
+                                         rot_axis_vec,
+                                         d_s1_vectors.data(),
+                                         d_phi_values.data(),
+                                         d_bboxes.data(),
+                                         d_reflection_indices.data(),
+                                         num_refls_this_image,
+                                         delta_b,
+                                         delta_m,
+                                         d_foreground_sum.data(),
+                                         d_foreground_count.data(),
+                                         d_background_sum.data(),
+                                         d_background_count.data(),
+                                         stream);
 
                 logger.trace("Thread {} loaded image {}", thread_id, image_num);
                 completed_images += 1;
