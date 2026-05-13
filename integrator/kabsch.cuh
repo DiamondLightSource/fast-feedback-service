@@ -26,6 +26,7 @@
 #include <cstddef>
 
 #include "h5read.h"
+#include "integrator.cuh"
 #include "integrator/extent.hpp"
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
@@ -70,6 +71,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                               int image_num,
                               const scalar_t *d_matrix,
                               scalar_t wavelength,
+                              DetectorParameters det_params,
                               scalar_t osc_start,
                               scalar_t osc_width,
                               int image_range_start,

@@ -43,6 +43,7 @@
 #include <vector>
 
 #include "cuda_common.hpp"
+#include "integrator.cuh"
 #include "integrator/extent.hpp"
 #include "kabsch.cuh"
 #include "math/math_utils.cuh"
@@ -101,6 +102,8 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
             d_matrix_scalar[i * 3 + j] = static_cast<scalar_t>(d_matrix_eigen(i, j));
+
+    DetectorParameters det_params = make_detector_params(panel);
 
     fastvec::Vector3D s0_vec =
       fastvec::make_vector3d(static_cast<scalar_t>(s0_eigen[0]),
@@ -207,6 +210,7 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
                                  image_num,
                                  d_d_matrix.data(),
                                  wavelength,
+                                 det_params,
                                  osc_start,
                                  osc_width,
                                  image_range_start,

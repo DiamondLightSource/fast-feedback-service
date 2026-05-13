@@ -36,6 +36,7 @@
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
+#include "integrator.cuh"
 #include "integrator/extent.hpp"
 #include "kabsch.cuh"
 #include "math/device_precision.cuh"
@@ -84,22 +85,6 @@ extern "C" void stop_processing(int sig) {
         global_stop.request_stop();
     }
 }
-
-/**
- * @brief Structure to hold detector parameters for GPU kernels
- * 
- * This struct packages all the detector-specific parameters needed for
- * correct coordinate transformations on the GPU, including parallax correction.
- */
-struct DetectorParameters {
-    scalar_t pixel_size[2];       // [x_size, y_size] in mm
-    bool parallax_correction;     // Whether to apply parallax correction
-    scalar_t mu;                  // Absorption coefficient
-    scalar_t thickness;           // Detector thickness in mm
-    fastvec::Vector3D fast_axis;  // Detector fast axis direction
-    fastvec::Vector3D slow_axis;  // Detector slow axis direction
-    fastvec::Vector3D origin;     // Detector origin position
-};
 
 #pragma region Argument Parsing
 class IntegratorArgumentParser : public CUDAArgumentParser {
@@ -521,6 +506,8 @@ int main(int argc, char **argv) {
     d_phi_values.assign(phi_values_vec.data());
     d_bboxes.assign(computed_bboxes.data());
 
+    DetectorParameters det_params = make_detector_params(panel);
+
     // Convert beam parameters to Vector3D
     fastvec::Vector3D s0_vec = to_vector3d(s0);
     fastvec::Vector3D rot_axis_vec = to_vector3d(rotation_axis);
@@ -693,6 +680,7 @@ int main(int argc, char **argv) {
                                          image_num,
                                          d_d_matrix.data(),
                                          wavelength,
+                                         det_params,
                                          osc_start_scalar,
                                          osc_width_scalar,
                                          image_range_start,
@@ -889,34 +877,7 @@ int main(int argc, char **argv) {
           static_cast<scalar_t>(phi_column(i, 2));  // Extract phi (z-component)
     }
 
-    // Extract detector parameters (assuming you add accessors to Panel class)
-    DetectorParameters detector_params;
-    auto pixel_size_array = panel.get_pixel_size();
-    detector_params.pixel_size[0] = static_cast<scalar_t>(pixel_size_array[0]);
-    detector_params.pixel_size[1] = static_cast<scalar_t>(pixel_size_array[1]);
-
-    // TODO: Add these accessors to Panel class
-    detector_params.parallax_correction = panel.has_parallax_correction();
-    detector_params.mu = static_cast<scalar_t>(panel.get_mu());
-    detector_params.thickness = static_cast<scalar_t>(panel.get_thickness());
-
-    // Convert geometry vectors to CUDA format
-    auto fast_axis_eigen = panel.get_fast_axis();
-    auto slow_axis_eigen = panel.get_slow_axis();
-    auto origin_eigen = panel.get_origin();
-
-    detector_params.fast_axis =
-      fastvec::make_vector3d(static_cast<scalar_t>(fast_axis_eigen.x()),
-                             static_cast<scalar_t>(fast_axis_eigen.y()),
-                             static_cast<scalar_t>(fast_axis_eigen.z()));
-    detector_params.slow_axis =
-      fastvec::make_vector3d(static_cast<scalar_t>(slow_axis_eigen.x()),
-                             static_cast<scalar_t>(slow_axis_eigen.y()),
-                             static_cast<scalar_t>(slow_axis_eigen.z()));
-    detector_params.origin =
-      fastvec::make_vector3d(static_cast<scalar_t>(origin_eigen.x()),
-                             static_cast<scalar_t>(origin_eigen.y()),
-                             static_cast<scalar_t>(origin_eigen.z()));
+    DetectorParameters detector_params = make_detector_params(panel);
 
     // Get D-matrix inverse
     auto d_matrix_inv = panel.get_d_matrix().inverse();

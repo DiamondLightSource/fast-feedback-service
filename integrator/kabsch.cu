@@ -178,6 +178,78 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
 }
 
 /**
+ * @brief Mean absorption path length through a flat sensor
+ *
+ *   o = (1/μ) − (t₀/cos_θ + 1/μ) · exp(−μ · t₀ / cos_θ)
+ *
+ * @param mu Linear attenuation coefficient μ (mm⁻¹)
+ * @param t0 Sensor thickness t₀ (mm)
+ * @param s1 Diffracted unit vector at the pixel
+ * @param fast Panel fast-axis direction f̂
+ * @param slow Panel slow-axis direction ŝ
+ * @param origin Panel origin (mm)
+ * @return Absorption depth o (mm)
+ */
+__device__ __forceinline__ scalar_t attenuation_length(scalar_t mu,
+                                                       scalar_t t0,
+                                                       Vector3D s1,
+                                                       Vector3D fast,
+                                                       Vector3D slow,
+                                                       Vector3D origin) {
+    // Panel normal n̂ = f̂ × ŝ, oriented toward the X-ray source
+    Vector3D normal = cross(fast, slow);
+    scalar_t distance = dot(origin, normal);
+    if (distance < scalar_t(0.0)) {
+        normal = -normal;
+    }
+
+    scalar_t cos_t = dot(s1, normal);
+
+    return (scalar_t(1.0) / mu)
+           - (t0 / cos_t + scalar_t(1.0) / mu) * exp(-mu * t0 / cos_t);
+}
+
+/**
+ * @brief Convert a pixel position to millimetre coordinates, optionally
+ *        applying the sensor parallax correction
+ *
+ *   x_mm = gx · px_size[0],  y_mm = gy · px_size[1]
+ *   c₁ = x_mm − (s₁ · f̂) · o
+ *   c₂ = y_mm − (s₁ · ŝ) · o
+ *
+ * GPU port of dx2::Panel::px_to_mm (detector.cxx).
+ *
+ * @param gx Pixel x index (fast axis)
+ * @param gy Pixel y index (slow axis)
+ * @param det Detector geometry and sensor parameters
+ * @param out_x Output x coordinate in mm
+ * @param out_y Output y coordinate in mm
+ */
+__device__ __forceinline__ void px_to_mm(int gx,
+                                         int gy,
+                                         const DetectorParameters &det,
+                                         scalar_t &out_x,
+                                         scalar_t &out_y) {
+    scalar_t x1 = static_cast<scalar_t>(gx) * det.pixel_size[0];
+    scalar_t x2 = static_cast<scalar_t>(gy) * det.pixel_size[1];
+
+    if (!det.parallax_correction) {
+        out_x = x1;
+        out_y = x2;
+        return;
+    }
+
+    Vector3D s1 = det.origin + det.fast_axis * x1 + det.slow_axis * x2;
+    s1 = normalized(s1);
+
+    scalar_t o = attenuation_length(
+      det.mu, det.thickness, s1, det.fast_axis, det.slow_axis, det.origin);
+
+    out_x = x1 - dot(s1, det.fast_axis) * o;
+    out_y = x2 - dot(s1, det.slow_axis) * o;
+}
+
+/**
  * @brief CUDA kernel with 8-corner voxel foreground classification
  *
  * Each thread represents a corner in the (width+1)×(height+1) corner grid.
@@ -224,6 +296,7 @@ __global__ void kabsch_transform(pixel_t *d_image,
                                  int image_num,
                                  const scalar_t *d_matrix,
                                  scalar_t wavelength,
+                                 DetectorParameters det_params,
                                  scalar_t osc_start,
                                  scalar_t osc_width,
                                  int image_range_start,
@@ -282,10 +355,13 @@ __global__ void kabsch_transform(pixel_t *d_image,
 
     Vector3D s_pixel = make_vector3d(0, 0, 0);
     if (corner_valid) {
+        scalar_t gx_mm, gy_mm;
+        px_to_mm(gx, gy, det_params, gx_mm, gy_mm);
+
         Vector3D lab_coord =
-          make_vector3d(d_matrix[0] * gx + d_matrix[1] * gy + d_matrix[2],
-                        d_matrix[3] * gx + d_matrix[4] * gy + d_matrix[5],
-                        d_matrix[6] * gx + d_matrix[7] * gy + d_matrix[8]);
+          make_vector3d(d_matrix[0] * gx_mm + d_matrix[1] * gy_mm + d_matrix[2],
+                        d_matrix[3] * gx_mm + d_matrix[4] * gy_mm + d_matrix[5],
+                        d_matrix[6] * gx_mm + d_matrix[7] * gy_mm + d_matrix[8]);
         s_pixel = normalized(lab_coord) / wavelength;
     }
 
@@ -428,6 +504,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                               int image_num,
                               const scalar_t *d_matrix,
                               scalar_t wavelength,
+                              DetectorParameters det_params,
                               scalar_t osc_start,
                               scalar_t osc_width,
                               int image_range_start,
@@ -467,6 +544,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                                                        image_num,
                                                        d_matrix,
                                                        wavelength,
+                                                       det_params,
                                                        osc_start,
                                                        osc_width,
                                                        image_range_start,
