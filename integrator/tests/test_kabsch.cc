@@ -11,10 +11,10 @@
  * compared against DIALS goldens.
  *
  * Inputs (in FFS_INTEGRATE_TEST_DATA, fallback /scratch/ffs_integrate_test_data):
- *   - predicted_withbbox.refl  -> s1, xyzcal.mm, bbox, miller_index
- *   - integrated_withbad.refl  -> num_pixels.foreground / .background goldens
- *                                  (matched to predictions by miller_index)
- *   - indexed.expt             -> beam, detector panel, goniometer, scan
+ *   - integrated_1_10.refl         -> s1, xyzcal.mm, bbox, miller_index
+ *   - integrated_withbad_1_10.refl -> num_pixels.foreground / .background goldens
+ *                                      (matched to predictions by miller_index)
+ *   - indexed_1_10.expt            -> beam, detector panel, goniometer, scan
  *
  * delta_b and delta_m are fixed test values (the indexed.expt used here
  * has no fitted profile model). If the data directory is missing the
@@ -71,9 +71,9 @@ class KabschTransformTest : public ::testing::Test {
 };
 
 TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
-    auto refl_file = data_dir / "predicted_withbbox.refl";
-    auto golden_file = data_dir / "integrated_withbad.refl";
-    auto expt_file = data_dir / "indexed.expt";
+    auto refl_file = data_dir / "integrated_1_10.refl";
+    auto golden_file = data_dir / "integrated_withbad_1_10.refl";
+    auto expt_file = data_dir / "indexed_1_10.expt";
     ASSERT_TRUE(fs::exists(refl_file)) << "Missing input file: " << refl_file;
     ASSERT_TRUE(fs::exists(golden_file)) << "Missing input file: " << golden_file;
     ASSERT_TRUE(fs::exists(expt_file)) << "Missing input file: " << expt_file;
