@@ -22,6 +22,7 @@
 #include <dx2/h5/h5read_processed.hpp>
 #include <dx2/reflection.hpp>
 #include <experimental/mdspan>
+#include <gemmi/unitcell.hpp>
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -36,6 +37,7 @@
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
+#include "integration_calculations.cc"
 #include "integrator.cuh"
 #include "integrator/extent.hpp"
 #include "kabsch.cuh"
@@ -45,6 +47,16 @@
 #include "predict.cc"
 #include "sigma_estimation.cc"
 #include "version.hpp"
+
+using Eigen::Vector3d;
+
+constexpr size_t IntegratedSum = (1 << 8);
+
+static FGAlgorithm parse_fg_algorithm(const std::string &name) {
+    if (name == "ellipsoid") return FGAlgorithm::Ellipsoid;
+    if (name == "dials") return FGAlgorithm::Dials;
+    throw std::runtime_error("Unknown foreground algorithm: " + name);
+}
 
 using namespace std::chrono_literals;
 
@@ -158,6 +170,22 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
             "number of images.")
           .default_value<int>(6)
           .scan<'i', int>();
+
+        add_argument("-a", "--algorithm")
+          .help("Foreground algorithm choice - dials or ellipsoid.")
+          .default_value<std::string>("ellipsoid");
+
+        add_argument("--min_zeta")
+          .help(
+            "Reflections close to the rotation axis, with a zeta below this threshold "
+            "will not be integrated.")
+          .default_value<float>(0.05f)
+          .scan<'f', float>();
+
+        add_argument("--output")
+          .help("Output file path")
+          .metavar("integrated.refl")
+          .default_value<std::string>("integrated.refl");
     }
 };
 #pragma endregion Argument Parsing
@@ -223,14 +251,23 @@ int main(int argc, char **argv) {
     Goniometer gonio = expt.goniometer();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
     const Scan &scan = expt.scan();
+    const Crystal &crystal = expt.crystal();
 
     // Extract vectors and parameters
     Eigen::Vector3d s0 = beam.get_s0();
     Eigen::Vector3d rotation_axis = gonio.get_rotation_axis();
-    // size_t num_reflections = s1_vectors.extent(0);
     const auto [osc_start, osc_width] = scan.get_oscillation();
     int image_range_start = scan.get_image_range()[0];
+    int image_range_end = scan.get_image_range()[1];
     double wl = beam.get_wavelength();
+    gemmi::UnitCell cell = crystal.get_unit_cell();
+
+    // Foreground algorithm and zeta cutoff for host-side filtering.
+    FGAlgorithm fg_algorithm = parse_fg_algorithm(parser.get<std::string>("algorithm"));
+    float min_zeta = parser.get<float>("min_zeta");
+    std::string output_file = parser.get<std::string>("output");
+    logger.info("Foreground algorithm: {}",
+                fg_algorithm == FGAlgorithm::Ellipsoid ? "ellipsoid" : "dials");
 
 #pragma endregion Data preparation
 
@@ -307,6 +344,7 @@ int main(int argc, char **argv) {
 
     mdspan_type<double> phi_column;
     mdspan_type<double> s1_vectors;
+    std::vector<int> hkl_vectors;
     size_t num_reflections;
     predicted_data_rotation output_data;  // Define here so that members stay in scope
     if (!all_predicted) {
@@ -338,6 +376,7 @@ int main(int argc, char **argv) {
         phi_column = mdspan_type<double>(
           output_data.xyz_mm.data(), output_data.xyz_mm.size() / 3, 3);
         num_reflections = output_data.enter.size();
+        hkl_vectors = output_data.hkl;
     } else {
         // is already predicted, so just extract required data.
         auto s1_vectors_opt = reflections.column<double>("s1");
@@ -352,7 +391,15 @@ int main(int argc, char **argv) {
             return 1;
         }
         phi_column = *phi_column_opt;
+        auto hkl_opt = reflections.column<int>("miller_index");
+        if (!hkl_opt) {
+            logger.error("Column 'miller_index' not found in reflection data.");
+            return 1;
+        }
         num_reflections = s1_vectors.extent(0);
+        hkl_vectors =
+          std::vector<int>(hkl_opt.value().data_handle(),
+                           hkl_opt.value().data_handle() + hkl_opt.value().size());
     }
 
 #pragma endregion Predict or extract predictions
@@ -397,11 +444,34 @@ int main(int argc, char **argv) {
         computed_bbox_data[step + 5] = static_cast<double>(computed_bboxes[i].z_max);
     }
 
-    // Map reflections by z layer (image number)
+    // Build per-reflection coordinate systems and apply host-side min_zeta
+    // filter. Reflections with |zeta| < min_zeta are skipped (dont_integrate).
+    std::vector<CoordinateSystem> coord_system_vector;
+    coord_system_vector.reserve(num_reflections);
+    std::vector<uint8_t> dont_integrate(num_reflections, 0);
+    {
+        size_t n_skipped = 0;
+        for (size_t i = 0; i < num_reflections; ++i) {
+            Vector3d s1_this(s1_vectors(i, 0), s1_vectors(i, 1), s1_vectors(i, 2));
+            CoordinateSystem cs(rotation_axis, s0, s1_this, phi_column(i, 2));
+            coord_system_vector.push_back(cs);
+            if (std::abs(cs.zeta()) < min_zeta) {
+                dont_integrate[i] = 1;
+                ++n_skipped;
+            }
+        }
+        logger.info("min_zeta={}: skipping {} of {} reflections",
+                    min_zeta,
+                    n_skipped,
+                    num_reflections);
+    }
+
+    // Map reflections by z layer (image number), excluding dont_integrate ones
     logger.info("Mapping reflections by image number (z layer)");
     std::unordered_map<int, std::vector<size_t>> reflections_by_image;
 
     for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
+        if (dont_integrate[refl_id]) continue;
         const auto &bbox = computed_bboxes[refl_id];
 
         // Add this reflection to all images it spans
@@ -531,12 +601,36 @@ int main(int argc, char **argv) {
     DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
     DeviceBuffer<accumulator_t> d_background_sum(num_reflections);
     DeviceBuffer<uint32_t> d_background_count(num_reflections);
+    // COM (intensity * coord) accumulators. Baseline uses Vector3d (double) for
+    // these, but we use unsigned long long so we can use the hardware-fast
+    // integer atomicAdd; double atomicAdd is slower and requires sm_60+. To
+    // keep arithmetic integer we accumulate intensity * (2*coord + 1) instead
+    // of intensity * (coord + 0.5), then divide by 2*intensity in finalisation
+    // (algebraically identical). 64-bit gives plenty of headroom against
+    // overflow for realistic pixel values and reflection sizes.
+    DeviceBuffer<unsigned long long> d_intensity_times_x(num_reflections);
+    DeviceBuffer<unsigned long long> d_intensity_times_y(num_reflections);
+    DeviceBuffer<unsigned long long> d_intensity_times_z(num_reflections);
+    // Per-reflection success flag (1 = ok). Currently only zeroed on host
+    // after the loop if fg_count == 0; reserved for future mask-based failure.
+    DeviceBuffer<uint8_t> d_success(num_reflections);
 
-    // Zero-initialize the accumulator buffers
     cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t));
     cudaMemset(d_background_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_background_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(
+      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
+    cudaMemset(
+      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long));
+    cudaMemset(
+      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long));
+    // Pre-fill success with dont_integrate complement (1 = ok, 0 = skipped/failed).
+    std::vector<uint8_t> success_init(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        success_init[i] = dont_integrate[i] ? 0 : 1;
+    }
+    d_success.assign(success_init.data());
     cuda_throw_error();
 #pragma endregion Prep GPU Data Buffers
 
@@ -693,10 +787,15 @@ int main(int argc, char **argv) {
                                          num_refls_this_image,
                                          delta_b,
                                          delta_m,
+                                         fg_algorithm,
                                          d_foreground_sum.data(),
                                          d_foreground_count.data(),
                                          d_background_sum.data(),
                                          d_background_count.data(),
+                                         d_intensity_times_x.data(),
+                                         d_intensity_times_y.data(),
+                                         d_intensity_times_z.data(),
+                                         d_success.data(),
                                          stream);
 
                 logger.trace("Thread {} loaded image {}", thread_id, image_num);
@@ -737,12 +836,20 @@ int main(int argc, char **argv) {
     std::vector<uint32_t> h_foreground_count(num_reflections);
     std::vector<accumulator_t> h_background_sum(num_reflections);
     std::vector<uint32_t> h_background_count(num_reflections);
+    std::vector<unsigned long long> h_intensity_times_x(num_reflections);
+    std::vector<unsigned long long> h_intensity_times_y(num_reflections);
+    std::vector<unsigned long long> h_intensity_times_z(num_reflections);
+    std::vector<uint8_t> h_success(num_reflections);
 
     // Copy results from device to host
     d_foreground_sum.extract(h_foreground_sum.data());
     d_foreground_count.extract(h_foreground_count.data());
     d_background_sum.extract(h_background_sum.data());
     d_background_count.extract(h_background_count.data());
+    d_intensity_times_x.extract(h_intensity_times_x.data());
+    d_intensity_times_y.extract(h_intensity_times_y.data());
+    d_intensity_times_z.extract(h_intensity_times_z.data());
+    d_success.extract(h_success.data());
 
     // Compute final intensities for each reflection
     std::vector<double> intensities(num_reflections);
@@ -841,6 +948,119 @@ int main(int argc, char **argv) {
     }
 
 #pragma endregion Summation Integration Finalization
+
+#pragma region Output Reflection Table
+    // Compute centre-of-mass (xyzobs.px.value), partiality, LP, and d-spacing,
+    // and write an output ReflectionTable matching the baseline integrator.
+    logger.info("Building output reflection table");
+
+    std::vector<double> xyzobs_px(num_reflections * 3);
+    std::vector<double> partialities(num_reflections);
+    std::vector<double> lp_corrections(num_reflections);
+    std::vector<double> d_values(num_reflections);
+    std::vector<int> nfg_out(num_reflections);
+    std::vector<int> nbg_out(num_reflections);
+    std::vector<double> bg_sum_out(num_reflections);
+    std::vector<double> bg_mean_out(num_reflections);
+
+    Vector3d pn = beam.get_polarization_normal();
+    double pf = beam.get_polarization_fraction();
+    LPCorrection lpcalculator(s0, pn, pf, rotation_axis);
+
+    std::vector<uint8_t> success_final(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        nfg_out[i] = static_cast<int>(h_foreground_count[i]);
+        nbg_out[i] = static_cast<int>(h_background_count[i]);
+        bg_sum_out[i] = static_cast<double>(h_background_sum[i]);
+        bg_mean_out[i] = (h_background_count[i] > 0)
+                           ? static_cast<double>(h_background_sum[i])
+                               / static_cast<double>(h_background_count[i])
+                           : 0.0;
+
+        // Success: kernel-flagged AND fg_count > 0 AND not dont_integrated.
+        bool ok = h_success[i] && (h_foreground_count[i] > 0) && !dont_integrate[i];
+        success_final[i] = ok ? 1 : 0;
+
+        // Centre-of-mass: kernel accumulated intensity·(2k+1), so divide by 2·I.
+        double fg_sum_d = static_cast<double>(h_foreground_sum[i]);
+        if (h_foreground_count[i] > 0 && fg_sum_d > 0.0) {
+            xyzobs_px[i * 3 + 0] =
+              static_cast<double>(h_intensity_times_x[i]) / (2.0 * fg_sum_d);
+            xyzobs_px[i * 3 + 1] =
+              static_cast<double>(h_intensity_times_y[i]) / (2.0 * fg_sum_d);
+            xyzobs_px[i * 3 + 2] =
+              static_cast<double>(h_intensity_times_z[i]) / (2.0 * fg_sum_d);
+        } else {
+            // Fallback to bbox centre (DIALS convention from centroid/simple/algorithm.h)
+            const auto &bb = computed_bboxes[i];
+            xyzobs_px[i * 3 + 0] = 0.5 * (bb.x_min + bb.x_max);
+            xyzobs_px[i * 3 + 1] = 0.5 * (bb.y_min + bb.y_max);
+            xyzobs_px[i * 3 + 2] = 0.5 * (bb.z_min + bb.z_max);
+        }
+
+        // Partiality from coordinate-system zeta integrated over bbox z-extent.
+        double xyzcal_px_z = radians_to_degrees(phi_column(i, 2)) / osc_width;
+        double phi = osc_start + ((xyzcal_px_z + 1 - image_range_start) * osc_width);
+        double phia =
+          osc_start + ((computed_bboxes[i].z_min + 1 - image_range_start) * osc_width);
+        double phib =
+          osc_start + ((computed_bboxes[i].z_max + 1 - image_range_start) * osc_width);
+        double zeta = coord_system_vector[i].zeta();
+        double c = std::abs(zeta) / (std::sqrt(2.0) * sigma_m);
+        partialities[i] =
+          0.5 * (std::erf(c * (phib - phi)) - std::erf(c * (phia - phi)));
+
+        Vector3d s1_this(s1_vectors(i, 0), s1_vectors(i, 1), s1_vectors(i, 2));
+        lp_corrections[i] = lpcalculator.calculate(s1_this);
+
+        std::array<int, 3> hkl_this = {
+          hkl_vectors[i * 3], hkl_vectors[i * 3 + 1], hkl_vectors[i * 3 + 2]};
+        d_values[i] = cell.calculate_d(hkl_this);
+    }
+
+    // Build output reflection table.
+    std::vector<std::string> identifiers = reflections.get_identifiers();
+    std::vector<uint64_t> ids_in = reflections.get_experiment_ids();
+    ReflectionTable integrated_data(ids_in, identifiers);
+
+    std::vector<double> intensity_variance(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        intensity_variance[i] = (variances[i] < 0.0) ? 0.0 : variances[i];
+    }
+
+    std::vector<double> xyzcal_mm(phi_column.data_handle(),
+                                  phi_column.data_handle() + phi_column.size());
+    std::vector<double> s1_out(s1_vectors.data_handle(),
+                               s1_vectors.data_handle() + s1_vectors.size());
+    std::vector<int> id_col(num_reflections, 0);
+    std::vector<std::size_t> final_flags(num_reflections, IntegratedSum);
+
+    integrated_data.add_column("intensity.sum.value", num_reflections, 1, intensities);
+    integrated_data.add_column(
+      "intensity.sum.variance", num_reflections, 1, intensity_variance);
+    integrated_data.add_column("partiality", num_reflections, 1, partialities);
+    integrated_data.add_column("miller_index", num_reflections, 3, hkl_vectors);
+    integrated_data.add_column("lp", num_reflections, 1, lp_corrections);
+    integrated_data.add_column("d", num_reflections, 1, d_values);
+    integrated_data.add_column("xyzcal.mm", num_reflections, 3, xyzcal_mm);
+    integrated_data.add_column("xyzobs.px.value", num_reflections, 3, xyzobs_px);
+    integrated_data.add_column("s1", num_reflections, 3, s1_out);
+    integrated_data.add_column("id", num_reflections, 1, id_col);
+    integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_out);
+    integrated_data.add_column("num_pixels.foreground", num_reflections, 1, nfg_out);
+    integrated_data.add_column("background.sum.value", num_reflections, 1, bg_sum_out);
+    integrated_data.add_column("background.mean", num_reflections, 1, bg_mean_out);
+    integrated_data.add_column("flags", num_reflections, 1, final_flags);
+
+    std::vector<bool> success_bool(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i)
+        success_bool[i] = success_final[i] != 0;
+    ReflectionTable success_data = integrated_data.select(success_bool);
+    int n_integrated =
+      success_data.column<double>("intensity.sum.value").value().extent(0);
+    logger.info("Writing {} integrated reflections to {}", n_integrated, output_file);
+    success_data.write(output_file);
+#pragma endregion Output Reflection Table
 
 #pragma endregion Image Reading and Threading
 

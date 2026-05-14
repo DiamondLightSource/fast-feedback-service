@@ -84,10 +84,15 @@ void compute_kabsch_transform(pixel_t *d_image,
                               size_t num_reflections_this_image,
                               scalar_t delta_b,
                               scalar_t delta_m,
+                              FGAlgorithm algorithm,
                               accumulator_t *d_foreground_sum,
                               uint32_t *d_foreground_count,
                               accumulator_t *d_background_sum,
                               uint32_t *d_background_count,
+                              unsigned long long *d_intensity_times_x,
+                              unsigned long long *d_intensity_times_y,
+                              unsigned long long *d_intensity_times_z,
+                              uint8_t *d_success,
                               cudaStream_t stream);
 
 // DEPRECATED

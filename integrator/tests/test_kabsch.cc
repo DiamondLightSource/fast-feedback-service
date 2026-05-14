@@ -175,10 +175,22 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
     DeviceBuffer<uint32_t> d_fg_count(num_reflections);
     DeviceBuffer<accumulator_t> d_bg_sum(num_reflections);
     DeviceBuffer<uint32_t> d_bg_count(num_reflections);
+    // Centre-of-mass accumulators: kernel writes unconditionally when any
+    // foreground pixel is found, so valid device memory is required even
+    // though this test only inspects the fg/bg pixel counts.
+    DeviceBuffer<unsigned long long> d_intensity_times_x(num_reflections);
+    DeviceBuffer<unsigned long long> d_intensity_times_y(num_reflections);
+    DeviceBuffer<unsigned long long> d_intensity_times_z(num_reflections);
     cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t));
     cudaMemset(d_bg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_bg_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(
+      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
+    cudaMemset(
+      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long));
+    cudaMemset(
+      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long));
     cuda_throw_error();
 
     // For each image in the scan, gather reflections whose bbox covers it
@@ -223,10 +235,15 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
                                  refl_indices_this_image.size(),
                                  delta_b,
                                  delta_m,
+                                 FGAlgorithm::Dials,
                                  d_fg_sum.data(),
                                  d_fg_count.data(),
                                  d_bg_sum.data(),
                                  d_bg_count.data(),
+                                 d_intensity_times_x.data(),
+                                 d_intensity_times_y.data(),
+                                 d_intensity_times_z.data(),
+                                 nullptr,
                                  nullptr);
     }
     cudaDeviceSynchronize();

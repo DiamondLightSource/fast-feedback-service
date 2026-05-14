@@ -10,6 +10,8 @@
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
 
+enum class FGAlgorithm : uint8_t { Ellipsoid, Dials };
+
 struct DetectorParameters {
     scalar_t pixel_size[2];       // pixel pitch [fast, slow] in mm
     bool parallax_correction;     // whether to apply parallax correction
