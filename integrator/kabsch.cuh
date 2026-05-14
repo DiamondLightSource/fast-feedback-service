@@ -94,27 +94,3 @@ void compute_kabsch_transform(pixel_t *d_image,
                               unsigned long long *d_intensity_times_z,
                               uint8_t *d_success,
                               cudaStream_t stream);
-
-// DEPRECATED
-/**
- * @brief Host wrapper function for voxel Kabsch computation
- * 
- * @param h_s_pixels Host array of s_pixel vectors (different for each voxel)
- * @param h_phi_pixels Host array of phi_pixel angles (different for each voxel)
- * @param s1_c Reflection center s1 vector (same for all voxels in this reflection)
- * @param phi_c Reflection center phi angle (same for all voxels in this reflection)
- * @param s0 Initial scattering vector
- * @param rot_axis Rotation axis vector
- * @param h_eps Host array to store output Kabsch coordinates
- * @param h_s1_len Host array to store output s1 lengths
- * @param n Number of voxels
- */
-void compute_kabsch_transform(const fastvec::Vector3D *h_s_pixels,
-                              const scalar_t *h_phi_pixels,
-                              fastvec::Vector3D s1_c,
-                              scalar_t phi_c,
-                              fastvec::Vector3D s0,
-                              fastvec::Vector3D rot_axis,
-                              fastvec::Vector3D *h_eps,
-                              scalar_t *h_s1_len,
-                              size_t n);
