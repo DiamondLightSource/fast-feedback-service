@@ -61,28 +61,28 @@ def test_baseline_integrator_dials_equivalence(tmp_path, dials_data):
             keys_ffs = (s1_ffs[:,2], s1_ffs[:,1], s1_ffs[:,0],   midx_ffs[:, 2],   midx_ffs[:, 1],   midx_ffs[:, 0])
 
             order_dials = np.lexsort(keys_dials)
-            order_ffs   = np.lexsort(keys_ffs)
+            order_ffs = np.lexsort(keys_ffs)
 
             # Apply ordering
             nfg_dials_sorted = nfg_dials[order_dials]
-            nfg_ffs_sorted   = nfg_ffs[order_ffs]
+            nfg_ffs_sorted = nfg_ffs[order_ffs]
 
             I_dials_sorted = intensity_dials[order_dials]
-            I_ffs_sorted   = intensity_ffs[order_ffs]
+            I_ffs_sorted = intensity_ffs[order_ffs]
 
             midx_dials_sorted = midx_dials[order_dials]
-            midx_ffs_sorted   = midx_ffs[order_ffs]
+            midx_ffs_sorted = midx_ffs[order_ffs]
             
             # check sort was correct
             assert np.all(midx_dials_sorted == midx_ffs_sorted)
 
             # compute deltas
             nfg_diff = nfg_dials_sorted - nfg_ffs_sorted
-            I_diff   = I_dials_sorted - I_ffs_sorted
+            I_diff = I_dials_sorted - I_ffs_sorted
 
             # filter nonzero differences
             nfg_deltas = nfg_diff[nfg_diff != 0]
-            I_deltas   = I_diff[I_diff != 0]
+            I_deltas = I_diff[I_diff != 0]
 
             ## Check that the current state of the output matches our expected level of difference.
             ## Total number of integrated reflections is 49579.
@@ -146,13 +146,13 @@ def test_baseline_integrator_ellipsoid(tmp_path, dials_data):
 
             dtype = make_key_dtype(midx_dials, s1_dials)
             keys_dials = make_keys(midx_dials, s1_dials, dtype)
-            keys_ffs   = make_keys(midx_ffs,   s1_ffs,   dtype)
+            keys_ffs = make_keys(midx_ffs,   s1_ffs,   dtype)
 
             common_keys, idx_dials, idx_ffs = np.intersect1d(
                 keys_dials, keys_ffs, return_indices=True
             )
-            I_diff   = intensity_dials[idx_dials] - intensity_ffs[idx_ffs]
-            I_deltas   = I_diff[I_diff != 0]
+            I_diff = intensity_dials[idx_dials] - intensity_ffs[idx_ffs]
+            I_deltas = I_diff[I_diff != 0]
 
             ## Check that the current state of the output matches our expected level of difference.
             ## Most are different, but only a small number are >20 pixels different.
