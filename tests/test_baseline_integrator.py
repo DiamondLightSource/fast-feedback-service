@@ -1,15 +1,14 @@
-import h5py
-import json
-import numpy as np
 import os
-import shutil
 import subprocess
-import pytest
-
 from pathlib import Path
+
+import h5py
+import numpy as np
+import pytest
 
 data_dir = Path("/scratch/ffs_integrate_test_data/")
 dials_integrated = data_dir / "integrated.refl"
+
 
 @pytest.mark.skipif(not data_dir.is_dir(), reason="Data directory not available")
 def test_baseline_integrator_dials_equivalence(tmp_path, dials_data):
@@ -57,8 +56,22 @@ def test_baseline_integrator_dials_equivalence(tmp_path, dials_data):
 
             # Sort primarily based on miller index, then additionally on s1 to handle
             # the rare case of two reflections having the same miller index.
-            keys_dials = (s1_dials[:,2], s1_dials[:,1], s1_dials[:,0], midx_dials[:, 2], midx_dials[:, 1], midx_dials[:, 0])
-            keys_ffs = (s1_ffs[:,2], s1_ffs[:,1], s1_ffs[:,0],   midx_ffs[:, 2],   midx_ffs[:, 1],   midx_ffs[:, 0])
+            keys_dials = (
+                s1_dials[:, 2],
+                s1_dials[:, 1],
+                s1_dials[:, 0],
+                midx_dials[:, 2],
+                midx_dials[:, 1],
+                midx_dials[:, 0],
+            )
+            keys_ffs = (
+                s1_ffs[:, 2],
+                s1_ffs[:, 1],
+                s1_ffs[:, 0],
+                midx_ffs[:, 2],
+                midx_ffs[:, 1],
+                midx_ffs[:, 0],
+            )
 
             order_dials = np.lexsort(keys_dials)
             order_ffs = np.lexsort(keys_ffs)
@@ -72,7 +85,7 @@ def test_baseline_integrator_dials_equivalence(tmp_path, dials_data):
 
             midx_dials_sorted = midx_dials[order_dials]
             midx_ffs_sorted = midx_ffs[order_ffs]
-            
+
             # check sort was correct
             assert np.all(midx_dials_sorted == midx_ffs_sorted)
 
@@ -89,6 +102,7 @@ def test_baseline_integrator_dials_equivalence(tmp_path, dials_data):
             assert len(nfg_deltas) == 870
             assert len(I_deltas) == 123
             assert np.max(np.absolute(np.array(I_deltas))) == 4
+
 
 @pytest.mark.skipif(not data_dir.is_dir(), reason="Data directory not available")
 def test_baseline_integrator_ellipsoid(tmp_path, dials_data):
@@ -118,14 +132,16 @@ def test_baseline_integrator_ellipsoid(tmp_path, dials_data):
     # Define two helper functions for sorting the data in the presence of
     # unequal numbers of reflections in the two files.
     def make_key_dtype(midx, s1):
-        return np.dtype([
-            ("h", midx.dtype),
-            ("k", midx.dtype),
-            ("l", midx.dtype),
-            ("s1x", s1.dtype),
-            ("s1y", s1.dtype),
-            ("s1z", s1.dtype),
-        ])
+        return np.dtype(
+            [
+                ("h", midx.dtype),
+                ("k", midx.dtype),
+                ("l", midx.dtype),
+                ("s1x", s1.dtype),
+                ("s1y", s1.dtype),
+                ("s1z", s1.dtype),
+            ]
+        )
 
     def make_keys(midx, s1, dtype):
         keys = np.empty(len(midx), dtype=dtype)
@@ -134,19 +150,23 @@ def test_baseline_integrator_ellipsoid(tmp_path, dials_data):
         return keys
 
     with h5py.File(dials_integrated) as dials_refl:
-        intensity_dials = dials_refl["/dials/processing/group_0/intensity.sum.value"][()]
+        intensity_dials = dials_refl["/dials/processing/group_0/intensity.sum.value"][
+            ()
+        ]
         midx_dials = dials_refl["/dials/processing/group_0/miller_index"][()]
         s1_dials = dials_refl["/dials/processing/group_0/s1"][()]
 
         with h5py.File(tmp_path / "integrated.refl") as ffs_refl:
             midx_ffs = ffs_refl["/dials/processing/group_0/miller_index"][()]
-            intensity_ffs = ffs_refl["/dials/processing/group_0/intensity.sum.value"][()]
+            intensity_ffs = ffs_refl["/dials/processing/group_0/intensity.sum.value"][
+                ()
+            ]
             s1_ffs = ffs_refl["/dials/processing/group_0/s1"][()]
             assert len(intensity_ffs) == 49853
 
             dtype = make_key_dtype(midx_dials, s1_dials)
             keys_dials = make_keys(midx_dials, s1_dials, dtype)
-            keys_ffs = make_keys(midx_ffs,   s1_ffs,   dtype)
+            keys_ffs = make_keys(midx_ffs, s1_ffs, dtype)
 
             common_keys, idx_dials, idx_ffs = np.intersect1d(
                 keys_dials, keys_ffs, return_indices=True
@@ -159,4 +179,4 @@ def test_baseline_integrator_ellipsoid(tmp_path, dials_data):
             assert len(I_deltas) == 39885
             absolute_differences = np.absolute(np.array(I_deltas))
             assert np.max(absolute_differences) == 110
-            assert len(absolute_differences[absolute_differences>20]) == 245
+            assert len(absolute_differences[absolute_differences > 20]) == 245

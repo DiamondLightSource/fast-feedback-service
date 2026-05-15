@@ -11,5 +11,7 @@ def set_env_vars():
     os.environ["PREDICTOR"] = os.fspath(Path.cwd() / "build/bin/baseline_predictor")
     os.environ["SPOTFINDER_32BIT"] = os.fspath(Path.cwd() / "build/bin/spotfinder32")
     os.environ["INTEGRATOR"] = os.fspath(Path.cwd() / "build/bin/integrator")
-    os.environ["BASELINE_INTEGRATOR"] = os.fspath(Path.cwd() / "build/bin/baseline_integrator")
+    os.environ["BASELINE_INTEGRATOR"] = os.fspath(
+        Path.cwd() / "build/bin/baseline_integrator"
+    )
     os.environ["FFS_ROOT_DIR"] = os.fspath(Path.cwd())
