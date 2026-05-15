@@ -331,7 +331,14 @@ __global__ void kabsch_transform(pixel_t *d_image,
     // helps occupancy. A runtime algorithm flag would force us to size for
     // the worst case here.
     constexpr int NUM_SLICES = (Algo == FGAlgorithm::Ellipsoid) ? 3 : 1;
-    __shared__ bool s_fg[NUM_SLICES][KABSCH_BLOCK_Y][KABSCH_BLOCK_X];
+    // s_is_fg is indexed [z-slice][ty][tx]. The first index selects a foreground
+    // mask in shared memory: Ellipsoid keeps 3 z-slices (phi_low, phi_high,
+    // phi_c), DIALS keeps 1 (phi_low only). Each slice is a full block-sized
+    // 2D plane shared by every thread in the block, so a thread can read its
+    // neighbours' corner flags (tx±1, ty±1) after __syncthreads() without
+    // recomputing them.
+    // Shared memory for corner foreground flags
+    __shared__ bool s_is_fg[NUM_SLICES][KABSCH_BLOCK_Y][KABSCH_BLOCK_X];
 
     // Block-level reflection list: indices into the global reflection arrays
     __shared__ size_t s_block_refl[MAX_BLOCK_REFLECTIONS];
@@ -452,21 +459,21 @@ __global__ void kabsch_transform(pixel_t *d_image,
                 // Lower z-face (phi_low)
                 Vector3D eps_lo =
                   pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis, s1_len);
-                s_fg[0][ty][tx] = is_foreground(eps_lo, delta_b, delta_m);
+                s_is_fg[0][ty][tx] = is_foreground(eps_lo, delta_b, delta_m);
 
                 // Upper z-face (phi_high)
                 Vector3D eps_hi =
                   pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_high, rot_axis, s1_len);
-                s_fg[1][ty][tx] = is_foreground(eps_hi, delta_b, delta_m);
+                s_is_fg[1][ty][tx] = is_foreground(eps_hi, delta_b, delta_m);
 
                 // Centre z-slice: evaluate at phi_c where ε₃ = 0
                 const bool centre_in_z_slice = (phi_c >= phi_low && phi_c <= phi_high);
                 if (centre_in_z_slice) {
                     Vector3D eps_c = pixel_to_kabsch(
                       s0, s1_c, phi_c, s_pixel, phi_c, rot_axis, s1_len);
-                    s_fg[2][ty][tx] = is_foreground(eps_c, delta_b, delta_m);
+                    s_is_fg[2][ty][tx] = is_foreground(eps_c, delta_b, delta_m);
                 } else {
-                    s_fg[2][ty][tx] = false;
+                    s_is_fg[2][ty][tx] = false;
                 }
             } else {
                 // DIALS: single 2D ellipse, evaluated at phi_low; ε₃ ignored
@@ -475,23 +482,28 @@ __global__ void kabsch_transform(pixel_t *d_image,
                 scalar_t inv_delta_b_sq = scalar_t(1.0) / (delta_b * delta_b);
                 scalar_t ellipsoid_val =
                   (eps.x * eps.x + eps.y * eps.y) * inv_delta_b_sq;
-                s_fg[0][ty][tx] = (ellipsoid_val <= scalar_t(1.0));
+                s_is_fg[0][ty][tx] = (ellipsoid_val <= scalar_t(1.0));
             }
         } else {
 #pragma unroll
             for (int z = 0; z < NUM_SLICES; ++z) {
-                s_fg[z][ty][tx] = false;
+                s_is_fg[z][ty][tx] = false;
             }
         }
 
         __syncthreads();
 
         if (pixel_in_image) {
+            // A pixel is foreground if any of its four surrounding corners
+            // is foreground in any z-slice.
             bool any_fg = false;
 #pragma unroll
             for (int z = 0; z < NUM_SLICES; ++z) {
-                any_fg |= s_fg[z][ty][tx] | s_fg[z][ty][tx + 1] | s_fg[z][ty + 1][tx]
-                          | s_fg[z][ty + 1][tx + 1];
+                const bool corner_00 = s_is_fg[z][ty][tx];
+                const bool corner_01 = s_is_fg[z][ty][tx + 1];
+                const bool corner_10 = s_is_fg[z][ty + 1][tx];
+                const bool corner_11 = s_is_fg[z][ty + 1][tx + 1];
+                any_fg |= corner_00 || corner_01 || corner_10 || corner_11;
             }
 
             // Only accumulate if the pixel centre is within the bbox
@@ -528,7 +540,7 @@ __global__ void kabsch_transform(pixel_t *d_image,
             }
         }
 
-        __syncthreads();  // Barrier before next reflection overwrites s_fg
+        __syncthreads();  // Barrier before next reflection overwrites s_is_fg
     }
 #pragma endregion Reflection Processing Loop
 }
@@ -587,7 +599,7 @@ void compute_kabsch_transform(pixel_t *d_image,
     // The kernel is templated on FGAlgorithm rather than taking it as a
     // runtime parameter, for two reasons:
     //   - Shared memory size (NUM_SLICES) is allowed to depend on the
-    //     algorithm, so DIALS gets a smaller s_fg allocation and better
+    //     algorithm, so DIALS gets a smaller s_is_fg allocation and better
     //     occupancy than if we always sized for the ellipsoid path.
     //   - `if constexpr` inside the kernel deletes the unused branch
     //     entirely. A runtime `if` would keep both paths live in every
