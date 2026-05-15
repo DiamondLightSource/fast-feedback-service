@@ -557,7 +557,12 @@ int main(int argc, char **argv) {
     // Extract experimental components
     MonochromaticBeam beam = expt.beam();
     Goniometer gonio = expt.goniometer();
-    const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
+    // Detector::panels() returns std::vector<Panel> by value; binding a
+    // reference to panels()[0] would dangle once the temporary vector is
+    // destroyed. Keep the vector alive.
+    const std::vector<Panel> panels =
+      expt.detector().panels();  // Assuming single panel detector
+    const Panel &panel = panels[0];
     const Scan &scan = expt.scan();
     const Crystal &crystal = expt.crystal();
 
