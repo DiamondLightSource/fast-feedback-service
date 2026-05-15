@@ -867,6 +867,12 @@ int main(int argc, char **argv) {
 
     for (int y = global_y_min; y <= global_y_max; ++y) {
         for (int x = global_x_min; x <= global_x_max; ++x) {
+            // Note, dials uses:
+            // shoebox_centroid_px = panel.get_ray_intersection_px(s1);
+            // attenuation_length = panel.attenuation_length(shoebox_centroid_px);
+            // i.e. the attenuation length depends on the shoebox centroid and
+            // so is not constant for a given pixel. Here we precalculate based on
+            // pixel coordinate.
             auto px_mm = panel.px_to_mm(x, y);
             Vector3d s1 = panel.get_lab_coord(px_mm[0], px_mm[1]);
             s1.normalize();
