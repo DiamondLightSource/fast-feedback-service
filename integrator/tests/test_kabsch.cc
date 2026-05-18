@@ -108,11 +108,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     std::ifstream f(expt_file);
     auto elist_json = nlohmann::json::parse(f);
     Experiment<MonochromaticBeam> expt(elist_json);
-    // Detector::panels() returns std::vector<Panel> by value; binding a
-    // reference to panels()[0] would dangle once the temporary vector is
-    // destroyed. Keep the vector alive.
-    const std::vector<Panel> panels = expt.detector().panels();
-    const Panel &panel = panels[0];
+    const Panel &panel = expt.detector().panels()[0];
     const Scan &scan = expt.scan();
     MonochromaticBeam beam = expt.beam();
 
