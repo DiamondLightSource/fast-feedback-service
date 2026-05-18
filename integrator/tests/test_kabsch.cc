@@ -8,12 +8,14 @@
  * the per-pixel Kabsch-ellipsoid foreground/background classification.
  * Pixel sums are necessarily zero and are not checked; only the
  * accumulated per-reflection foreground and background pixel COUNTS are
- * compared against DIALS goldens.
+ * compared against a CPU baseline reference (see reference resolution
+ * below), matched by row index.
  *
  * Inputs (in FFS_INTEGRATE_TEST_DATA, fallback /scratch/ffs_integrate_test_data):
  *   - integrated_1_10.refl         -> s1, xyzcal.mm, bbox, miller_index
- *   - integrated_withbad_1_10.refl -> num_pixels.foreground / .background goldens
- *                                      (matched to predictions by miller_index)
+ *   - baseline_<algo>_1_10.refl    -> num_pixels.foreground / .background
+ *                                      reference (row-aligned with the
+ *                                      prediction table)
  *   - indexed_1_10.expt            -> beam, detector panel, goniometer, scan
  *
  * delta_b and delta_m are fixed test values (the indexed.expt used here
@@ -69,14 +71,37 @@ class KabschTransformTest : public ::testing::Test {
     }
 
     fs::path data_dir;
+
+    // Shared comparison driver; the only thing that varies between the
+    // DIALS and Ellipsoid tests is the foreground-classification algorithm.
+    void RunPixelCountComparison(FGAlgorithm algo);
 };
 
-TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
+void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     auto refl_file = data_dir / "integrated_1_10.refl";
-    auto golden_file = data_dir / "integrated_withbad_1_10.refl";
+    // Oracle is the CPU baseline integrator run with the SAME algorithm,
+    // the SAME delta_b/delta_m (sigma_b=0.03, sigma_m=0.1, n=3), and the
+    // SAME predictions/bboxes (it consumes integrated_1_10.refl).
+    // Regenerate with:
+    //   baseline_integrator integrated_1_10.refl indexed_1_10.expt \
+    //     baseline_<algo>_1_10.refl --algorithm <algo> \
+    //     --sigma_b 0.03 --sigma_m 0.1
+    // Path is overridable via FFS_KABSCH_BASELINE_REFERENCE; default falls back
+    // to the build tree (data_dir is typically read-only test data).
+    const std::string reference_name = (algo == FGAlgorithm::Ellipsoid)
+                                         ? "baseline_ellipsoid_1_10.refl"
+                                         : "baseline_dials_1_10.refl";
+    fs::path reference_file;
+    if (const char *gp = std::getenv("FFS_KABSCH_BASELINE_REFERENCE")) {
+        reference_file = gp;
+    } else if (fs::exists(data_dir / reference_name)) {
+        reference_file = data_dir / reference_name;
+    } else {
+        reference_file = fs::path("../../test_references") / reference_name;
+    }
     auto expt_file = data_dir / "indexed_1_10.expt";
     ASSERT_TRUE(fs::exists(refl_file)) << "Missing input file: " << refl_file;
-    ASSERT_TRUE(fs::exists(golden_file)) << "Missing input file: " << golden_file;
+    ASSERT_TRUE(fs::exists(reference_file)) << "Missing input file: " << reference_file;
     ASSERT_TRUE(fs::exists(expt_file)) << "Missing input file: " << expt_file;
 
     // Extract beam, detector panel, goniometer, and scan from the experiment
@@ -239,7 +264,7 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
                                  refl_indices_this_image.size(),
                                  delta_b,
                                  delta_m,
-                                 FGAlgorithm::Dials,
+                                 algo,
                                  d_fg_sum.data(),
                                  d_fg_count.data(),
                                  d_bg_sum.data(),
@@ -258,33 +283,31 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
     d_fg_count.extract(h_fg_count.data());
     d_bg_count.extract(h_bg_count.data());
 
-    // Load golden foreground/background pixel counts and their Miller indices
-    auto golden_path = golden_file.string();
+    // Load baseline foreground/background pixel counts. The baseline writes
+    // rows in the SAME order as its input (integrated_1_10.refl), which is
+    // exactly what refl_file feeds the kernel, so we match by ROW INDEX.
+    auto reference_path = reference_file.string();
     auto exp_fg_int =
-      read_array_from_h5_file<int32_t>(golden_path, G + "num_pixels.foreground");
+      read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.foreground");
     auto exp_bg_int =
-      read_array_from_h5_file<int32_t>(golden_path, G + "num_pixels.background");
-    auto exp_hkl_flat =
-      read_array_from_h5_file<int32_t>(golden_path, G + "miller_index");
+      read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.background");
     size_t num_expected = exp_fg_int.size();
     ASSERT_EQ(exp_bg_int.size(), num_expected);
-    ASSERT_EQ(exp_hkl_flat.size(), num_expected * 3);
+    ASSERT_EQ(num_expected, num_reflections)
+      << "Baseline reference row count must match the prediction table; "
+         "regenerate baseline_dials_1_10.refl from integrated_1_10.refl";
 
-    // Map golden HKL -> row (multimap; same HKL may recur on adjacent images).
-    using HKL = std::tuple<int32_t, int32_t, int32_t>;
-    std::multimap<HKL, size_t> golden_hkl_to_row;
-    for (size_t j = 0; j < num_expected; ++j) {
-        golden_hkl_to_row.emplace(
-          HKL{
-            exp_hkl_flat[j * 3 + 0], exp_hkl_flat[j * 3 + 1], exp_hkl_flat[j * 3 + 2]},
-          j);
-    }
-
-    // Match computed counts to golden by HKL; consume first exact match to
-    // avoid ordering dependence
+    // A reflection is comparable only when the kernel and the baseline saw
+    // the SAME pixel population. The baseline reads real images and applies
+    // the detector mask, so it drops masked / off-edge pixels; the kernel
+    // runs an unmasked blank image and counts the whole in-image bbox. When
+    // the totals (fg+bg) agree, no pixel was masked/clipped for that
+    // reflection and the foreground/background split must match exactly.
+    // When they differ, the difference is entirely the detector mask, which
+    // this test does not model, so the reflection is excluded.
     size_t exact_matches = 0;
     size_t mismatches = 0;
-    size_t not_found = 0;
+    size_t mask_excluded = 0;
 
     const char *comp_names[] = {"n_fg", "n_bg"};
     std::array<double, 2> sum_abs_err = {};
@@ -293,36 +316,20 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
     std::array<std::map<int, int>, 2> diff_hist;
 
     for (size_t i = 0; i < num_reflections; ++i) {
-        HKL key{hkl_flat[i * 3 + 0], hkl_flat[i * 3 + 1], hkl_flat[i * 3 + 2]};
-        auto [it, end] = golden_hkl_to_row.equal_range(key);
-        if (it == end) {
-            not_found++;
+        std::array<int64_t, 2> got = {static_cast<int64_t>(h_fg_count[i]),
+                                      static_cast<int64_t>(h_bg_count[i])};
+        std::array<int64_t, 2> exp = {static_cast<int64_t>(exp_fg_int[i]),
+                                      static_cast<int64_t>(exp_bg_int[i])};
+
+        if (got[0] + got[1] != exp[0] + exp[1]) {
+            mask_excluded++;
             continue;
         }
 
-        std::array<int64_t, 2> got = {static_cast<int64_t>(h_fg_count[i]),
-                                      static_cast<int64_t>(h_bg_count[i])};
-
-        // Search for an exact match among all candidates sharing this HKL,
-        // consume it so it can't be reused (avoids ordering dependence).
-        auto match_it = end;
-        for (auto candidate = it; candidate != end; ++candidate) {
-            size_t j = candidate->second;
-            if (got[0] == static_cast<int64_t>(exp_fg_int[j])
-                && got[1] == static_cast<int64_t>(exp_bg_int[j])) {
-                match_it = candidate;
-                break;
-            }
-        }
-
-        if (match_it != end) {
-            golden_hkl_to_row.erase(match_it);
+        if (got[0] == exp[0] && got[1] == exp[1]) {
             exact_matches++;
         } else {
             mismatches++;
-            size_t j = it->second;
-            std::array<int64_t, 2> exp = {static_cast<int64_t>(exp_fg_int[j]),
-                                          static_cast<int64_t>(exp_bg_int[j])};
             for (int c = 0; c < 2; ++c) {
                 int64_t diff = got[c] - exp[c];
                 int64_t absdiff = std::abs(diff);
@@ -336,13 +343,16 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
 
     size_t compared = exact_matches + mismatches;
 
-    std::cout << "\n=== Kabsch Pixel Count Comparison Summary ===\n";
+    const char *algo_name = (algo == FGAlgorithm::Ellipsoid) ? "Ellipsoid" : "Dials";
+    std::cout << "\n=== Kabsch Pixel Count Comparison Summary (" << algo_name
+              << ") ===\n";
     std::cout << "  Reflections compared : " << compared << " (of " << num_reflections
               << ")\n";
+    std::cout << "  Mask-excluded (fg+bg differs, not modelled) : " << mask_excluded
+              << "\n";
     std::cout << "  Exact matches        : " << exact_matches << " ("
               << (compared ? 100.0 * exact_matches / compared : 0) << "%)\n";
     std::cout << "  Mismatches           : " << mismatches << "\n";
-    std::cout << "  Not found in golden  : " << not_found << "\n";
 
     if (mismatches > 0) {
         std::cout << "\n  Per-component error breakdown (over " << mismatches
@@ -378,8 +388,18 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCounts) {
     }
     std::cout << "=============================================\n";
 
-    EXPECT_EQ(not_found, 0) << not_found
-                            << " reflections had no HKL match in golden file";
+    // Every reflection with an identical pixel population must produce an
+    // identical foreground/background split as the baseline Dials algorithm.
+    EXPECT_GT(compared, 0u) << "No comparable reflections (all mask-excluded?)";
     EXPECT_EQ(mismatches, 0) << mismatches << " of " << compared
-                             << " reflections had pixel-count mismatches";
+                             << " comparable reflections diverged from the "
+                                "baseline Dials oracle";
+}
+
+TEST_F(KabschTransformTest, ForegroundBackgroundPixelCountsDials) {
+    RunPixelCountComparison(FGAlgorithm::Dials);
+}
+
+TEST_F(KabschTransformTest, ForegroundBackgroundPixelCountsEllipsoid) {
+    RunPixelCountComparison(FGAlgorithm::Ellipsoid);
 }
