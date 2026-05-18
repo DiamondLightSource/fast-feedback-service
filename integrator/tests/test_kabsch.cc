@@ -79,12 +79,15 @@ class KabschTransformTest : public ::testing::Test {
 
 void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     auto refl_file = data_dir / "integrated_1_10.refl";
-    // Oracle is the CPU baseline integrator run with the SAME algorithm,
+    // Reference is the CPU baseline integrator run with the SAME algorithm,
     // the SAME delta_b/delta_m (sigma_b=0.03, sigma_m=0.1, n=3), and the
     // SAME predictions/bboxes (it consumes integrated_1_10.refl).
-    // Regenerate with:
+    // Regenerate with (one per algorithm):
     //   baseline_integrator integrated_1_10.refl indexed_1_10.expt \
-    //     baseline_<algo>_1_10.refl --algorithm <algo> \
+    //     baseline_ellipsoid_1_10.refl --algorithm ellipsoid \
+    //     --sigma_b 0.03 --sigma_m 0.1
+    //   baseline_integrator integrated_1_10.refl indexed_1_10.expt \
+    //     baseline_dials_1_10.refl --algorithm dials \
     //     --sigma_b 0.03 --sigma_m 0.1
     // Path is overridable via FFS_KABSCH_BASELINE_REFERENCE; default falls back
     // to the build tree (data_dir is typically read-only test data).
@@ -385,11 +388,12 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     std::cout << "=============================================\n";
 
     // Every reflection with an identical pixel population must produce an
-    // identical foreground/background split as the baseline Dials algorithm.
+    // identical foreground/background split as the baseline CPU algorithm.
     EXPECT_GT(compared, 0u) << "No comparable reflections (all mask-excluded?)";
     EXPECT_EQ(mismatches, 0) << mismatches << " of " << compared
                              << " comparable reflections diverged from the "
-                                "baseline Dials oracle";
+                                "baseline "
+                             << algo_name << " reference";
 }
 
 TEST_F(KabschTransformTest, ForegroundBackgroundPixelCountsDials) {
