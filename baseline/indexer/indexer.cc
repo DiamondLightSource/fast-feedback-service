@@ -436,12 +436,11 @@ int main(int argc, char **argv) {
             reflections.add_column(std::string("entering"), enterings);
             const ReflectionTable filtered = reflections.select(selection);
 
-            refine_crystal(expt.crystal(),
-                           filtered,
-                           gonio,
-                           expt.beam(),
-                           expt.detector().panels()[0],
-                           scan_width);
+            // panels() returns a const ref, so refine on a mutable copy
+            Panel refine_panel = expt.detector().panels()[0];
+            refine_crystal(
+              expt.crystal(), filtered, gonio, expt.beam(), refine_panel, scan_width);
+            expt.detector().update(refine_panel.get_d_matrix());
         }
     }
 
