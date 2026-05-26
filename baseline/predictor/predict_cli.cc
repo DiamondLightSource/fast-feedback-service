@@ -122,11 +122,11 @@ int main(int argc, char **argv) {
                      ex.byte);
         std::exit(1);
     }
-    Experiment<MonochromaticBeam> expt;
+    Experiment expt;
     try {
-        expt = Experiment<MonochromaticBeam>(elist_json_obj);
+        expt = Experiment(elist_json_obj);
     } catch (std::invalid_argument const &ex) {
-        logger.error("Unable to create MonochromaticBeam experiment: {}", ex.what());
+        logger.error("Unable to create experiment: {}", ex.what());
         std::exit(1);
     }
 
@@ -162,7 +162,16 @@ int main(int argc, char **argv) {
 
     // Check if the minimum resolution paramenter (dmin) was passed in by the user,
     // if yes, check if it is a valid value; if not, assign a default.
-    MonochromaticBeam beam = expt.beam();
+    MonochromaticBeam beam;
+    try {
+        beam =
+            std::get<MonochromaticBeam>(expt.beam());
+
+        // safe to use monochromatic-only API
+    } catch (const std::bad_variant_access&) {
+        logger.error("Beam is not monochromatic");
+        std::exit(1);
+    }
     double wavelength = beam.get_wavelength();
     double dmin_min = 0.5 * wavelength;
     // FIXME: Need a better dmin_default from .expt file (like in DIALS)

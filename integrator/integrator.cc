@@ -222,9 +222,9 @@ int main(int argc, char **argv) {
     }
 
     // Construct Experiment object and extract components
-    Experiment<MonochromaticBeam> expt;
+    Experiment expt;
     try {
-        expt = Experiment<MonochromaticBeam>(elist_json_obj);
+        expt = Experiment(elist_json_obj);
     } catch (const std::invalid_argument &ex) {
         logger.error(
           "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
@@ -232,7 +232,16 @@ int main(int argc, char **argv) {
     }
 
     // Extract experimental components
-    MonochromaticBeam beam = expt.beam();
+    MonochromaticBeam beam;
+    try {
+        MonochromaticBeam beam =
+            std::get<MonochromaticBeam>(expt.beam());
+
+        // safe to use monochromatic-only API
+    } catch (const std::bad_variant_access&) {
+        logger.error("Beam is not monochromatic");
+        std::exit(1);
+    }
     Goniometer gonio = expt.goniometer();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
     const Scan &scan = expt.scan();

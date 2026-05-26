@@ -187,7 +187,7 @@ predicted_data_rotation predict_single_image(
     return output_data_this_image;
 }
 
-predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experiment,
+predicted_data_rotation predict_rotation(Experiment &experiment,
                                          const scan_varying_data &sv_data,
                                          double param_dmin,
                                          int buffer_size = 0,
@@ -208,7 +208,16 @@ predicted_data_rotation predict_rotation(Experiment<MonochromaticBeam> &experime
           scan.get_oscillation()[1]};
         scan = Scan(image_range, oscillation);
     }
-    MonochromaticBeam &beam = experiment.beam();
+    MonochromaticBeam beam;
+    try {
+        beam =
+            std::get<MonochromaticBeam>(experiment.beam());
+
+        // safe to use monochromatic-only API
+    } catch (const std::bad_variant_access&) {
+        logger.error("Beam is not monochromatic");
+        std::exit(1);
+    }
     const Goniometer &goniometer = experiment.goniometer();
     Detector &detector = experiment.detector();
     const Crystal &crystal = experiment.crystal();

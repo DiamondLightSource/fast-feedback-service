@@ -37,7 +37,7 @@ std::pair<double, double> squaredev_in_kabsch_space(const Vector3d &xyzcal,  //m
 }
 
 std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
-                                          Experiment<MonochromaticBeam> &expt,
+                                          Experiment &expt,
                                           int min_bbox_depth = 6) {
     logger.info("Estimation of spot extent parameters (σ_b, σ_m):");
     auto flags = indexed.column<std::size_t>("flags");
@@ -110,7 +110,17 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     int count = 0;
     constexpr double deg_to_rad = M_PI / 180.0;
     double tot_rmsd_z = 0;
-    Vector3d s0 = expt.beam().get_s0();
+    MonochromaticBeam beam;
+    try {
+        MonochromaticBeam beam =
+            std::get<MonochromaticBeam>(expt.beam());
+
+        // safe to use monochromatic-only API
+    } catch (const std::bad_variant_access&) {
+        logger.error("Beam is not monochromatic");
+        std::exit(1);
+    }
+    Vector3d s0 = beam.get_s0();
     Vector3d m2 = expt.goniometer().get_rotation_axis();
     int count_m = 0;
     for (int i = 0; i < xyzcal.extent(0); ++i) {
