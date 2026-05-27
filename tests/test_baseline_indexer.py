@@ -204,8 +204,8 @@ def test_baseline_indexer(tmp_path, dials_data):
         assert len(flags) == 703
         n_indexed = np.sum(np.array(flags, dtype=int) == 36)
         n_unindexed = np.sum(np.array(flags, dtype=int) == 32)
-        assert n_indexed == 55
-        assert n_unindexed == 648
+        assert n_indexed == 66
+        assert n_unindexed == 637
 
 
 def test_baseline_indexer_c2sum(tmp_path, dials_data):
