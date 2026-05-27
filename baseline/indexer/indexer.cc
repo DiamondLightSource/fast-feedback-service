@@ -418,9 +418,9 @@ int main(int argc, char **argv) {
         for (int i = 0; i < macro_cycles; ++i) {
             double d_min = d_steps[i];
             logger.info("Performing macro cycle {} with d_min={:.3f}", i + 1, d_min);
-            beam = std::get<MonochromaticBeam>(expt.beam());
+            MonochromaticBeam& beam_ = std::get<MonochromaticBeam>(expt.beam());
             results = xyz_to_rlp(
-              xyzobs_px, expt.detector().panels()[0], beam, scan, gonio);
+              xyzobs_px, expt.detector().panels()[0], beam_, scan, gonio);
 
             // Make a selection on dmin and rotation angle like dials
             std::vector<bool> selection(results.rlp.extent(0), true);
@@ -449,9 +449,8 @@ int main(int argc, char **argv) {
             // panels() returns a const ref, so refine on a mutable copy
             Panel refine_panel = expt.detector().panels()[0];
             refine_crystal(
-              expt.crystal(), filtered, gonio, beam, refine_panel, scan_width);
+              expt.crystal(), filtered, gonio, beam_, refine_panel, scan_width);
             expt.detector().update(refine_panel.get_d_matrix());
-            expt.set_beam(beam);
         }
     }
 
