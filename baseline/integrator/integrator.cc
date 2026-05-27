@@ -555,10 +555,9 @@ int main(int argc, char **argv) {
     }
 
     // Extract experimental components
-    MonochromaticBeam beam ;
+    MonochromaticBeam beam;
     try {
-        const MonochromaticBeam& beam =
-            std::get<MonochromaticBeam>(expt.beam());
+         beam = std::get<MonochromaticBeam>(expt.beam());
 
         // safe to use monochromatic-only API
     } catch (const std::bad_variant_access&) {

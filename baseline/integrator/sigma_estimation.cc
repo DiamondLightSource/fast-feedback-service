@@ -112,9 +112,7 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     double tot_rmsd_z = 0;
     MonochromaticBeam beam;
     try {
-        MonochromaticBeam beam =
-            std::get<MonochromaticBeam>(expt.beam());
-
+        beam = std::get<MonochromaticBeam>(expt.beam());
         // safe to use monochromatic-only API
     } catch (const std::bad_variant_access&) {
         logger.error("Beam is not monochromatic");

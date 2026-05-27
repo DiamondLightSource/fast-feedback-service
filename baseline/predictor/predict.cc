@@ -210,9 +210,7 @@ predicted_data_rotation predict_rotation(Experiment &experiment,
     }
     MonochromaticBeam beam;
     try {
-        beam =
-            std::get<MonochromaticBeam>(experiment.beam());
-
+        beam = std::get<MonochromaticBeam>(experiment.beam());
         // safe to use monochromatic-only API
     } catch (const std::bad_variant_access&) {
         logger.error("Beam is not monochromatic");

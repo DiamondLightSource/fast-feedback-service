@@ -164,9 +164,7 @@ int main(int argc, char **argv) {
     // if yes, check if it is a valid value; if not, assign a default.
     MonochromaticBeam beam;
     try {
-        beam =
-            std::get<MonochromaticBeam>(expt.beam());
-
+        beam = std::get<MonochromaticBeam>(expt.beam());
         // safe to use monochromatic-only API
     } catch (const std::bad_variant_access&) {
         logger.error("Beam is not monochromatic");

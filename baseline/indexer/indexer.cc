@@ -451,6 +451,7 @@ int main(int argc, char **argv) {
             refine_crystal(
               expt.crystal(), filtered, gonio, beam, refine_panel, scan_width);
             expt.detector().update(refine_panel.get_d_matrix());
+            expt.set_beam(beam);
         }
     }
 
