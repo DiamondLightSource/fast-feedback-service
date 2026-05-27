@@ -144,16 +144,7 @@ int main(int argc, char **argv) {
         std::exit(1);
     }
     Scan scan = expt.scan();
-    Beam anybeam = expt.beam();
-    MonochromaticBeam beam;
-    try {
-        beam = std::get<MonochromaticBeam>(anybeam);
-
-        // safe to use monochromatic-only API
-    } catch (const std::bad_variant_access&) {
-        logger.error("Beam is not monochromatic");
-        std::exit(1);
-    }
+    auto& beam = expt.monochromatic_beam();
     Goniometer gonio = expt.goniometer();
     Detector detector = expt.detector();
     assert(detector.panels().size()
@@ -368,7 +359,7 @@ int main(int argc, char **argv) {
           result.second.score);
     }
     Crystal best_xtal = results_vector[0].second.crystal;
-    MonochromaticBeam best_beam = results_vector[0].second.beam;
+    auto best_beam = results_vector[0].second.beam;
     Panel best_panel = results_vector[0].second.panel;
 
     bool test = parser.get<bool>("test");
@@ -418,7 +409,7 @@ int main(int argc, char **argv) {
         for (int i = 0; i < macro_cycles; ++i) {
             double d_min = d_steps[i];
             logger.info("Performing macro cycle {} with d_min={:.3f}", i + 1, d_min);
-            MonochromaticBeam& beam_ = std::get<MonochromaticBeam>(expt.beam());
+            auto& beam_ = expt.monochromatic_beam();
             results = xyz_to_rlp(
               xyzobs_px, expt.detector().panels()[0], beam_, scan, gonio);
 
@@ -469,7 +460,7 @@ int main(int argc, char **argv) {
 
         // Recalculate the rlp and s1 vectors based on the updated models.
         xyz_to_rlp_results final_results =
-          xyz_to_rlp(xyzobs_px, expt.detector().panels()[0], std::get<MonochromaticBeam>(expt.beam()), scan, gonio);
+          xyz_to_rlp(xyzobs_px, expt.detector().panels()[0], expt.monochromatic_beam(), scan, gonio);
         strong_reflections.add_column(std::string("xyzobs.mm.value"),
                                       final_results.xyzobs_mm.extent(0),
                                       3,
@@ -603,7 +594,7 @@ int main(int argc, char **argv) {
 
         strong_reflections.add_column(std::string("entering"), enterings);
         // Call the predictor to get xyzcal values in the output.
-        simple_reflection_predictor(std::get<MonochromaticBeam>(expt.beam()),
+        simple_reflection_predictor(expt.monochromatic_beam(),
                                     expt.goniometer(),
                                     expt.crystal().get_A_matrix(),
                                     expt.detector().panels()[0],
