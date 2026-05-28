@@ -110,14 +110,7 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     int count = 0;
     constexpr double deg_to_rad = M_PI / 180.0;
     double tot_rmsd_z = 0;
-    MonochromaticBeam beam;
-    try {
-        beam = std::get<MonochromaticBeam>(expt.beam());
-        // safe to use monochromatic-only API
-    } catch (const std::bad_variant_access&) {
-        logger.error("Beam is not monochromatic");
-        std::exit(1);
-    }
+    auto& beam = expt.monochromatic_beam();
     Vector3d s0 = beam.get_s0();
     Vector3d m2 = expt.goniometer().get_rotation_axis();
     int count_m = 0;

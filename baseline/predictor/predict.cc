@@ -208,14 +208,7 @@ predicted_data_rotation predict_rotation(Experiment &experiment,
           scan.get_oscillation()[1]};
         scan = Scan(image_range, oscillation);
     }
-    MonochromaticBeam beam;
-    try {
-        beam = std::get<MonochromaticBeam>(experiment.beam());
-        // safe to use monochromatic-only API
-    } catch (const std::bad_variant_access&) {
-        logger.error("Beam is not monochromatic");
-        std::exit(1);
-    }
+    auto& beam = experiment.monochromatic_beam();
     const Goniometer &goniometer = experiment.goniometer();
     Detector &detector = experiment.detector();
     const Crystal &crystal = experiment.crystal();
