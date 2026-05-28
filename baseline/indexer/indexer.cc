@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstring>
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
@@ -144,7 +145,7 @@ int main(int argc, char **argv) {
         std::exit(1);
     }
     Scan scan = expt.scan();
-    auto& beam = expt.monochromatic_beam();
+    auto& beam = beam_ops::require_monochromatic(expt.beam());
     Goniometer gonio = expt.goniometer();
     Detector detector = expt.detector();
     assert(detector.panels().size()
@@ -409,7 +410,7 @@ int main(int argc, char **argv) {
         for (int i = 0; i < macro_cycles; ++i) {
             double d_min = d_steps[i];
             logger.info("Performing macro cycle {} with d_min={:.3f}", i + 1, d_min);
-            auto& beam_ = expt.monochromatic_beam();
+            auto& beam_ = beam_ops::require_monochromatic(expt.beam());
             results = xyz_to_rlp(
               xyzobs_px, expt.detector().panels()[0], beam_, scan, gonio);
 
@@ -457,10 +458,11 @@ int main(int argc, char **argv) {
         // Load the strong refls, to persist existing data items
         std::vector<std::string> labels = {expt.identifier()};
         strong_reflections.set_identifiers(labels);
+        const auto& beam = beam_ops::require_monochromatic(expt.beam());
 
         // Recalculate the rlp and s1 vectors based on the updated models.
         xyz_to_rlp_results final_results =
-          xyz_to_rlp(xyzobs_px, expt.detector().panels()[0], expt.monochromatic_beam(), scan, gonio);
+          xyz_to_rlp(xyzobs_px, expt.detector().panels()[0], beam, scan, gonio);
         strong_reflections.add_column(std::string("xyzobs.mm.value"),
                                       final_results.xyzobs_mm.extent(0),
                                       3,
@@ -594,7 +596,7 @@ int main(int argc, char **argv) {
 
         strong_reflections.add_column(std::string("entering"), enterings);
         // Call the predictor to get xyzcal values in the output.
-        simple_reflection_predictor(expt.monochromatic_beam(),
+        simple_reflection_predictor(beam,
                                     expt.goniometer(),
                                     expt.crystal().get_A_matrix(),
                                     expt.detector().panels()[0],

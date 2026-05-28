@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
@@ -107,7 +108,7 @@ TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
     Experiment expt(elist_json);
     const Panel &panel = expt.detector().panels()[0];
     const Scan &scan = expt.scan();
-    const auto& beam = expt.monochromatic_beam();
+    const auto& beam = beam_ops::require_monochromatic(expt.beam());
 
     // s₀ and rotation axis come from the experiment geometry
     Eigen::Vector3d s0 = beam.get_s0();

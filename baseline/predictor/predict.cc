@@ -12,6 +12,7 @@
 #include <cmath>
 #include <common.hpp>
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
@@ -208,7 +209,7 @@ predicted_data_rotation predict_rotation(Experiment &experiment,
           scan.get_oscillation()[1]};
         scan = Scan(image_range, oscillation);
     }
-    auto& beam = experiment.monochromatic_beam();
+    const auto& beam = beam_ops::require_monochromatic(experiment.beam());
     const Goniometer &goniometer = experiment.goniometer();
     Detector &detector = experiment.detector();
     const Crystal &crystal = experiment.crystal();

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <common.hpp>
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
@@ -162,7 +163,7 @@ int main(int argc, char **argv) {
 
     // Check if the minimum resolution paramenter (dmin) was passed in by the user,
     // if yes, check if it is a valid value; if not, assign a default.
-    auto& beam = expt.monochromatic_beam();
+    const auto& beam = beam_ops::require_monochromatic(expt.beam());
     double wavelength = beam.get_wavelength();
     double dmin_min = 0.5 * wavelength;
     // FIXME: Need a better dmin_default from .expt file (like in DIALS)

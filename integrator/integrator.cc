@@ -17,6 +17,7 @@
 #include <cmath>
 #include <csignal>
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
@@ -232,7 +233,7 @@ int main(int argc, char **argv) {
     }
 
     // Extract experimental components
-    auto& beam = expt.monochromatic_beam();
+    auto& beam = beam_ops::require_monochromatic(expt.beam());  
     Goniometer gonio = expt.goniometer();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
     const Scan &scan = expt.scan();
