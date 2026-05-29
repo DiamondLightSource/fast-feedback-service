@@ -163,7 +163,7 @@ int main(int argc, char **argv) {
 
     // Check if the minimum resolution paramenter (dmin) was passed in by the user,
     // if yes, check if it is a valid value; if not, assign a default.
-    const auto& beam = beam_ops::require_monochromatic(expt.beam());
+    const auto &beam = beam_ops::require_monochromatic(expt.beam());
     double wavelength = beam.get_wavelength();
     double dmin_min = 0.5 * wavelength;
     // FIXME: Need a better dmin_default from .expt file (like in DIALS)

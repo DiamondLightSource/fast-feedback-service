@@ -209,7 +209,7 @@ predicted_data_rotation predict_rotation(Experiment &experiment,
           scan.get_oscillation()[1]};
         scan = Scan(image_range, oscillation);
     }
-    const auto& beam = beam_ops::require_monochromatic(experiment.beam());
+    const auto &beam = beam_ops::require_monochromatic(experiment.beam());
     const Goniometer &goniometer = experiment.goniometer();
     Detector &detector = experiment.detector();
     const Crystal &crystal = experiment.crystal();

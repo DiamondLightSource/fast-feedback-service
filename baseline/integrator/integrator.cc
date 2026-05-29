@@ -556,7 +556,7 @@ int main(int argc, char **argv) {
     }
 
     // Extract experimental components
-    auto& beam = beam_ops::require_monochromatic(expt.beam());
+    auto &beam = beam_ops::require_monochromatic(expt.beam());
     Goniometer gonio = expt.goniometer();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
     const Scan &scan = expt.scan();

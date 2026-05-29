@@ -111,8 +111,8 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     int count = 0;
     constexpr double deg_to_rad = M_PI / 180.0;
     double tot_rmsd_z = 0;
-    const auto& beam = beam_ops::require_monochromatic(expt.beam());
-    
+    const auto &beam = beam_ops::require_monochromatic(expt.beam());
+
     Vector3d s0 = beam.get_s0();
     Vector3d m2 = expt.goniometer().get_rotation_axis();
     int count_m = 0;

@@ -108,7 +108,7 @@ TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
     Experiment expt(elist_json);
     const Panel &panel = expt.detector().panels()[0];
     const Scan &scan = expt.scan();
-    const auto& beam = beam_ops::require_monochromatic(expt.beam());
+    const auto &beam = beam_ops::require_monochromatic(expt.beam());
 
     // s₀ and rotation axis come from the experiment geometry
     Eigen::Vector3d s0 = beam.get_s0();
