@@ -6,6 +6,7 @@
 #include <Eigen/Dense>
 #include <chrono>
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
@@ -234,7 +235,7 @@ struct SharedConstants {
 
 Accumulator process_image_range(
   ImageRange range,
-  Experiment<MonochromaticBeam> &expt,
+  Experiment &expt,
   std::unordered_map<int, std::vector<size_t>> &reflections_by_image,
   const SharedConstants &constants) {
     Accumulator accumulator;
@@ -545,9 +546,9 @@ int main(int argc, char **argv) {
     }
 
     // Construct Experiment object and extract components
-    Experiment<MonochromaticBeam> expt;
+    Experiment expt;
     try {
-        expt = Experiment<MonochromaticBeam>(elist_json_obj);
+        expt = Experiment(elist_json_obj);
     } catch (const std::invalid_argument &ex) {
         logger.error(
           "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
@@ -555,7 +556,7 @@ int main(int argc, char **argv) {
     }
 
     // Extract experimental components
-    MonochromaticBeam beam = expt.beam();
+    auto &beam = beam_ops::require_monochromatic(expt.beam());
     Goniometer gonio = expt.goniometer();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
     const Scan &scan = expt.scan();

@@ -17,6 +17,7 @@
 #include <cmath>
 #include <csignal>
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
@@ -222,9 +223,9 @@ int main(int argc, char **argv) {
     }
 
     // Construct Experiment object and extract components
-    Experiment<MonochromaticBeam> expt;
+    Experiment expt;
     try {
-        expt = Experiment<MonochromaticBeam>(elist_json_obj);
+        expt = Experiment(elist_json_obj);
     } catch (const std::invalid_argument &ex) {
         logger.error(
           "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
@@ -232,7 +233,7 @@ int main(int argc, char **argv) {
     }
 
     // Extract experimental components
-    MonochromaticBeam beam = expt.beam();
+    auto &beam = beam_ops::require_monochromatic(expt.beam());
     Goniometer gonio = expt.goniometer();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
     const Scan &scan = expt.scan();

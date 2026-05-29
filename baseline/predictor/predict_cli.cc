@@ -12,6 +12,7 @@
 #include <cmath>
 #include <common.hpp>
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
@@ -122,11 +123,11 @@ int main(int argc, char **argv) {
                      ex.byte);
         std::exit(1);
     }
-    Experiment<MonochromaticBeam> expt;
+    Experiment expt;
     try {
-        expt = Experiment<MonochromaticBeam>(elist_json_obj);
+        expt = Experiment(elist_json_obj);
     } catch (std::invalid_argument const &ex) {
-        logger.error("Unable to create MonochromaticBeam experiment: {}", ex.what());
+        logger.error("Unable to create experiment: {}", ex.what());
         std::exit(1);
     }
 
@@ -162,7 +163,7 @@ int main(int argc, char **argv) {
 
     // Check if the minimum resolution paramenter (dmin) was passed in by the user,
     // if yes, check if it is a valid value; if not, assign a default.
-    MonochromaticBeam beam = expt.beam();
+    const auto &beam = beam_ops::require_monochromatic(expt.beam());
     double wavelength = beam.get_wavelength();
     double dmin_min = 0.5 * wavelength;
     // FIXME: Need a better dmin_default from .expt file (like in DIALS)
