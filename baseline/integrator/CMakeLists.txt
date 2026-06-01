@@ -12,7 +12,7 @@ target_include_directories(baseline_integrator PRIVATE ${CMAKE_SOURCE_DIR}/basel
 
 target_link_libraries(baseline_integrator
     PRIVATE
-    fmt
+    fmt::fmt
     dx2
     h5read
     Eigen3::Eigen

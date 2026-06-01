@@ -54,6 +54,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         target_link_libraries(miniapp PUBLIC baseline_dials h5read)
 
         add_executable(check_no_tbx check_no_tbx.cc)
-        target_link_libraries(check_no_tbx PUBLIC baseline_dials h5read standalone fmt)
+        target_link_libraries(check_no_tbx PUBLIC baseline_dials h5read standalone fmt::fmt)
     endif()
 endif()

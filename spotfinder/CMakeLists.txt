@@ -18,7 +18,7 @@ add_executable(spotfinder
 )
 target_link_libraries(spotfinder
     PRIVATE
-    fmt
+    fmt::fmt
     h5read
     argparse
     standalone
@@ -54,7 +54,7 @@ add_executable(spotfinder32
 )
 target_link_libraries(spotfinder32
     PRIVATE
-    fmt
+    fmt::fmt
     h5read
     argparse
     standalone

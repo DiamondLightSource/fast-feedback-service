@@ -9,7 +9,7 @@ add_executable(baseline_predictor
 )
 target_link_libraries(baseline_predictor
     PRIVATE
-    fmt
+    fmt::fmt
     dx2
     argparse
     nlohmann_json::nlohmann_json
