@@ -1,4 +1,5 @@
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
 #include <dx2/reflection.hpp>
@@ -37,7 +38,7 @@ std::pair<double, double> squaredev_in_kabsch_space(const Vector3d &xyzcal,  //m
 }
 
 std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
-                                          Experiment<MonochromaticBeam> &expt,
+                                          Experiment &expt,
                                           int min_bbox_depth = 6) {
     logger.info("Estimation of spot extent parameters (σ_b, σ_m):");
     auto flags = indexed.column<std::size_t>("flags");
@@ -110,7 +111,9 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
     int count = 0;
     constexpr double deg_to_rad = M_PI / 180.0;
     double tot_rmsd_z = 0;
-    Vector3d s0 = expt.beam().get_s0();
+    const auto &beam = beam_ops::require_monochromatic(expt.beam());
+
+    Vector3d s0 = beam.get_s0();
     Vector3d m2 = expt.goniometer().get_rotation_axis();
     int count_m = 0;
     for (int i = 0; i < xyzcal.extent(0); ++i) {

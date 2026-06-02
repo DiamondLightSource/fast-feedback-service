@@ -46,7 +46,7 @@ target_include_directories(baseline_indexer PRIVATE ${CMAKE_SOURCE_DIR}/baseline
 target_include_directories(baseline_indexer PRIVATE ${CMAKE_SOURCE_DIR}/baseline/refiner)
 target_link_libraries(baseline_indexer
     PRIVATE
-    fmt
+    fmt::fmt
     dx2
     Eigen3::Eigen
     pocketfft

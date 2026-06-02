@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstring>
 #include <dx2/beam.hpp>
+#include <dx2/beam_ops.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
@@ -136,15 +137,15 @@ int main(int argc, char **argv) {
                      ex.byte);
         std::exit(1);
     }
-    Experiment<MonochromaticBeam> expt;
+    Experiment expt;
     try {
-        expt = Experiment<MonochromaticBeam>(elist_json_obj);
+        expt = Experiment(elist_json_obj);
     } catch (std::invalid_argument const &ex) {
-        logger.error("Unable to create MonochromaticBeam experiment: {}", ex.what());
+        logger.error("Unable to create experiment: {}", ex.what());
         std::exit(1);
     }
     Scan scan = expt.scan();
-    MonochromaticBeam beam = expt.beam();
+    auto &beam = beam_ops::require_monochromatic(expt.beam());
     Goniometer gonio = expt.goniometer();
     Detector detector = expt.detector();
     assert(detector.panels().size()
@@ -359,7 +360,7 @@ int main(int argc, char **argv) {
           result.second.score);
     }
     Crystal best_xtal = results_vector[0].second.crystal;
-    MonochromaticBeam best_beam = results_vector[0].second.beam;
+    auto best_beam = results_vector[0].second.beam;
     Panel best_panel = results_vector[0].second.panel;
 
     bool test = parser.get<bool>("test");
@@ -393,7 +394,7 @@ int main(int argc, char **argv) {
 
     // Update the experiment list models.
     expt.set_crystal(best_xtal);
-    expt.beam().set_s0(best_beam.get_s0());
+    expt.set_beam(best_beam);
     expt.detector().update(best_panel.get_d_matrix());
 
     // Now do macrocycles of refinement
@@ -409,8 +410,9 @@ int main(int argc, char **argv) {
         for (int i = 0; i < macro_cycles; ++i) {
             double d_min = d_steps[i];
             logger.info("Performing macro cycle {} with d_min={:.3f}", i + 1, d_min);
-            results = xyz_to_rlp(
-              xyzobs_px, expt.detector().panels()[0], expt.beam(), scan, gonio);
+            auto &beam_ = beam_ops::require_monochromatic(expt.beam());
+            results =
+              xyz_to_rlp(xyzobs_px, expt.detector().panels()[0], beam_, scan, gonio);
 
             // Make a selection on dmin and rotation angle like dials
             std::vector<bool> selection(results.rlp.extent(0), true);
@@ -439,7 +441,7 @@ int main(int argc, char **argv) {
             // panels() returns a const ref, so refine on a mutable copy
             Panel refine_panel = expt.detector().panels()[0];
             refine_crystal(
-              expt.crystal(), filtered, gonio, expt.beam(), refine_panel, scan_width);
+              expt.crystal(), filtered, gonio, beam_, refine_panel, scan_width);
             expt.detector().update(refine_panel.get_d_matrix());
         }
     }
@@ -456,10 +458,11 @@ int main(int argc, char **argv) {
         // Load the strong refls, to persist existing data items
         std::vector<std::string> labels = {expt.identifier()};
         strong_reflections.set_identifiers(labels);
+        const auto &beam = beam_ops::require_monochromatic(expt.beam());
 
         // Recalculate the rlp and s1 vectors based on the updated models.
         xyz_to_rlp_results final_results =
-          xyz_to_rlp(xyzobs_px, expt.detector().panels()[0], expt.beam(), scan, gonio);
+          xyz_to_rlp(xyzobs_px, expt.detector().panels()[0], beam, scan, gonio);
         strong_reflections.add_column(std::string("xyzobs.mm.value"),
                                       final_results.xyzobs_mm.extent(0),
                                       3,
@@ -593,7 +596,7 @@ int main(int argc, char **argv) {
 
         strong_reflections.add_column(std::string("entering"), enterings);
         // Call the predictor to get xyzcal values in the output.
-        simple_reflection_predictor(expt.beam(),
+        simple_reflection_predictor(beam,
                                     expt.goniometer(),
                                     expt.crystal().get_A_matrix(),
                                     expt.detector().panels()[0],

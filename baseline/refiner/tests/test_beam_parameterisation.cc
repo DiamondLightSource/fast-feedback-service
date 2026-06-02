@@ -16,7 +16,7 @@ TEST(BaselineIndexer, beam_parameterisation) {
       "/dls/i03/data/2024/cm37235-2/processing/JBE/c2sum/imported.expt";
     std::ifstream f(imported_expt);
     json elist_json_obj = json::parse(f);
-    json beam_json = elist_json_obj["beam"][0];
+    const json beam_json = elist_json_obj["beam"][0];
     json goniometer_json = elist_json_obj["goniometer"][0];
     MonochromaticBeam beam(beam_json);
     Goniometer goniometer(goniometer_json);

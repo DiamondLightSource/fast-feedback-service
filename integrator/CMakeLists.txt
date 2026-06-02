@@ -24,7 +24,7 @@ target_include_directories(integrator
 
 target_link_libraries(integrator
     PRIVATE
-    fmt
+    fmt::fmt
     h5read
     argparse
     standalone
