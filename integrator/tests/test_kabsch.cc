@@ -89,18 +89,16 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     //   baseline_integrator integrated_1_10.refl indexed_1_10.expt \
     //     baseline_dials_1_10.refl --algorithm dials \
     //     --sigma_b 0.03 --sigma_m 0.1
-    // Path is overridable via FFS_KABSCH_BASELINE_REFERENCE; default falls back
-    // to the build tree (data_dir is typically read-only test data).
+    // Path is overridable via FFS_KABSCH_BASELINE_REFERENCE; default is the
+    // baseline reference alongside the inputs in data_dir.
     const std::string reference_name = (algo == FGAlgorithm::Ellipsoid)
                                          ? "baseline_ellipsoid_1_10.refl"
                                          : "baseline_dials_1_10.refl";
     fs::path reference_file;
     if (const char *gp = std::getenv("FFS_KABSCH_BASELINE_REFERENCE")) {
         reference_file = gp;
-    } else if (fs::exists(data_dir / reference_name)) {
-        reference_file = data_dir / reference_name;
     } else {
-        reference_file = fs::path("../../test_references") / reference_name;
+        reference_file = data_dir / reference_name;
     }
     auto expt_file = data_dir / "indexed_1_10.expt";
     ASSERT_TRUE(fs::exists(refl_file)) << "Missing input file: " << refl_file;
