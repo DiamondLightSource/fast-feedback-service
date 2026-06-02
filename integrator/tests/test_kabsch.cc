@@ -110,10 +110,10 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     // Extract beam, detector panel, goniometer, and scan from the experiment
     std::ifstream f(expt_file);
     auto elist_json = nlohmann::json::parse(f);
-    Experiment<MonochromaticBeam> expt(elist_json);
+    Experiment expt(elist_json);
     const Panel &panel = expt.detector().panels()[0];
     const Scan &scan = expt.scan();
-    MonochromaticBeam beam = expt.beam();
+    MonochromaticBeam beam = std::get<MonochromaticBeam>(expt.beam());
 
     Eigen::Vector3d s0_eigen = beam.get_s0();
     Eigen::Vector3d rot_axis_eigen = expt.goniometer().get_rotation_axis();
