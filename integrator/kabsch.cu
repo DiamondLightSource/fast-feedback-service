@@ -364,12 +364,13 @@ __global__ void kabsch_transform(pixel_t *d_image,
 #pragma endregion Shared Memory
 
 #pragma region Per-Corner Setup
-    // Two phi values define the z-extent of the voxel on this image
-    const scalar_t phi_low = degrees_to_radians(
-      osc_start + (static_cast<scalar_t>(image_num - image_range_start) * osc_width));
-    const scalar_t phi_high = degrees_to_radians(
-      osc_start
-      + (static_cast<scalar_t>(image_num - image_range_start + 1) * osc_width));
+    // The voxel's two z-faces, one image apart. slice converts the 0-based
+    // image_num to the (z + 1 - image_range_start) frame used everywhere else.
+    const int slice = image_num - image_range_start + 1;
+    const scalar_t phi_low =
+      degrees_to_radians(osc_start + (static_cast<scalar_t>(slice) * osc_width));
+    const scalar_t phi_high =
+      degrees_to_radians(osc_start + (static_cast<scalar_t>(slice + 1) * osc_width));
 
     // s_pixel depends only on detector position (gx, gy), not phi
     const bool corner_valid = (gx >= 0) && (gx <= static_cast<int>(width)) && (gy >= 0)
