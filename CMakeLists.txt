@@ -103,6 +103,14 @@ if(NOT GTest_FOUND AND NOT TARGET GTest::gtest_main)
     FetchContent_MakeAvailable(GTest)
 endif()
 
+# Discover GoogleTest cases at ctest time, not build time. The default
+# POST_BUILD mode runs each test binary during the build, where conda's
+# rpath makes it load the stale installed libdx2.so and fail on any dx2
+# ABI change. gtest_discover_tests() reads this default, so it also
+# covers the dx2 submodule without editing it. Must be set before
+# add_subdirectory(dx2).
+set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
+
 # Handle inclusion of dx2 dependency using git submodule
 set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
 
