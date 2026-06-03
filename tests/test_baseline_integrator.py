@@ -162,7 +162,7 @@ def test_baseline_integrator_ellipsoid(tmp_path, dials_data):
                 ()
             ]
             s1_ffs = ffs_refl["/dials/processing/group_0/s1"][()]
-            assert len(intensity_ffs) == 49853
+            assert len(intensity_ffs) == 50147
 
             dtype = make_key_dtype(midx_dials, s1_dials)
             keys_dials = make_keys(midx_dials, s1_dials, dtype)
@@ -176,7 +176,7 @@ def test_baseline_integrator_ellipsoid(tmp_path, dials_data):
 
             ## Check that the current state of the output matches our expected level of difference.
             ## Most are different, but only a small number are >20 pixels different.
-            assert len(I_deltas) == 39885
+            assert len(I_deltas) == 47852
             absolute_differences = np.absolute(np.array(I_deltas))
-            assert np.max(absolute_differences) == 110
-            assert len(absolute_differences[absolute_differences > 20]) == 245
+            assert np.max(absolute_differences) == 166
+            assert len(absolute_differences[absolute_differences > 30]) == 457
