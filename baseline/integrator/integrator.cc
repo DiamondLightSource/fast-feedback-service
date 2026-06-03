@@ -307,7 +307,7 @@ Accumulator process_image_range(
                           cs.coords_from_s1vector(s1dash, phidash_start);
                         Vector3d epsilon_coords_end =
                           cs.coords_from_s1vector(s1dash, phidash_end);
-                        if ((phidash_start > phi_c) && (phi_c < phidash_end)) {
+                        if ((phidash_start < phi_c) && (phi_c < phidash_end)) {
                             epsilon_coords_start[2] = 0.0;
                             epsilon_coords_end[2] = 0.0;
                         }
