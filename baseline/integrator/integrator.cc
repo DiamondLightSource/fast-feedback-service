@@ -26,8 +26,9 @@
 #include "common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
-#include "integration_calculations.cc"
+#include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
+#include "integrator/lp_correction.hpp"
 #include "kabsch.cc"
 #include "math/math_utils.cuh"
 #include "predict.cc"
@@ -307,6 +308,7 @@ Accumulator process_image_range(
                           cs.coords_from_s1vector(s1dash, phidash_start);
                         Vector3d epsilon_coords_end =
                           cs.coords_from_s1vector(s1dash, phidash_end);
+                        // Centre inside the voxel: collapse e3 to the peak cross-section.
                         if ((phidash_start < phi_c) && (phi_c < phidash_end)) {
                             epsilon_coords_start[2] = 0.0;
                             epsilon_coords_end[2] = 0.0;

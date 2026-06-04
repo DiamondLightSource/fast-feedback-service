@@ -108,6 +108,16 @@ __host__ __device__ inline Vector3D operator-(const Vector3D &a, const Vector3D 
 }
 
 /**
+ * @brief Vector unary negation operator
+ * Computes: -**v** = (-v.x, -v.y, -v.z)
+ * @param v Vector to negate
+ * @return Negated vector
+ */
+__host__ __device__ inline Vector3D operator-(const Vector3D &v) {
+    return MAKE_VECTOR3D(-v.x, -v.y, -v.z);
+}
+
+/**
  * @brief Scalar multiplication operator
  * Computes: s × **v** = (s·v.x, s·v.y, s·v.z)
  * @param v Vector to scale
