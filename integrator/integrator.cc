@@ -763,8 +763,8 @@ int main(int argc, char **argv) {
                 // This computes Kabsch coordinates and atomically accumulates
                 // foreground/background intensities for summation integration
                 logger.info("Launching GPU kernel for image {} with {} reflections",
-                             image_num,
-                             num_refls_this_image);
+                            image_num,
+                            num_refls_this_image);
                 compute_kabsch_transform(device_image.get(),
                                          device_image.pitch_bytes(),
                                          width,
