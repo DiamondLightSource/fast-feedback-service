@@ -1,14 +1,25 @@
+/**
+ * @file index_generators.hpp
+ * @brief Miller-index generators (Reeke / stills) for spot prediction.
+ *
+ * Header-only: every member function is defined inline, so the classes are
+ * safe to include in multiple translation units.
+ */
+
 #pragma once
+
 #include <Eigen/Dense>
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <gemmi/symmetry.hpp>
 #include <optional>
+#include <utility>
 
 using Eigen::Matrix3d;
 using Eigen::Matrix4d;
 using Eigen::MatrixXd;
 using Eigen::Vector3d;
-
-#pragma region Index Generators
 
 /**
  * A class to generate miller indices for rotational experiments using the Reeke algorithm.
@@ -86,10 +97,6 @@ class ReekeIndexGenerator {
   private:
     /**
      * @brief Get the min and max elements from among the passed in values (if any).
-     * 
-     * @param pair1 
-     * @param pair2 
-     * @return std::optional<std::pair<T, T>> 
      */
     template <typename T>
         requires(std::integral<T> or std::floating_point<T>)
@@ -114,13 +121,8 @@ class ReekeIndexGenerator {
     }
 
     /**
-	 * @brief Calculate the looping limits of the Miller index h, considering only the resolution sphere
-	 *
-	 * @param a The vector normal to the plane of constant h, pointing in the direction of increasing h
-	 * @param s0 The incident beam vector
-	 * @param dmin The minimum lattice spacing that can be resolved
-	 * @return std::pair<double, double>
-	 */
+     * @brief Calculate the looping limits of the Miller index h, considering only the resolution sphere
+     */
     auto calc_h_limits_resolution(const Vector3d &a, const Vector3d &s0)
       -> std::pair<double, double> {
         double dstar_max = 1.0 / dmin;
@@ -135,15 +137,8 @@ class ReekeIndexGenerator {
     }
 
     /**
-	 * @brief Calculate the looping limits of the Miller index h
-	 *
-	 * @param A1 The (rotation * crystal setting matrix) at the start of the rotation
-	 * @param A2 The (rotation * crystal setting matrix) at the end of the rotation
-	 * @param s0_1 The incident beam vector at the start of the rotation
-	 * @param s0_2 The incident beam vector at the end of the rotation
-	 * @param dmin The minimum lattice spacing that can be resolved
-	 * @return std::optional<std::pair<int, int>>
-	 */
+     * @brief Calculate the looping limits of the Miller index h
+     */
     auto calc_h_limits() -> std::optional<std::pair<int, int>> {
         const Vector3d a1 = A1.inverse().row(0);
         const Vector3d a2 = A2.inverse().row(0);
@@ -195,11 +190,8 @@ class ReekeIndexGenerator {
     }
 
     /**
-	 * @brief Calculate the looping limits of the Miller index k, given index h and considering only the Ewald sphere
-	 *
-	 * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
-	 * @return std::optional<std::pair<int, int>>
-	 */
+     * @brief Calculate the looping limits of the Miller index k, given index h and considering only the Ewald sphere
+     */
     auto calc_k_limits_ewald(const Matrix4d &T, const int h)
       -> std::optional<std::pair<int, int>> {
         double r0 = T(2, 3) * T(2, 3)
@@ -222,11 +214,6 @@ class ReekeIndexGenerator {
 
     /**
      * @brief Calculate the looping limits of the Miller index k, given index h and considering only the resolution sphere
-     * 
-     * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
-     * @param h The h Miller index
-     * @param dmin The minimum lattice spacing that can be resolved
-     * @return std::optional<std::pair<int, int>> 
      */
     auto calc_k_limits_resolution(const Matrix4d &T, const int h)
       -> std::optional<std::pair<int, int>> {
@@ -247,12 +234,6 @@ class ReekeIndexGenerator {
 
     /**
      * @brief Calculate the looping limits of the Miller index k, given index h.
-     * 
-     * @param T1 A 4d matrix (start of rotation); modified from the one defined on p. 54 of LURE Phase 1 and 2.
-     * @param T2 A 4d matrix (end of rotation); modified from the one defined on p. 54 of LURE Phase 1 and 2.
-     * @param h The h Miller index
-     * @param dmin The minimum lattice spacing that can be resolved
-     * @return std::optional<std::pair<int, int>> 
      */
     auto calc_k_limits(const int h) -> std::optional<std::pair<int, int>> {
         std::optional<std::pair<int, int>> k_limits_ewald_1 =
@@ -279,11 +260,6 @@ class ReekeIndexGenerator {
 
     /**
      * @brief Calculate the looping limits of the Miller index l, given indices h and k and considering only the Ewald sphere
-     * 
-     * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
-     * @param h The h Miller index
-     * @param k The k Miller index
-     * @return std::optional<std::pair<int, int>> 
      */
     auto calc_l_limits_ewald(const Matrix4d &T, const int h, const int k)
       -> std::optional<std::pair<int, int>> {
@@ -304,12 +280,6 @@ class ReekeIndexGenerator {
 
     /**
      * @brief Calculate the looping limits of the Miller index l, given indices h and k and considering only the resolution sphere
-     * 
-     * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
-     * @param h The h Miller index
-     * @param k The k Miller index
-     * @param dmin The minimum lattice spacing that can be resolved
-     * @return std::optional<std::pair<int, int>> 
      */
     auto calc_l_limits_resolution(const Matrix4d &T, const int h, const int k)
       -> std::optional<std::pair<int, int>> {
@@ -329,15 +299,8 @@ class ReekeIndexGenerator {
     }
 
     /**
- * @brief Calculate the looping limits of the Miller index l, given indices h and k.
- *
- * @param T1 The T-matrix at the start of the rotation
- * @param T2 The T-matrix at the end of the rotation
- * @param h The h Miller index
- * @param k The k Miller index
- * @param dmin The minimum lattice spacing that can be resolved
- * @return std::array<std::optional<std::pair<int, int>>, 2>
- */
+     * @brief Calculate the looping limits of the Miller index l, given indices h and k.
+     */
     auto calc_l_limits(const int h, const int k)
       -> std::array<std::optional<std::pair<int, int>>, 2> {
         std::optional<std::pair<int, int>> l_limits_ewald_1 =
@@ -512,10 +475,8 @@ class StillsIndexGenerator {
 
   private:
     /**
-	 * @brief Calculate the looping limits of the Miller index h
-	 *
-	 * @return std::optional<std::pair<int, int>>
-	 */
+     * @brief Calculate the looping limits of the Miller index h
+     */
     auto calc_h_limits() -> std::optional<std::pair<int, int>> {
         const Vector3d a = A.inverse().row(0);
         const double a_len = a.norm();
@@ -532,9 +493,6 @@ class StillsIndexGenerator {
 
     /**
      * @brief Calculate the looping limits of the Miller index k
-     * 
-     * @param h The h Miller index
-     * @return std::optional<std::pair<int, int>> 
      */
     auto calc_k_limits(const int h) -> std::optional<std::pair<int, int>> {
         double r0 = T(2, 3) * T(2, 3)
@@ -558,11 +516,6 @@ class StillsIndexGenerator {
 
     /**
      * @brief Calculate the looping limits of the Miller index l, given indices h and k and considering only the Ewald sphere
-     * 
-     * @param T A 4d matrix; modified from the one defined on p. 54 of LURE Phase 1 and 2.
-     * @param h The h Miller index
-     * @param k The k Miller index
-     * @return std::array<std::optional<std::pair<double, double>>, 2>
      */
     auto calc_l_limits_ewald(const int h, const int k)
       -> std::array<std::optional<std::pair<double, double>>, 2> {
@@ -603,10 +556,6 @@ class StillsIndexGenerator {
 
     /**
      * @brief Calculate the looping limits of the Miller index l, given indices h and k.
-     *
-     * @param h The h Miller index
-     * @param k The k Miller index
-     * @return std::array<std::optional<std::pair<int, int>>, 2>
      */
     auto calc_l_limits(const int h, const int k)
       -> std::array<std::optional<std::pair<int, int>>, 2> {
@@ -662,4 +611,3 @@ class StillsIndexGenerator {
     std::size_t l_index;
     int state = 0;
 };
-#pragma endregion

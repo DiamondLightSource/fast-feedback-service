@@ -1,28 +1,9 @@
-#pragma once
-#include <atomic>
-#include <condition_variable>
-#include <functional>
-#include <mutex>
-#include <queue>
-#include <thread>
-#include <vector>
+/**
+ * @file threadpool.cc
+ * @brief Minimal fixed-size thread pool used by the spot predictor.
+ */
 
-class ThreadPool {
-  public:
-    ThreadPool(size_t num_threads);
-    ~ThreadPool();
-
-    // Enqueue a task
-    void enqueue(std::function<void()> task);
-
-  private:
-    std::vector<std::thread> workers;
-    std::queue<std::function<void()>> tasks;
-
-    std::mutex queue_mutex;
-    std::condition_variable condition;
-    std::atomic<bool> stop;
-};
+#include "predictor/threadpool.hpp"
 
 ThreadPool::ThreadPool(size_t num_threads) : stop(false) {
     for (size_t i = 0; i < num_threads; ++i) {

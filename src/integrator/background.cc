@@ -1,68 +1,14 @@
+/**
+ * @file background.cc
+ * @brief Background estimation for baseline CPU integration.
+ */
+
+#include "integrator/background.hpp"
+
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <stdexcept>
-#include <tuple>
-#include <unordered_map>
 #include <vector>
-
-static constexpr std::size_t VECTOR_LIMIT = 64;
-
-class BackgroundAggregator {
-  public:
-    BackgroundAggregator() = default;
-
-    ~BackgroundAggregator() {
-        delete _large_hist;
-    }
-
-    void add(int x) {
-        if (x >= 0 && x < VECTOR_LIMIT) {
-            ++_small_hist[x];
-        } else {
-            if (!_large_hist) {
-                _large_hist = new std::unordered_map<int, std::size_t>();
-            }
-            ++(*_large_hist)[x];
-        }
-        ++n_pixels;
-    }
-
-    int num_pixels() const {
-        return n_pixels;
-    }
-    const auto &small_hist() const {
-        return _small_hist;
-    }
-    const auto *large_hist() const {
-        return _large_hist;
-    }
-
-    void add(const BackgroundAggregator &other) {
-        for (std::size_t i = 0; i < VECTOR_LIMIT; ++i) {
-            _small_hist[i] += other._small_hist[i];
-        }
-
-        if (other._large_hist) {
-            if (!_large_hist) {
-                _large_hist = new std::unordered_map<int, std::size_t>();
-            }
-            for (const auto &[k, v] : *other._large_hist) {
-                (*_large_hist)[k] += v;
-            }
-        }
-
-        n_pixels += other.n_pixels;
-    }
-
-  private:
-    // Use two data structures for the histogram
-    // - a small array for small counts (< VECTOR_LIMIT) (vast majority of pixels, efficient for adding a large number of low-value pixels)
-    // - an unordered map pointer for large counts (sparse, infrequent, efficient for adding a low number of high-value pixels (perhaps outliers))
-    std::array<std::size_t, VECTOR_LIMIT> _small_hist{};
-    std::unordered_map<int, std::size_t> *_large_hist = nullptr;
-    int n_pixels = 0;
-};
 
 // Simple background with tukey outlier for now.
 std::tuple<double, double> compute_background_constant_3d(

@@ -1,14 +1,26 @@
+/**
+ * @file sigma_estimation.cc
+ * @brief Estimation of spot extent parameters (σ_b, σ_m) for baseline CPU
+ *        integration.
+ */
+
+#include "integrator/sigma_estimation.hpp"
+
+#include <cmath>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
-#include <dx2/detector.hpp>
-#include <dx2/experiment.hpp>
-#include <dx2/reflection.hpp>
 #include <math/math_utils.cuh>
+#include <stdexcept>
+#include <vector>
 
 #include "ffs_logger.hpp"
 
+using Eigen::Vector3d;
+
+namespace {
 constexpr size_t indexed_flag = (1 << 2);             // 4
 constexpr size_t used_in_refinement_flag = (1 << 3);  // 8
+}  // namespace
 
 /*
 Function to calculate the square deviation in kabsch space between
@@ -39,7 +51,7 @@ std::pair<double, double> squaredev_in_kabsch_space(const Vector3d &xyzcal,  //m
 
 std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
                                           Experiment &expt,
-                                          int min_bbox_depth = 6) {
+                                          int min_bbox_depth) {
     logger.info("Estimation of spot extent parameters (σ_b, σ_m):");
     auto flags = indexed.column<std::size_t>("flags");
     auto &flags_data = flags.value();
