@@ -42,12 +42,12 @@
 #include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
 #include "integrator/lp_correction.hpp"
+#include "integrator/sigma_estimation.hpp"
 #include "kabsch.cuh"
 #include "math/device_precision.cuh"
 #include "math/math_utils.cuh"
 #include "math/vector3d.cuh"
-#include "predict.cc"
-#include "sigma_estimation.cc"
+#include "predictor/predict.hpp"
 #include "version.hpp"
 
 using Eigen::Vector3d;

@@ -3,91 +3,30 @@
  * @brief This program implements the algorithm for spot prediction.
  *
  * ReekeIndexGenerator outlined in in the LURE workshop notes.
- *
  */
 
-#include <Eigen/Dense>
-#include <argparse/argparse.hpp>
-#include <chrono>
+#include "predictor/predict.hpp"
+
 #include <cmath>
-#include <common.hpp>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/crystal.hpp>
-#include <dx2/detector.hpp>
-#include <dx2/experiment.hpp>
-#include <dx2/goniometer.hpp>
-#include <dx2/reflection.hpp>
-#include <dx2/scan.hpp>
 #include <exception>
-#include <fstream>
-#include <gemmi/symmetry.hpp>
+#include <functional>
 #include <mutex>
-#include <nlohmann/json.hpp>
-#include <thread>
-#include <tuple>
-#include <vector>
+#include <optional>
+#include <stdexcept>
 
-#include "index_generators.cc"
-#include "ray_predictors.cc"
-#include "threadpool.cc"
-#include "utils.cc"
+#include "ffs_logger.hpp"
+#include "predictor/index_generators.hpp"
+#include "predictor/ray_predictors.hpp"
+#include "predictor/threadpool.hpp"
+#include "predictor/utils.hpp"
 
 using json = nlohmann::json;
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
-
-constexpr size_t predicted_flag = (1 << 0);
-
-struct predicted_data_rotation {
-    // Shape {size, 3}
-    std::vector<int> hkl;
-    std::vector<double> s1;
-    std::vector<double> xyz_px;
-    std::vector<double> xyz_mm;
-    // Shape {size, 1}
-    std::vector<int> panels;
-    std::vector<bool> enter;
-    std::vector<size_t> flags;
-    std::vector<int> ids;
-    std::vector<uint64_t> experiment_ids;
-    std::vector<std::string> identifiers;
-
-    void add(const std::array<int, 3> &hkl_entry,
-             const std::array<double, 3> &s1_entry,
-             const std::array<double, 3> &xyz_px_entry,
-             const std::array<double, 3> &xyz_mm_entry,
-             int panel,
-             bool enter_flag,
-             size_t flag) {
-        hkl.insert(hkl.end(), hkl_entry.begin(), hkl_entry.end());
-        s1.insert(s1.end(), s1_entry.begin(), s1_entry.end());
-        xyz_px.insert(xyz_px.end(), xyz_px_entry.begin(), xyz_px_entry.end());
-        xyz_mm.insert(xyz_mm.end(), xyz_mm_entry.begin(), xyz_mm_entry.end());
-        panels.push_back(panel);
-        enter.push_back(enter_flag);
-        flags.push_back(flag);
-    }
-
-    void merge(predicted_data_rotation &&other) {
-        hkl.insert(hkl.end(), other.hkl.begin(), other.hkl.end());
-        s1.insert(s1.end(), other.s1.begin(), other.s1.end());
-        xyz_px.insert(xyz_px.end(), other.xyz_px.begin(), other.xyz_px.end());
-        xyz_mm.insert(xyz_mm.end(), other.xyz_mm.begin(), other.xyz_mm.end());
-        panels.insert(panels.end(), other.panels.begin(), other.panels.end());
-        enter.insert(enter.end(), other.enter.begin(), other.enter.end());
-        flags.insert(flags.end(), other.flags.begin(), other.flags.end());
-    }
-};
-
-struct scan_varying_data {
-    std::vector<Vector3d> s0_at_scan_points;
-    std::vector<Matrix3d> A_at_scan_points;
-    std::vector<Matrix3d> r_setting_at_scan_points;
-
-    auto operator<=>(const scan_varying_data &) const = default;
-};
 
 predicted_data_rotation predict_single_image(
   const int image_index,
@@ -191,8 +130,8 @@ predicted_data_rotation predict_single_image(
 predicted_data_rotation predict_rotation(Experiment &experiment,
                                          const scan_varying_data &sv_data,
                                          double param_dmin,
-                                         int buffer_size = 0,
-                                         int nthreads = 1) {
+                                         int buffer_size,
+                                         int nthreads) {
     Scan &scan = experiment.scan();
     if (buffer_size > 0) {
         // Can't have both scan varying data and a buffer

@@ -11,6 +11,7 @@ add_executable(integrator
     ${CMAKE_SOURCE_DIR}/src/integrator/extent.cc
     ${CMAKE_SOURCE_DIR}/src/integrator/lp_correction.cc
     ${CMAKE_SOURCE_DIR}/src/integrator/coordinate_system.cc
+    ${CMAKE_SOURCE_DIR}/src/integrator/sigma_estimation.cc
     ../spotfinder/shmread.cc
     ../spotfinder/cbfread.cc
 )
@@ -18,12 +19,11 @@ add_executable(integrator
 target_include_directories(integrator
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../spotfinder
-    ${CMAKE_CURRENT_SOURCE_DIR}/../baseline/integrator
-    ${CMAKE_CURRENT_SOURCE_DIR}/../baseline/predictor
 )
 
 target_link_libraries(integrator
     PRIVATE
+    predictor
     fmt::fmt
     h5read
     argparse

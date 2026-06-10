@@ -1,24 +1,15 @@
-#include <Eigen/Dense>
-#include <cmath>
-#include <nlohmann/json.hpp>
+/**
+ * @file ray_predictors.cc
+ * @brief Ray-prediction routines for the various scattering geometries.
+ */
 
-#include "utils.cc"
-using json = nlohmann::json;
+#include "predictor/ray_predictors.hpp"
+
+#include <cmath>
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 
-#pragma once
-/**
- * @brief Return a Ray object if a prediction is found within a give tolerance angle
- * 
- * @param index The Miller indices of the spot under consideration
- * @param A The (rotation * crystal setting matrix)
- * @param s0 The incident beam vector
- * @param dmin The minimum lattice spacing that can be resolved
- * @param delta_psi_tolerance The tolerance (in radians) of 
- * @return std::optional<Ray> 
- */
 std::optional<Ray> predict_ray_monochromatic_stills(const std::array<int, 3> &index,
                                                     const Matrix3d &A,
                                                     const Vector3d &s0,
@@ -46,21 +37,6 @@ std::optional<Ray> predict_ray_monochromatic_stills(const std::array<int, 3> &in
     return Ray{s1, abs(delta_psi), false};
 }
 
-/**
- * @brief Return a Ray object if a prediction is found during a static rotation
- * 
- * @param index The Miller indices of the spot under consideration
- * @param A The (rotation * crystal setting matrix)
- * @param r_setting The setting rotation matrix
- * @param r_setting_inv The inverse of the setting rotation matrix
- * @param s0 The incident beam vector
- * @param m2 The goniometer rotation axis
- * @param rotator The rotator object to generate rotations around axis m2
- * @param dmin The minimum lattice spacing that can be resolved
- * @param phi_beg The angle of the goniometer at the start of the rotation (in degrees)
- * @param d_osc The amount the goniometer rotates during the image capture (in degrees)
- * @return std::array<std::optional<Ray>, 2> 
- */
 std::array<std::optional<Ray>, 2> predict_ray_monochromatic_static(
   const std::array<int, 3> &index,
   const Matrix3d &A,
@@ -136,19 +112,6 @@ std::array<std::optional<Ray>, 2> predict_ray_monochromatic_static(
     return {ray_first, ray_second};
 }
 
-/**
- * @brief Return a Ray object if a prediction is found during a scan-varying rotation
- * 
- * @param index The Miller indices of the spot under consideration
- * @param A1 The (rotation * crystal setting matrix) at the start of the rotation
- * @param A2 The (rotation * crystal setting matrix) at the end of the rotation
- * @param s0_1 The incident beam vector at the start of the rotation
- * @param s0_2 The incident beam vector at the end of the rotation
- * @param dmin The minimum lattice spacing that can be resolved
- * @param phi_beg The angle of the goniometer at the start of the rotation (in degrees)
- * @param d_osc The amount the goniometer rotates during the image capture (in degrees)
- * @return std::optional<Ray>
- */
 std::optional<Ray> predict_ray_monochromatic_sv(const std::array<int, 3> &index,
                                                 const Matrix3d &A1,
                                                 const Matrix3d &A2,
@@ -238,17 +201,6 @@ std::optional<Ray> predict_ray_monochromatic_sv(const std::array<int, 3> &index,
 }
 
 // Laue prediction
-/**
- * @brief Return a Ray object if a prediction is found for a polychromatic beam.
- * 
- * @param index The Miller indices of the spot under consideration
- * @param A The (rotation * crystal setting matrix)
- * @param s0_unit The unit incident beam vector
- * @param wavelength_min The lower end of the wavelength spectrum
- * @param wavelength_max The upper end of the wavelength spectrum
- * @param dmin The minimum lattice spacing that can be resolved
- * @return std::optional<Ray> 
- */
 std::optional<Ray> predict_ray_polychromatic_stills(const std::array<int, 3> &index,
                                                     const Matrix3d &A,
                                                     Vector3d s0_unit,
@@ -267,21 +219,6 @@ std::optional<Ray> predict_ray_polychromatic_stills(const std::array<int, 3> &in
     return Ray{s1, 0.0, false};
 }
 
-/**
- * @brief Return a Ray object if a prediction is found during a scan-varying rotation for a polychromatic beam.
- * 
- * @param index The Miller indices of the spot under consideration
- * @param A1 The (rotation * crystal setting matrix) at the start of the rotation
- * @param A2 The (rotation * crystal setting matrix) at the end of the rotation
- * @param s0_1_unit The unit incident beam vector at the start of the rotation
- * @param s0_2_unit The unit incident beam vector at the end of the rotation
- * @param wavelength_min The lower end of the wavelength spectrum
- * @param wavelength_max The upper end of the wavelength spectrum
- * @param dmin The minimum lattice spacing that can be resolved
- * @param phi_beg The angle of the goniometer at the start of the rotation (in degrees)
- * @param d_osc The amount the goniometer rotates during the image capture (in degrees)
- * @return std::optional<Ray> 
- */
 std::optional<Ray> predict_ray_polychromatic_rotational(const std::array<int, 3> &index,
                                                         const Matrix3d &A1,
                                                         const Matrix3d &A2,

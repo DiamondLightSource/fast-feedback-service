@@ -22,17 +22,17 @@
 #include <vector>
 
 #include "arg_parser.hpp"
-#include "background.cc"
 #include "common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
+#include "integrator/background.hpp"
 #include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
+#include "integrator/kabsch.hpp"
 #include "integrator/lp_correction.hpp"
-#include "kabsch.cc"
+#include "integrator/sigma_estimation.hpp"
 #include "math/math_utils.cuh"
-#include "predict.cc"
-#include "sigma_estimation.cc"
+#include "predictor/predict.hpp"
 #include "version.hpp"
 
 using json = nlohmann::json;

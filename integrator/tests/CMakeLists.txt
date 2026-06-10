@@ -15,8 +15,6 @@ add_executable(test_kabsch test_kabsch.cc ../kabsch.cu ${CMAKE_SOURCE_DIR}/src/i
 set_source_files_properties(../kabsch.cu PROPERTIES LANGUAGE CUDA)
 target_include_directories(test_kabsch PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../baseline/integrator
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../baseline/predictor
 )
 target_link_libraries(test_kabsch PRIVATE
     ffs_common

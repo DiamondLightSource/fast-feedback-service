@@ -8,12 +8,14 @@ add_executable(baseline_integrator
     ${CMAKE_SOURCE_DIR}/src/integrator/extent.cc
     ${CMAKE_SOURCE_DIR}/src/integrator/lp_correction.cc
     ${CMAKE_SOURCE_DIR}/src/integrator/coordinate_system.cc
+    ${CMAKE_SOURCE_DIR}/src/integrator/background.cc
+    ${CMAKE_SOURCE_DIR}/src/integrator/kabsch.cc
+    ${CMAKE_SOURCE_DIR}/src/integrator/sigma_estimation.cc
 )
-
-target_include_directories(baseline_integrator PRIVATE ${CMAKE_SOURCE_DIR}/baseline/predictor)
 
 target_link_libraries(baseline_integrator
     PRIVATE
+    predictor
     fmt::fmt
     dx2
     h5read

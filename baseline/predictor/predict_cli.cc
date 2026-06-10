@@ -27,11 +27,8 @@
 #include <thread>
 #include <vector>
 
-#include "index_generators.cc"
-#include "predict.cc"
-#include "ray_predictors.cc"
-#include "threadpool.cc"
-#include "utils.cc"
+#include "ffs_logger.hpp"
+#include "predictor/predict.hpp"
 
 using json = nlohmann::json;
 
