@@ -283,12 +283,19 @@ __device__ __forceinline__ void px_to_mm(int gx,
  * @param d_bboxes Array of bounding box structs for each reflection
  * @param d_reflection_indices Indices of reflections touching this image
  * @param num_reflections_this_image Number of reflections to process
+ * @param d_mask Detector mask, flat width*height
+ * @param origin_x Pixel x coordinate of the launch grid origin (may be negative)
+ * @param origin_y Pixel y coordinate of the launch grid origin (may be negative)
  * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D)
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M)
  * @param d_foreground_sum Output: accumulated foreground intensities per reflection
  * @param d_foreground_count Output: foreground pixel counts per reflection
  * @param d_background_sum Output: accumulated background intensities per reflection
  * @param d_background_count Output: background pixel counts per reflection
+ * @param d_intensity_times_x Output: intensity·(2gx+1) per reflection (centre-of-mass)
+ * @param d_intensity_times_y Output: intensity·(2gy+1) per reflection (centre-of-mass)
+ * @param d_intensity_times_z Output: intensity·(2z+1) per reflection (centre-of-mass)
+ * @param d_success Output: per-reflection success flag, cleared on a masked or out-of-image foreground pixel
  */
 template <FGAlgorithm Algo>
 __global__ void kabsch_transform(pixel_t *d_image,
@@ -309,6 +316,9 @@ __global__ void kabsch_transform(pixel_t *d_image,
                                  const BoundingBoxExtents *d_bboxes,
                                  const size_t *d_reflection_indices,
                                  size_t num_reflections_this_image,
+                                 const uint8_t *d_mask,
+                                 int origin_x,
+                                 int origin_y,
                                  // Summation integration parameters
                                  scalar_t delta_b,
                                  scalar_t delta_m,
@@ -358,8 +368,12 @@ __global__ void kabsch_transform(pixel_t *d_image,
     // memory, and pixel 31 (in Block 1) can read its left-side corner (31)
     // from its own block's shared memory.
 
-    const int gx = blockIdx.x * (KABSCH_BLOCK_X - 1) + tx;  // Global x coordinate
-    const int gy = blockIdx.y * (KABSCH_BLOCK_Y - 1) + ty;  // Global y coordinate
+    // origin_{x,y} offsets the grid into negative pixel coordinates so the
+    // launch footprint covers bboxes that overflow the detector edge.
+    const int gx =
+      origin_x + blockIdx.x * (KABSCH_BLOCK_X - 1) + tx;  // Global x coordinate
+    const int gy =
+      origin_y + blockIdx.y * (KABSCH_BLOCK_Y - 1) + ty;  // Global y coordinate
 
 #pragma endregion Shared Memory
 
@@ -372,12 +386,12 @@ __global__ void kabsch_transform(pixel_t *d_image,
     const scalar_t phi_high =
       degrees_to_radians(osc_start + (static_cast<scalar_t>(slice + 1) * osc_width));
 
-    // s_pixel depends only on detector position (gx, gy), not phi
-    const bool corner_valid = (gx >= 0) && (gx <= static_cast<int>(width)) && (gy >= 0)
-                              && (gy <= static_cast<int>(height));
-
+    // s_pixel depends only on detector position (gx, gy), not phi. The
+    // px_to_mm / d_matrix mapping is geometric and well-defined beyond the
+    // detector edge, so corners outside the image carry valid Kabsch
+    // coordinates and are classified like any other.
     Vector3D s_pixel = make_vector3d(0, 0, 0);
-    if (corner_valid) {
+    {
         scalar_t gx_mm, gy_mm;
         px_to_mm(gx, gy, det_params, gx_mm, gy_mm);
 
@@ -396,9 +410,11 @@ __global__ void kabsch_transform(pixel_t *d_image,
     if (tx == 0 && ty == 0) {
         s_num_block_refl = 0;
 
-        const int bx_min = static_cast<int>(blockIdx.x) * (KABSCH_BLOCK_X - 1);
+        const int bx_min =
+          origin_x + static_cast<int>(blockIdx.x) * (KABSCH_BLOCK_X - 1);
         const int bx_max = bx_min + KABSCH_BLOCK_X - 1;
-        const int by_min = static_cast<int>(blockIdx.y) * (KABSCH_BLOCK_Y - 1);
+        const int by_min =
+          origin_y + static_cast<int>(blockIdx.y) * (KABSCH_BLOCK_Y - 1);
         const int by_max = by_min + KABSCH_BLOCK_Y - 1;
 
         for (size_t i = 0; i < num_reflections_this_image; ++i) {
@@ -432,7 +448,8 @@ __global__ void kabsch_transform(pixel_t *d_image,
     // (tx == 31) and bottom row (ty == 15) only contribute their corner
     // during Phase 1; they don't process a pixel in Phase 2.
     const bool is_pixel_thread = (tx < KABSCH_BLOCK_X - 1) && (ty < KABSCH_BLOCK_Y - 1);
-    const bool pixel_in_image = is_pixel_thread && (gx < static_cast<int>(width))
+    const bool pixel_in_image = is_pixel_thread && (gx >= 0)
+                                && (gx < static_cast<int>(width)) && (gy >= 0)
                                 && (gy < static_cast<int>(height));
 
 #pragma endregion Block Reflection Filter
@@ -447,7 +464,7 @@ __global__ void kabsch_transform(pixel_t *d_image,
 
         // Every thread writes its corner's foreground flag to shared memory.
         // Per-corner bbox check avoids needless Kabsch computation.
-        const bool in_bbox = corner_valid && (gx >= bbox.x_min && gx <= bbox.x_max)
+        const bool in_bbox = (gx >= bbox.x_min && gx <= bbox.x_max)
                              && (gy >= bbox.y_min && gy <= bbox.y_max);
 
         if (in_bbox) {
@@ -494,7 +511,13 @@ __global__ void kabsch_transform(pixel_t *d_image,
 
         __syncthreads();
 
-        if (pixel_in_image) {
+        // Pixel centre within the bbox. Out-of-image pixels still enter
+        // here (guarded below): a foreground pixel outside the image
+        // fails the reflection.
+        const bool px_in_bbox = is_pixel_thread && (gx >= bbox.x_min && gx < bbox.x_max)
+                                && (gy >= bbox.y_min && gy < bbox.y_max);
+
+        if (px_in_bbox) {
             // A pixel is foreground if any of its four surrounding corners
             // is foreground in any z-slice.
             bool any_fg = false;
@@ -507,15 +530,16 @@ __global__ void kabsch_transform(pixel_t *d_image,
                 any_fg |= corner_00 || corner_01 || corner_10 || corner_11;
             }
 
-            // Only accumulate if the pixel centre is within the bbox
-            const bool px_in_bbox = (gx >= bbox.x_min && gx < bbox.x_max)
-                                    && (gy >= bbox.y_min && gy < bbox.y_max);
-
-            if (px_in_bbox) {
-                const accumulator_t pixel_value =
-                  static_cast<accumulator_t>(image(gx, gy));
-
-                if (any_fg) {
+            if (any_fg) {
+                // Foreground outside the image or on a masked pixel makes the
+                // reflection unusable. d_success is only ever cleared, never
+                // set, so the concurrent writes need no atomic.
+                if (!pixel_in_image
+                    || d_mask[static_cast<size_t>(gy) * width + gx] == 0) {
+                    d_success[refl_idx] = 0;
+                } else {
+                    const accumulator_t pixel_value =
+                      static_cast<accumulator_t>(image(gx, gy));
                     atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
                     atomicAdd(&d_foreground_count[refl_idx], 1u);
                     // Accumulate intensity·coord for centre-of-mass (xyzobs.px).
@@ -531,13 +555,17 @@ __global__ void kabsch_transform(pixel_t *d_image,
                     atomicAdd(
                       &d_intensity_times_z[refl_idx],
                       pv64 * static_cast<unsigned long long>(2 * image_num + 1));
-                } else {
+                }
+            } else {
+                // Background is counted only for unmasked pixels inside the
+                // image; masked or out-of-image background is dropped.
+                if (pixel_in_image
+                    && d_mask[static_cast<size_t>(gy) * width + gx] != 0) {
+                    const accumulator_t pixel_value =
+                      static_cast<accumulator_t>(image(gx, gy));
                     atomicAdd(&d_background_sum[refl_idx], pixel_value);
                     atomicAdd(&d_background_count[refl_idx], 1u);
                 }
-            } else if (any_fg) {
-                // Foreground pixel lies outside the bbox bounds; should not
-                // happen if bbox is correctly sized, but flag for safety.
             }
         }
 
@@ -571,6 +599,11 @@ void compute_kabsch_transform(pixel_t *d_image,
                               const BoundingBoxExtents *d_bboxes,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
+                              const uint8_t *d_mask,
+                              int origin_x,
+                              int origin_y,
+                              uint32_t grid_w,
+                              uint32_t grid_h,
                               scalar_t delta_b,
                               scalar_t delta_m,
                               FGAlgorithm algorithm,
@@ -594,8 +627,10 @@ void compute_kabsch_transform(pixel_t *d_image,
     //   gridDim.y = ceil(height / 15)
     // Edge blocks may extend past the image boundary; those threads
     // simply fail the bounds check in the kernel and write false / skip.
-    dim3 gridDim(ceil_div(width, static_cast<uint32_t>(KABSCH_BLOCK_X - 1)),
-                 ceil_div(height, static_cast<uint32_t>(KABSCH_BLOCK_Y - 1)));
+    // grid_w/grid_h are the padded extent (image plus any bbox overflow past
+    // the detector edge), not the raw image dimensions.
+    dim3 gridDim(ceil_div(grid_w, static_cast<uint32_t>(KABSCH_BLOCK_X - 1)),
+                 ceil_div(grid_h, static_cast<uint32_t>(KABSCH_BLOCK_Y - 1)));
 
     // The kernel is templated on FGAlgorithm rather than taking it as a
     // runtime parameter, for two reasons:
@@ -633,6 +668,9 @@ void compute_kabsch_transform(pixel_t *d_image,
                                              d_bboxes,
                                              d_reflection_indices,
                                              num_reflections_this_image,
+                                             d_mask,
+                                             origin_x,
+                                             origin_y,
                                              delta_b,
                                              delta_m,
                                              d_foreground_sum,

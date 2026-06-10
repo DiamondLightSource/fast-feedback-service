@@ -217,6 +217,14 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
       d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long));
     cudaMemset(
       d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long));
+
+    // All-valid detector mask (non-zero = valid) and a per-reflection success
+    // flag. The kernel clears success on a masked or out-of-image foreground
+    // pixel; with no mask and an image-sized grid, neither occurs here.
+    DeviceBuffer<uint8_t> d_mask(static_cast<size_t>(width) * height);
+    cudaMemset(d_mask.data(), 1, static_cast<size_t>(width) * height * sizeof(uint8_t));
+    DeviceBuffer<uint8_t> d_success(num_reflections);
+    cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t));
     cuda_throw_error();
 
     // For each image in the scan, gather reflections whose bbox covers it
@@ -259,6 +267,11 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                                  d_bboxes.data(),
                                  d_reflection_indices.data(),
                                  refl_indices_this_image.size(),
+                                 d_mask.data(),
+                                 0,
+                                 0,
+                                 width,
+                                 height,
                                  delta_b,
                                  delta_m,
                                  algo,
@@ -269,7 +282,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                                  d_intensity_times_x.data(),
                                  d_intensity_times_y.data(),
                                  d_intensity_times_z.data(),
-                                 nullptr,
+                                 d_success.data(),
                                  nullptr);
     }
     cudaDeviceSynchronize();
