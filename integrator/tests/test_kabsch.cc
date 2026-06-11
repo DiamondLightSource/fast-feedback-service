@@ -3,13 +3,23 @@
  * @brief Unit test for the GPU Kabsch transform foreground/background
  *        pixel classification
  *
- * Drives compute_kabsch_transform across every image in the scan with a
- * blank (all-zero) detector image, so the only thing being exercised is
- * the per-pixel Kabsch-ellipsoid foreground/background classification.
- * Pixel sums are necessarily zero and are not checked; only the
- * accumulated per-reflection foreground and background pixel COUNTS are
- * compared against a CPU baseline reference (see reference resolution
- * below), matched by row index.
+ * Two families of tests share the same geometry/prediction inputs
+ * (loadKabschInputs):
+ *
+ *  - ForegroundBackgroundPixelCounts{Dials,Ellipsoid} drive
+ *    compute_kabsch_transform with a blank (all-zero) detector image, so the
+ *    only thing tested is the per-pixel Kabsch foreground/background
+ *    classification. Pixel sums are zero and unchecked; only the per-reflection
+ *    foreground/background pixel COUNTS are compared to the baseline.
+ *
+ *  - IntensitySum{Dials,Ellipsoid} drive the same kernel over the REAL detector
+ *    frames and mask, and check the per-reflection foreground intensity SUM. The
+ *    kernel emits a raw foreground sum; the baseline subtracts a robust Tukey
+ *    background. background.mean is the mean background per pixel, so the raw
+ *    sum is recovered as intensity.sum.value + n_foreground * background.mean
+ *    (no background model needed here).
+ *
+ * Both match the baseline by row index.
  *
  * Inputs (in FFS_INTEGRATE_TEST_DATA, fallback /scratch/ffs_integrate_test_data):
  *   - integrated_1_10.refl         -> s1, xyzcal.mm, bbox, miller_index
@@ -45,6 +55,7 @@
 #include <vector>
 
 #include "cuda_common.hpp"
+#include "h5read.h"
 #include "integrator.cuh"
 #include "integrator/extent.hpp"
 #include "kabsch.cuh"
@@ -55,6 +66,116 @@ namespace fs = std::filesystem;
 
 /// HDF5 group path prefix for DIALS reflection table datasets
 static const std::string G = "dials/processing/group_0/";
+
+/**
+ * @brief Geometry and per-reflection inputs shared by every Kabsch test.
+ *
+ * Loaded once from indexed_1_10.expt (geometry) and integrated_1_10.refl
+ * (predictions/bboxes); the only thing that varies between tests is the
+ * foreground algorithm and whether real image data is fed to the kernel.
+ */
+struct KabschInputs {
+    // Geometry / scan
+    DetectorParameters det_params;
+    fastvec::Vector3D s0_vec;
+    fastvec::Vector3D rot_axis_vec;
+    std::vector<scalar_t> d_matrix_scalar;  // 3x3 flattened
+    scalar_t wavelength;
+    scalar_t osc_start;
+    scalar_t osc_width;
+    int image_range_start;
+    int image_range_end;
+    uint32_t width;
+    uint32_t height;
+    scalar_t delta_b;
+    scalar_t delta_m;
+    std::string image_template;  // path to the image file (nxs) for this scan
+
+    // Per-reflection predictions
+    size_t num_reflections;
+    std::vector<fastvec::Vector3D> s1_vecs;
+    std::vector<scalar_t> phi_vals;
+    std::vector<BoundingBoxExtents> bboxes;
+};
+
+/// Parse indexed_1_10.expt + integrated_1_10.refl into kernel-facing inputs.
+static KabschInputs loadKabschInputs(const fs::path &data_dir) {
+    KabschInputs in;
+
+    auto expt_file = data_dir / "indexed_1_10.expt";
+    auto refl_file = data_dir / "integrated_1_10.refl";
+
+    std::ifstream f(expt_file);
+    auto elist_json = nlohmann::json::parse(f);
+    Experiment expt(elist_json);
+    const Panel &panel = expt.detector().panels()[0];
+    const Scan &scan = expt.scan();
+    MonochromaticBeam beam = std::get<MonochromaticBeam>(expt.beam());
+
+    Eigen::Vector3d s0_eigen = beam.get_s0();
+    Eigen::Vector3d rot_axis_eigen = expt.goniometer().get_rotation_axis();
+    in.wavelength = static_cast<scalar_t>(beam.get_wavelength());
+    auto oscillation = scan.get_oscillation();
+    in.osc_start = static_cast<scalar_t>(oscillation[0]);
+    in.osc_width = static_cast<scalar_t>(oscillation[1]);
+    auto image_range = scan.get_image_range();
+    in.image_range_start = image_range[0];
+    in.image_range_end = image_range[1];
+
+    Eigen::Matrix3d d_matrix_eigen = panel.get_d_matrix();
+    in.d_matrix_scalar.resize(9);
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            in.d_matrix_scalar[i * 3 + j] = static_cast<scalar_t>(d_matrix_eigen(i, j));
+
+    in.det_params = make_detector_params(panel);
+
+    in.s0_vec = fastvec::make_vector3d(static_cast<scalar_t>(s0_eigen[0]),
+                                       static_cast<scalar_t>(s0_eigen[1]),
+                                       static_cast<scalar_t>(s0_eigen[2]));
+    in.rot_axis_vec = fastvec::make_vector3d(static_cast<scalar_t>(rot_axis_eigen[0]),
+                                             static_cast<scalar_t>(rot_axis_eigen[1]),
+                                             static_cast<scalar_t>(rot_axis_eigen[2]));
+
+    auto image_size_mm = panel.get_image_size_mm();
+    auto pixel_size = panel.get_pixel_size();
+    in.width = static_cast<uint32_t>(std::round(image_size_mm[0] / pixel_size[0]));
+    in.height = static_cast<uint32_t>(std::round(image_size_mm[1] / pixel_size[1]));
+
+    // Fixed test values (indexed.expt has no fitted profile model)
+    constexpr scalar_t N_SIGMA = scalar_t(3.0);
+    in.delta_b = N_SIGMA * static_cast<scalar_t>(degrees_to_radians(0.03));
+    in.delta_m = N_SIGMA * static_cast<scalar_t>(degrees_to_radians(0.1));
+
+    // Image file for this scan (used by the real-image intensity tests)
+    in.image_template = elist_json["imageset"][0]["template"].get<std::string>();
+
+    // Predicted s1 vectors, calculated positions and bboxes
+    auto refl_path = refl_file.string();
+    auto s1_flat = read_array_from_h5_file<double>(refl_path, G + "s1");
+    auto xyzcal_flat = read_array_from_h5_file<double>(refl_path, G + "xyzcal.mm");
+    auto bbox_flat = read_array_from_h5_file<int32_t>(refl_path, G + "bbox");
+
+    in.num_reflections = s1_flat.size() / 3;
+    in.s1_vecs.resize(in.num_reflections);
+    in.phi_vals.resize(in.num_reflections);
+    in.bboxes.resize(in.num_reflections);
+    for (size_t i = 0; i < in.num_reflections; ++i) {
+        in.s1_vecs[i] =
+          fastvec::make_vector3d(static_cast<scalar_t>(s1_flat[i * 3 + 0]),
+                                 static_cast<scalar_t>(s1_flat[i * 3 + 1]),
+                                 static_cast<scalar_t>(s1_flat[i * 3 + 2]));
+        in.phi_vals[i] = static_cast<scalar_t>(xyzcal_flat[i * 3 + 2]);
+        in.bboxes[i].x_min = bbox_flat[i * 6 + 0];
+        in.bboxes[i].x_max = bbox_flat[i * 6 + 1];
+        in.bboxes[i].y_min = bbox_flat[i * 6 + 2];
+        in.bboxes[i].y_max = bbox_flat[i * 6 + 3];
+        in.bboxes[i].z_min = bbox_flat[i * 6 + 4];
+        in.bboxes[i].z_max = bbox_flat[i * 6 + 5];
+    }
+
+    return in;
+}
 
 class KabschTransformTest : public ::testing::Test {
   protected:
@@ -72,13 +193,26 @@ class KabschTransformTest : public ::testing::Test {
 
     fs::path data_dir;
 
-    // Shared comparison driver; the only thing that varies between the
-    // DIALS and Ellipsoid tests is the foreground-classification algorithm.
+    // Resolve the baseline reference (CPU integrator run with the SAME algorithm,
+    // delta_b/delta_m and predictions). Overridable via FFS_KABSCH_BASELINE_REFERENCE.
+    fs::path baselineReference(FGAlgorithm algo) const {
+        if (const char *gp = std::getenv("FFS_KABSCH_BASELINE_REFERENCE")) {
+            return gp;
+        }
+        return data_dir
+               / ((algo == FGAlgorithm::Ellipsoid) ? "baseline_ellipsoid_1_10.refl"
+                                                   : "baseline_dials_1_10.refl");
+    }
+
+    // Blank-image comparison of foreground/background pixel COUNTS.
     void RunPixelCountComparison(FGAlgorithm algo);
+    // Real-image comparison of the foreground intensity SUM.
+    void RunIntensitySumComparison(FGAlgorithm algo);
 };
 
 void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     auto refl_file = data_dir / "integrated_1_10.refl";
+    auto expt_file = data_dir / "indexed_1_10.expt";
     // Reference is the CPU baseline integrator run with the SAME algorithm,
     // the SAME delta_b/delta_m (sigma_b=0.03, sigma_m=0.1, n=3), and the
     // SAME predictions/bboxes (it consumes integrated_1_10.refl).
@@ -89,97 +223,29 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     //   baseline_integrator integrated_1_10.refl indexed_1_10.expt \
     //     baseline_dials_1_10.refl --algorithm dials \
     //     --sigma_b 0.03 --sigma_m 0.1
-    // Path is overridable via FFS_KABSCH_BASELINE_REFERENCE; default is the
-    // baseline reference alongside the inputs in data_dir.
-    const std::string reference_name = (algo == FGAlgorithm::Ellipsoid)
-                                         ? "baseline_ellipsoid_1_10.refl"
-                                         : "baseline_dials_1_10.refl";
-    fs::path reference_file;
-    if (const char *gp = std::getenv("FFS_KABSCH_BASELINE_REFERENCE")) {
-        reference_file = gp;
-    } else {
-        reference_file = data_dir / reference_name;
-    }
-    auto expt_file = data_dir / "indexed_1_10.expt";
+    // Path is overridable via FFS_KABSCH_BASELINE_REFERENCE.
+    fs::path reference_file = baselineReference(algo);
     ASSERT_TRUE(fs::exists(refl_file)) << "Missing input file: " << refl_file;
     ASSERT_TRUE(fs::exists(reference_file)) << "Missing input file: " << reference_file;
     ASSERT_TRUE(fs::exists(expt_file)) << "Missing input file: " << expt_file;
 
-    // Extract beam, detector panel, goniometer, and scan from the experiment
-    std::ifstream f(expt_file);
-    auto elist_json = nlohmann::json::parse(f);
-    Experiment expt(elist_json);
-    const Panel &panel = expt.detector().panels()[0];
-    const Scan &scan = expt.scan();
-    MonochromaticBeam beam = std::get<MonochromaticBeam>(expt.beam());
-
-    Eigen::Vector3d s0_eigen = beam.get_s0();
-    Eigen::Vector3d rot_axis_eigen = expt.goniometer().get_rotation_axis();
-    scalar_t wavelength = static_cast<scalar_t>(beam.get_wavelength());
-    auto oscillation = scan.get_oscillation();
-    scalar_t osc_start = static_cast<scalar_t>(oscillation[0]);
-    scalar_t osc_width = static_cast<scalar_t>(oscillation[1]);
-    auto image_range = scan.get_image_range();
-    int image_range_start = image_range[0];
-    int image_range_end = image_range[1];
-
-    Eigen::Matrix3d d_matrix_eigen = panel.get_d_matrix();
-    std::vector<scalar_t> d_matrix_scalar(9);
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            d_matrix_scalar[i * 3 + j] = static_cast<scalar_t>(d_matrix_eigen(i, j));
-
-    DetectorParameters det_params = make_detector_params(panel);
-
-    fastvec::Vector3D s0_vec =
-      fastvec::make_vector3d(static_cast<scalar_t>(s0_eigen[0]),
-                             static_cast<scalar_t>(s0_eigen[1]),
-                             static_cast<scalar_t>(s0_eigen[2]));
-    fastvec::Vector3D rot_axis_vec =
-      fastvec::make_vector3d(static_cast<scalar_t>(rot_axis_eigen[0]),
-                             static_cast<scalar_t>(rot_axis_eigen[1]),
-                             static_cast<scalar_t>(rot_axis_eigen[2]));
-
-    auto image_size_mm = panel.get_image_size_mm();
-    auto pixel_size = panel.get_pixel_size();
-    uint32_t width =
-      static_cast<uint32_t>(std::round(image_size_mm[0] / pixel_size[0]));
-    uint32_t height =
-      static_cast<uint32_t>(std::round(image_size_mm[1] / pixel_size[1]));
-
-    // Fixed test values
-    constexpr scalar_t N_SIGMA = scalar_t(3.0);
-    scalar_t delta_b = N_SIGMA * static_cast<scalar_t>(degrees_to_radians(0.03));
-    scalar_t delta_m = N_SIGMA * static_cast<scalar_t>(degrees_to_radians(0.1));
-
-    // Load predicted s₁ vectors, calculated positions, bboxes and Miller indices
-    auto refl_path = refl_file.string();
-    auto s1_flat = read_array_from_h5_file<double>(refl_path, G + "s1");
-    auto xyzcal_flat = read_array_from_h5_file<double>(refl_path, G + "xyzcal.mm");
-    auto bbox_flat = read_array_from_h5_file<int32_t>(refl_path, G + "bbox");
-    auto hkl_flat = read_array_from_h5_file<int32_t>(refl_path, G + "miller_index");
-
-    size_t num_reflections = s1_flat.size() / 3;
-    ASSERT_EQ(xyzcal_flat.size(), num_reflections * 3);
-    ASSERT_EQ(bbox_flat.size(), num_reflections * 6);
-    ASSERT_EQ(hkl_flat.size(), num_reflections * 3);
-
-    // Convert host data into kernel-facing types
-    std::vector<fastvec::Vector3D> s1_vecs(num_reflections);
-    std::vector<scalar_t> phi_vals(num_reflections);
-    std::vector<BoundingBoxExtents> bboxes(num_reflections);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        s1_vecs[i] = fastvec::make_vector3d(static_cast<scalar_t>(s1_flat[i * 3 + 0]),
-                                            static_cast<scalar_t>(s1_flat[i * 3 + 1]),
-                                            static_cast<scalar_t>(s1_flat[i * 3 + 2]));
-        phi_vals[i] = static_cast<scalar_t>(xyzcal_flat[i * 3 + 2]);
-        bboxes[i].x_min = bbox_flat[i * 6 + 0];
-        bboxes[i].x_max = bbox_flat[i * 6 + 1];
-        bboxes[i].y_min = bbox_flat[i * 6 + 2];
-        bboxes[i].y_max = bbox_flat[i * 6 + 3];
-        bboxes[i].z_min = bbox_flat[i * 6 + 4];
-        bboxes[i].z_max = bbox_flat[i * 6 + 5];
-    }
+    KabschInputs in = loadKabschInputs(data_dir);
+    size_t num_reflections = in.num_reflections;
+    uint32_t width = in.width;
+    uint32_t height = in.height;
+    int image_range_start = in.image_range_start;
+    int image_range_end = in.image_range_end;
+    scalar_t delta_b = in.delta_b;
+    scalar_t delta_m = in.delta_m;
+    scalar_t wavelength = in.wavelength;
+    scalar_t osc_start = in.osc_start;
+    scalar_t osc_width = in.osc_width;
+    DetectorParameters det_params = in.det_params;
+    fastvec::Vector3D s0_vec = in.s0_vec;
+    fastvec::Vector3D rot_axis_vec = in.rot_axis_vec;
+    const std::vector<fastvec::Vector3D> &s1_vecs = in.s1_vecs;
+    const std::vector<scalar_t> &phi_vals = in.phi_vals;
+    const std::vector<BoundingBoxExtents> &bboxes = in.bboxes;
 
     // Allocate a blank (all-zero) detector image on the GPU, reused per image
     auto d_image = PitchedMalloc<pixel_t>(width, height);
@@ -191,7 +257,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
     DeviceBuffer<scalar_t> d_phi_values(num_reflections);
     DeviceBuffer<BoundingBoxExtents> d_bboxes(num_reflections);
-    d_d_matrix.assign(d_matrix_scalar.data());
+    d_d_matrix.assign(in.d_matrix_scalar.data());
     d_s1_vectors.assign(s1_vecs.data());
     d_phi_values.assign(phi_vals.data());
     d_bboxes.assign(bboxes.data());
@@ -217,6 +283,14 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
       d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long));
     cudaMemset(
       d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long));
+
+    // All-valid detector mask (non-zero = valid) and a per-reflection success
+    // flag. The kernel clears success on a masked or out-of-image foreground
+    // pixel; with no mask and an image-sized grid, neither occurs here.
+    DeviceBuffer<uint8_t> d_mask(static_cast<size_t>(width) * height);
+    cudaMemset(d_mask.data(), 1, static_cast<size_t>(width) * height * sizeof(uint8_t));
+    DeviceBuffer<uint8_t> d_success(num_reflections);
+    cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t));
     cuda_throw_error();
 
     // For each image in the scan, gather reflections whose bbox covers it
@@ -259,6 +333,11 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                                  d_bboxes.data(),
                                  d_reflection_indices.data(),
                                  refl_indices_this_image.size(),
+                                 d_mask.data(),
+                                 0,
+                                 0,
+                                 width,
+                                 height,
                                  delta_b,
                                  delta_m,
                                  algo,
@@ -269,7 +348,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                                  d_intensity_times_x.data(),
                                  d_intensity_times_y.data(),
                                  d_intensity_times_z.data(),
-                                 nullptr,
+                                 d_success.data(),
                                  nullptr);
     }
     cudaDeviceSynchronize();
@@ -284,12 +363,12 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     // rows in the SAME order as its input (integrated_1_10.refl), which is
     // exactly what refl_file feeds the kernel, so we match by ROW INDEX.
     auto reference_path = reference_file.string();
-    auto exp_fg_int =
+    auto expected_fg_int =
       read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.foreground");
-    auto exp_bg_int =
+    auto expected_bg_int =
       read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.background");
-    size_t num_expected = exp_fg_int.size();
-    ASSERT_EQ(exp_bg_int.size(), num_expected);
+    size_t num_expected = expected_fg_int.size();
+    ASSERT_EQ(expected_bg_int.size(), num_expected);
     ASSERT_EQ(num_expected, num_reflections)
       << "Baseline reference row count must match the prediction table; "
          "regenerate baseline_dials_1_10.refl from integrated_1_10.refl";
@@ -315,8 +394,8 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     for (size_t i = 0; i < num_reflections; ++i) {
         std::array<int64_t, 2> got = {static_cast<int64_t>(h_fg_count[i]),
                                       static_cast<int64_t>(h_bg_count[i])};
-        std::array<int64_t, 2> exp = {static_cast<int64_t>(exp_fg_int[i]),
-                                      static_cast<int64_t>(exp_bg_int[i])};
+        std::array<int64_t, 2> exp = {static_cast<int64_t>(expected_fg_int[i]),
+                                      static_cast<int64_t>(expected_bg_int[i])};
 
         if (got[0] + got[1] != exp[0] + exp[1]) {
             mask_excluded++;
@@ -400,4 +479,262 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCountsDials) {
 
 TEST_F(KabschTransformTest, ForegroundBackgroundPixelCountsEllipsoid) {
     RunPixelCountComparison(FGAlgorithm::Ellipsoid);
+}
+
+/**
+ * @brief Compare the kernel's per-reflection foreground intensity sum against
+ *        the baseline, driven over the real detector frames.
+ *
+ * Unlike the count tests above (which use a blank image), this feeds the actual
+ * scan frames and the real detector mask, so the foreground summation itself is
+ * exercised. The kernel accumulates a raw foreground sum, whereas the baseline
+ * subtracts a robust Tukey background, so its intensity.sum.value is not a raw
+ * sum. The raw sum is recovered exactly as intensity.sum.value + background.mean
+ * (the baseline stores I = fg_sum - background.mean), so no background model is
+ * needed here.
+ */
+void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
+    auto refl_file = data_dir / "integrated_1_10.refl";
+    auto expt_file = data_dir / "indexed_1_10.expt";
+    fs::path reference_file = baselineReference(algo);
+    ASSERT_TRUE(fs::exists(refl_file)) << "Missing input file: " << refl_file;
+    ASSERT_TRUE(fs::exists(reference_file)) << "Missing input file: " << reference_file;
+    ASSERT_TRUE(fs::exists(expt_file)) << "Missing input file: " << expt_file;
+
+    KabschInputs in = loadKabschInputs(data_dir);
+    size_t num_reflections = in.num_reflections;
+    uint32_t width = in.width;
+    uint32_t height = in.height;
+
+    // Open the real image file referenced by the experiment.
+    ASSERT_TRUE(fs::exists(in.image_template))
+      << "Image file referenced by expt not found: " << in.image_template;
+    H5Read reader(in.image_template);
+    int num_images = static_cast<int>(reader.get_number_of_images());
+    auto shape = reader.image_shape();  // {slow, fast}
+    ASSERT_EQ(shape[1], width) << "Image fast dimension disagrees with detector";
+    ASSERT_EQ(shape[0], height) << "Image slow dimension disagrees with detector";
+
+    // Static per-reflection inputs.
+    auto d_image = PitchedMalloc<pixel_t>(width, height);
+    DeviceBuffer<scalar_t> d_d_matrix(9);
+    DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
+    DeviceBuffer<scalar_t> d_phi_values(num_reflections);
+    DeviceBuffer<BoundingBoxExtents> d_bboxes(num_reflections);
+    d_d_matrix.assign(in.d_matrix_scalar.data());
+    d_s1_vectors.assign(in.s1_vecs.data());
+    d_phi_values.assign(in.phi_vals.data());
+    d_bboxes.assign(in.bboxes.data());
+
+    // Per-reflection accumulators (zeroed; the kernel atomically adds into them).
+    DeviceBuffer<accumulator_t> d_fg_sum(num_reflections);
+    DeviceBuffer<uint32_t> d_fg_count(num_reflections);
+    DeviceBuffer<accumulator_t> d_bg_sum(num_reflections);
+    DeviceBuffer<uint32_t> d_bg_count(num_reflections);
+    DeviceBuffer<unsigned long long> d_itx(num_reflections);
+    DeviceBuffer<unsigned long long> d_ity(num_reflections);
+    DeviceBuffer<unsigned long long> d_itz(num_reflections);
+    cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
+    cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(d_bg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
+    cudaMemset(d_bg_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(d_itx.data(), 0, num_reflections * sizeof(unsigned long long));
+    cudaMemset(d_ity.data(), 0, num_reflections * sizeof(unsigned long long));
+    cudaMemset(d_itz.data(), 0, num_reflections * sizeof(unsigned long long));
+
+    // Real detector mask (non-zero = valid); all-valid fallback if absent.
+    std::vector<uint8_t> h_mask(static_cast<size_t>(width) * height, 1);
+    if (auto mask_opt = reader.get_mask()) {
+        std::copy(mask_opt->begin(), mask_opt->end(), h_mask.begin());
+    }
+    DeviceBuffer<uint8_t> d_mask(static_cast<size_t>(width) * height);
+    d_mask.assign(h_mask.data());
+    DeviceBuffer<uint8_t> d_success(num_reflections);
+    cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t));
+    cuda_throw_error();
+
+    // Pad the launch grid to cover bboxes overflowing the detector edge, exactly
+    // as the production integrator does, so masked / out-of-image foreground
+    // fails reflections the same way the baseline does.
+    int grid_origin_x = 0;
+    int grid_origin_y = 0;
+    int grid_max_x = static_cast<int>(width);
+    int grid_max_y = static_cast<int>(height);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        grid_origin_x = std::min(grid_origin_x, in.bboxes[i].x_min);
+        grid_origin_y = std::min(grid_origin_y, in.bboxes[i].y_min);
+        grid_max_x = std::max(grid_max_x, in.bboxes[i].x_max + 1);
+        grid_max_y = std::max(grid_max_y, in.bboxes[i].y_max + 1);
+    }
+    uint32_t grid_w = static_cast<uint32_t>(grid_max_x - grid_origin_x);
+    uint32_t grid_h = static_cast<uint32_t>(grid_max_y - grid_origin_y);
+
+    // Iterate frames in 0-based frame space (== bbox z space, == baseline). Load
+    // the real pixels for each frame and dispatch one kernel call.
+    std::vector<pixel_t> host_image(static_cast<size_t>(width) * height);
+    DeviceBuffer<size_t> d_reflection_indices(num_reflections);
+    std::vector<size_t> refl_indices_this_image;
+    refl_indices_this_image.reserve(num_reflections);
+
+    for (int image_num = 0; image_num < num_images; ++image_num) {
+        refl_indices_this_image.clear();
+        for (size_t i = 0; i < num_reflections; ++i) {
+            if (in.bboxes[i].z_min <= image_num && image_num < in.bboxes[i].z_max) {
+                refl_indices_this_image.push_back(i);
+            }
+        }
+        if (refl_indices_this_image.empty()) continue;
+
+        // is_image_available() lazily opens the frame's dataset handle (via the
+        // raw-chunk path); get_image_into() relies on it already being open, so
+        // this call is required before reading, as the baseline/integrator do.
+        ASSERT_TRUE(reader.is_image_available(static_cast<size_t>(image_num)))
+          << "Image frame " << image_num << " not available in " << in.image_template;
+        reader.get_image_into(static_cast<size_t>(image_num), host_image.data());
+        cudaMemcpy2D(d_image.get(),
+                     d_image.pitch_bytes(),
+                     host_image.data(),
+                     width * sizeof(pixel_t),
+                     width * sizeof(pixel_t),
+                     height,
+                     cudaMemcpyHostToDevice);
+        cuda_throw_error();
+
+        cudaMemcpy(d_reflection_indices.data(),
+                   refl_indices_this_image.data(),
+                   refl_indices_this_image.size() * sizeof(size_t),
+                   cudaMemcpyHostToDevice);
+        cuda_throw_error();
+
+        compute_kabsch_transform(d_image.get(),
+                                 d_image.pitch_bytes(),
+                                 width,
+                                 height,
+                                 image_num,
+                                 d_d_matrix.data(),
+                                 in.wavelength,
+                                 in.det_params,
+                                 in.osc_start,
+                                 in.osc_width,
+                                 in.image_range_start,
+                                 in.s0_vec,
+                                 in.rot_axis_vec,
+                                 d_s1_vectors.data(),
+                                 d_phi_values.data(),
+                                 d_bboxes.data(),
+                                 d_reflection_indices.data(),
+                                 refl_indices_this_image.size(),
+                                 d_mask.data(),
+                                 grid_origin_x,
+                                 grid_origin_y,
+                                 grid_w,
+                                 grid_h,
+                                 in.delta_b,
+                                 in.delta_m,
+                                 algo,
+                                 d_fg_sum.data(),
+                                 d_fg_count.data(),
+                                 d_bg_sum.data(),
+                                 d_bg_count.data(),
+                                 d_itx.data(),
+                                 d_ity.data(),
+                                 d_itz.data(),
+                                 d_success.data(),
+                                 nullptr);
+    }
+    cudaDeviceSynchronize();
+    cuda_throw_error();
+
+    std::vector<accumulator_t> h_fg_sum(num_reflections);
+    std::vector<uint32_t> h_fg_count(num_reflections);
+    std::vector<uint32_t> h_bg_count(num_reflections);
+    d_fg_sum.extract(h_fg_sum.data());
+    d_fg_count.extract(h_fg_count.data());
+    d_bg_count.extract(h_bg_count.data());
+
+    // Baseline columns (row-aligned with the prediction table).
+    auto reference_path = reference_file.string();
+    auto expected_fg_int =
+      read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.foreground");
+    auto expected_bg_int =
+      read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.background");
+    auto expected_intensity =
+      read_array_from_h5_file<double>(reference_path, G + "intensity.sum.value");
+    auto expected_bg_mean =
+      read_array_from_h5_file<double>(reference_path, G + "background.mean");
+    ASSERT_EQ(expected_fg_int.size(), num_reflections);
+    ASSERT_EQ(expected_bg_int.size(), num_reflections);
+    ASSERT_EQ(expected_intensity.size(), num_reflections);
+    ASSERT_EQ(expected_bg_mean.size(), num_reflections);
+
+    // A reflection is comparable only when the kernel and baseline selected the
+    // identical foreground pixel set, which is guaranteed when both the fg and
+    // bg counts match. For those, the raw foreground sums must be equal:
+    //   kernel fg_sum == intensity.sum.value + background.mean.
+    size_t compared = 0;
+    size_t mismatches = 0;
+    size_t excluded = 0;
+    double sum_abs_err = 0.0;
+    double max_abs_err = 0.0;
+
+    for (size_t i = 0; i < num_reflections; ++i) {
+        if (static_cast<int64_t>(h_fg_count[i]) != expected_fg_int[i]
+            || static_cast<int64_t>(h_bg_count[i]) != expected_bg_int[i]) {
+            excluded++;
+            continue;
+        }
+        compared++;
+        // Undo the baseline's background subtraction to get its raw foreground
+        // sum. background.mean is the mean background per pixel, and the
+        // baseline stored intensity.sum.value = fg_sum - n_fg * background.mean,
+        // so adding n_fg * background.mean back cancels the (robust Tukey)
+        // background term and leaves the same raw Σ over foreground pixels the
+        // kernel produces. (n_fg == expected_fg_int[i] for the compared reflections.)
+        double baseline_foreground_sum =
+          expected_intensity[i]
+          + expected_bg_mean[i] * static_cast<double>(expected_fg_int[i]);
+        double kernel_foreground_sum = static_cast<double>(h_fg_sum[i]);
+        double abs_err = std::abs(kernel_foreground_sum - baseline_foreground_sum);
+        double tol = 1e-6 * std::abs(baseline_foreground_sum) + 1e-3;
+        sum_abs_err += abs_err;
+        max_abs_err = std::max(max_abs_err, abs_err);
+        if (abs_err > tol) {
+            mismatches++;
+            if (mismatches <= 10) {
+                std::cout << "  fg_sum mismatch refl " << i
+                          << ": kernel=" << kernel_foreground_sum
+                          << " baseline=" << baseline_foreground_sum
+                          << " (I=" << expected_intensity[i]
+                          << " + n_fg*bg_mean=" << expected_fg_int[i] << "*"
+                          << expected_bg_mean[i] << "), |err|=" << abs_err << "\n";
+            }
+        }
+    }
+
+    const char *algo_name = (algo == FGAlgorithm::Ellipsoid) ? "Ellipsoid" : "Dials";
+    std::cout << "\n=== Kabsch Foreground Intensity Sum Comparison (" << algo_name
+              << ") ===\n";
+    std::cout << "  Reflections compared : " << compared << " (of " << num_reflections
+              << ")\n";
+    std::cout << "  Excluded (counts differ) : " << excluded << "\n";
+    std::cout << "  Mismatches           : " << mismatches << "\n";
+    if (compared > 0) {
+        std::cout << "  Mean |err|           : " << (sum_abs_err / compared) << "\n";
+        std::cout << "  Max  |err|           : " << max_abs_err << "\n";
+    }
+    std::cout << "=============================================\n";
+
+    EXPECT_GT(compared, 0u) << "No comparable reflections (counts never matched)";
+    EXPECT_EQ(mismatches, 0u)
+      << mismatches << " of " << compared
+      << " comparable reflections had a foreground sum differing from the baseline "
+      << algo_name << " reference";
+}
+
+TEST_F(KabschTransformTest, IntensitySumDials) {
+    RunIntensitySumComparison(FGAlgorithm::Dials);
+}
+
+TEST_F(KabschTransformTest, IntensitySumEllipsoid) {
+    RunIntensitySumComparison(FGAlgorithm::Ellipsoid);
 }

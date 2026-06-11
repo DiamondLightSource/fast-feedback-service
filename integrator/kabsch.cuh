@@ -34,11 +34,12 @@
 /**
  * @brief Host wrapper function for image-based Kabsch computation
  * 
- * Launches a kernel over the entire image grid to compute Kabsch coordinates
- * for pixels that fall within reflection bounding boxes, classifying each
- * pixel as foreground or background and atomically accumulating intensities
- * for summation integration.
- * 
+ * Launches a kernel over the padded grid (image plus any bbox overflow past
+ * the detector edge) to compute Kabsch coordinates for pixels that fall within
+ * reflection bounding boxes, classifying each pixel as foreground or background
+ * and atomically accumulating intensities for summation integration. A masked
+ * or out-of-image foreground pixel fails the reflection via d_success.
+ *
  * @param d_image Device pointer to image data (pitched allocation)
  * @param image_pitch Pitch in bytes of the device image allocation
  * @param width Image width in pixels
@@ -56,12 +57,21 @@
  * @param d_bboxes Device array of BoundingBoxExtents structs for each reflection
  * @param d_reflection_indices Device array of reflection indices for this image
  * @param num_reflections_this_image Number of reflections touching this image
+ * @param d_mask Detector mask, flat width*height indexed gy*width + gx (non-zero = valid, 0 = masked)
+ * @param origin_x Pixel x coordinate of the launch grid origin (may be negative)
+ * @param origin_y Pixel y coordinate of the launch grid origin (may be negative)
+ * @param grid_w Padded grid width in pixels (image plus bbox overflow)
+ * @param grid_h Padded grid height in pixels (image plus bbox overflow)
  * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D), radians
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M), radians
  * @param d_foreground_sum Device array to accumulate foreground intensities per reflection
  * @param d_foreground_count Device array to count foreground pixels per reflection
  * @param d_background_sum Device array to accumulate background intensities per reflection
  * @param d_background_count Device array to count background pixels per reflection
+ * @param d_intensity_times_x Device array accumulating intensity·(2gx+1) per reflection (centre-of-mass)
+ * @param d_intensity_times_y Device array accumulating intensity·(2gy+1) per reflection (centre-of-mass)
+ * @param d_intensity_times_z Device array accumulating intensity·(2z+1) per reflection (centre-of-mass)
+ * @param d_success Per-reflection success flag, cleared on a masked or out-of-image foreground pixel
  * @param stream CUDA stream for async execution
  */
 void compute_kabsch_transform(pixel_t *d_image,
@@ -82,6 +92,11 @@ void compute_kabsch_transform(pixel_t *d_image,
                               const BoundingBoxExtents *d_bboxes,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
+                              const uint8_t *d_mask,
+                              int origin_x,
+                              int origin_y,
+                              uint32_t grid_w,
+                              uint32_t grid_h,
                               scalar_t delta_b,
                               scalar_t delta_m,
                               FGAlgorithm algorithm,
