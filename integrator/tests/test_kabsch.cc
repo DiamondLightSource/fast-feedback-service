@@ -15,8 +15,9 @@
  *  - IntensitySum{Dials,Ellipsoid} drive the same kernel over the REAL detector
  *    frames and mask, and check the per-reflection foreground intensity SUM. The
  *    kernel emits a raw foreground sum; the baseline subtracts a robust Tukey
- *    background, so the raw sum is recovered as intensity.sum.value +
- *    background.mean (no background model needed here).
+ *    background. background.mean is the mean background per pixel, so the raw
+ *    sum is recovered as intensity.sum.value + n_foreground * background.mean
+ *    (no background model needed here).
  *
  * Both match the baseline by row index.
  *
@@ -362,12 +363,12 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     // rows in the SAME order as its input (integrated_1_10.refl), which is
     // exactly what refl_file feeds the kernel, so we match by ROW INDEX.
     auto reference_path = reference_file.string();
-    auto exp_fg_int =
+    auto expected_fg_int =
       read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.foreground");
-    auto exp_bg_int =
+    auto expected_bg_int =
       read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.background");
-    size_t num_expected = exp_fg_int.size();
-    ASSERT_EQ(exp_bg_int.size(), num_expected);
+    size_t num_expected = expected_fg_int.size();
+    ASSERT_EQ(expected_bg_int.size(), num_expected);
     ASSERT_EQ(num_expected, num_reflections)
       << "Baseline reference row count must match the prediction table; "
          "regenerate baseline_dials_1_10.refl from integrated_1_10.refl";
@@ -393,8 +394,8 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     for (size_t i = 0; i < num_reflections; ++i) {
         std::array<int64_t, 2> got = {static_cast<int64_t>(h_fg_count[i]),
                                       static_cast<int64_t>(h_bg_count[i])};
-        std::array<int64_t, 2> exp = {static_cast<int64_t>(exp_fg_int[i]),
-                                      static_cast<int64_t>(exp_bg_int[i])};
+        std::array<int64_t, 2> exp = {static_cast<int64_t>(expected_fg_int[i]),
+                                      static_cast<int64_t>(expected_bg_int[i])};
 
         if (got[0] + got[1] != exp[0] + exp[1]) {
             mask_excluded++;
@@ -653,18 +654,18 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
 
     // Baseline columns (row-aligned with the prediction table).
     auto reference_path = reference_file.string();
-    auto exp_fg_int =
+    auto expected_fg_int =
       read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.foreground");
-    auto exp_bg_int =
+    auto expected_bg_int =
       read_array_from_h5_file<int32_t>(reference_path, G + "num_pixels.background");
-    auto exp_intensity =
+    auto expected_intensity =
       read_array_from_h5_file<double>(reference_path, G + "intensity.sum.value");
-    auto exp_bg_mean =
+    auto expected_bg_mean =
       read_array_from_h5_file<double>(reference_path, G + "background.mean");
-    ASSERT_EQ(exp_fg_int.size(), num_reflections);
-    ASSERT_EQ(exp_bg_int.size(), num_reflections);
-    ASSERT_EQ(exp_intensity.size(), num_reflections);
-    ASSERT_EQ(exp_bg_mean.size(), num_reflections);
+    ASSERT_EQ(expected_fg_int.size(), num_reflections);
+    ASSERT_EQ(expected_bg_int.size(), num_reflections);
+    ASSERT_EQ(expected_intensity.size(), num_reflections);
+    ASSERT_EQ(expected_bg_mean.size(), num_reflections);
 
     // A reflection is comparable only when the kernel and baseline selected the
     // identical foreground pixel set, which is guaranteed when both the fg and
@@ -677,17 +678,21 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     double max_abs_err = 0.0;
 
     for (size_t i = 0; i < num_reflections; ++i) {
-        if (static_cast<int64_t>(h_fg_count[i]) != exp_fg_int[i]
-            || static_cast<int64_t>(h_bg_count[i]) != exp_bg_int[i]) {
+        if (static_cast<int64_t>(h_fg_count[i]) != expected_fg_int[i]
+            || static_cast<int64_t>(h_bg_count[i]) != expected_bg_int[i]) {
             excluded++;
             continue;
         }
         compared++;
         // Undo the baseline's background subtraction to get its raw foreground
-        // sum: it stored intensity.sum.value = fg_sum - background.mean, so
-        // adding background.mean back cancels the (robust Tukey) background term
-        // and leaves the same raw Σ over foreground pixels the kernel produces.
-        double baseline_foreground_sum = exp_intensity[i] + exp_bg_mean[i];
+        // sum. background.mean is the mean background per pixel, and the
+        // baseline stored intensity.sum.value = fg_sum - n_fg * background.mean,
+        // so adding n_fg * background.mean back cancels the (robust Tukey)
+        // background term and leaves the same raw Σ over foreground pixels the
+        // kernel produces. (n_fg == expected_fg_int[i] for the compared reflections.)
+        double baseline_foreground_sum =
+          expected_intensity[i]
+          + expected_bg_mean[i] * static_cast<double>(expected_fg_int[i]);
         double kernel_foreground_sum = static_cast<double>(h_fg_sum[i]);
         double abs_err = std::abs(kernel_foreground_sum - baseline_foreground_sum);
         double tol = 1e-6 * std::abs(baseline_foreground_sum) + 1e-3;
@@ -699,9 +704,9 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
                 std::cout << "  fg_sum mismatch refl " << i
                           << ": kernel=" << kernel_foreground_sum
                           << " baseline=" << baseline_foreground_sum
-                          << " (I=" << exp_intensity[i]
-                          << " + bg_mean=" << exp_bg_mean[i] << "), |err|=" << abs_err
-                          << "\n";
+                          << " (I=" << expected_intensity[i]
+                          << " + n_fg*bg_mean=" << expected_fg_int[i] << "*"
+                          << expected_bg_mean[i] << "), |err|=" << abs_err << "\n";
             }
         }
     }
