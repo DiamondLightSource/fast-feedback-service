@@ -234,6 +234,7 @@ class KabschTransformTest : public ::testing::Test {
 };
 
 void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
+#pragma region Load inputs
     auto refl_file = data_dir / "integrated_1_10.refl";
     auto expt_file = data_dir / "indexed_1_10.expt";
     // Reference is the CPU baseline integrator run with the SAME algorithm,
@@ -269,7 +270,9 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     const std::vector<fastvec::Vector3D> &s1_vecs = in.s1_vecs;
     const std::vector<scalar_t> &phi_vals = in.phi_vals;
     const std::vector<BoundingBoxExtents> &bboxes = in.bboxes;
+#pragma endregion Load inputs
 
+#pragma region Allocate buffers
     // Allocate a blank (all-zero) detector image on the GPU, reused per image
     auto d_image = PitchedMalloc<pixel_t>(width, height);
     cudaMemset2D(
@@ -317,7 +320,9 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     DeviceBuffer<uint8_t> d_success(num_reflections);
     cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t));
     cuda_throw_error();
+#pragma endregion Allocate buffers
 
+#pragma region Dispatch
     // For each image in the scan, gather reflections whose bbox covers it
     // (z_min <= image_num < z_max) and dispatch one kernel call. Counts
     // accumulate across images via atomic adds inside the kernel.
@@ -378,7 +383,9 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     }
     cudaDeviceSynchronize();
     cuda_throw_error();
+#pragma endregion Dispatch
 
+#pragma region Compare counts
     std::vector<uint32_t> h_fg_count(num_reflections);
     std::vector<uint32_t> h_bg_count =
       background_counts(d_bg_hist, d_bg_overflow, num_reflections);
@@ -496,6 +503,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                              << " comparable reflections diverged from the "
                                 "baseline "
                              << algo_name << " reference";
+#pragma endregion Compare counts
 }
 
 TEST_F(KabschTransformTest, ForegroundBackgroundPixelCountsDials) {
@@ -519,6 +527,7 @@ TEST_F(KabschTransformTest, ForegroundBackgroundPixelCountsEllipsoid) {
  * needed here.
  */
 void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
+#pragma region Load inputs
     auto refl_file = data_dir / "integrated_1_10.refl";
     auto expt_file = data_dir / "indexed_1_10.expt";
     fs::path reference_file = baselineReference(algo);
@@ -539,7 +548,9 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     auto shape = reader.image_shape();  // {slow, fast}
     ASSERT_EQ(shape[1], width) << "Image fast dimension disagrees with detector";
     ASSERT_EQ(shape[0], height) << "Image slow dimension disagrees with detector";
+#pragma endregion Load inputs
 
+#pragma region Allocate buffers
     // Static per-reflection inputs.
     auto d_image = PitchedMalloc<pixel_t>(width, height);
     DeviceBuffer<scalar_t> d_d_matrix(9);
@@ -577,7 +588,9 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     DeviceBuffer<uint8_t> d_success(num_reflections);
     cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t));
     cuda_throw_error();
+#pragma endregion Allocate buffers
 
+#pragma region Dispatch
     // Pad the launch grid to cover bboxes overflowing the detector edge, exactly
     // as the production integrator does, so masked / out-of-image foreground
     // fails reflections the same way the baseline does.
@@ -669,7 +682,9 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     }
     cudaDeviceSynchronize();
     cuda_throw_error();
+#pragma endregion Dispatch
 
+#pragma region Reduce background
     std::vector<accumulator_t> h_fg_sum(num_reflections);
     std::vector<uint32_t> h_fg_count(num_reflections);
     std::vector<uint32_t> h_bg_count =
@@ -701,7 +716,9 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     d_bg_mean.extract(h_bg_mean.data());
     d_bg_sum_value.extract(h_bg_sum_value.data());
     d_bg_success.extract(h_bg_success.data());
+#pragma endregion Reduce background
 
+#pragma region Load baseline
     // Baseline columns (row-aligned with the prediction table).
     auto reference_path = reference_file.string();
     auto expected_fg_int =
@@ -719,7 +736,9 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     ASSERT_EQ(expected_intensity.size(), num_reflections);
     ASSERT_EQ(expected_bg_mean.size(), num_reflections);
     ASSERT_EQ(expected_bg_sum.size(), num_reflections);
+#pragma endregion Load baseline
 
+#pragma region Compare results
     // A reflection is comparable only when the kernel and baseline selected the
     // identical foreground pixel set, which is guaranteed when both the fg and
     // bg counts match. For those, the raw foreground sums must be equal:
@@ -787,6 +806,9 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
         }
     }
 
+#pragma endregion Compare results
+
+#pragma region Assertions
     const char *algo_name = (algo == FGAlgorithm::Ellipsoid) ? "Ellipsoid" : "Dials";
     std::cout << "\n=== Kabsch Foreground Intensity Sum Comparison (" << algo_name
               << ") ===\n";
@@ -812,6 +834,7 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
       << " comparable reflections had a device Tukey background differing from the "
          "baseline "
       << algo_name << " reference";
+#pragma endregion Assertions
 }
 
 TEST_F(KabschTransformTest, IntensitySumDials) {
