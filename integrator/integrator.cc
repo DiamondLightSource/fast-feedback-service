@@ -31,6 +31,10 @@
 #include <string>
 #include <thread>
 
+#ifdef __linux__
+#include <sched.h>
+#endif
+
 #include "../spotfinder/cbfread.hpp"
 #include "../spotfinder/shmread.hpp"
 #include "common.hpp"
@@ -110,6 +114,32 @@ extern "C" void stop_processing(int sig) {
     }
 }
 
+/**
+ * @brief Determine a sensible default number of worker threads.
+ *
+ * Prefers the number of CPUs the process is actually allowed to run on
+ * (respecting cgroup/scheduler affinity for when in containers).
+ * Falls back to std::thread::hardware_concurrency(), and finally to 1.
+ */
+static uint32_t auto_select_thread_count() {
+#ifdef __linux__
+    cpu_set_t cpus;
+    if (sched_getaffinity(0, sizeof(cpus), &cpus) == 0) {
+        int count = CPU_COUNT(&cpus);
+        logger.debug("sched_getaffinity reports {} allowed CPU(s)", count);
+        if (count > 0) {
+            return static_cast<uint32_t>(count);
+        }
+    } else {
+        logger.debug("sched_getaffinity failed, falling back to hardware_concurrency");
+    }
+#endif
+    uint32_t hw_threads = std::thread::hardware_concurrency();
+    logger.debug("std::thread::hardware_concurrency() reports {} thread(s)",
+                 hw_threads);
+    return hw_threads ? hw_threads : 1;
+}
+
 #pragma region Argument Parsing
 class IntegratorArgumentParser : public CUDAArgumentParser {
   public:
@@ -154,8 +184,8 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
 
     void add_integrator_arguments() {
         add_argument("-n", "--threads")
-          .help("Number of parallel reader threads")
-          .default_value<uint32_t>(1)
+          .help("Number of parallel reader threads (default: 0 = auto-select)")
+          .default_value<uint32_t>(0)
           .metavar("NUM")
           .scan<'u', uint32_t>();
 
@@ -525,11 +555,11 @@ int main(int argc, char **argv) {
                     avg_refls_per_image);
     }
 
-    // Get threading parameters
+    // Get threading parameters (0 = auto-select)
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
-    if (num_cpu_threads < 1) {
-        logger.error("Thread count must be >= 1");
-        return 1;
+    if (num_cpu_threads == 0) {
+        num_cpu_threads = auto_select_thread_count();
+        logger.info("Auto-selected {} CPU threads", num_cpu_threads);
     }
     logger.info("Running with {} CPU threads", num_cpu_threads);
 
