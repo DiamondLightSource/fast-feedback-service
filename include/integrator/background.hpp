@@ -37,6 +37,23 @@
  */
 enum class BackgroundModel : uint8_t { Constant, Glm };
 
+// Number of integer-valued bins in each per-reflection background histogram.
+// Single source of truth, shared by the GPU device histogram stride and the
+// host baseline adapter, so both paths bin identical pixel values and produce
+// identical estimates. bins cover pixel values [0, NUM_BG_BINS); values at or
+// above NUM_BG_BINS land in the per-reflection overflow tail. Chosen above the
+// realistic constant-background inlier range; device-memory cost is
+// num_reflections * NUM_BG_BINS * 4 bytes. If a reflection puts more than
+// kBackgroundMaxOverflowFraction of its background pixels in the overflow, the
+// range is too small to characterise that background and the estimate is
+// rejected (see tukey_constant_background), which the callers surface as an
+// error rather than silently degrading.
+constexpr int NUM_BG_BINS = 256;
+
+// Fraction of a reflection's background pixels allowed in the high-tail
+// overflow before the constant background estimate is rejected as untrustworthy.
+constexpr double kBackgroundMaxOverflowFraction = 0.25;
+
 /**
  * @brief Read-only view of a per-reflection background histogram.
  *
@@ -93,6 +110,16 @@ FFS_HD inline BackgroundResult tukey_constant_background(
     }
     if (N == 0) {
         return result;  // no background pixels, so no estimate (valid stays false)
+    }
+
+    // Too much of the background in the high-tail overflow means the histogram
+    // range (num_bins) is too small to characterise this reflection. The
+    // quartile and inlier estimate would silently diverge from a full-range
+    // computation, so reject it (valid stays false) and let the caller report
+    // the insufficient range.
+    if (static_cast<double>(hist.overflow_count)
+        > kBackgroundMaxOverflowFraction * static_cast<double>(N)) {
+        return result;
     }
 
     // Quantile positions (1-based counting convention, matching the baseline).

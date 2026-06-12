@@ -971,6 +971,7 @@ int main(int argc, char **argv) {
     std::vector<double> h_background_mean(num_reflections);
     std::vector<double> h_background_sum_value(num_reflections);
     std::vector<uint32_t> h_background_count(num_reflections);
+    std::vector<uint32_t> h_background_overflow(num_reflections);
     std::vector<uint8_t> h_background_success(num_reflections);
     std::vector<unsigned long long> h_intensity_times_x(num_reflections);
     std::vector<unsigned long long> h_intensity_times_y(num_reflections);
@@ -983,11 +984,43 @@ int main(int argc, char **argv) {
     d_background_mean.extract(h_background_mean.data());
     d_background_sum_value.extract(h_background_sum_value.data());
     d_background_count.extract(h_background_count.data());
+    d_background_overflow.extract(h_background_overflow.data());
     d_background_success.extract(h_background_success.data());
     d_intensity_times_x.extract(h_intensity_times_x.data());
     d_intensity_times_y.extract(h_intensity_times_y.data());
     d_intensity_times_z.extract(h_intensity_times_z.data());
     d_success.extract(h_success.data());
+
+    // The background histogram only covers pixel values [0, NUM_BG_BINS). If a
+    // reflection pushes more than kBackgroundMaxOverflowFraction of its
+    // background pixels into the overflow tail, that range is too small to
+    // characterise its background and the device Tukey estimate diverges from a
+    // full-range computation. Fail loudly so the histogram range is raised
+    // rather than silently producing a degraded intensity.
+    {
+        size_t overflowing = 0;
+        double worst_fraction = 0.0;
+        for (size_t i = 0; i < num_reflections; ++i) {
+            const uint32_t total = h_background_count[i];
+            if (total == 0) continue;
+            const double fraction = static_cast<double>(h_background_overflow[i])
+                                    / static_cast<double>(total);
+            if (fraction > kBackgroundMaxOverflowFraction) {
+                overflowing++;
+                worst_fraction = std::max(worst_fraction, fraction);
+            }
+        }
+        if (overflowing > 0) {
+            throw std::runtime_error(fmt::format(
+              "{} reflection(s) put more than {:.0f}% of their background pixels "
+              "above NUM_BG_BINS={} (worst {:.1f}%); the background histogram "
+              "range is too small. Increase NUM_BG_BINS.",
+              overflowing,
+              kBackgroundMaxOverflowFraction * 100.0,
+              NUM_BG_BINS,
+              worst_fraction * 100.0));
+        }
+    }
 
     // Compute final intensities for each reflection
     std::vector<double> intensities(num_reflections);

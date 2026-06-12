@@ -10,18 +10,10 @@
 #include <stdexcept>
 #include <vector>
 
-// Upper bound on the contiguous histogram from the aggregator.
-// Background pixel values above this are folded into the overflow tail; for a
-// constant background these are extreme outliers that Tukey rejects, so the
-// estimate is unaffected and large hot-pixel-sized values need no allocation.
-namespace {
-constexpr int kMaxBins = 4096;
-}
-
 // Tukey outlier-rejecting constant background. Delegates to the single-source
 // tukey_constant_background() so the baseline and the GPU run identical math;
 // this function only flattens the aggregator's array and overflow map into a
-// contiguous ConstHistogramView.
+// contiguous ConstHistogramView over the shared NUM_BG_BINS range.
 std::tuple<double, double> compute_background_constant_3d(
   const BackgroundAggregator &data) {
     if (data.num_pixels() == 0) {
@@ -31,34 +23,39 @@ std::tuple<double, double> compute_background_constant_3d(
     const auto &small_hist = data.small_hist();
     const auto *large_hist = data.large_hist();  // may be nullptr
 
-    // Determine how many contiguous integer bins to allocate: enough to
-    // cover the small array and any in-range map keys, capped at kMaxBins.
-    int num_bins = static_cast<int>(small_hist.size());
-    if (large_hist != nullptr) {
-        for (const auto &[value, count] : *large_hist) {
-            if (value >= num_bins && value < kMaxBins) {
-                num_bins = value + 1;
-            }
-        }
-    }
-
-    std::vector<uint32_t> bins(static_cast<size_t>(num_bins), 0);
+    // Bin into the shared [0, NUM_BG_BINS) range exactly as the GPU kernel does,
+    // so the host baseline and the device reduction see identical histograms:
+    // negatives clamp into bin 0, values at or above NUM_BG_BINS go to the
+    // overflow tail.
+    std::vector<uint32_t> bins(static_cast<size_t>(NUM_BG_BINS), 0);
     uint32_t overflow_count = 0;
 
-    for (std::size_t v = 0; v < small_hist.size(); ++v) {
+    for (std::size_t v = 0; v < small_hist.size() && v < NUM_BG_BINS; ++v) {
         bins[v] = static_cast<uint32_t>(small_hist[v]);
     }
     if (large_hist != nullptr) {
         for (const auto &[value, count] : *large_hist) {
-            if (value >= 0 && value < num_bins) {
-                bins[static_cast<size_t>(value)] += static_cast<uint32_t>(count);
+            const int bin = value < 0 ? 0 : value;
+            if (bin < NUM_BG_BINS) {
+                bins[static_cast<size_t>(bin)] += static_cast<uint32_t>(count);
             } else {
                 overflow_count += static_cast<uint32_t>(count);
             }
         }
     }
 
-    ConstHistogramView view{bins.data(), num_bins, overflow_count};
+    ConstHistogramView view{bins.data(), NUM_BG_BINS, overflow_count};
+
+    // Too many pixels in the overflow tail means NUM_BG_BINS is too small to
+    // represent this reflection's background, so the estimate would diverge
+    // from a full-range computation. Fail loudly rather than degrade silently.
+    if (static_cast<double>(overflow_count)
+        > kBackgroundMaxOverflowFraction * static_cast<double>(data.num_pixels())) {
+        throw std::runtime_error(
+          "Background histogram overflow exceeded the permitted fraction; "
+          "NUM_BG_BINS is too small for this reflection's background level");
+    }
+
     BackgroundResult result = tukey_constant_background(view);
     if (!result.valid) {
         throw std::runtime_error(
