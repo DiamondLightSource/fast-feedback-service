@@ -739,20 +739,51 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
 #pragma endregion Load baseline
 
 #pragma region Compare results
-    // A reflection is comparable only when the kernel and baseline selected the
-    // identical foreground pixel set, which is guaranteed when both the fg and
-    // bg counts match. For those, the raw foreground sums must be equal:
+    // Foreground sum parity requires the kernel and baseline to have selected the
+    // identical foreground pixel set, which holds when both the fg and bg counts
+    // match. For those, the raw foreground sums must be equal:
     //   kernel fg_sum == intensity.sum.value + background.mean.
+    // Background parity depends only on the background population, so it is gated
+    // on the bg count alone: a reflection whose foreground was clipped by the
+    // mask can still have an identical background worth verifying.
     size_t compared = 0;
     size_t mismatches = 0;
     size_t excluded = 0;
     double sum_abs_err = 0.0;
     double max_abs_err = 0.0;
     // Background estimate parity (device Tukey reduction vs baseline).
+    size_t bg_compared = 0;
     size_t bg_mismatches = 0;
     double bg_max_abs_err = 0.0;
 
     for (size_t i = 0; i < num_reflections; ++i) {
+        // Background parity: same background pixel population (bg counts match)
+        // => the device Tukey reduction must reproduce the baseline
+        // background.mean and background.sum.value.
+        if (static_cast<int64_t>(h_bg_count[i]) == expected_bg_int[i]) {
+            bg_compared++;
+            double bg_mean_err = std::abs(h_bg_mean[i] - expected_bg_mean[i]);
+            double bg_sum_err = std::abs(h_bg_sum_value[i] - expected_bg_sum[i]);
+            double bg_mean_tol = 1e-5 * std::abs(expected_bg_mean[i]) + 1e-4;
+            double bg_sum_tol = 1e-5 * std::abs(expected_bg_sum[i]) + 1e-3;
+            bg_max_abs_err = std::max(bg_max_abs_err, bg_mean_err);
+            if (!h_bg_success[i] || bg_mean_err > bg_mean_tol
+                || bg_sum_err > bg_sum_tol) {
+                bg_mismatches++;
+                if (bg_mismatches <= 10) {
+                    std::cout << "  background mismatch refl " << i
+                              << ": gpu_mean=" << h_bg_mean[i]
+                              << " baseline_mean=" << expected_bg_mean[i]
+                              << " gpu_sum=" << h_bg_sum_value[i]
+                              << " baseline_sum=" << expected_bg_sum[i]
+                              << " success=" << static_cast<int>(h_bg_success[i])
+                              << "\n";
+                }
+            }
+        }
+
+        // Foreground sum parity needs the identical foreground pixel set, which
+        // requires both the fg and bg counts to match.
         if (static_cast<int64_t>(h_fg_count[i]) != expected_fg_int[i]
             || static_cast<int64_t>(h_bg_count[i]) != expected_bg_int[i]) {
             excluded++;
@@ -760,25 +791,6 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
         }
         compared++;
 
-        // Same background pixel population (bg counts match) => the device
-        // Tukey reduction must reproduce the baseline background.mean and
-        // background.sum.value.
-        double bg_mean_err = std::abs(h_bg_mean[i] - expected_bg_mean[i]);
-        double bg_sum_err = std::abs(h_bg_sum_value[i] - expected_bg_sum[i]);
-        double bg_mean_tol = 1e-5 * std::abs(expected_bg_mean[i]) + 1e-4;
-        double bg_sum_tol = 1e-5 * std::abs(expected_bg_sum[i]) + 1e-3;
-        bg_max_abs_err = std::max(bg_max_abs_err, bg_mean_err);
-        if (!h_bg_success[i] || bg_mean_err > bg_mean_tol || bg_sum_err > bg_sum_tol) {
-            bg_mismatches++;
-            if (bg_mismatches <= 10) {
-                std::cout << "  background mismatch refl " << i
-                          << ": gpu_mean=" << h_bg_mean[i]
-                          << " baseline_mean=" << expected_bg_mean[i]
-                          << " gpu_sum=" << h_bg_sum_value[i]
-                          << " baseline_sum=" << expected_bg_sum[i]
-                          << " success=" << static_cast<int>(h_bg_success[i]) << "\n";
-            }
-        }
         // Undo the baseline's background subtraction to get its raw foreground
         // sum. background.mean is the mean background per pixel, and the
         // baseline stored intensity.sum.value = fg_sum - n_fg * background.mean,
@@ -820,6 +832,8 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
         std::cout << "  Mean |err|           : " << (sum_abs_err / compared) << "\n";
         std::cout << "  Max  |err|           : " << max_abs_err << "\n";
     }
+    std::cout << "  Background compared  : " << bg_compared << " (of "
+              << num_reflections << ")\n";
     std::cout << "  Background mismatches : " << bg_mismatches << " (max |mean err| "
               << bg_max_abs_err << ")\n";
     std::cout << "=============================================\n";
@@ -829,10 +843,12 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
       << mismatches << " of " << compared
       << " comparable reflections had a foreground sum differing from the baseline "
       << algo_name << " reference";
+    EXPECT_GT(bg_compared, 0u)
+      << "No reflections with matching background counts to compare";
     EXPECT_EQ(bg_mismatches, 0u)
-      << bg_mismatches << " of " << compared
-      << " comparable reflections had a device Tukey background differing from the "
-         "baseline "
+      << bg_mismatches << " of " << bg_compared
+      << " reflections with matching background counts had a device Tukey background "
+         "differing from the baseline "
       << algo_name << " reference";
 #pragma endregion Assertions
 }
