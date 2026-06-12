@@ -57,6 +57,8 @@
 #include "cuda_common.hpp"
 #include "h5read.h"
 #include "integrator.cuh"
+#include "integrator/background.cuh"
+#include "integrator/background.hpp"
 #include "integrator/extent.hpp"
 #include "kabsch.cuh"
 #include "math/math_utils.cuh"
@@ -97,6 +99,27 @@ struct KabschInputs {
     std::vector<scalar_t> phi_vals;
     std::vector<BoundingBoxExtents> bboxes;
 };
+
+/// Recover per-reflection background pixel counts from the device histogram +
+/// overflow buffers (sum of all bins plus the high-tail overflow). The kernel
+/// no longer keeps a running background count; it is derived here.
+static std::vector<uint32_t> background_counts(const DeviceBuffer<uint32_t> &d_hist,
+                                               const DeviceBuffer<uint32_t> &d_overflow,
+                                               size_t num_reflections) {
+    std::vector<uint32_t> hist(num_reflections * NUM_BG_BINS);
+    std::vector<uint32_t> overflow(num_reflections);
+    d_hist.extract(hist.data());
+    d_overflow.extract(overflow.data());
+    std::vector<uint32_t> counts(num_reflections);
+    for (size_t r = 0; r < num_reflections; ++r) {
+        uint32_t total = overflow[r];
+        for (int v = 0; v < NUM_BG_BINS; ++v) {
+            total += hist[r * NUM_BG_BINS + v];
+        }
+        counts[r] = total;
+    }
+    return counts;
+}
 
 /// Parse indexed_1_10.expt + integrated_1_10.refl into kernel-facing inputs.
 static KabschInputs loadKabschInputs(const fs::path &data_dir) {
@@ -265,8 +288,10 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     // Per-reflection accumulators (sums are unchecked; image is zero)
     DeviceBuffer<accumulator_t> d_fg_sum(num_reflections);
     DeviceBuffer<uint32_t> d_fg_count(num_reflections);
-    DeviceBuffer<accumulator_t> d_bg_sum(num_reflections);
-    DeviceBuffer<uint32_t> d_bg_count(num_reflections);
+    // Background histogram (one bin per integer value) + overflow tail. The
+    // background pixel count is recovered by summing these on the host.
+    DeviceBuffer<uint32_t> d_bg_hist(num_reflections * NUM_BG_BINS);
+    DeviceBuffer<uint32_t> d_bg_overflow(num_reflections);
     // Centre-of-mass accumulators: kernel writes unconditionally when any
     // foreground pixel is found, so valid device memory is required even
     // though this test only inspects the fg/bg pixel counts.
@@ -275,8 +300,8 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     DeviceBuffer<unsigned long long> d_intensity_times_z(num_reflections);
     cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(d_bg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
-    cudaMemset(d_bg_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(d_bg_hist.data(), 0, num_reflections * NUM_BG_BINS * sizeof(uint32_t));
+    cudaMemset(d_bg_overflow.data(), 0, num_reflections * sizeof(uint32_t));
     cudaMemset(
       d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
     cudaMemset(
@@ -343,8 +368,8 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                                  algo,
                                  d_fg_sum.data(),
                                  d_fg_count.data(),
-                                 d_bg_sum.data(),
-                                 d_bg_count.data(),
+                                 d_bg_hist.data(),
+                                 d_bg_overflow.data(),
                                  d_intensity_times_x.data(),
                                  d_intensity_times_y.data(),
                                  d_intensity_times_z.data(),
@@ -355,9 +380,9 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     cuda_throw_error();
 
     std::vector<uint32_t> h_fg_count(num_reflections);
-    std::vector<uint32_t> h_bg_count(num_reflections);
+    std::vector<uint32_t> h_bg_count =
+      background_counts(d_bg_hist, d_bg_overflow, num_reflections);
     d_fg_count.extract(h_fg_count.data());
-    d_bg_count.extract(h_bg_count.data());
 
     // Load baseline foreground/background pixel counts. The baseline writes
     // rows in the SAME order as its input (integrated_1_10.refl), which is
@@ -529,15 +554,15 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     // Per-reflection accumulators (zeroed; the kernel atomically adds into them).
     DeviceBuffer<accumulator_t> d_fg_sum(num_reflections);
     DeviceBuffer<uint32_t> d_fg_count(num_reflections);
-    DeviceBuffer<accumulator_t> d_bg_sum(num_reflections);
-    DeviceBuffer<uint32_t> d_bg_count(num_reflections);
+    DeviceBuffer<uint32_t> d_bg_hist(num_reflections * NUM_BG_BINS);
+    DeviceBuffer<uint32_t> d_bg_overflow(num_reflections);
     DeviceBuffer<unsigned long long> d_itx(num_reflections);
     DeviceBuffer<unsigned long long> d_ity(num_reflections);
     DeviceBuffer<unsigned long long> d_itz(num_reflections);
     cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(d_bg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
-    cudaMemset(d_bg_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(d_bg_hist.data(), 0, num_reflections * NUM_BG_BINS * sizeof(uint32_t));
+    cudaMemset(d_bg_overflow.data(), 0, num_reflections * sizeof(uint32_t));
     cudaMemset(d_itx.data(), 0, num_reflections * sizeof(unsigned long long));
     cudaMemset(d_ity.data(), 0, num_reflections * sizeof(unsigned long long));
     cudaMemset(d_itz.data(), 0, num_reflections * sizeof(unsigned long long));
@@ -634,8 +659,8 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
                                  algo,
                                  d_fg_sum.data(),
                                  d_fg_count.data(),
-                                 d_bg_sum.data(),
-                                 d_bg_count.data(),
+                                 d_bg_hist.data(),
+                                 d_bg_overflow.data(),
                                  d_itx.data(),
                                  d_ity.data(),
                                  d_itz.data(),
@@ -647,10 +672,35 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
 
     std::vector<accumulator_t> h_fg_sum(num_reflections);
     std::vector<uint32_t> h_fg_count(num_reflections);
-    std::vector<uint32_t> h_bg_count(num_reflections);
+    std::vector<uint32_t> h_bg_count =
+      background_counts(d_bg_hist, d_bg_overflow, num_reflections);
     d_fg_sum.extract(h_fg_sum.data());
     d_fg_count.extract(h_fg_count.data());
-    d_bg_count.extract(h_bg_count.data());
+
+    // Reduce the per-reflection background histograms on the device (the same
+    // Tukey/IQR path the integrator uses) to compare the GPU background estimate
+    // against the baseline.
+    DeviceBuffer<double> d_bg_mean(num_reflections);
+    DeviceBuffer<double> d_bg_sum_value(num_reflections);
+    DeviceBuffer<uint32_t> d_bg_count_r(num_reflections);
+    DeviceBuffer<uint8_t> d_bg_success(num_reflections);
+    compute_background(BackgroundModel::Constant,
+                       d_bg_hist.data(),
+                       d_bg_overflow.data(),
+                       num_reflections,
+                       d_bg_mean.data(),
+                       d_bg_sum_value.data(),
+                       d_bg_count_r.data(),
+                       d_bg_success.data(),
+                       nullptr);
+    cudaDeviceSynchronize();
+    cuda_throw_error();
+    std::vector<double> h_bg_mean(num_reflections);
+    std::vector<double> h_bg_sum_value(num_reflections);
+    std::vector<uint8_t> h_bg_success(num_reflections);
+    d_bg_mean.extract(h_bg_mean.data());
+    d_bg_sum_value.extract(h_bg_sum_value.data());
+    d_bg_success.extract(h_bg_success.data());
 
     // Baseline columns (row-aligned with the prediction table).
     auto reference_path = reference_file.string();
@@ -662,10 +712,13 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
       read_array_from_h5_file<double>(reference_path, G + "intensity.sum.value");
     auto expected_bg_mean =
       read_array_from_h5_file<double>(reference_path, G + "background.mean");
+    auto expected_bg_sum =
+      read_array_from_h5_file<double>(reference_path, G + "background.sum.value");
     ASSERT_EQ(expected_fg_int.size(), num_reflections);
     ASSERT_EQ(expected_bg_int.size(), num_reflections);
     ASSERT_EQ(expected_intensity.size(), num_reflections);
     ASSERT_EQ(expected_bg_mean.size(), num_reflections);
+    ASSERT_EQ(expected_bg_sum.size(), num_reflections);
 
     // A reflection is comparable only when the kernel and baseline selected the
     // identical foreground pixel set, which is guaranteed when both the fg and
@@ -676,6 +729,9 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     size_t excluded = 0;
     double sum_abs_err = 0.0;
     double max_abs_err = 0.0;
+    // Background estimate parity (device Tukey reduction vs baseline).
+    size_t bg_mismatches = 0;
+    double bg_max_abs_err = 0.0;
 
     for (size_t i = 0; i < num_reflections; ++i) {
         if (static_cast<int64_t>(h_fg_count[i]) != expected_fg_int[i]
@@ -684,6 +740,26 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
             continue;
         }
         compared++;
+
+        // Same background pixel population (bg counts match) => the device
+        // Tukey reduction must reproduce the baseline background.mean and
+        // background.sum.value.
+        double bg_mean_err = std::abs(h_bg_mean[i] - expected_bg_mean[i]);
+        double bg_sum_err = std::abs(h_bg_sum_value[i] - expected_bg_sum[i]);
+        double bg_mean_tol = 1e-5 * std::abs(expected_bg_mean[i]) + 1e-4;
+        double bg_sum_tol = 1e-5 * std::abs(expected_bg_sum[i]) + 1e-3;
+        bg_max_abs_err = std::max(bg_max_abs_err, bg_mean_err);
+        if (!h_bg_success[i] || bg_mean_err > bg_mean_tol || bg_sum_err > bg_sum_tol) {
+            bg_mismatches++;
+            if (bg_mismatches <= 10) {
+                std::cout << "  background mismatch refl " << i
+                          << ": gpu_mean=" << h_bg_mean[i]
+                          << " baseline_mean=" << expected_bg_mean[i]
+                          << " gpu_sum=" << h_bg_sum_value[i]
+                          << " baseline_sum=" << expected_bg_sum[i]
+                          << " success=" << static_cast<int>(h_bg_success[i]) << "\n";
+            }
+        }
         // Undo the baseline's background subtraction to get its raw foreground
         // sum. background.mean is the mean background per pixel, and the
         // baseline stored intensity.sum.value = fg_sum - n_fg * background.mean,
@@ -722,12 +798,19 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
         std::cout << "  Mean |err|           : " << (sum_abs_err / compared) << "\n";
         std::cout << "  Max  |err|           : " << max_abs_err << "\n";
     }
+    std::cout << "  Background mismatches : " << bg_mismatches << " (max |mean err| "
+              << bg_max_abs_err << ")\n";
     std::cout << "=============================================\n";
 
     EXPECT_GT(compared, 0u) << "No comparable reflections (counts never matched)";
     EXPECT_EQ(mismatches, 0u)
       << mismatches << " of " << compared
       << " comparable reflections had a foreground sum differing from the baseline "
+      << algo_name << " reference";
+    EXPECT_EQ(bg_mismatches, 0u)
+      << bg_mismatches << " of " << compared
+      << " comparable reflections had a device Tukey background differing from the "
+         "baseline "
       << algo_name << " reference";
 }
 

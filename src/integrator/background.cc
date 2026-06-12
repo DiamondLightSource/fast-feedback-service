@@ -1,110 +1,69 @@
 /**
  * @file background.cc
- * @brief Background estimation for baseline CPU integration.
+ * @brief Host adapter from the baseline BackgroundAggregator histogram to the
+ *        shared, device-safe constant background model.
  */
 
 #include "integrator/background.hpp"
 
-#include <algorithm>
-#include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 
-// Simple background with tukey outlier for now.
+// Upper bound on the contiguous histogram from the aggregator.
+// Background pixel values above this are folded into the overflow tail; for a
+// constant background these are extreme outliers that Tukey rejects, so the
+// estimate is unaffected and large hot-pixel-sized values need no allocation.
+namespace {
+constexpr int kMaxBins = 4096;
+}
+
+// Tukey outlier-rejecting constant background. Delegates to the single-source
+// tukey_constant_background() so the baseline and the GPU run identical math;
+// this function only flattens the aggregator's array and overflow map into a
+// contiguous ConstHistogramView.
 std::tuple<double, double> compute_background_constant_3d(
   const BackgroundAggregator &data) {
-    constexpr double iqr_multiplier = 1.5;
-
-    const int N = data.num_pixels();
-    if (N == 0) {
+    if (data.num_pixels() == 0) {
         throw std::runtime_error("No background pixels available");
     }
-
-    // Quantile positions (1-based counting convention)
-    const std::size_t p25 = (N + 3) / 4;
-    const std::size_t p50 = (N + 1) / 2;
-    const std::size_t p75 = (3 * N + 1) / 4;
 
     const auto &small_hist = data.small_hist();
     const auto *large_hist = data.large_hist();  // may be nullptr
 
-    std::size_t cumulative = 0;
-    int q1 = -1, median = -1, q3 = -1;
-
-    // ---- Scan small histogram (fixed array) ----
-    for (std::size_t value = 0; value < small_hist.size(); ++value) {
-        cumulative += small_hist[value];
-
-        if (q1 < 0 && cumulative >= p25) q1 = static_cast<int>(value);
-        if (median < 0 && cumulative >= p50) median = static_cast<int>(value);
-        if (q3 < 0 && cumulative >= p75) {
-            q3 = static_cast<int>(value);
-            break;
-        }
-    }
-
-    // ---- Scan large histogram only if needed ----
-    if (q3 < 0 && large_hist != nullptr) {
-        std::vector<int> keys;
-        keys.reserve(large_hist->size());
-        for (const auto &[k, _] : *large_hist) {
-            keys.push_back(k);
-        }
-        std::sort(keys.begin(), keys.end());
-
-        for (int value : keys) {
-            cumulative += large_hist->at(value);
-
-            if (q1 < 0 && cumulative >= p25) q1 = value;
-            if (median < 0 && cumulative >= p50) median = value;
-            if (q3 < 0 && cumulative >= p75) {
-                q3 = value;
-                break;
-            }
-        }
-    }
-
-    // Sanity check (should not happen unless input is inconsistent)
-    if (q1 < 0 || q3 < 0) {
-        throw std::runtime_error("Failed to compute quartiles for background");
-    }
-
-    const int iqr = q3 - q1;
-    const double lower_bound = q1 - iqr_multiplier * iqr;
-    const double upper_bound = q3 + iqr_multiplier * iqr;
-
-    // ---- Accumulate inliers ----
-    std::size_t included_count = 0;
-    double weighted_sum = 0.0;
-
-    // Small histogram
-    for (std::size_t value = 0; value < small_hist.size(); ++value) {
-        if (value < lower_bound || value > upper_bound) {
-            continue;
-        }
-
-        const std::size_t count = small_hist[value];
-        included_count += count;
-        weighted_sum += static_cast<double>(value) * count;
-    }
-
-    // Large histogram (if present)
+    // Determine how many contiguous integer bins to allocate: enough to
+    // cover the small array and any in-range map keys, capped at kMaxBins.
+    int num_bins = static_cast<int>(small_hist.size());
     if (large_hist != nullptr) {
         for (const auto &[value, count] : *large_hist) {
-            if (value < lower_bound || value > upper_bound) {
-                continue;
+            if (value >= num_bins && value < kMaxBins) {
+                num_bins = value + 1;
             }
-
-            included_count += count;
-            weighted_sum += static_cast<double>(value) * count;
         }
     }
 
-    if (included_count == 0) {
+    std::vector<uint32_t> bins(static_cast<size_t>(num_bins), 0);
+    uint32_t overflow_count = 0;
+
+    for (std::size_t v = 0; v < small_hist.size(); ++v) {
+        bins[v] = static_cast<uint32_t>(small_hist[v]);
+    }
+    if (large_hist != nullptr) {
+        for (const auto &[value, count] : *large_hist) {
+            if (value >= 0 && value < num_bins) {
+                bins[static_cast<size_t>(value)] += static_cast<uint32_t>(count);
+            } else {
+                overflow_count += static_cast<uint32_t>(count);
+            }
+        }
+    }
+
+    ConstHistogramView view{bins.data(), num_bins, overflow_count};
+    BackgroundResult result = tukey_constant_background(view);
+    if (!result.valid) {
         throw std::runtime_error(
           "No background data remaining after outlier rejection");
     }
 
-    const double mean = weighted_sum / static_cast<double>(included_count);
-    return {mean, weighted_sum};
+    return {result.mean, result.weighted_sum};
 }

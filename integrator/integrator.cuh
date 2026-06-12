@@ -12,6 +12,13 @@
 
 enum class FGAlgorithm : uint8_t { Ellipsoid, Dials };
 
+// Number of integer-valued bins in each per-reflection background histogram.
+// bins cover pixel values [0, NUM_BG_BINS); values >= NUM_BG_BINS land in a
+// per-reflection overflow counter (the high tail). Chosen above the realistic
+// inlier range so the constant (Tukey) model rejects everything in the
+// overflow. Device-memory cost is num_reflections * NUM_BG_BINS * 4 bytes.
+constexpr int NUM_BG_BINS = 256;
+
 struct DetectorParameters {
     scalar_t pixel_size[2];       // pixel pitch [fast, slow] in mm
     bool parallax_correction;     // whether to apply parallax correction
