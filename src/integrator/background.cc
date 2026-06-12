@@ -25,8 +25,8 @@ std::tuple<double, double> compute_background_constant_3d(
 
     // Bin into the shared [0, NUM_BG_BINS) range exactly as the GPU kernel does,
     // so the host baseline and the device reduction see identical histograms:
-    // negatives clamp into bin 0, values at or above NUM_BG_BINS go to the
-    // overflow tail.
+    // negative sentinel values are dropped, values at or above NUM_BG_BINS go to
+    // the overflow tail.
     std::vector<uint32_t> bins(static_cast<size_t>(NUM_BG_BINS), 0);
     uint32_t overflow_count = 0;
 
@@ -35,10 +35,12 @@ std::tuple<double, double> compute_background_constant_3d(
     }
     if (large_hist != nullptr) {
         for (const auto &[value, count] : *large_hist) {
-            const int bin = value < 0 ? 0 : value;
-            if (bin < NUM_BG_BINS) {
-                bins[static_cast<size_t>(bin)] += static_cast<uint32_t>(count);
-            } else {
+            // A negative value is a sentinel/garbage pixel, not a real
+            // background measurement, so it is dropped rather than counted,
+            // matching the GPU kernel.
+            if (value >= 0 && value < NUM_BG_BINS) {
+                bins[static_cast<size_t>(value)] += static_cast<uint32_t>(count);
+            } else if (value >= NUM_BG_BINS) {
                 overflow_count += static_cast<uint32_t>(count);
             }
         }

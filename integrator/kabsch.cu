@@ -561,15 +561,17 @@ __global__ void kabsch_transform(pixel_t *d_image,
                 // image; masked or out-of-image background is dropped. Each
                 // pixel value increments one bin of this reflection's
                 // histogram (one bin per integer count). Values at or above
-                // NUM_BG_BINS go to the overflow tail; rare negatives (sentinel
-                // values not caught by the mask) are clamped into bin 0.
+                // NUM_BG_BINS go to the overflow tail. A negative value is a
+                // sentinel/garbage pixel that slipped past the mask (reachable
+                // only when pixel_t is 32-bit and the value exceeds INT_MAX);
+                // it is not a real background measurement, so it is dropped
+                // rather than counted.
                 if (pixel_in_image
                     && d_mask[static_cast<size_t>(gy) * width + gx] != 0) {
-                    int bin = static_cast<int>(image(gx, gy));
-                    if (bin < 0) bin = 0;
-                    if (bin < NUM_BG_BINS) {
+                    const int bin = static_cast<int>(image(gx, gy));
+                    if (bin >= 0 && bin < NUM_BG_BINS) {
                         atomicAdd(&d_background_hist[refl_idx * NUM_BG_BINS + bin], 1u);
-                    } else {
+                    } else if (bin >= NUM_BG_BINS) {
                         atomicAdd(&d_background_overflow[refl_idx], 1u);
                     }
                 }
