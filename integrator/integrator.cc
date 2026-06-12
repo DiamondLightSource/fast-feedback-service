@@ -563,8 +563,16 @@ int main(int argc, char **argv) {
     }
     logger.info("Running with {} CPU threads", num_cpu_threads);
 
-    // Set up image reader
-    const auto images_file = parser.images();
+    // Set up image reader. When no images are given, fall back to the
+    // image file recorded in the experiment
+    auto images_file = parser.images();
+    if (images_file.empty()) {
+        images_file = expt.imagesequence().filename();
+        if (!images_file.empty()) {
+            logger.info("No --images given; using image file from the experiment: {}",
+                        images_file);
+        }
+    }
     std::unique_ptr<Reader> reader_ptr;
 
     if (std::filesystem::is_directory(images_file)) {
