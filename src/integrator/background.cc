@@ -28,10 +28,12 @@ std::tuple<double, double> compute_background_constant_3d(
     // negative sentinel values are dropped, values at or above NUM_BG_BINS go to
     // the overflow tail.
     std::vector<uint32_t> bins(static_cast<size_t>(NUM_BG_BINS), 0);
+    uint32_t in_range_count = 0;
     uint32_t overflow_count = 0;
 
     for (std::size_t v = 0; v < small_hist.size() && v < NUM_BG_BINS; ++v) {
         bins[v] = static_cast<uint32_t>(small_hist[v]);
+        in_range_count += static_cast<uint32_t>(small_hist[v]);
     }
     if (large_hist != nullptr) {
         for (const auto &[value, count] : *large_hist) {
@@ -40,6 +42,7 @@ std::tuple<double, double> compute_background_constant_3d(
             // matching the GPU kernel.
             if (value >= 0 && value < NUM_BG_BINS) {
                 bins[static_cast<size_t>(value)] += static_cast<uint32_t>(count);
+                in_range_count += static_cast<uint32_t>(count);
             } else if (value >= NUM_BG_BINS) {
                 overflow_count += static_cast<uint32_t>(count);
             }
@@ -51,8 +54,11 @@ std::tuple<double, double> compute_background_constant_3d(
     // Too many pixels in the overflow tail means NUM_BG_BINS is too small to
     // represent this reflection's background, so the estimate would diverge
     // from a full-range computation. Fail loudly rather than degrade silently.
+    // The denominator is the histogram population (in-range + overflow), which
+    // matches the GPU reduction's count and excludes dropped sentinels.
     if (static_cast<double>(overflow_count)
-        > kBackgroundMaxOverflowFraction * static_cast<double>(data.num_pixels())) {
+        > kBackgroundMaxOverflowFraction
+            * static_cast<double>(in_range_count + overflow_count)) {
         throw std::runtime_error(
           "Background histogram overflow exceeded the permitted fraction; "
           "NUM_BG_BINS is too small for this reflection's background level");
