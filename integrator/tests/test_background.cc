@@ -70,6 +70,17 @@ TEST(TukeyConstantBackground, HighOutlierInBinsRejected) {
     EXPECT_DOUBLE_EQ(r.mean, 4.5);
 }
 
+// A spread wide enough that the upper fence q3 + 1.5*IQR reaches num_bins is
+// rejected, even with an empty overflow tail: the range is too small to apply
+// Tukey rejection, so the estimate is untrustworthy.
+TEST(TukeyConstantBackground, UpperFenceReachingOverflowRejected) {
+    std::vector<uint32_t> bins(16, 1);  // N = 16, uniform 0..15, no overflow
+
+    BackgroundResult r = tukey_constant_background(view_of(bins));
+    // q1=3, q3=11, IQR=8 -> upper_bound = 23 >= num_bins (16).
+    EXPECT_FALSE(r.valid);
+}
+
 // Degenerate: every pixel has the same value -> IQR 0, mean equals that value.
 TEST(TukeyConstantBackground, ConstantValue) {
     std::vector<uint32_t> bins(64, 0);
