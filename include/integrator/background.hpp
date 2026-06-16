@@ -127,9 +127,11 @@ FFS_HD inline BackgroundResult tukey_constant_background(
     const uint64_t p50 = (N + 1) / 2;
     const uint64_t p75 = (3 * N + 1) / 4;
 
-    // Ascending scan over bins to locate q1, median, q3. If a quartile falls in
-    // the overflow tail, num_bins is too small for this reflection; clamp it to
-    // num_bins (a lower bound) so the estimate degrades instead of failing.
+    // Ascending scan over bins to locate q1, median, q3. If a quartile
+    // falls in the overflow tail, num_bins is too small for this
+    // reflection; clamp it to num_bins (a lower bound). A clamped q1
+    // alone leaves the estimate usable, whereas a clamped q3 pushes the
+    // upper fence to num_bins, which the bound check below rejects.
     uint64_t cumulative = 0;
     long q1 = -1, median = -1, q3 = -1;
     for (int v = 0; v < hist.num_bins; ++v) {
@@ -148,9 +150,16 @@ FFS_HD inline BackgroundResult tukey_constant_background(
     const double lower_bound = q1 - iqr_multiplier * iqr;
     const double upper_bound = q3 + iqr_multiplier * iqr;
 
-    // Accumulate inliers. Overflow values are >= num_bins, so they count only
-    // if num_bins itself falls within the rejection bounds, matching the
-    // baseline's treatment of the high tail as outliers.
+    // The upper fence reaching past the bins into the overflow tail
+    // means the range is too small to separate the inliers from the
+    // high tail, so reject the estimate (valid stays false).
+    if (upper_bound >= static_cast<double>(hist.num_bins)) {
+        return result;
+    }
+
+    // Accumulate inliers. The fence check above guarantees
+    // upper_bound < num_bins, so overflow values (>= num_bins)
+    // always sit above the upper bound and are rejected
     uint64_t included_count = 0;
     double weighted_sum = 0.0;
     for (int v = 0; v < hist.num_bins; ++v) {
