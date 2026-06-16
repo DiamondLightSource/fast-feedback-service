@@ -1037,6 +1037,7 @@ int main(int argc, char **argv) {
     std::vector<double> backgrounds(num_reflections);  // b̄  (background mean per pixel)
     std::vector<double> background_sigmas(num_reflections);  // σ(b̄)
     size_t valid_reflections = 0;
+    size_t background_failures = 0;  // fg present but Tukey estimate rejected
 
     for (size_t i = 0; i < num_reflections; ++i) {
         uint32_t fg_count = h_foreground_count[i];
@@ -1054,8 +1055,15 @@ int main(int argc, char **argv) {
 
         double fg_sum = h_foreground_sum[i];
 
+        // Tally rejected estimates (no inlier pixels, or the IQR fence ran past
+        // the histogram range) purely for error reporting and logging; the
+        // reflection is marked unintegrated below regardless.
+        if (!h_background_success[i]) {
+            ++background_failures;
+        }
+
         // Background mean b̄ from the device-side Tukey/IQR reduction. When the
-        // estimate failed (no inlier pixels) the model contributes nothing.
+        // estimate failed the model contributes nothing.
         double bg_mean = h_background_success[i] ? h_background_mean[i] : 0.0;
 
         // Subtract background:  I = Σcᵢ(fg) − n_fg · b̄
@@ -1090,6 +1098,15 @@ int main(int argc, char **argv) {
     logger.info("Summation integration complete: {} valid reflections out of {}",
                 valid_reflections,
                 num_reflections);
+
+    if (background_failures > 0) {
+        logger.warn(
+          "Background estimate rejected for {} of {} reflections with "
+          "foreground pixels; NUM_BG_BINS may be too small for their "
+          "background level",
+          background_failures,
+          num_reflections);
+    }
 
     // Log some statistics
     if (valid_reflections > 0) {
