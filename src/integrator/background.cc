@@ -7,17 +7,19 @@
 #include "integrator/background.hpp"
 
 #include <cstdint>
-#include <stdexcept>
 #include <vector>
 
-// Tukey outlier-rejecting constant background. Delegates to the single-source
-// tukey_constant_background() so the baseline and the GPU run identical math;
+// Constant background estimate for one reflection. Delegates to the
+// single-source model functions so the baseline and the GPU run identical math;
 // this function only flattens the aggregator's array and overflow map into a
-// contiguous ConstHistogramView over the shared NUM_BG_BINS range.
-std::tuple<double, double> compute_background_constant_3d(
-  const BackgroundAggregator &data) {
+// contiguous ConstHistogramView over the shared NUM_BG_BINS range, then
+// dispatches on the selected model. A rejected estimate returns a
+// BackgroundResult with valid=false (the same channel the GPU reduction uses)
+// so the caller can mark the reflection unintegrated rather than aborting.
+BackgroundResult compute_background_constant_3d(const BackgroundAggregator &data,
+                                                BackgroundModel model) {
     if (data.num_pixels() == 0) {
-        throw std::runtime_error("No background pixels available");
+        return BackgroundResult{};  // no background pixels, so no estimate
     }
 
     const auto &small_hist = data.small_hist();
@@ -53,22 +55,28 @@ std::tuple<double, double> compute_background_constant_3d(
 
     // Too many pixels in the overflow tail means NUM_BG_BINS is too small to
     // represent this reflection's background, so the estimate would diverge
-    // from a full-range computation. Fail loudly rather than degrade silently.
+    // from a full-range computation. Reject it (the model functions apply the
+    // same guard internally; this short-circuits with the explicit reason).
     // The denominator is the histogram population (in-range + overflow), which
     // matches the GPU reduction's count and excludes dropped sentinels.
     if (static_cast<double>(overflow_count)
         > kBackgroundMaxOverflowFraction
             * static_cast<double>(in_range_count + overflow_count)) {
-        throw std::runtime_error(
-          "Background histogram overflow exceeded the permitted fraction; "
-          "NUM_BG_BINS is too small for this reflection's background level");
+        return BackgroundResult{};
     }
 
-    BackgroundResult result = tukey_constant_background(view);
-    if (!result.valid) {
-        throw std::runtime_error(
-          "No background data remaining after outlier rejection");
+    // Dispatch to the selected single-source model, mirroring the GPU kernel.
+    // The model functions already report rejection via BackgroundResult::valid.
+    // No default case, so adding a BackgroundModel raises a -Wswitch warning here
+    // until it is handled.
+    switch (model) {
+    case BackgroundModel::Constant:
+        return tukey_constant_background(view);
+    case BackgroundModel::Glm:
+        return glm_constant_background(view);
     }
 
-    return {result.mean, result.weighted_sum};
+    // Unreachable: parse_background_model rejects unknown names. Keeps the
+    // function total for an out-of-range model value.
+    return BackgroundResult{};
 }

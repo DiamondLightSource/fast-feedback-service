@@ -514,11 +514,19 @@ class BackgroundAggregator {
 };
 
 /**
- * @brief Estimate a constant background level from an aggregated histogram
- * using a Tukey (IQR-based) outlier rejection.
+ * @brief Estimate a constant background level from an aggregated histogram.
+ *
+ * Flattens the aggregator into the shared ConstHistogramView and dispatches to
+ * the selected single-source model: tukey_constant_background (Constant) or
+ * glm_constant_background (Glm), so the baseline runs the same math as the GPU.
  *
  * @param data Aggregated background pixel histogram for one reflection.
- * @return {mean background, weighted sum of included pixel values}
+ * @param model Background model to apply (Constant = Tukey; Glm = robust GLM).
+ * @return BackgroundResult with mean and weighted_sum; valid is false when the
+ *         estimate is rejected (no inliers, too few pixels, too much overflow,
+ *         or non-convergence), in which case the caller marks the reflection
+ *         unintegrated. Mirrors the BackgroundResult::valid channel the GPU
+ *         reduction uses.
  */
-std::tuple<double, double> compute_background_constant_3d(
-  const BackgroundAggregator &data);
+BackgroundResult compute_background_constant_3d(const BackgroundAggregator &data,
+                                                BackgroundModel model);

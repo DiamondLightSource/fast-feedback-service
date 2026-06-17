@@ -109,6 +109,12 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .help("Foreground algorithm choice - dials or ellipsoid.")
           .default_value<std::string>("ellipsoid");
 
+        add_argument("--background")
+          .help(
+            "Background model - constant (Tukey/IQR outlier rejection) or "
+            "glm (robust-Poisson GLM constant background).")
+          .default_value<std::string>("constant");
+
         add_argument("--min_zeta")
           .help(
             "Reflections close to the rotation axis, with a zeta below this threshold "
@@ -492,6 +498,12 @@ FGAlgorithm parse_fg_algorithm(const std::string &name) {
     throw std::runtime_error("Unknown foreground algorithm: " + name);
 }
 
+BackgroundModel parse_background_model(const std::string &name) {
+    if (name == "constant" || name == "tukey") return BackgroundModel::Constant;
+    if (name == "glm") return BackgroundModel::Glm;
+    throw std::runtime_error("Unknown background model: " + name);
+}
+
 #pragma region Application Entry
 int main(int argc, char **argv) {
     logger.info("Baseline Integrator Version: {}", FFS_VERSION);
@@ -506,6 +518,9 @@ int main(int argc, char **argv) {
     std::string output_file = parser.get<std::string>("output");
 
     FGAlgorithm fg_algorithm = parse_fg_algorithm(parser.get<std::string>("algorithm"));
+    BackgroundModel background_model =
+      parse_background_model(parser.get<std::string>("background"));
+    logger.info("Background model: {}", parser.get<std::string>("background"));
 
     // Guard against missing files
     if (!std::filesystem::exists(reflection_file)) {
@@ -966,11 +981,18 @@ int main(int argc, char **argv) {
     std::vector<double> d_values(num_reflections);
     std::vector<double> mean_bg(num_reflections);
     std::vector<double> bg_sum_value(num_reflections);
-    // FIXME need to include robust outlier rejection in background calculation (glm, constant3dmodel)
     for (int i = 0; i < num_reflections; i++) {
         if (nbg_accumulators[i]) {
-            auto [bg, total_bg_counts] =
-              compute_background_constant_3d(bg_accumulators[i]);
+            BackgroundResult bg_result =
+              compute_background_constant_3d(bg_accumulators[i], background_model);
+            if (!bg_result.valid) {
+                // Estimate rejected (no inliers, too few pixels, too much
+                // overflow, or non-convergence); skip like the GPU path.
+                success[i] = false;
+                continue;
+            }
+            double bg = bg_result.mean;
+            double total_bg_counts = bg_result.weighted_sum;
             mean_bg[i] = bg;
             bg_sum_value[i] = total_bg_counts;
             double I = intensity_accumulators[i] - bg;
