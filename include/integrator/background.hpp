@@ -14,6 +14,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <tuple>
@@ -32,8 +33,9 @@
  *        background level from its pixel histogram.
  *
  * Constant is the Tukey/IQR outlier-rejecting constant background (matches the
- * DIALS "constant 3d" model). Glm is the full DIALS robust-Poisson GLM model,
- * not yet implemented; it will read the same histogram.
+ * DIALS "constant 3d" model). Glm is the DIALS robust-Poisson GLM constant
+ * background (matches the DIALS "glm constant3d" model); it reads the same
+ * histogram.
  */
 enum class BackgroundModel : uint8_t { Constant, Glm };
 
@@ -53,6 +55,15 @@ constexpr int NUM_BG_BINS = 256;
 // Fraction of a reflection's background pixels allowed in the high-tail
 // overflow before the constant background estimate is rejected as untrustworthy.
 constexpr double kBackgroundMaxOverflowFraction = 0.25;
+
+// Parameters for the robust-Poisson GLM constant background, matching the DIALS
+// defaults (dials.algorithms.background.glm: tuning_constant 1.345,
+// max_iter 100, tolerance 1e-3, min_pixels 10). Held here as the single source
+// of truth so the host baseline and the device reduction iterate identically.
+constexpr double kGlmTuningConstant = 1.345;
+constexpr double kGlmTolerance = 1e-3;
+constexpr int kGlmMaxIter = 100;
+constexpr uint32_t kGlmMinPixels = 10;
 
 /**
  * @brief Read-only view of a per-reflection background histogram.
@@ -175,6 +186,233 @@ FFS_HD inline BackgroundResult tukey_constant_background(
 
     result.mean = weighted_sum / static_cast<double>(included_count);
     result.weighted_sum = weighted_sum;
+    result.valid = true;
+    return result;
+}
+
+/**
+ * @brief Poisson probability mass P(Y = value).
+ *
+ * Used to form the GLM expectation values. value is integer-valued.
+ *
+ * Source: scitbx::glmtbx::poisson::pdf in scitbx/glmtbx/family.h.
+ */
+FFS_HD inline double glm_poisson_pdf(double mean, double value) {
+    if (mean == 0.0) return 0.0;
+    if (value == 0.0) return std::exp(-mean);
+    if (value < 0.0) return 0.0;
+    return std::exp(value * std::log(mean) - mean - std::lgamma(value + 1.0));
+}
+
+/**
+ * @brief Poisson cumulative probability P(Y <= value) for integer value.
+ *
+ * The DIALS routine uses boost::math::gamma_q(floor(value+1), mean). For an
+ * integer first argument that regularised upper incomplete gamma equals the
+ * finite Poisson sum e^-mean * sum_{k=0..value} mean^k / k!, which avoids a
+ * special-function dependency on the device. mean stays below NUM_BG_BINS for
+ * accepted reflections, so the sum is short.
+ *
+ * Source: scitbx::glmtbx::poisson::cdf in scitbx/glmtbx/family.h.
+ */
+FFS_HD inline double glm_poisson_cdf(double mean, double value) {
+    if (mean == 0.0) return 0.0;
+    if (value < 0.0) return 0.0;
+    const long v = static_cast<long>(std::floor(value));
+    double term = std::exp(-mean);  // k = 0
+    double sum = term;
+    for (long k = 1; k <= v; ++k) {
+        term *= mean / static_cast<double>(k);
+        sum += term;
+    }
+    return sum;
+}
+
+/**
+ * @brief Huber psi function: identity inside [-c, c], clipped to +/-c outside.
+ *
+ * Source: scitbx::glmtbx::huber in scitbx/glmtbx/robust_glm.h.
+ */
+FFS_HD inline double glm_huber(double r, double c) {
+    if (std::fabs(r) < c) return r;
+    return (r > 0.0) ? c : ((r < 0.0) ? -c : 0.0);
+}
+
+/**
+ * @brief Expectation values E[psi] (epsi1) and E[psi'] (epsi2) under the
+ *        Poisson model, used to centre and weight the robust score.
+ *
+ * Source: the epsi1/epsi2 members of scitbx::glmtbx::expectation<poisson> in
+ * scitbx/glmtbx/robust_glm.h.
+ */
+struct GlmExpectation {
+    double epsi1 = 0.0;
+    double epsi2 = 0.0;
+};
+
+/**
+ * @brief Compute the Poisson expectation values epsi1 and epsi2 for a given
+ *        mean, sqrt-variance and Huber tuning constant.
+ *
+ * The p1..p10 Poisson probabilities and the epsi1/epsi2 closed forms reproduce
+ * the DIALS algebra.
+ *
+ * Source: the constructor of scitbx::glmtbx::expectation<poisson> in
+ * scitbx/glmtbx/robust_glm.h.
+ */
+FFS_HD inline GlmExpectation glm_expectation(double mu, double svar, double c) {
+    const double j1 = std::floor(mu - c * svar);
+    const double j2 = std::floor(mu + c * svar);
+    const double p1 = glm_poisson_pdf(mu, j1);        // P(Y  = j1)
+    const double p2 = glm_poisson_pdf(mu, j2);        // P(Y  = j2)
+    const double p3 = glm_poisson_cdf(mu, j1);        // P(Y <= j1)
+    const double p4 = glm_poisson_pdf(mu, j2 + 1.0);  // P(Y  = j2 + 1)
+    const double p5 = glm_poisson_cdf(mu, j2 + 1.0);  // P(Y <= j2 + 1)
+    const double p6 = 1.0 - p5 + p4;                  // P(Y >= j2 + 1)
+    const double p7 = glm_poisson_pdf(mu, j1 - 1.0);  // P(Y  = j1 - 1)
+    const double p8 = glm_poisson_pdf(mu, j2 - 1.0);  // P(Y  = j2 - 1)
+    const double p9 = glm_poisson_cdf(mu, j2 - 1.0);  // P(Y <= j2 - 1)
+    const double p10 = p9 - p3 + p1;                  // P(j1 <= Y <= j2)
+
+    GlmExpectation e;
+    e.epsi1 = c * (p6 - p3) + (mu / svar) * (p1 - p2);
+    e.epsi2 =
+      c * (p1 + p2) + (mu * mu / (svar * svar * svar)) * (p10 / mu + p7 - p1 - p8 + p2);
+    return e;
+}
+
+/**
+ * @brief Robust-Poisson GLM constant background (DIALS "glm constant3d").
+ *
+ * Single-source implementation shared by host and device. Fits a constant
+ * Poisson mean with a log link by iteratively reweighted least squares with
+ * Huber weighting, reproducing dials::algorithms::RobustPoissonMean over the
+ * same per-reflection histogram. Because every background pixel shares one
+ * design row, the fit depends only on the value counts, so the histogram is an
+ * exact representation. High-tail overflow pixels always sit far above the
+ * upper Huber bound, so their psi clips to +c regardless of their exact value,
+ * which is why the overflow count alone suffices.
+ *
+ * Iterating bins times their count and folding the overflow tail in at the
+ * saturated Huber value are exact restatements of the DIALS per-pixel loop. The
+ * sole numerical divergence is the Hessian: DIALS sums H += b per pixel while
+ * this uses N * b directly, equal in exact arithmetic but differing in
+ * floating-point rounding, so parity with DIALS holds to 1e-6 rather than
+ * bit-for-bit (see the IRLS loop below).
+ *
+ * The seed is the histogram median (matching DIALS), the tuning constant,
+ * tolerance, iteration cap and minimum pixel count match the DIALS defaults.
+ * Device-safe: no allocation, no exceptions; failure (too few pixels, range too
+ * small, non-convergence, or a degenerate parameter) is reported via
+ * BackgroundResult::valid. weighted_sum is the modelled background summed over
+ * the background pixels (mean * N), since the GLM models every pixel at mean.
+ *
+ * Source: dials::algorithms::RobustPoissonMean in
+ * dials/algorithms/background/glm/robust_poisson_mean.h (the constant-model
+ * specialisation of scitbx::glmtbx::robust_glm in scitbx/glmtbx/robust_glm.h).
+ */
+FFS_HD inline BackgroundResult glm_constant_background(const ConstHistogramView &hist) {
+    BackgroundResult result;
+
+    // Total pixel count across the histogram and the high-tail overflow.
+    uint64_t N = hist.overflow_count;
+    for (int v = 0; v < hist.num_bins; ++v) {
+        N += hist.bins[v];
+    }
+    // DIALS requires at least min_pixels background pixels to attempt a fit.
+    if (N < kGlmMinPixels) {
+        return result;
+    }
+
+    // Too much of the background in the high-tail overflow means the histogram
+    // range is too small to characterise this reflection (see
+    // tukey_constant_background); reject rather than fit a truncated histogram.
+    if (static_cast<double>(hist.overflow_count)
+        > kBackgroundMaxOverflowFraction * static_cast<double>(N)) {
+        return result;
+    }
+
+    // Median seed, matching DIALS detail::median (the element at sorted
+    // position N/2). The overflow tail counts towards the position but, for an
+    // accepted reflection, the median itself lies within the binned range.
+    const uint64_t mid = N / 2;  // 0-based target index
+    uint64_t cumulative = 0;
+    long median = -1;
+    for (int v = 0; v < hist.num_bins; ++v) {
+        cumulative += hist.bins[v];
+        if (cumulative >= mid + 1) {
+            median = v;
+            break;
+        }
+    }
+    double mean0 = (median < 0) ? 1.0 : static_cast<double>(median);
+    if (mean0 == 0.0) mean0 = 1.0;  // DIALS: a zero median seeds at 1
+
+    // IRLS for the single coefficient beta = log(mu) (constant model, log link).
+    const double c = kGlmTuningConstant;
+    double beta = std::log(mean0);
+    std::size_t niter = 0;
+    for (niter = 0; niter < static_cast<std::size_t>(kGlmMaxIter); ++niter) {
+        const double eta = beta;
+        const double mu = std::exp(eta);    // linkinv
+        const double dmu = std::exp(eta);   // dmu/deta
+        const double svar = std::sqrt(mu);  // sqrt(phi * variance), phi = 1
+        if (!(mu > 0.0) || !(svar > 0.0)) {
+            return result;  // degenerate, cannot continue (valid stays false)
+        }
+
+        const GlmExpectation epsi = glm_expectation(mu, svar, c);
+        const double b = epsi.epsi2 * dmu * dmu / svar;  // per-observation, w = 1
+
+        // U = sum over observations of (huber(res, c) - epsi1) * dmu / svar.
+        // Each bin contributes its count times the per-value term; the overflow
+        // pixels are extreme high outliers whose Huber psi clips to +c, so they
+        // contribute the same term regardless of their exact (unrecorded) value.
+        double U = 0.0;
+        for (int v = 0; v < hist.num_bins; ++v) {
+            const uint32_t count = hist.bins[v];
+            if (count == 0) {
+                continue;
+            }
+            const double res = (static_cast<double>(v) - mu) / svar;
+            const double q = (glm_huber(res, c) - epsi.epsi1) * dmu / svar;
+            U += static_cast<double>(count) * q;
+        }
+        if (hist.overflow_count > 0) {
+            const double q = (c - epsi.epsi1) * dmu / svar;
+            U += static_cast<double>(hist.overflow_count) * q;
+        }
+
+        // DIALS accumulates H += b once per observation, so H = n_obs * b. Since
+        // b is constant across observations for the constant model, this folds to
+        // N * b directly. The result is identical in exact arithmetic; the only
+        // divergence from DIALS is floating-point rounding (N * b versus summing
+        // b N times), which holds the histogram path to 1e-6 parity rather than
+        // bit-for-bit equality.
+        const double delta = U / (static_cast<double>(N) * b);
+        const double sum_delta_sq = delta * delta;
+        const double sum_beta_sq = beta * beta;
+        beta += delta;
+
+        const double error =
+          std::sqrt(sum_delta_sq / (sum_beta_sq > 1e-10 ? sum_beta_sq : 1e-10));
+        if (error < kGlmTolerance) {
+            break;
+        }
+    }
+
+    // DIALS treats a run that exhausts max_iter as non-converged and fails the
+    // reflection; mirror that, and the mean()'s bound on beta.
+    if (niter >= static_cast<std::size_t>(kGlmMaxIter)) {
+        return result;
+    }
+    if (!(beta > -300.0 && beta < 300.0)) {
+        return result;
+    }
+
+    const double mean = std::exp(beta);
+    result.mean = mean;
+    result.weighted_sum = mean * static_cast<double>(N);
     result.valid = true;
     return result;
 }

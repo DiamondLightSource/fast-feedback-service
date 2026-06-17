@@ -1,12 +1,14 @@
 /**
  * @file test_background.cc
- * @brief Host unit tests for the single-source constant (Tukey/IQR) background
- *        model in integrator/background.hpp.
+ * @brief Host unit tests for the single-source background models in
+ *        integrator/background.hpp.
  *
- * These exercise tukey_constant_background() directly over hand-built
- * histograms with known quartiles and outliers, independent of CUDA. The same
- * function is compiled for the device, so locking its behaviour here also pins
- * the GPU reduction's result.
+ * These exercise tukey_constant_background() and glm_constant_background()
+ * directly over hand-built histograms, independent of CUDA. The same functions
+ * are compiled for the device, so locking their behaviour here also pins the
+ * GPU reduction's result. The GLM expected values come from DIALS
+ * RobustPoissonMean run on the expanded histograms, so the tests assert parity
+ * with DIALS.
  */
 
 #include <gtest/gtest.h>
@@ -90,4 +92,91 @@ TEST(TukeyConstantBackground, ConstantValue) {
     ASSERT_TRUE(r.valid);
     EXPECT_DOUBLE_EQ(r.mean, 5.0);
     EXPECT_DOUBLE_EQ(r.weighted_sum, 100.0);
+}
+
+// Reference means below were produced by DIALS RobustPoissonMean (tuning
+// constant 1.345, tolerance 1e-3, max_iter 100) on the expanded histograms.
+// Matching them confirms the single-source GLM core reproduces DIALS.
+namespace {
+constexpr double kDialsParityTol = 1e-6;
+}  // namespace
+
+// Tight low background, no outliers. N = 24, median seed 4.
+TEST(GlmConstantBackground, TightLowNoOutliers) {
+    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
+    bins[2] = 3;
+    bins[3] = 5;
+    bins[4] = 8;
+    bins[5] = 6;
+    bins[6] = 2;
+
+    BackgroundResult r = glm_constant_background(view_of(bins));
+    ASSERT_TRUE(r.valid);
+    EXPECT_NEAR(r.mean, 4.0304431542, kDialsParityTol);
+    // GLM models every background pixel at mean, so the reported sum is mean*N.
+    EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 24.0);
+}
+
+// A single in-range high outlier is down-weighted, not rejected outright, so it
+// shifts the mean slightly. N = 25, median seed 4.
+TEST(GlmConstantBackground, HighOutlierDownweighted) {
+    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
+    bins[2] = 3;
+    bins[3] = 5;
+    bins[4] = 8;
+    bins[5] = 6;
+    bins[6] = 2;
+    bins[120] = 1;
+
+    BackgroundResult r = glm_constant_background(view_of(bins));
+    ASSERT_TRUE(r.valid);
+    EXPECT_NEAR(r.mean, 4.1427022177, kDialsParityTol);
+}
+
+// Overflow-tail pixels clip to the Huber bound regardless of their exact value,
+// so the overflow count alone reproduces the DIALS result. N = 89 (4 overflow).
+TEST(GlmConstantBackground, OverflowTailClips) {
+    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
+    bins[2] = 10;
+    bins[3] = 20;
+    bins[4] = 30;
+    bins[5] = 25;
+
+    BackgroundResult r = glm_constant_background(view_of(bins, 4));
+    ASSERT_TRUE(r.valid);
+    EXPECT_NEAR(r.mean, 4.0257619071, kDialsParityTol);
+}
+
+// Higher background level. N = 27, median seed 50.
+TEST(GlmConstantBackground, ModerateLevel) {
+    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
+    bins[48] = 4;
+    bins[50] = 10;
+    bins[52] = 8;
+    bins[55] = 3;
+    bins[60] = 2;
+
+    BackgroundResult r = glm_constant_background(view_of(bins));
+    ASSERT_TRUE(r.valid);
+    EXPECT_NEAR(r.mean, 51.6834964586, kDialsParityTol);
+}
+
+// Fewer than kGlmMinPixels background pixels -> no estimate (matches DIALS,
+// which asserts num_background >= min_pixels).
+TEST(GlmConstantBackground, TooFewPixelsFails) {
+    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
+    for (int v = 3; v < 8; ++v) bins[v] = 1;  // N = 5 < kGlmMinPixels
+
+    BackgroundResult r = glm_constant_background(view_of(bins));
+    EXPECT_FALSE(r.valid);
+}
+
+// Too much of the background in the overflow tail -> range too small, rejected.
+TEST(GlmConstantBackground, ExcessiveOverflowRejected) {
+    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
+    bins[3] = 10;
+    bins[4] = 10;  // 20 in range
+
+    BackgroundResult r = glm_constant_background(view_of(bins, 20));  // 50% overflow
+    EXPECT_FALSE(r.valid);
 }
