@@ -9,6 +9,12 @@
  * for CUDA device code (GPU reduction kernel), so both paths produce identical
  * results. Background pixel values are integer counts, so a histogram with one
  * bin per integer value makes the quartile/IQR logic exact.
+ *
+ * The robust-Poisson GLM model and its symbols (η, μ, β, ψ_c, the score U and
+ * the Fisher information I) follow Parkhurst, Winter, Waterman, Fuentes-Montero,
+ * Gildea, Murshudov & Evans (2016), "Robust background modelling in DIALS",
+ * J. Appl. Cryst. 49, 1912-1921, DOI 10.1107/S1600576716013595. Equation numbers
+ * in the GLM comments below refer to that paper.
  */
 
 #pragma once
@@ -60,6 +66,8 @@ constexpr double kBackgroundMaxOverflowFraction = 0.25;
 // defaults (dials.algorithms.background.glm: tuning_constant 1.345,
 // max_iter 100, tolerance 1e-3, min_pixels 10). Held here as the single source
 // of truth so the host baseline and the device reduction iterate identically.
+// kGlmTuningConstant is the Huber tuning constant c of ψ_c [Eq 3]; 1.345 gives
+// 95% efficiency under a normal model.
 constexpr double kGlmTuningConstant = 1.345;
 constexpr double kGlmTolerance = 1e-3;
 constexpr int kGlmMaxIter = 100;
@@ -229,7 +237,8 @@ FFS_HD inline double glm_poisson_cdf(double mean, double value) {
 }
 
 /**
- * @brief Huber psi function: identity inside [-c, c], clipped to +/-c outside.
+ * @brief Huber psi function ψ_c(r) [Eq 3]: identity for |r| < c, clipped to
+ *        ±c outside.
  *
  * Source: scitbx::glmtbx::huber in scitbx/glmtbx/robust_glm.h.
  */
@@ -239,8 +248,14 @@ FFS_HD inline double glm_huber(double r, double c) {
 }
 
 /**
- * @brief Expectation values E[psi] (epsi1) and E[psi'] (epsi2) under the
- *        Poisson model, used to centre and weight the robust score.
+ * @brief Poisson expectation values used to centre and weight the robust score.
+ *
+ * epsi1 = E[ψ_c(rᵢ)], the per-observation expectation subtracted from ψ_c in
+ * the score U [Eq 2]; weighted by μ′/√(φ*v_μ) it forms the consistency
+ * correction a(β) [Eq 4]. epsi2 = E[ψ_c(rᵢ)*∂lnP(yᵢ|μ)/∂μ] (for Poisson
+ * ∂lnP/∂μ = (yᵢ - μ)/v_μ), the expectation in the diagonal bᵢ of B [Eq 10,
+ * Poisson form Eq 11]; B is the weight matrix of the Fisher information
+ * I = XᵀBX [Eq 9].
  *
  * Source: the epsi1/epsi2 members of scitbx::glmtbx::expectation<poisson> in
  * scitbx/glmtbx/robust_glm.h.
@@ -251,8 +266,9 @@ struct GlmExpectation {
 };
 
 /**
- * @brief Compute the Poisson expectation values epsi1 and epsi2 for a given
- *        mean, sqrt-variance and Huber tuning constant.
+ * @brief Compute the Poisson expectation values E[ψ_c] (epsi1) and
+ *        E[ψ_c*∂lnP/∂μ] (epsi2) for a given mean μ, sqrt-variance √(φ*v_μ) and
+ *        Huber tuning constant c.
  *
  * The p1..p10 Poisson probabilities and the epsi1/epsi2 closed forms reproduce
  * the DIALS algebra.
@@ -299,6 +315,12 @@ FFS_HD inline GlmExpectation glm_expectation(double mu, double svar, double c) {
  * this uses N * b directly, equal in exact arithmetic but differing in
  * floating-point rounding, so parity with DIALS holds to 1e-6 rather than
  * bit-for-bit (see the IRLS loop below).
+ *
+ * Paper symbols (constant model, design row xᵢ = (1)): coefficient β, linear
+ * predictor η = β, mean μ = exp(η) (log link), link derivative μ′ = dμ/dη,
+ * dispersion φ = 1 and variance function v_μ = μ, so √(φ*v_μ) = √μ. The IRLS
+ * loop below forms the robust score U [Eq 2] and the Fisher information I [Eq 9]
+ * and applies the update β ← β + I⁻¹U [Eq 5].
  *
  * The seed is the histogram median (matching DIALS), the tuning constant,
  * tolerance, iteration cap and minimum pixel count match the DIALS defaults.
@@ -348,33 +370,42 @@ FFS_HD inline BackgroundResult glm_constant_background(const ConstHistogramView 
     double mean0 = (median < 0) ? 1.0 : static_cast<double>(median);
     if (mean0 == 0.0) mean0 = 1.0;  // DIALS: a zero median seeds at 1
 
-    // IRLS for the single coefficient beta = log(mu) (constant model, log link).
+    // IRLS for the single coefficient β = log(μ) (constant model, log link).
     const double c = kGlmTuningConstant;
     double beta = std::log(mean0);
     std::size_t niter = 0;
     for (niter = 0; niter < static_cast<std::size_t>(kGlmMaxIter); ++niter) {
-        const double eta = beta;
-        const double mu = std::exp(eta);    // linkinv
-        const double dmu = std::exp(eta);   // dmu/deta
-        const double svar = std::sqrt(mu);  // sqrt(phi * variance), phi = 1
+        const double eta = beta;           // η = β
+        const double mu = std::exp(eta);   // μ = exp(η), linkinv
+        const double dmu = std::exp(eta);  // μ′ = dμ/dη, dmu/deta
+        const double svar =
+          std::sqrt(mu);  // √(φ*v_μ), φ = 1, v_μ = μ, sqrt(phi * variance), phi = 1
         if (!(mu > 0.0) || !(svar > 0.0)) {
             return result;  // degenerate, cannot continue (valid stays false)
         }
 
         const GlmExpectation epsi = glm_expectation(mu, svar, c);
-        const double b = epsi.epsi2 * dmu * dmu / svar;  // per-observation, w = 1
+        // bᵢ = epsi2*μ′²/√(φ*v_μ), the diagonal of B [Eq 10], where the
+        // expectation factor epsi2 = E[ψ_c*∂lnP/∂μ] (Poisson form, Eq 11);
+        // constant across observations here (w = 1).
+        const double b = epsi.epsi2 * dmu * dmu / svar;
 
-        // U = sum over observations of (huber(res, c) - epsi1) * dmu / svar.
-        // Each bin contributes its count times the per-value term; the overflow
-        // pixels are extreme high outliers whose Huber psi clips to +c, so they
-        // contribute the same term regardless of their exact (unrecorded) value.
+        // Robust score U = Σ (ψ_c(rᵢ) - E[ψ_c])*μ′/√(φ*v_μ) [Eq 2], with the
+        // Pearson residual rᵢ = (yᵢ - μ)/√v_μ and E[ψ_c] = epsi1. Expanding the
+        // subtraction recovers the paper's per-term form
+        // Σ (ψ_c(rᵢ)*μ′/√(φ*v_μ) - a(β)), where the consistency correction
+        // a(β) = E[ψ_c]*μ′/√(φ*v_μ) [Eq 4] (μ′ and √(φ*v_μ) are constant across
+        // observations). Each bin
+        // contributes its count times the per-value term; the overflow pixels
+        // are extreme high outliers whose ψ_c clips to +c, so they contribute
+        // the same term regardless of their exact (unrecorded) value.
         double U = 0.0;
         for (int v = 0; v < hist.num_bins; ++v) {
             const uint32_t count = hist.bins[v];
             if (count == 0) {
                 continue;
             }
-            const double res = (static_cast<double>(v) - mu) / svar;
+            const double res = (static_cast<double>(v) - mu) / svar;  // rᵢ
             const double q = (glm_huber(res, c) - epsi.epsi1) * dmu / svar;
             U += static_cast<double>(count) * q;
         }
@@ -383,12 +414,13 @@ FFS_HD inline BackgroundResult glm_constant_background(const ConstHistogramView 
             U += static_cast<double>(hist.overflow_count) * q;
         }
 
-        // DIALS accumulates H += b once per observation, so H = n_obs * b. Since
-        // b is constant across observations for the constant model, this folds to
-        // N * b directly. The result is identical in exact arithmetic; the only
-        // divergence from DIALS is floating-point rounding (N * b versus summing
-        // b N times), which holds the histogram path to 1e-6 parity rather than
-        // bit-for-bit equality.
+        // Fisher information I = XᵀBX [Eq 9], a scalar N*b for the constant
+        // model. DIALS accumulates H += b once per observation, so H = n_obs*b;
+        // since b is constant here this folds to N*b directly. The result is
+        // identical in exact arithmetic; the only divergence from DIALS is
+        // floating-point rounding (N*b versus summing b N times), which holds
+        // the histogram path to 1e-6 parity rather than bit-for-bit equality.
+        // delta = I⁻¹U, and beta += delta is the IRLS update β <- β + I⁻¹U [Eq 5].
         const double delta = U / (static_cast<double>(N) * b);
         const double sum_delta_sq = delta * delta;
         const double sum_beta_sq = beta * beta;
@@ -410,7 +442,7 @@ FFS_HD inline BackgroundResult glm_constant_background(const ConstHistogramView 
         return result;
     }
 
-    const double mean = std::exp(beta);
+    const double mean = std::exp(beta);  // μ = exp(β)
     result.mean = mean;
     result.weighted_sum = mean * static_cast<double>(N);
     result.valid = true;
