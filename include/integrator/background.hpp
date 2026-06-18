@@ -37,6 +37,19 @@
  */
 enum class BackgroundModel : uint8_t { Constant, Glm };
 
+/**
+ * @brief Selects which implementation of the constant (Tukey/IQR) background
+ *        model the host baseline uses.
+ *
+ * DialsIndependent is the original self-contained baseline: an unbounded
+ * histogram (small array plus a sparse map for large/outlier values) that
+ * counts every pixel, including negative sentinels, with no overflow rejection.
+ * This is the true-to-dials reference. SharedCore delegates to the same
+ * tukey_constant_background() the GPU runs, over a bounded NUM_BG_BINS
+ * histogram, so the baseline can be compared directly against the shared core.
+ */
+enum class ConstantBackgroundImpl : uint8_t { DialsIndependent, SharedCore };
+
 // Number of integer-valued bins in each per-reflection background histogram.
 // Single source of truth, shared by the GPU device histogram stride and the
 // host baseline adapter, so both paths bin identical pixel values and produce
@@ -248,7 +261,10 @@ class BackgroundAggregator {
  * using a Tukey (IQR-based) outlier rejection.
  *
  * @param data Aggregated background pixel histogram for one reflection.
+ * @param impl Which implementation to run: the independent dials-like baseline
+ *        (default) or the shared core the GPU uses.
  * @return {mean background, weighted sum of included pixel values}
  */
 std::tuple<double, double> compute_background_constant_3d(
-  const BackgroundAggregator &data);
+  const BackgroundAggregator &data,
+  ConstantBackgroundImpl impl = ConstantBackgroundImpl::DialsIndependent);

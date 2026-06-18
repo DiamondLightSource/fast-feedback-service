@@ -11,7 +11,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 
 #include "integrator/background.hpp"
@@ -90,4 +92,85 @@ TEST(TukeyConstantBackground, ConstantValue) {
     ASSERT_TRUE(r.valid);
     EXPECT_DOUBLE_EQ(r.mean, 5.0);
     EXPECT_DOUBLE_EQ(r.weighted_sum, 100.0);
+}
+
+namespace {
+
+// Add a value to a BackgroundAggregator a given number of times.
+void add_n(BackgroundAggregator &agg, int value, int times) {
+    for (int i = 0; i < times; ++i) agg.add(value);
+}
+
+}  // namespace
+
+// With only low, outlier-free values, the independent dials-like baseline and
+// the shared core agree exactly.
+TEST(ConstantBackgroundImplComparison, AgreeOnCleanLowValues) {
+    BackgroundAggregator agg;
+    for (int v = 0; v <= 9; ++v) agg.add(v);  // N = 10, one pixel each
+
+    auto [dials_mean, dials_sum] =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
+    auto [shared_mean, shared_sum] =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::SharedCore);
+
+    EXPECT_DOUBLE_EQ(dials_mean, 4.5);
+    EXPECT_DOUBLE_EQ(dials_sum, 45.0);
+    EXPECT_DOUBLE_EQ(shared_mean, dials_mean);
+    EXPECT_DOUBLE_EQ(shared_sum, dials_sum);
+}
+
+// Negative sentinel pixels are counted by the dials-like baseline (and pulled
+// into the inlier mean here) but dropped by the shared core, so the two
+// diverge. This is exactly the true-to-dials behaviour the baseline keeps.
+TEST(ConstantBackgroundImplComparison, NegativesCountedByDialsDroppedByShared) {
+    BackgroundAggregator agg;
+    for (int v = 0; v <= 9; ++v) add_n(agg, v, 10);  // 100 low pixels
+    add_n(agg, -1, 4);                               // 4 negative sentinels
+
+    auto [dials_mean, dials_sum] =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
+    auto [shared_mean, shared_sum] =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::SharedCore);
+
+    // Dials counts the four -1 pixels as inliers: sum 450 - 4 over 104 pixels.
+    EXPECT_DOUBLE_EQ(dials_sum, 446.0);
+    EXPECT_DOUBLE_EQ(dials_mean, 446.0 / 104.0);
+    // Shared drops the sentinels: sum 450 over 100 pixels.
+    EXPECT_DOUBLE_EQ(shared_sum, 450.0);
+    EXPECT_DOUBLE_EQ(shared_mean, 4.5);
+}
+
+// A large fraction of pixels above NUM_BG_BINS overflows the shared core's
+// bounded histogram, which it rejects; the unbounded dials-like baseline still
+// produces an estimate from the full range.
+TEST(ConstantBackgroundImplComparison, HighOverflowRejectedOnlyByShared) {
+    BackgroundAggregator agg;
+    for (int v = 0; v <= 9; ++v) agg.add(v);  // 10 low pixels
+    add_n(agg, 5000, 10);                     // 10 pixels above NUM_BG_BINS
+
+    // Shared core: overflow fraction (50%) exceeds the permitted limit.
+    EXPECT_THROW(
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::SharedCore),
+      std::runtime_error);
+
+    // Dials-like baseline: unbounded, so it still returns an estimate.
+    auto [dials_mean, dials_sum] =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
+    EXPECT_GT(dials_sum, 0.0);
+    EXPECT_TRUE(std::isfinite(dials_mean));
+}
+
+// The default implementation is the independent dials-like baseline.
+TEST(ConstantBackgroundImplComparison, DefaultIsDialsIndependent) {
+    BackgroundAggregator agg;
+    for (int v = 0; v <= 9; ++v) add_n(agg, v, 10);
+    add_n(agg, -1, 4);
+
+    auto [default_mean, default_sum] = compute_background_constant_3d(agg);
+    auto [dials_mean, dials_sum] =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
+
+    EXPECT_DOUBLE_EQ(default_mean, dials_mean);
+    EXPECT_DOUBLE_EQ(default_sum, dials_sum);
 }

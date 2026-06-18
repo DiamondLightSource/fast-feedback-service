@@ -11,7 +11,7 @@ target_link_libraries(test_extent PRIVATE
     nlohmann_json::nlohmann_json
 )
 
-add_executable(test_background test_background.cc)
+add_executable(test_background test_background.cc ${CMAKE_SOURCE_DIR}/src/integrator/background.cc)
 target_include_directories(test_background PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(test_background PRIVATE
     GTest::gtest_main
