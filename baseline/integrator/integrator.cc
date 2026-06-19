@@ -111,8 +111,9 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
 
         add_argument("--background")
           .help(
-            "Background model - constant (Tukey/IQR outlier rejection) or "
-            "glm (robust-Poisson GLM constant background).")
+            "Background model - dials for the independent dials-like Tukey/IQR "
+            "baseline, constant/tukey for the shared-core Tukey/IQR model, or "
+            "glm for the shared-core robust-Poisson GLM constant background.")
           .default_value<std::string>("constant");
 
         add_argument("--min_zeta")
@@ -498,9 +499,26 @@ FGAlgorithm parse_fg_algorithm(const std::string &name) {
     throw std::runtime_error("Unknown foreground algorithm: " + name);
 }
 
-BackgroundModel parse_background_model(const std::string &name) {
-    if (name == "constant" || name == "tukey") return BackgroundModel::Constant;
-    if (name == "glm") return BackgroundModel::Glm;
+// Resolves the --background string into the implementation path and, for the
+// shared core, the background model. dials selects the independent dials-like
+// Tukey/IQR reference; constant/tukey select the shared-core Tukey/IQR model;
+// glm selects the shared-core robust-Poisson GLM. The dials reference is
+// Tukey-only, so its model field is left at Constant and ignored downstream.
+struct BackgroundChoice {
+    ConstantBackgroundImpl impl;
+    BackgroundModel model;
+};
+
+BackgroundChoice parse_background_choice(const std::string &name) {
+    if (name == "dials") {
+        return {ConstantBackgroundImpl::DialsIndependent, BackgroundModel::Constant};
+    }
+    if (name == "constant" || name == "tukey" || name == "shared" || name == "core") {
+        return {ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant};
+    }
+    if (name == "glm") {
+        return {ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm};
+    }
     throw std::runtime_error("Unknown background model: " + name);
 }
 
@@ -518,8 +536,10 @@ int main(int argc, char **argv) {
     std::string output_file = parser.get<std::string>("output");
 
     FGAlgorithm fg_algorithm = parse_fg_algorithm(parser.get<std::string>("algorithm"));
-    BackgroundModel background_model =
-      parse_background_model(parser.get<std::string>("background"));
+    BackgroundChoice background_choice =
+      parse_background_choice(parser.get<std::string>("background"));
+    BackgroundModel background_model = background_choice.model;
+    ConstantBackgroundImpl background_impl = background_choice.impl;
     logger.info("Background model: {}", parser.get<std::string>("background"));
 
     // Guard against missing files
@@ -983,8 +1003,8 @@ int main(int argc, char **argv) {
     std::vector<double> bg_sum_value(num_reflections);
     for (int i = 0; i < num_reflections; i++) {
         if (nbg_accumulators[i]) {
-            BackgroundResult bg_result =
-              compute_background_constant_3d(bg_accumulators[i], background_model);
+            BackgroundResult bg_result = compute_background_constant_3d(
+              bg_accumulators[i], background_impl, background_model);
             if (!bg_result.valid) {
                 // Estimate rejected (no inliers, too few pixels, too much
                 // overflow, or non-convergence); skip like the GPU path.

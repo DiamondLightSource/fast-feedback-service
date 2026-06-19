@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -249,8 +250,12 @@ void expect_same_result(const BackgroundResult &a, const BackgroundResult &b) {
 // No background pixels -> no estimate, for either model.
 TEST(BackgroundAdapter, EmptyAggregatorFails) {
     BackgroundAggregator agg;  // num_pixels() == 0
-    EXPECT_FALSE(compute_background_constant_3d(agg, BackgroundModel::Constant).valid);
-    EXPECT_FALSE(compute_background_constant_3d(agg, BackgroundModel::Glm).valid);
+    EXPECT_FALSE(compute_background_constant_3d(
+                   agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant)
+                   .valid);
+    EXPECT_FALSE(compute_background_constant_3d(
+                   agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm)
+                   .valid);
 }
 
 // The adapter's flattened histogram must reproduce the direct-view GLM result.
@@ -265,8 +270,8 @@ TEST(BackgroundAdapter, MatchesDirectViewGlm) {
     BackgroundResult direct = glm_constant_background(view_of(bins));
 
     BackgroundAggregator agg = aggregator_of({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
-    BackgroundResult adapted =
-      compute_background_constant_3d(agg, BackgroundModel::Glm);
+    BackgroundResult adapted = compute_background_constant_3d(
+      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
 
     ASSERT_TRUE(adapted.valid);
     expect_same_result(adapted, direct);
@@ -282,8 +287,8 @@ TEST(BackgroundAdapter, MatchesDirectViewTukey) {
     std::vector<std::pair<int, int>> value_counts;
     for (int v = 0; v <= 9; ++v) value_counts.push_back({v, 1});
     BackgroundAggregator agg = aggregator_of(value_counts);
-    BackgroundResult adapted =
-      compute_background_constant_3d(agg, BackgroundModel::Constant);
+    BackgroundResult adapted = compute_background_constant_3d(
+      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant);
 
     ASSERT_TRUE(adapted.valid);
     expect_same_result(adapted, direct);
@@ -304,8 +309,8 @@ TEST(BackgroundAdapter, LargeHistValueBinnedInRange) {
 
     BackgroundAggregator agg =
       aggregator_of({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}, {120, 1}});
-    BackgroundResult adapted =
-      compute_background_constant_3d(agg, BackgroundModel::Glm);
+    BackgroundResult adapted = compute_background_constant_3d(
+      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
 
     ASSERT_TRUE(adapted.valid);
     expect_same_result(adapted, direct);
@@ -324,8 +329,8 @@ TEST(BackgroundAdapter, OverflowTailCounted) {
 
     BackgroundAggregator agg =
       aggregator_of({{2, 10}, {3, 20}, {4, 30}, {5, 25}, {5000, 4}});
-    BackgroundResult adapted =
-      compute_background_constant_3d(agg, BackgroundModel::Glm);
+    BackgroundResult adapted = compute_background_constant_3d(
+      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
 
     ASSERT_TRUE(adapted.valid);
     expect_same_result(adapted, direct);
@@ -336,14 +341,15 @@ TEST(BackgroundAdapter, OverflowTailCounted) {
 TEST(BackgroundAdapter, NegativeSentinelDropped) {
     std::vector<std::pair<int, int>> base = {{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}};
     BackgroundAggregator clean = aggregator_of(base);
-    BackgroundResult without =
-      compute_background_constant_3d(clean, BackgroundModel::Glm);
+    BackgroundResult without = compute_background_constant_3d(
+      clean, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
 
     std::vector<std::pair<int, int>> with_sentinels = base;
     with_sentinels.push_back({-1, 3});
     with_sentinels.push_back({-100, 2});
     BackgroundAggregator dirty = aggregator_of(with_sentinels);
-    BackgroundResult with = compute_background_constant_3d(dirty, BackgroundModel::Glm);
+    BackgroundResult with = compute_background_constant_3d(
+      dirty, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
 
     ASSERT_TRUE(without.valid);
     expect_same_result(with, without);
@@ -354,6 +360,100 @@ TEST(BackgroundAdapter, NegativeSentinelDropped) {
 TEST(BackgroundAdapter, ExcessiveOverflowRejected) {
     // 20 in range, 20 overflow -> 50% overflow, above kBackgroundMaxOverflowFraction.
     BackgroundAggregator agg = aggregator_of({{3, 10}, {4, 10}, {5000, 20}});
-    EXPECT_FALSE(compute_background_constant_3d(agg, BackgroundModel::Glm).valid);
-    EXPECT_FALSE(compute_background_constant_3d(agg, BackgroundModel::Constant).valid);
+    EXPECT_FALSE(compute_background_constant_3d(
+                   agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm)
+                   .valid);
+    EXPECT_FALSE(compute_background_constant_3d(
+                   agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant)
+                   .valid);
+}
+
+namespace {
+
+// Add a value to a BackgroundAggregator a given number of times.
+void add_n(BackgroundAggregator &agg, int value, int times) {
+    for (int i = 0; i < times; ++i) agg.add(value);
+}
+
+}  // namespace
+
+// With only low, outlier-free values, the independent dials-like baseline and
+// the shared core agree exactly. Both run the Tukey/IQR (Constant) model.
+TEST(ConstantBackgroundImplComparison, AgreeOnCleanLowValues) {
+    BackgroundAggregator agg;
+    for (int v = 0; v <= 9; ++v) agg.add(v);  // N = 10, one pixel each
+
+    BackgroundResult dials =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
+    BackgroundResult shared = compute_background_constant_3d(
+      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant);
+
+    ASSERT_TRUE(dials.valid);
+    ASSERT_TRUE(shared.valid);
+    EXPECT_DOUBLE_EQ(dials.mean, 4.5);
+    EXPECT_DOUBLE_EQ(dials.weighted_sum, 45.0);
+    EXPECT_DOUBLE_EQ(shared.mean, dials.mean);
+    EXPECT_DOUBLE_EQ(shared.weighted_sum, dials.weighted_sum);
+}
+
+// Negative values are garbage pixels that slipped past the mask, not real
+// background measurements. The aggregator drops them at the source, so both the
+// dials-like baseline and the shared core see only the 100 clean pixels and
+// agree on the estimate.
+TEST(ConstantBackgroundImplComparison, NegativesDroppedBeforeEstimation) {
+    BackgroundAggregator agg;
+    for (int v = 0; v <= 9; ++v) add_n(agg, v, 10);  // 100 low pixels
+    add_n(agg, -1, 4);                               // 4 negatives, dropped
+
+    EXPECT_EQ(agg.num_pixels(), 100);
+
+    BackgroundResult dials =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
+    BackgroundResult shared = compute_background_constant_3d(
+      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant);
+
+    ASSERT_TRUE(dials.valid);
+    ASSERT_TRUE(shared.valid);
+    // Both see sum 450 over the 100 retained pixels.
+    EXPECT_DOUBLE_EQ(dials.weighted_sum, 450.0);
+    EXPECT_DOUBLE_EQ(dials.mean, 4.5);
+    EXPECT_DOUBLE_EQ(shared.weighted_sum, dials.weighted_sum);
+    EXPECT_DOUBLE_EQ(shared.mean, dials.mean);
+}
+
+// A large fraction of pixels above NUM_BG_BINS overflows the shared core's
+// bounded histogram, which it rejects (valid=false); the unbounded dials-like
+// baseline still produces an estimate from the full range.
+TEST(ConstantBackgroundImplComparison, HighOverflowRejectedOnlyByShared) {
+    BackgroundAggregator agg;
+    for (int v = 0; v <= 9; ++v) agg.add(v);  // 10 low pixels
+    add_n(agg, 5000, 10);                     // 10 pixels above NUM_BG_BINS
+
+    // Shared core: overflow fraction (50%) exceeds the permitted limit.
+    BackgroundResult shared = compute_background_constant_3d(
+      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant);
+    EXPECT_FALSE(shared.valid);
+
+    // Dials-like baseline: unbounded, so it still returns an estimate.
+    BackgroundResult dials =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
+    ASSERT_TRUE(dials.valid);
+    EXPECT_GT(dials.weighted_sum, 0.0);
+    EXPECT_TRUE(std::isfinite(dials.mean));
+}
+
+// The default implementation is the independent dials-like baseline.
+TEST(ConstantBackgroundImplComparison, DefaultIsDialsIndependent) {
+    BackgroundAggregator agg;
+    for (int v = 0; v <= 9; ++v) add_n(agg, v, 10);
+    add_n(agg, -1, 4);
+
+    BackgroundResult def = compute_background_constant_3d(agg);
+    BackgroundResult dials =
+      compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
+
+    ASSERT_TRUE(def.valid);
+    ASSERT_TRUE(dials.valid);
+    EXPECT_DOUBLE_EQ(def.mean, dials.mean);
+    EXPECT_DOUBLE_EQ(def.weighted_sum, dials.weighted_sum);
 }
