@@ -216,7 +216,12 @@ class BackgroundAggregator {
     }
 
     void add(int x) {
-        if (x >= 0 && x < VECTOR_LIMIT) {
+        // Negatives are garbage pixels that slipped past the mask, not real
+        // background measurements, so they are dropped entirely.
+        if (x < 0) {
+            return;
+        }
+        if (x < VECTOR_LIMIT) {
             ++_small_hist[x];
         } else {
             if (!_large_hist) {

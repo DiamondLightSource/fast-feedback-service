@@ -120,25 +120,27 @@ TEST(ConstantBackgroundImplComparison, AgreeOnCleanLowValues) {
     EXPECT_DOUBLE_EQ(shared_sum, dials_sum);
 }
 
-// Negative sentinel pixels are counted by the dials-like baseline (and pulled
-// into the inlier mean here) but dropped by the shared core, so the two
-// diverge. This is exactly the true-to-dials behaviour the baseline keeps.
-TEST(ConstantBackgroundImplComparison, NegativesCountedByDialsDroppedByShared) {
+// Negative values are garbage pixels that slipped past the mask, not real
+// background measurements. The aggregator drops them at the source, so both the
+// dials-like baseline and the shared core see only the 100 clean pixels and
+// agree on the estimate.
+TEST(ConstantBackgroundImplComparison, NegativesDroppedBeforeEstimation) {
     BackgroundAggregator agg;
     for (int v = 0; v <= 9; ++v) add_n(agg, v, 10);  // 100 low pixels
-    add_n(agg, -1, 4);                               // 4 negative sentinels
+    add_n(agg, -1, 4);                               // 4 negatives, dropped
+
+    EXPECT_EQ(agg.num_pixels(), 100);
 
     auto [dials_mean, dials_sum] =
       compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
     auto [shared_mean, shared_sum] =
       compute_background_constant_3d(agg, ConstantBackgroundImpl::SharedCore);
 
-    // Dials counts the four -1 pixels as inliers: sum 450 - 4 over 104 pixels.
-    EXPECT_DOUBLE_EQ(dials_sum, 446.0);
-    EXPECT_DOUBLE_EQ(dials_mean, 446.0 / 104.0);
-    // Shared drops the sentinels: sum 450 over 100 pixels.
-    EXPECT_DOUBLE_EQ(shared_sum, 450.0);
-    EXPECT_DOUBLE_EQ(shared_mean, 4.5);
+    // Both see sum 450 over the 100 retained pixels.
+    EXPECT_DOUBLE_EQ(dials_sum, 450.0);
+    EXPECT_DOUBLE_EQ(dials_mean, 4.5);
+    EXPECT_DOUBLE_EQ(shared_sum, dials_sum);
+    EXPECT_DOUBLE_EQ(shared_mean, dials_mean);
 }
 
 // A large fraction of pixels above NUM_BG_BINS overflows the shared core's

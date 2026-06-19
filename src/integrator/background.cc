@@ -146,14 +146,12 @@ std::tuple<double, double> compute_background_constant_3d_shared(
     }
     if (large_hist != nullptr) {
         for (const auto &[value, count] : *large_hist) {
-            // A negative value is a sentinel/garbage pixel, not a real
-            // background measurement, so it is dropped rather than counted,
-            // matching the GPU kernel.
-            if (value >= 0 && value < NUM_BG_BINS) {
+            // Values at or above NUM_BG_BINS go to the overflow tail
+            if (value >= NUM_BG_BINS) {
+                overflow_count += static_cast<uint32_t>(count);
+            } else {
                 bins[static_cast<size_t>(value)] += static_cast<uint32_t>(count);
                 in_range_count += static_cast<uint32_t>(count);
-            } else if (value >= NUM_BG_BINS) {
-                overflow_count += static_cast<uint32_t>(count);
             }
         }
     }
