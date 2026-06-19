@@ -111,9 +111,8 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
 
         add_argument("--background")
           .help(
-            "Background model - dials for the independent dials-like Tukey/IQR "
-            "baseline, constant/tukey for the shared-core Tukey/IQR model, or "
-            "glm for the shared-core robust-Poisson GLM constant background.")
+            "Background model: dials (dials-like Tukey), constant (shared-core "
+            "Tukey), or glm (shared-core robust-Poisson GLM).")
           .default_value<std::string>("constant");
 
         add_argument("--min_zeta")
