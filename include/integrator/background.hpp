@@ -9,6 +9,12 @@
  * for CUDA device code (GPU reduction kernel), so both paths produce identical
  * results. Background pixel values are integer counts, so a histogram with one
  * bin per integer value makes the quartile/IQR logic exact.
+ *
+ * This assumes a photon-counting detector, where raw pixel values are
+ * non-negative integer photon counts. The integer histogram and the dropping
+ * of negative values both depend on that assumption. Charge-integrating
+ * detectors (e.g. Jungfrau) produce non-integer pixel values that will 
+ * need a different background approach.
  */
 
 #pragma once
