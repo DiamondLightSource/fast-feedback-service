@@ -126,8 +126,7 @@ struct BackgroundResult {
  * Single-source implementation shared by host and device. Computes the
  * quartiles of the histogram, rejects values outside
  * [q1 - 1.5*IQR, q3 + 1.5*IQR], and returns the mean and weighted sum of the
- * surviving inliers. Device-safe: no allocation, no exceptions; failure is
- * reported via BackgroundResult::valid.
+ * surviving inliers. Failure is reported via BackgroundResult::valid.
  *
  * The high tail (overflow_count) is counted towards the quartile positions but
  * never contributes inliers, since for a sensible num_bins it lies above the
@@ -322,9 +321,9 @@ FFS_HD inline GlmExpectation glm_expectation(double mu, double svar, double c) {
  * Single-source implementation shared by host and device. Fits a constant
  * Poisson mean with a log link by iteratively reweighted least squares with
  * Huber weighting, reproducing dials::algorithms::RobustPoissonMean over the
- * same per-reflection histogram. Because every background pixel shares one
- * design row, the fit depends only on the value counts, so the histogram is an
- * exact representation. High-tail overflow pixels always sit far above the
+ * same per-reflection histogram. The model treats every pixel the same, so the
+ * fit only needs the count of pixels at each value, which makes the histogram
+ * an exact representation. High-tail overflow pixels always sit far above the
  * upper Huber bound, so their psi clips to +c regardless of their exact value,
  * which is why the overflow count alone suffices.
  *
@@ -335,18 +334,15 @@ FFS_HD inline GlmExpectation glm_expectation(double mu, double svar, double c) {
  * floating-point rounding, so parity with DIALS holds to 1e-6 rather than
  * bit-for-bit (see the IRLS loop below).
  *
- * Paper symbols (constant model, design row xᵢ = (1)): coefficient β, linear
+ * Paper symbols (constant model, per-pixel term xᵢ = 1): coefficient β, linear
  * predictor η = β, mean μ = exp(η) (log link), link derivative μ′ = dμ/dη,
  * dispersion φ = 1 and variance function v_μ = μ, so √(φ*v_μ) = √μ. The IRLS
  * loop below forms the robust score U [Eq 2] and the Fisher information I [Eq 9]
  * and applies the update β ← β + I⁻¹U [Eq 5].
  *
- * The seed is the histogram median (matching DIALS), the tuning constant,
- * tolerance, iteration cap and minimum pixel count match the DIALS defaults.
- * Device-safe: no allocation, no exceptions; failure (too few pixels, range too
- * small, non-convergence, or a degenerate parameter) is reported via
- * BackgroundResult::valid. weighted_sum is the modelled background summed over
- * the background pixels (mean * N), since the GLM models every pixel at mean.
+ * Failure (too few pixels, range too small, non-convergence, or a degenerate
+ * parameter) is reported via BackgroundResult::valid. weighted_sum is mean * N,
+ * since the GLM models every background pixel at the fitted mean.
  *
  * Source: dials::algorithms::RobustPoissonMean in
  * dials/algorithms/background/glm/robust_poisson_mean.h (the constant-model
