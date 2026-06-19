@@ -8,6 +8,7 @@ add_executable(integrator
     integrator.cc
     integrator.cu
     kabsch.cu
+    background.cu
     ${CMAKE_SOURCE_DIR}/src/integrator/extent.cc
     ${CMAKE_SOURCE_DIR}/src/integrator/lp_correction.cc
     ${CMAKE_SOURCE_DIR}/src/integrator/coordinate_system.cc

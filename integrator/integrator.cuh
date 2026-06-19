@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <dx2/detector.hpp>
 
+#include "integrator/background.hpp"  // NUM_BG_BINS (shared host/device constant)
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
 

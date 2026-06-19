@@ -43,6 +43,8 @@
 #include "ffs_logger.hpp"
 #include "h5read.h"
 #include "integrator.cuh"
+#include "integrator/background.cuh"
+#include "integrator/background.hpp"
 #include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
 #include "integrator/lp_correction.hpp"
@@ -62,6 +64,14 @@ static FGAlgorithm parse_fg_algorithm(const std::string &name) {
     if (name == "ellipsoid") return FGAlgorithm::Ellipsoid;
     if (name == "dials") return FGAlgorithm::Dials;
     throw std::runtime_error("Unknown foreground algorithm: " + name);
+}
+
+static BackgroundModel parse_background_model(const std::string &name) {
+    if (name == "constant" || name == "tukey") return BackgroundModel::Constant;
+    if (name == "glm") {
+        throw std::runtime_error("GLM background model not yet implemented");
+    }
+    throw std::runtime_error("Unknown background model: " + name);
 }
 
 using namespace std::chrono_literals;
@@ -207,6 +217,12 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
           .help("Foreground algorithm choice - dials or ellipsoid.")
           .default_value<std::string>("ellipsoid");
 
+        add_argument("--background")
+          .help(
+            "Background model - constant (Tukey/IQR outlier rejection). "
+            "glm is not yet implemented.")
+          .default_value<std::string>("constant");
+
         add_argument("--min_zeta")
           .help(
             "Reflections close to the rotation axis, with a zeta below this threshold "
@@ -300,6 +316,10 @@ int main(int argc, char **argv) {
     std::string output_file = parser.get<std::string>("output");
     logger.info("Foreground algorithm: {}",
                 fg_algorithm == FGAlgorithm::Ellipsoid ? "ellipsoid" : "dials");
+
+    BackgroundModel background_model =
+      parse_background_model(parser.get<std::string>("background"));
+    logger.info("Background model: {}", parser.get<std::string>("background"));
 
 #pragma endregion Data preparation
 
@@ -543,8 +563,16 @@ int main(int argc, char **argv) {
     }
     logger.info("Running with {} CPU threads", num_cpu_threads);
 
-    // Set up image reader
-    const auto images_file = parser.images();
+    // Set up image reader. When no images are given, fall back to the
+    // image file recorded in the experiment
+    auto images_file = parser.images();
+    if (images_file.empty()) {
+        images_file = expt.imagesequence().filename();
+        if (!images_file.empty()) {
+            logger.info("No --images given; using image file from the experiment: {}",
+                        images_file);
+        }
+    }
     std::unique_ptr<Reader> reader_ptr;
 
     if (std::filesystem::is_directory(images_file)) {
@@ -671,8 +699,21 @@ int main(int argc, char **argv) {
     // These persist across all images and accumulate atomically
     DeviceBuffer<accumulator_t> d_foreground_sum(num_reflections);
     DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
-    DeviceBuffer<accumulator_t> d_background_sum(num_reflections);
+    // Per-reflection background histogram: one bin per integer pixel value over
+    // [0, NUM_BG_BINS), plus an overflow counter for the high tail. The Kabsch
+    // kernel fills these; compute_background() reduces them into an estimate
+    // after the image loop.
+    DeviceBuffer<uint32_t> d_background_hist(num_reflections * NUM_BG_BINS);
+    DeviceBuffer<uint32_t> d_background_overflow(num_reflections);
+    logger.info("Background histograms: {} reflections x {} bins = {:.1f} MiB",
+                num_reflections,
+                NUM_BG_BINS,
+                (num_reflections * NUM_BG_BINS * sizeof(uint32_t)) / (1024.0 * 1024.0));
+    // Reduced background estimates (written by compute_background()).
+    DeviceBuffer<double> d_background_mean(num_reflections);
+    DeviceBuffer<double> d_background_sum_value(num_reflections);
     DeviceBuffer<uint32_t> d_background_count(num_reflections);
+    DeviceBuffer<uint8_t> d_background_success(num_reflections);
     // COM (intensity * coord) accumulators. Baseline uses Vector3d (double) for
     // these, but we use unsigned long long so we can use the hardware-fast
     // integer atomicAdd; double atomicAdd is slower and requires sm_60+. To
@@ -690,8 +731,9 @@ int main(int argc, char **argv) {
 
     cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(d_background_sum.data(), 0, num_reflections * sizeof(accumulator_t));
-    cudaMemset(d_background_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(
+      d_background_hist.data(), 0, num_reflections * NUM_BG_BINS * sizeof(uint32_t));
+    cudaMemset(d_background_overflow.data(), 0, num_reflections * sizeof(uint32_t));
     cudaMemset(
       d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
     cudaMemset(
@@ -864,8 +906,8 @@ int main(int argc, char **argv) {
                                          fg_algorithm,
                                          d_foreground_sum.data(),
                                          d_foreground_count.data(),
-                                         d_background_sum.data(),
-                                         d_background_count.data(),
+                                         d_background_hist.data(),
+                                         d_background_overflow.data(),
                                          d_intensity_times_x.data(),
                                          d_intensity_times_y.data(),
                                          d_intensity_times_z.data(),
@@ -900,6 +942,32 @@ int main(int argc, char **argv) {
         logger.info("Total time waiting for images: {:.2f} s", time_waiting_for_images);
     }
 
+#pragma region Background Reduction
+    // The reader threads have joined, which destroyed their per-thread streams,
+    // but cudaStreamDestroy does not wait for queued work, so the accumulation
+    // kernels may still be in flight. Synchronise the whole device before the
+    // reduction reads the histograms those kernels filled.
+    // Perhaps better to have each thread synchronize its stream before joining,
+    // this is simper for now, but worth testing during profiling.
+    cudaDeviceSynchronize();
+    cuda_throw_error();
+
+    // Reduce each reflection's background histogram into an estimate on the
+    // device (Tukey/IQR constant model), then copy the small results back.
+    logger.info("Reducing background histograms for {} reflections", num_reflections);
+    compute_background(background_model,
+                       d_background_hist.data(),
+                       d_background_overflow.data(),
+                       num_reflections,
+                       d_background_mean.data(),
+                       d_background_sum_value.data(),
+                       d_background_count.data(),
+                       d_background_success.data(),
+                       0);
+    cudaDeviceSynchronize();
+    cuda_throw_error();
+#pragma endregion Background Reduction
+
 #pragma region Summation Integration Finalization
     // Host-side reduction and finalization
     // Copy accumulator buffers back from GPU and compute final intensities
@@ -908,8 +976,11 @@ int main(int argc, char **argv) {
     // Allocate host buffers for results
     std::vector<accumulator_t> h_foreground_sum(num_reflections);
     std::vector<uint32_t> h_foreground_count(num_reflections);
-    std::vector<accumulator_t> h_background_sum(num_reflections);
+    std::vector<double> h_background_mean(num_reflections);
+    std::vector<double> h_background_sum_value(num_reflections);
     std::vector<uint32_t> h_background_count(num_reflections);
+    std::vector<uint32_t> h_background_overflow(num_reflections);
+    std::vector<uint8_t> h_background_success(num_reflections);
     std::vector<unsigned long long> h_intensity_times_x(num_reflections);
     std::vector<unsigned long long> h_intensity_times_y(num_reflections);
     std::vector<unsigned long long> h_intensity_times_z(num_reflections);
@@ -918,12 +989,46 @@ int main(int argc, char **argv) {
     // Copy results from device to host
     d_foreground_sum.extract(h_foreground_sum.data());
     d_foreground_count.extract(h_foreground_count.data());
-    d_background_sum.extract(h_background_sum.data());
+    d_background_mean.extract(h_background_mean.data());
+    d_background_sum_value.extract(h_background_sum_value.data());
     d_background_count.extract(h_background_count.data());
+    d_background_overflow.extract(h_background_overflow.data());
+    d_background_success.extract(h_background_success.data());
     d_intensity_times_x.extract(h_intensity_times_x.data());
     d_intensity_times_y.extract(h_intensity_times_y.data());
     d_intensity_times_z.extract(h_intensity_times_z.data());
     d_success.extract(h_success.data());
+
+    // The background histogram only covers pixel values [0, NUM_BG_BINS). If a
+    // reflection pushes more than kBackgroundMaxOverflowFraction of its
+    // background pixels into the overflow tail, that range is too small to
+    // characterise its background and the device Tukey estimate diverges from a
+    // full-range computation. Fail loudly so the histogram range is raised
+    // rather than silently producing a degraded intensity.
+    {
+        size_t overflowing = 0;
+        double worst_fraction = 0.0;
+        for (size_t i = 0; i < num_reflections; ++i) {
+            const uint32_t total = h_background_count[i];
+            if (total == 0) continue;
+            const double fraction = static_cast<double>(h_background_overflow[i])
+                                    / static_cast<double>(total);
+            if (fraction > kBackgroundMaxOverflowFraction) {
+                overflowing++;
+                worst_fraction = std::max(worst_fraction, fraction);
+            }
+        }
+        if (overflowing > 0) {
+            throw std::runtime_error(fmt::format(
+              "{} reflection(s) put more than {:.0f}% of their background pixels "
+              "above NUM_BG_BINS={} (worst {:.1f}%); the background histogram "
+              "range is too small. Increase NUM_BG_BINS.",
+              overflowing,
+              kBackgroundMaxOverflowFraction * 100.0,
+              NUM_BG_BINS,
+              worst_fraction * 100.0));
+        }
+    }
 
     // Compute final intensities for each reflection
     std::vector<double> intensities(num_reflections);
@@ -932,6 +1037,7 @@ int main(int argc, char **argv) {
     std::vector<double> backgrounds(num_reflections);  // b̄  (background mean per pixel)
     std::vector<double> background_sigmas(num_reflections);  // σ(b̄)
     size_t valid_reflections = 0;
+    size_t background_failures = 0;  // fg present but Tukey estimate rejected
 
     for (size_t i = 0; i < num_reflections; ++i) {
         uint32_t fg_count = h_foreground_count[i];
@@ -949,8 +1055,16 @@ int main(int argc, char **argv) {
 
         double fg_sum = h_foreground_sum[i];
 
-        // Background mean b̄ (simple mean for now
-        double bg_mean = (bg_count > 0) ? h_background_sum[i] / bg_count : 0.0;
+        // Tally rejected estimates (no inlier pixels, or the IQR fence ran past
+        // the histogram range) purely for error reporting and logging; the
+        // reflection is marked unintegrated below regardless.
+        if (!h_background_success[i]) {
+            ++background_failures;
+        }
+
+        // Background mean b̄ from the device-side Tukey/IQR reduction. When the
+        // estimate failed the model contributes nothing.
+        double bg_mean = h_background_success[i] ? h_background_mean[i] : 0.0;
 
         // Subtract background:  I = Σcᵢ(fg) − n_fg · b̄
         double background_total = bg_mean * fg_count;
@@ -984,6 +1098,15 @@ int main(int argc, char **argv) {
     logger.info("Summation integration complete: {} valid reflections out of {}",
                 valid_reflections,
                 num_reflections);
+
+    if (background_failures > 0) {
+        logger.warn(
+          "Background estimate rejected for {} of {} reflections with "
+          "foreground pixels; NUM_BG_BINS may be too small for their "
+          "background level",
+          background_failures,
+          num_reflections);
+    }
 
     // Log some statistics
     if (valid_reflections > 0) {
@@ -1045,14 +1168,15 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < num_reflections; ++i) {
         nfg_out[i] = static_cast<int>(h_foreground_count[i]);
         nbg_out[i] = static_cast<int>(h_background_count[i]);
-        bg_sum_out[i] = static_cast<double>(h_background_sum[i]);
-        bg_mean_out[i] = (h_background_count[i] > 0)
-                           ? static_cast<double>(h_background_sum[i])
-                               / static_cast<double>(h_background_count[i])
-                           : 0.0;
+        // background.sum.value is the Tukey inlier weighted sum; background.mean
+        // is the inlier mean. Both come from the device reduction.
+        bg_sum_out[i] = h_background_success[i] ? h_background_sum_value[i] : 0.0;
+        bg_mean_out[i] = h_background_success[i] ? h_background_mean[i] : 0.0;
 
-        // Success: kernel-flagged AND fg_count > 0 AND not dont_integrated.
-        bool ok = h_success[i] && (h_foreground_count[i] > 0) && !dont_integrate[i];
+        // Success: kernel-flagged AND fg_count > 0 AND a valid background
+        // estimate AND not dont_integrated.
+        bool ok = h_success[i] && (h_foreground_count[i] > 0) && h_background_success[i]
+                  && !dont_integrate[i];
         success_final[i] = ok ? 1 : 0;
 
         // Centre-of-mass: kernel accumulated intensity·(2k+1), so divide by 2·I.

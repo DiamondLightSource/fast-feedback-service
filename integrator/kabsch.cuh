@@ -66,8 +66,8 @@
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M), radians
  * @param d_foreground_sum Device array to accumulate foreground intensities per reflection
  * @param d_foreground_count Device array to count foreground pixels per reflection
- * @param d_background_sum Device array to accumulate background intensities per reflection
- * @param d_background_count Device array to count background pixels per reflection
+ * @param d_background_hist Device per-reflection background histogram, num_reflections*NUM_BG_BINS bins (one per integer pixel value)
+ * @param d_background_overflow Device per-reflection count of background pixels with value >= NUM_BG_BINS (high tail)
  * @param d_intensity_times_x Device array accumulating intensity·(2gx+1) per reflection (centre-of-mass)
  * @param d_intensity_times_y Device array accumulating intensity·(2gy+1) per reflection (centre-of-mass)
  * @param d_intensity_times_z Device array accumulating intensity·(2z+1) per reflection (centre-of-mass)
@@ -102,8 +102,8 @@ void compute_kabsch_transform(pixel_t *d_image,
                               FGAlgorithm algorithm,
                               accumulator_t *d_foreground_sum,
                               uint32_t *d_foreground_count,
-                              accumulator_t *d_background_sum,
-                              uint32_t *d_background_count,
+                              uint32_t *d_background_hist,
+                              uint32_t *d_background_overflow,
                               unsigned long long *d_intensity_times_x,
                               unsigned long long *d_intensity_times_y,
                               unsigned long long *d_intensity_times_z,

@@ -290,8 +290,8 @@ __device__ __forceinline__ void px_to_mm(int gx,
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M)
  * @param d_foreground_sum Output: accumulated foreground intensities per reflection
  * @param d_foreground_count Output: foreground pixel counts per reflection
- * @param d_background_sum Output: accumulated background intensities per reflection
- * @param d_background_count Output: background pixel counts per reflection
+ * @param d_background_hist Output: per-reflection background histogram (num_reflections*NUM_BG_BINS bins, one per integer value)
+ * @param d_background_overflow Output: per-reflection count of background pixels with value >= NUM_BG_BINS
  * @param d_intensity_times_x Output: intensity·(2gx+1) per reflection (centre-of-mass)
  * @param d_intensity_times_y Output: intensity·(2gy+1) per reflection (centre-of-mass)
  * @param d_intensity_times_z Output: intensity·(2z+1) per reflection (centre-of-mass)
@@ -325,8 +325,8 @@ __global__ void kabsch_transform(pixel_t *d_image,
                                  // Output accumulators (atomically updated)
                                  accumulator_t *d_foreground_sum,
                                  uint32_t *d_foreground_count,
-                                 accumulator_t *d_background_sum,
-                                 uint32_t *d_background_count,
+                                 uint32_t *d_background_hist,
+                                 uint32_t *d_background_overflow,
                                  unsigned long long *d_intensity_times_x,
                                  unsigned long long *d_intensity_times_y,
                                  unsigned long long *d_intensity_times_z,
@@ -558,13 +558,22 @@ __global__ void kabsch_transform(pixel_t *d_image,
                 }
             } else {
                 // Background is counted only for unmasked pixels inside the
-                // image; masked or out-of-image background is dropped.
+                // image; masked or out-of-image background is dropped. Each
+                // pixel value increments one bin of this reflection's
+                // histogram (one bin per integer count). Values at or above
+                // NUM_BG_BINS go to the overflow tail. A negative value is a
+                // sentinel/garbage pixel that slipped past the mask (reachable
+                // only when pixel_t is 32-bit and the value exceeds INT_MAX);
+                // it is not a real background measurement, so it is dropped
+                // rather than counted.
                 if (pixel_in_image
                     && d_mask[static_cast<size_t>(gy) * width + gx] != 0) {
-                    const accumulator_t pixel_value =
-                      static_cast<accumulator_t>(image(gx, gy));
-                    atomicAdd(&d_background_sum[refl_idx], pixel_value);
-                    atomicAdd(&d_background_count[refl_idx], 1u);
+                    const int bin = static_cast<int>(image(gx, gy));
+                    if (bin >= 0 && bin < NUM_BG_BINS) {
+                        atomicAdd(&d_background_hist[refl_idx * NUM_BG_BINS + bin], 1u);
+                    } else if (bin >= NUM_BG_BINS) {
+                        atomicAdd(&d_background_overflow[refl_idx], 1u);
+                    }
                 }
             }
         }
@@ -609,8 +618,8 @@ void compute_kabsch_transform(pixel_t *d_image,
                               FGAlgorithm algorithm,
                               accumulator_t *d_foreground_sum,
                               uint32_t *d_foreground_count,
-                              accumulator_t *d_background_sum,
-                              uint32_t *d_background_count,
+                              uint32_t *d_background_hist,
+                              uint32_t *d_background_overflow,
                               unsigned long long *d_intensity_times_x,
                               unsigned long long *d_intensity_times_y,
                               unsigned long long *d_intensity_times_z,
@@ -675,8 +684,8 @@ void compute_kabsch_transform(pixel_t *d_image,
                                              delta_m,
                                              d_foreground_sum,
                                              d_foreground_count,
-                                             d_background_sum,
-                                             d_background_count,
+                                             d_background_hist,
+                                             d_background_overflow,
                                              d_intensity_times_x,
                                              d_intensity_times_y,
                                              d_intensity_times_z,

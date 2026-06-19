@@ -1,17 +1,27 @@
 /**
  * @file background.cc
- * @brief Background estimation for baseline CPU integration.
+ * @brief Host constant (Tukey/IQR) background estimation for the baseline
+ *        integrator, available as either the independent dials-like algorithm
+ *        or an adapter onto the shared, device-safe constant background model.
  */
 
 #include "integrator/background.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 
-// Simple background with tukey outlier for now.
-std::tuple<double, double> compute_background_constant_3d(
+namespace {
+
+// Independent dials-like constant background. Self-contained baseline that
+// scans the aggregator's unbounded histogram directly: the small fixed array
+// for low values and, only if a quartile is not yet found, the sparse map of
+// large/outlier values. Every pixel is counted (including negative sentinels
+// in the large map) and there is no overflow rejection, so this stays the
+// true-to-dials reference independent of the shared core's bounded range.
+std::tuple<double, double> compute_background_constant_3d_dials(
   const BackgroundAggregator &data) {
     constexpr double iqr_multiplier = 1.5;
 
@@ -107,4 +117,79 @@ std::tuple<double, double> compute_background_constant_3d(
 
     const double mean = weighted_sum / static_cast<double>(included_count);
     return {mean, weighted_sum};
+}
+
+// Shared-core constant background. Delegates to the single-source
+// tukey_constant_background() so the baseline and the GPU run identical math;
+// this function only flattens the aggregator's array and overflow map into a
+// contiguous ConstHistogramView over the shared NUM_BG_BINS range.
+std::tuple<double, double> compute_background_constant_3d_shared(
+  const BackgroundAggregator &data) {
+    if (data.num_pixels() == 0) {
+        throw std::runtime_error("No background pixels available");
+    }
+
+    const auto &small_hist = data.small_hist();
+    const auto *large_hist = data.large_hist();  // may be nullptr
+
+    // Bin into the shared [0, NUM_BG_BINS) range exactly as the GPU kernel does,
+    // so the host baseline and the device reduction see identical histograms:
+    // negative sentinel values are dropped, values at or above NUM_BG_BINS go to
+    // the overflow tail.
+    std::vector<uint32_t> bins(static_cast<size_t>(NUM_BG_BINS), 0);
+    uint32_t in_range_count = 0;
+    uint32_t overflow_count = 0;
+
+    for (std::size_t v = 0; v < small_hist.size() && v < NUM_BG_BINS; ++v) {
+        bins[v] = static_cast<uint32_t>(small_hist[v]);
+        in_range_count += static_cast<uint32_t>(small_hist[v]);
+    }
+    if (large_hist != nullptr) {
+        for (const auto &[value, count] : *large_hist) {
+            // Values at or above NUM_BG_BINS go to the overflow tail
+            if (value >= NUM_BG_BINS) {
+                overflow_count += static_cast<uint32_t>(count);
+            } else {
+                bins[static_cast<size_t>(value)] += static_cast<uint32_t>(count);
+                in_range_count += static_cast<uint32_t>(count);
+            }
+        }
+    }
+
+    ConstHistogramView view{bins.data(), NUM_BG_BINS, overflow_count};
+
+    // Too many pixels in the overflow tail means NUM_BG_BINS is too small to
+    // represent this reflection's background, so the estimate would diverge
+    // from a full-range computation. Fail loudly rather than degrade silently.
+    // The denominator is the histogram population (in-range + overflow), which
+    // matches the GPU reduction's count and excludes dropped sentinels.
+    if (static_cast<double>(overflow_count)
+        > kBackgroundMaxOverflowFraction
+            * static_cast<double>(in_range_count + overflow_count)) {
+        throw std::runtime_error(
+          "Background histogram overflow exceeded the permitted fraction; "
+          "NUM_BG_BINS is too small for this reflection's background level");
+    }
+
+    BackgroundResult result = tukey_constant_background(view);
+    if (!result.valid) {
+        throw std::runtime_error(
+          "No background data remaining after outlier rejection");
+    }
+
+    return {result.mean, result.weighted_sum};
+}
+
+}  // namespace
+
+std::tuple<double, double> compute_background_constant_3d(
+  const BackgroundAggregator &data,
+  ConstantBackgroundImpl impl) {
+    switch (impl) {
+    case ConstantBackgroundImpl::SharedCore:
+        return compute_background_constant_3d_shared(data);
+    case ConstantBackgroundImpl::DialsIndependent:
+    default:
+        return compute_background_constant_3d_dials(data);
+    }
 }

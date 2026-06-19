@@ -13,7 +13,7 @@ The test is skipped if the directory is missing.
 |------|----------|
 | `integrated_1_10.refl` | predictions: `s1`, `xyzcal.mm`, `bbox`, `miller_index` |
 | `indexed_1_10.expt` | beam, detector panel, goniometer, scan |
-| `baseline_<algo>_1_10.refl` | reference `num_pixels.foreground` / `.background` |
+| `baseline_<algo>_1_10.refl` | reference `num_pixels.foreground` / `.background`, `intensity.sum.value`, `background.mean` / `.sum.value` |
 
 The baseline references are generated. Regenerate them whenever the baseline algorithm, its parameters, or the input data change. `$FFS_KABSCH_BASELINE_REFERENCE` overrides the reference path.
 
