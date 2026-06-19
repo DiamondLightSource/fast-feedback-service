@@ -120,11 +120,11 @@ TEST(TukeyConstantBackground, ConstantValue) {
 // This parity tolerance is distinct from the GLM's own convergence
 // tolerance (kGlmTolerance = 1e-3, the DIALS default at which the IRLS
 // loop stops). That 1e-3 is matched to DIALS so both fits halt at the
-// same iteration. Because our core and DIALS run the same algorithm
-// with the same stopping rule, their results agree far more tightly
-// than 1e-3 (~1e-11 in practice). 1e-6 sits between that real agreement
-// and 1e-3: loose enough to absorb the documented H = N*b vs H += b
-// divergence and FP error
+// same iteration. Because the shared core and DIALS run the same
+// algorithm with the same stopping rule, their results agree far more
+// tightly than 1e-3 (~1e-11 in practice). 1e-6 sits between that real
+// agreement and 1e-3: loose enough to absorb the documented H = N*b vs
+// H += b divergence and FP error.
 namespace {
 constexpr double kDialsParityTol = 1e-6;
 }  // namespace
@@ -217,7 +217,7 @@ TEST(GlmConstantBackground, ExcessiveOverflowRejected) {
 
 // The tests above feed a ConstHistogramView straight into the model
 // functions, which bypasses the baseline host adapter. The cases below
-// tests compute_background_constant_3d, which flattens a
+// test compute_background_constant_3d, which flattens a
 // BackgroundAggregator into the same view before dispatching. They pin
 // the adapter's binning (the small/large split versus the NUM_BG_BINS
 // range, negative-sentinel drop, overflow tail) by asserting it
