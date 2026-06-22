@@ -111,9 +111,8 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
 
         add_argument("--background")
           .help(
-            "Constant (Tukey/IQR) background implementation - constant/tukey/dials "
-            "for the independent dials-like baseline, or shared/core for the shared "
-            "GPU core. glm is not yet implemented.")
+            "Background model: dials (dials-like Tukey), constant (shared-core "
+            "Tukey), or glm (shared-core robust-Poisson GLM).")
           .default_value<std::string>("constant");
 
         add_argument("--min_zeta")
@@ -499,15 +498,25 @@ FGAlgorithm parse_fg_algorithm(const std::string &name) {
     throw std::runtime_error("Unknown foreground algorithm: " + name);
 }
 
-ConstantBackgroundImpl parse_background_impl(const std::string &name) {
-    if (name == "constant" || name == "tukey" || name == "dials") {
-        return ConstantBackgroundImpl::DialsIndependent;
+// Resolves the --background string into the implementation path and, for the
+// shared core, the background model. dials selects the independent dials-like
+// Tukey/IQR reference; constant/tukey select the shared-core Tukey/IQR model;
+// glm selects the shared-core robust-Poisson GLM. The dials reference is
+// Tukey-only, so its model field is left at Constant and ignored downstream.
+struct BackgroundChoice {
+    ConstantBackgroundImpl impl;
+    BackgroundModel model;
+};
+
+BackgroundChoice parse_background_choice(const std::string &name) {
+    if (name == "dials") {
+        return {ConstantBackgroundImpl::DialsIndependent, BackgroundModel::Constant};
     }
-    if (name == "shared" || name == "core") {
-        return ConstantBackgroundImpl::SharedCore;
+    if (name == "constant" || name == "tukey" || name == "shared" || name == "core") {
+        return {ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant};
     }
     if (name == "glm") {
-        throw std::runtime_error("GLM background model not yet implemented");
+        return {ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm};
     }
     throw std::runtime_error("Unknown background model: " + name);
 }
@@ -526,13 +535,11 @@ int main(int argc, char **argv) {
     std::string output_file = parser.get<std::string>("output");
 
     FGAlgorithm fg_algorithm = parse_fg_algorithm(parser.get<std::string>("algorithm"));
-
-    ConstantBackgroundImpl background_impl =
-      parse_background_impl(parser.get<std::string>("background"));
-    logger.info("Background model: constant ({})",
-                background_impl == ConstantBackgroundImpl::SharedCore
-                  ? "shared core"
-                  : "independent dials-like");
+    BackgroundChoice background_choice =
+      parse_background_choice(parser.get<std::string>("background"));
+    BackgroundModel background_model = background_choice.model;
+    ConstantBackgroundImpl background_impl = background_choice.impl;
+    logger.info("Background model: {}", parser.get<std::string>("background"));
 
     // Guard against missing files
     if (!std::filesystem::exists(reflection_file)) {
@@ -993,11 +1000,18 @@ int main(int argc, char **argv) {
     std::vector<double> d_values(num_reflections);
     std::vector<double> mean_bg(num_reflections);
     std::vector<double> bg_sum_value(num_reflections);
-    // FIXME need to include robust outlier rejection in background calculation (glm, constant3dmodel)
     for (int i = 0; i < num_reflections; i++) {
         if (nbg_accumulators[i]) {
-            auto [bg, total_bg_counts] =
-              compute_background_constant_3d(bg_accumulators[i], background_impl);
+            BackgroundResult bg_result = compute_background_constant_3d(
+              bg_accumulators[i], background_impl, background_model);
+            if (!bg_result.valid) {
+                // Estimate rejected (no inliers, too few pixels, too much
+                // overflow, or non-convergence); skip like the GPU path.
+                success[i] = false;
+                continue;
+            }
+            double bg = bg_result.mean;
+            double total_bg_counts = bg_result.weighted_sum;
             mean_bg[i] = bg;
             bg_sum_value[i] = total_bg_counts;
             double I = intensity_accumulators[i] - bg;

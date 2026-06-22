@@ -1,8 +1,8 @@
 /**
  * @file background.cc
- * @brief Host constant (Tukey/IQR) background estimation for the baseline
- *        integrator, available as either the independent dials-like algorithm
- *        or an adapter onto the shared, device-safe constant background model.
+ * @brief Host constant background estimation for the baseline integrator,
+ *        available as either the independent dials-like algorithm or an adapter
+ *        onto the shared, device-safe constant background models (Tukey/GLM).
  */
 
 #include "integrator/background.hpp"
@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -20,14 +19,18 @@ namespace {
 // for low values and, only if a quartile is not yet found, the sparse map of
 // large/outlier values. Every pixel is counted (including negative sentinels
 // in the large map) and there is no overflow rejection, so this stays the
-// true-to-dials reference independent of the shared core's bounded range.
-std::tuple<double, double> compute_background_constant_3d_dials(
+// true-to-dials reference independent of the shared core's bounded range. This
+// path is Tukey/IQR only; the GLM model lives solely in the shared core. A
+// degenerate input returns a BackgroundResult with valid=false (the same
+// channel the GPU reduction uses) so the caller can skip the reflection rather
+// than aborting.
+BackgroundResult compute_background_constant_3d_dials(
   const BackgroundAggregator &data) {
     constexpr double iqr_multiplier = 1.5;
 
     const int N = data.num_pixels();
     if (N == 0) {
-        throw std::runtime_error("No background pixels available");
+        return BackgroundResult{};  // no background pixels, so no estimate
     }
 
     // Quantile positions (1-based counting convention)
@@ -74,9 +77,9 @@ std::tuple<double, double> compute_background_constant_3d_dials(
         }
     }
 
-    // Sanity check (should not happen unless input is inconsistent)
+    // Quartiles not found means the input is inconsistent; reject the estimate.
     if (q1 < 0 || q3 < 0) {
-        throw std::runtime_error("Failed to compute quartiles for background");
+        return BackgroundResult{};
     }
 
     const int iqr = q3 - q1;
@@ -111,22 +114,24 @@ std::tuple<double, double> compute_background_constant_3d_dials(
     }
 
     if (included_count == 0) {
-        throw std::runtime_error(
-          "No background data remaining after outlier rejection");
+        return BackgroundResult{};  // no inliers after outlier rejection
     }
 
     const double mean = weighted_sum / static_cast<double>(included_count);
-    return {mean, weighted_sum};
+    return BackgroundResult{mean, weighted_sum, true};
 }
 
-// Shared-core constant background. Delegates to the single-source
-// tukey_constant_background() so the baseline and the GPU run identical math;
-// this function only flattens the aggregator's array and overflow map into a
-// contiguous ConstHistogramView over the shared NUM_BG_BINS range.
-std::tuple<double, double> compute_background_constant_3d_shared(
-  const BackgroundAggregator &data) {
+// Shared-core constant background. Delegates to the single-source model
+// functions so the baseline and the GPU run identical math; this function only
+// flattens the aggregator's array and overflow map into a contiguous
+// ConstHistogramView over the shared NUM_BG_BINS range, then dispatches on the
+// selected model. A rejected estimate returns a BackgroundResult with
+// valid=false (the same channel the GPU reduction uses) so the caller can mark
+// the reflection unintegrated rather than aborting.
+BackgroundResult compute_background_constant_3d_shared(const BackgroundAggregator &data,
+                                                       BackgroundModel model) {
     if (data.num_pixels() == 0) {
-        throw std::runtime_error("No background pixels available");
+        return BackgroundResult{};  // no background pixels, so no estimate
     }
 
     const auto &small_hist = data.small_hist();
@@ -146,12 +151,14 @@ std::tuple<double, double> compute_background_constant_3d_shared(
     }
     if (large_hist != nullptr) {
         for (const auto &[value, count] : *large_hist) {
-            // Values at or above NUM_BG_BINS go to the overflow tail
-            if (value >= NUM_BG_BINS) {
-                overflow_count += static_cast<uint32_t>(count);
-            } else {
+            // A negative value is a sentinel/garbage pixel, not a real
+            // background measurement, so it is dropped rather than counted,
+            // matching the GPU kernel.
+            if (value >= 0 && value < NUM_BG_BINS) {
                 bins[static_cast<size_t>(value)] += static_cast<uint32_t>(count);
                 in_range_count += static_cast<uint32_t>(count);
+            } else if (value >= NUM_BG_BINS) {
+                overflow_count += static_cast<uint32_t>(count);
             }
         }
     }
@@ -160,36 +167,43 @@ std::tuple<double, double> compute_background_constant_3d_shared(
 
     // Too many pixels in the overflow tail means NUM_BG_BINS is too small to
     // represent this reflection's background, so the estimate would diverge
-    // from a full-range computation. Fail loudly rather than degrade silently.
+    // from a full-range computation. Reject it (the model functions apply the
+    // same guard internally; this short-circuits with the explicit reason).
     // The denominator is the histogram population (in-range + overflow), which
     // matches the GPU reduction's count and excludes dropped sentinels.
     if (static_cast<double>(overflow_count)
         > kBackgroundMaxOverflowFraction
             * static_cast<double>(in_range_count + overflow_count)) {
-        throw std::runtime_error(
-          "Background histogram overflow exceeded the permitted fraction; "
-          "NUM_BG_BINS is too small for this reflection's background level");
+        return BackgroundResult{};
     }
 
-    BackgroundResult result = tukey_constant_background(view);
-    if (!result.valid) {
-        throw std::runtime_error(
-          "No background data remaining after outlier rejection");
+    // Dispatch to the selected single-source model, mirroring the GPU kernel.
+    // The model functions already report rejection via BackgroundResult::valid.
+    // No default case, so adding a BackgroundModel raises a -Wswitch warning here
+    // until it is handled.
+    switch (model) {
+    case BackgroundModel::Constant:
+        return tukey_constant_background(view);
+    case BackgroundModel::Glm:
+        return glm_constant_background(view);
     }
 
-    return {result.mean, result.weighted_sum};
+    // Unreachable: parse_background_model rejects unknown names. Keeps the
+    // function total for an out-of-range model value.
+    return BackgroundResult{};
 }
 
 }  // namespace
 
-std::tuple<double, double> compute_background_constant_3d(
-  const BackgroundAggregator &data,
-  ConstantBackgroundImpl impl) {
+BackgroundResult compute_background_constant_3d(const BackgroundAggregator &data,
+                                                ConstantBackgroundImpl impl,
+                                                BackgroundModel model) {
     switch (impl) {
     case ConstantBackgroundImpl::SharedCore:
-        return compute_background_constant_3d_shared(data);
+        return compute_background_constant_3d_shared(data, model);
     case ConstantBackgroundImpl::DialsIndependent:
     default:
+        // The dials reference is Tukey-only; the model selection is ignored.
         return compute_background_constant_3d_dials(data);
     }
 }

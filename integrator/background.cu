@@ -55,10 +55,10 @@ __global__ void background_reduce_kernel(BackgroundModel model,
         res = tukey_constant_background(view);
         break;
     case BackgroundModel::Glm:
-        // Not yet implemented; fall back to the constant model so the pipeline
-        // still produces a usable estimate. GLM (robust Poisson IRLS) will read
-        // the same histogram view.
-        res = tukey_constant_background(view);
+        // Robust-Poisson GLM constant background (DIALS "glm constant3d"),
+        // evaluated over the same histogram view by the shared single-source
+        // core so the device matches the baseline.
+        res = glm_constant_background(view);
         break;
     }
 

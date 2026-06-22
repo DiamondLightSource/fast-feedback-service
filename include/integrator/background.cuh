@@ -23,7 +23,7 @@
  * One thread handles one reflection: it views its slice of the histogram
  * (NUM_BG_BINS bins plus the overflow tail) and evaluates the chosen model.
  *
- * @param model Background model to apply (Constant = Tukey; Glm not yet implemented)
+ * @param model Background model to apply (Constant = Tukey; Glm = robust-Poisson GLM)
  * @param d_background_hist Device histogram, num_reflections * NUM_BG_BINS bins
  * @param d_background_overflow Device per-reflection high-tail counts
  * @param num_reflections Number of reflections

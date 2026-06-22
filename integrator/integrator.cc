@@ -68,9 +68,7 @@ static FGAlgorithm parse_fg_algorithm(const std::string &name) {
 
 static BackgroundModel parse_background_model(const std::string &name) {
     if (name == "constant" || name == "tukey") return BackgroundModel::Constant;
-    if (name == "glm") {
-        throw std::runtime_error("GLM background model not yet implemented");
-    }
+    if (name == "glm") return BackgroundModel::Glm;
     throw std::runtime_error("Unknown background model: " + name);
 }
 
@@ -219,8 +217,8 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
 
         add_argument("--background")
           .help(
-            "Background model - constant (Tukey/IQR outlier rejection). "
-            "glm is not yet implemented.")
+            "Background model - constant (Tukey/IQR outlier rejection) or "
+            "glm (robust-Poisson GLM constant background).")
           .default_value<std::string>("constant");
 
         add_argument("--min_zeta")
@@ -1062,8 +1060,8 @@ int main(int argc, char **argv) {
             ++background_failures;
         }
 
-        // Background mean b̄ from the device-side Tukey/IQR reduction. When the
-        // estimate failed the model contributes nothing.
+        // Background mean b̄ from the device-side background reduction (the
+        // selected model). When the estimate failed the model contributes nothing.
         double bg_mean = h_background_success[i] ? h_background_mean[i] : 0.0;
 
         // Subtract background:  I = Σcᵢ(fg) − n_fg · b̄
@@ -1168,8 +1166,11 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < num_reflections; ++i) {
         nfg_out[i] = static_cast<int>(h_foreground_count[i]);
         nbg_out[i] = static_cast<int>(h_background_count[i]);
-        // background.sum.value is the Tukey inlier weighted sum; background.mean
-        // is the inlier mean. Both come from the device reduction.
+        // background.sum.value is the modelled background summed over the
+        // background pixels; background.mean is the per-pixel level. For the
+        // constant model these are the Tukey inlier sum and mean; for the GLM
+        // model the robust-Poisson sum (mean*N) and mean. Both come from the
+        // device reduction.
         bg_sum_out[i] = h_background_success[i] ? h_background_sum_value[i] : 0.0;
         bg_mean_out[i] = h_background_success[i] ? h_background_mean[i] : 0.0;
 
