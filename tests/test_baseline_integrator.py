@@ -28,6 +28,8 @@ def test_baseline_integrator_dials_equivalence(tmp_path, dials_data):
             "0.03",
             "--sigma_m",
             "0.1",
+            "--background",
+            "dials"
         ],
         capture_output=True,
         text=True,
@@ -122,6 +124,8 @@ def test_baseline_integrator_ellipsoid(tmp_path, dials_data):
             "0.03",
             "--sigma_m",
             "0.1",
+            "--background",
+            "dials"
         ],
         capture_output=True,
         text=True,
