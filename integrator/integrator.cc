@@ -517,8 +517,9 @@ int main(int argc, char **argv) {
         if (dont_integrate[refl_id]) continue;
         const auto &bbox = computed_bboxes[refl_id];
 
-        // Add this reflection to all images it spans
-        for (int z = bbox.z_min; z <= bbox.z_max; ++z) {
+        // Add this reflection to all images it spans. The shoebox z
+        // range is half-open [z_min, z_max), so z_max is excluded.
+        for (int z = bbox.z_min; z < bbox.z_max; ++z) {
             reflections_by_image[z].push_back(refl_id);
         }
     }
@@ -579,15 +580,36 @@ int main(int argc, char **argv) {
     Reader &reader = *reader_ptr;
     auto reader_mutex = std::mutex{};
 
-    uint32_t num_images = reader.get_number_of_images();
+    uint32_t num_images_in_file = reader.get_number_of_images();
     uint32_t height = reader.image_shape()[0];
     uint32_t width = reader.image_shape()[1];
 
     logger.info("Image dimensions: {} x {} = {} pixels", width, height, width * height);
-    logger.info("Number of images: {}", num_images);
+    logger.info("Data file contains {} images", num_images_in_file);
+
+    // Process only the images covered by the experiment scan, not every
+    // frame in the (possibly larger) data file. Image numbers are
+    // 0-indexed here, so the scan's 1-indexed image_range maps to
+    // [start-1, end-1].
+    int first_image = image_range_start - 1;
+    int last_image = image_range_end - 1;
+    if (last_image >= static_cast<int>(num_images_in_file)) {
+        logger.warn(
+          "Experiment scan range [{}, {}] exceeds the {} images in the data "
+          "file; clamping to the available frames",
+          image_range_start,
+          image_range_end,
+          num_images_in_file);
+        last_image = static_cast<int>(num_images_in_file) - 1;
+    }
+    uint32_t num_images = last_image - first_image + 1;
+    logger.info("Processing experiment image range [{}, {}] ({} images)",
+                image_range_start,
+                image_range_end,
+                num_images);
 
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
-    auto next_image = std::atomic<int>(0);
+    auto next_image = std::atomic<int>(first_image);
     auto completed_images = std::atomic<int>(0);
     auto cpu_sync = std::barrier{num_cpu_threads};
 
@@ -764,7 +786,7 @@ int main(int argc, char **argv) {
 
             while (!stop_token.stop_requested()) {
                 auto image_num = next_image.fetch_add(1);
-                if (image_num >= num_images) {
+                if (image_num > last_image) {
                     break;
                 }
 
