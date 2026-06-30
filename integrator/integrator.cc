@@ -261,13 +261,6 @@ int main(int argc, char **argv) {
     logger.info("Loading data from file: {}", reflection_file);
     ReflectionTable reflections(reflection_file);
 
-    // Display column names
-    std::string column_names_str;
-    for (const auto &name : reflections.get_column_names()) {
-        column_names_str += "\n\t- " + name;
-    }
-    logger.info("Column names: {}", column_names_str);
-
 #pragma region Data preparation
     // Parse experiment list from JSON
     std::ifstream f(experiment_file);
