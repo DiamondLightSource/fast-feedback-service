@@ -117,6 +117,11 @@ class Reflection3D {
         // logger.debug("Finding peak signal for reflection with {} pixels",
         //              signals_.size());
 
+        // Get the center of mass up front; used for nearest-centroid
+        // tie-breaking and for the final peak-centroid distance below.
+        auto [com_x, com_y, com_z] = center_of_mass();
+        // logger.debug("Center of mass: ({:.3f}, {:.3f}, {:.3f})", com_x, com_y, com_z);
+
         // Find the signal with the highest intensity
         const Signal *peak_signal = nullptr;
         double max_intensity = std::numeric_limits<double>::min();
@@ -151,8 +156,9 @@ class Reflection3D {
                 continue;
             }
 
-            // Deterministic tie-breaking using coordinate comparison
-            bool should_update_tie = is_signal_preferred(signal, *peak_signal);
+            // Deterministic tie-breaking: prefer the pixel nearest the centroid
+            bool should_update_tie =
+              is_signal_preferred(signal, *peak_signal, com_x, com_y, com_z);
 
             // logger.trace(
             //   "Tie at intensity {}: current ({}, {}, {}) vs peak ({}, {}, {}), "
@@ -185,10 +191,6 @@ class Reflection3D {
         //   peak_signal->z.has_value() ? peak_signal->z.value() : -1,
         //   peak_signal->linear_index,
         //   candidates_with_max_intensity);
-
-        // Get the cached or computed center of mass
-        auto [com_x, com_y, com_z] = center_of_mass();
-        // logger.debug("Center of mass: ({:.3f}, {:.3f}, {:.3f})", com_x, com_y, com_z);
 
         // Calculate the Euclidean distance
         float dx = (static_cast<float>(peak_signal->x) + 0.5f) - com_x;
@@ -257,14 +259,27 @@ class Reflection3D {
     mutable std::tuple<float, float, float> com_cache_;
 
     /**
-     * @brief Determines if the first signal should be preferred over the second
-     *        in case of intensity ties using coordinate-based tie-breaking.
-     * 
+     * @brief Determines if the first signal
+     *        should be preferred over the second in case of intensity
+     *        ties.
+     *
+     * The tie is broken in favour of the pixel nearest the centroid
+     * (see https://github.com/dials/dials/issues/3014); pixels
+     * equidistant from the centroid fall back to a deterministic z, y,
+     * x ordering.
+     *
      * @param candidate The signal to compare
      * @param current The current preferred signal
+     * @param com_x The x-coordinate of the center of mass
+     * @param com_y The y-coordinate of the center of mass
+     * @param com_z The z-coordinate of the center of mass
      * @return true if candidate should be preferred over current
      */
-    bool is_signal_preferred(const Signal &candidate, const Signal &current) const;
+    bool is_signal_preferred(const Signal &candidate,
+                             const Signal &current,
+                             double com_x,
+                             double com_y,
+                             double com_z) const;
 };
 
 /**
