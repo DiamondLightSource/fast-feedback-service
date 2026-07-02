@@ -19,6 +19,9 @@ build*/
 .vscode/
 compile_commands.json
 
+# NVIDIA profiling reports
+profiling/
+
 .dials_build
 
 a.out
@@ -28,3 +31,7 @@ _build*/
 # Python build artifacts
 *.egg-info/
 .venv/
+
+# Run artifacts
+ffs_log.txt
+*.refl
