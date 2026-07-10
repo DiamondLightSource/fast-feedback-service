@@ -664,31 +664,6 @@ int main(int argc, char **argv) {
     DeviceBuffer<uint8_t> d_mask(static_cast<size_t>(width) * height);
     d_mask.assign(h_mask.data());
 
-    // Reflection bboxes are not clamped to the detector in x/y, so
-    // foreground pixels can fall outside the image. The launch grid is
-    // padded to span this overflow; its origin may be negative.
-    // Foreground pixels landing outside the image fail their reflection
-    // in the kernel.
-    int grid_origin_x = 0;
-    int grid_origin_y = 0;
-    int grid_max_x = static_cast<int>(width);
-    int grid_max_y = static_cast<int>(height);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        if (dont_integrate[i]) continue;
-        const auto &bb = computed_bboxes[i];
-        grid_origin_x = std::min(grid_origin_x, bb.x_min);
-        grid_origin_y = std::min(grid_origin_y, bb.y_min);
-        grid_max_x = std::max(grid_max_x, bb.x_max + 1);
-        grid_max_y = std::max(grid_max_y, bb.y_max + 1);
-    }
-    uint32_t grid_w = static_cast<uint32_t>(grid_max_x - grid_origin_x);
-    uint32_t grid_h = static_cast<uint32_t>(grid_max_y - grid_origin_y);
-    logger.info("Kabsch launch grid: origin=({},{}), extent={}x{}",
-                grid_origin_x,
-                grid_origin_y,
-                grid_w,
-                grid_h);
-
     DetectorParameters det_params = make_detector_params(panel);
 
     // Convert beam parameters to Vector3D
@@ -910,10 +885,6 @@ int main(int argc, char **argv) {
                                          d_reflection_indices.data(),
                                          num_refls_this_image,
                                          d_mask.data(),
-                                         grid_origin_x,
-                                         grid_origin_y,
-                                         grid_w,
-                                         grid_h,
                                          delta_b,
                                          delta_m,
                                          fg_algorithm,

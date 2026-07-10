@@ -58,10 +58,6 @@
  * @param d_reflection_indices Device array of reflection indices for this image
  * @param num_reflections_this_image Number of reflections touching this image
  * @param d_mask Detector mask, flat width*height indexed gy*width + gx (non-zero = valid, 0 = masked)
- * @param origin_x Pixel x coordinate of the launch grid origin (may be negative)
- * @param origin_y Pixel y coordinate of the launch grid origin (may be negative)
- * @param grid_w Padded grid width in pixels (image plus bbox overflow)
- * @param grid_h Padded grid height in pixels (image plus bbox overflow)
  * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D), radians
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M), radians
  * @param d_foreground_sum Device array to accumulate foreground intensities per reflection
@@ -93,10 +89,6 @@ void compute_kabsch_transform(pixel_t *d_image,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
                               const uint8_t *d_mask,
-                              int origin_x,
-                              int origin_y,
-                              uint32_t grid_w,
-                              uint32_t grid_h,
                               scalar_t delta_b,
                               scalar_t delta_m,
                               FGAlgorithm algorithm,

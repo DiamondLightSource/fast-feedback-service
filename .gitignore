@@ -28,3 +28,7 @@ _build*/
 # Python build artifacts
 *.egg-info/
 .venv/
+
+# Profiling artifacts
+profiling/
+out/

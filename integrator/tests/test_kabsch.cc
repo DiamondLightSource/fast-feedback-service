@@ -364,10 +364,6 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                                  d_reflection_indices.data(),
                                  refl_indices_this_image.size(),
                                  d_mask.data(),
-                                 0,
-                                 0,
-                                 width,
-                                 height,
                                  delta_b,
                                  delta_m,
                                  algo,
@@ -591,22 +587,6 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
 #pragma endregion Allocate buffers
 
 #pragma region Dispatch
-    // Pad the launch grid to cover bboxes overflowing the detector edge, exactly
-    // as the production integrator does, so masked / out-of-image foreground
-    // fails reflections the same way the baseline does.
-    int grid_origin_x = 0;
-    int grid_origin_y = 0;
-    int grid_max_x = static_cast<int>(width);
-    int grid_max_y = static_cast<int>(height);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        grid_origin_x = std::min(grid_origin_x, in.bboxes[i].x_min);
-        grid_origin_y = std::min(grid_origin_y, in.bboxes[i].y_min);
-        grid_max_x = std::max(grid_max_x, in.bboxes[i].x_max + 1);
-        grid_max_y = std::max(grid_max_y, in.bboxes[i].y_max + 1);
-    }
-    uint32_t grid_w = static_cast<uint32_t>(grid_max_x - grid_origin_x);
-    uint32_t grid_h = static_cast<uint32_t>(grid_max_y - grid_origin_y);
-
     // Iterate frames in 0-based frame space (== bbox z space, == baseline). Load
     // the real pixels for each frame and dispatch one kernel call.
     std::vector<pixel_t> host_image(static_cast<size_t>(width) * height);
@@ -663,10 +643,6 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
                                  d_reflection_indices.data(),
                                  refl_indices_this_image.size(),
                                  d_mask.data(),
-                                 grid_origin_x,
-                                 grid_origin_y,
-                                 grid_w,
-                                 grid_h,
                                  in.delta_b,
                                  in.delta_m,
                                  algo,
