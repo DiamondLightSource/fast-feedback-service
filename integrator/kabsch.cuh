@@ -31,6 +31,15 @@
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
 
+/// CUDA block width (threads per block) for the shoebox-parallel Kabsch kernel.
+/// Each block strides this many threads over its shoebox's pixels, so it makes
+/// ceil(w*h / KABSCH_THREADS) passes. A block-size sweep found the kernel is
+/// compute-bound and its time is flat within ~8% from 32 to 512, so this is a
+/// fixed constant, not a tuning knob. Must be a multiple of the 32-lane warp;
+/// note 1024 exceeds the per-SM register budget at ~122 regs/thread and fails
+/// to launch.
+constexpr uint32_t KABSCH_THREADS = 128;
+
 /**
  * @brief Host wrapper function for image-based Kabsch computation
  * 

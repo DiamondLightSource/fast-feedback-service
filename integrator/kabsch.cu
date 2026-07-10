@@ -59,12 +59,6 @@
 
 using namespace fastvec;
 
-// Threads per block for the shoebox-parallel Kabsch kernel. One block handles
-// one reflection shoebox; its threads stride over the shoebox's w×h pixels, so
-// this is a scheduling knob, not a shoebox-size limit. 128 keeps register
-// pressure low enough for several blocks per SM; tune against the profiler.
-constexpr int KABSCH_THREADS = 128;
-
 /**
  * @brief Check if a pixel is in the foreground region of a reflection
  *

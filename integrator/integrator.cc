@@ -11,6 +11,8 @@
 #include <bitshuffle.h>
 
 #include <Eigen/Dense>
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <barrier>
 #include <chrono>
@@ -70,6 +72,85 @@ static BackgroundModel parse_background_model(const std::string &name) {
     if (name == "constant" || name == "tukey") return BackgroundModel::Constant;
     if (name == "glm") return BackgroundModel::Glm;
     throw std::runtime_error("Unknown background model: " + name);
+}
+
+/**
+ * @brief Build a per-block pass-count histogram for the Kabsch kernel as one
+ * multi-line string (a startup diagnostic; the caller logs it at debug level).
+ *
+ * Each reflection launches one GPU block per image it spans, and every block
+ * strides a block_threads-wide thread vector over the shoebox's w*h pixels, so
+ * it makes ceil(w*h / block_threads) passes. Every pass but the last fills all
+ * lanes; the tail pass is the only place lanes sit idle. Blocks are bucketed by
+ * pass count, weighted by z-depth (the real block population), and summarised
+ * with the overall lane utilisation. One pass over the reflections,
+ * O(bboxes.size()); returns an empty string when there are no blocks.
+ */
+static std::string format_shoebox_pass_histogram(
+  const std::vector<BoundingBoxExtents> &bboxes,
+  const std::vector<uint8_t> &dont_integrate,
+  int block_threads) {
+    struct Bucket {
+        int lo;  // inclusive pass count
+        int hi;  // inclusive pass count
+        const char *label;
+    };
+    static constexpr std::array<Bucket, 6> buckets = {{{1, 1, "    1x"},
+                                                       {2, 2, "    2x"},
+                                                       {3, 4, "  3-4x"},
+                                                       {5, 8, "  5-8x"},
+                                                       {9, 16, " 9-16x"},
+                                                       {17, 1 << 30, "  >16x"}}};
+    std::array<size_t, 6> block_counts{};
+    size_t total_blocks = 0;
+    size_t total_px = 0;
+    size_t total_slots = 0;  // passes * block_threads, i.e. lanes launched
+    for (size_t refl_id = 0; refl_id < bboxes.size(); ++refl_id) {
+        if (dont_integrate[refl_id]) continue;
+        const auto &bbox = bboxes[refl_id];
+        const int npix = (bbox.x_max - bbox.x_min) * (bbox.y_max - bbox.y_min);
+        const int depth = bbox.z_max - bbox.z_min;
+        if (npix <= 0 || depth <= 0) continue;
+        const size_t d = static_cast<size_t>(depth);
+        const int passes = (npix + block_threads - 1) / block_threads;
+        for (size_t b = 0; b < buckets.size(); ++b) {
+            if (passes >= buckets[b].lo && passes <= buckets[b].hi) {
+                block_counts[b] += d;
+                break;
+            }
+        }
+        total_blocks += d;
+        total_px += static_cast<size_t>(npix) * d;
+        total_slots += static_cast<size_t>(passes) * block_threads * d;
+    }
+    if (total_blocks == 0) return {};
+
+    const size_t max_count =
+      *std::max_element(block_counts.begin(), block_counts.end());
+    constexpr int kBarWidth = 24;
+    std::string out =
+      fmt::format("Shoebox passes per block over {} GPU blocks ({} threads/block):",
+                  total_blocks,
+                  block_threads);
+    for (size_t b = 0; b < buckets.size(); ++b) {
+        const int fill =
+          max_count ? static_cast<int>((block_counts[b] * kBarWidth + max_count - 1)
+                                       / max_count)
+                    : 0;
+        std::string bar;
+        for (int i = 0; i < kBarWidth; ++i) bar += (i < fill) ? "█" : "░";
+        out += fmt::format("\n  {}  {}  {:5.1f}%  ({})",
+                           buckets[b].label,
+                           bar,
+                           100.0 * block_counts[b] / total_blocks,
+                           block_counts[b]);
+    }
+    out += fmt::format(
+      "\n  avg {:.0f} px/block, {:.1f} passes/block, {:.0f}% lane utilisation",
+      static_cast<double>(total_px) / total_blocks,
+      static_cast<double>(total_slots) / total_blocks / block_threads,
+      100.0 * total_px / total_slots);
+    return out;
 }
 
 using namespace std::chrono_literals;
@@ -545,6 +626,14 @@ int main(int argc, char **argv) {
                     min_refls_per_image,
                     max_refls_per_image,
                     avg_refls_per_image);
+    }
+
+    // Per-block pass-count histogram for the Kabsch kernel. The guard
+    // skips the O(num_reflections) scan entirely at higher levels.
+    if (logger.should_log(spdlog::level::debug)) {
+        std::string hist = format_shoebox_pass_histogram(
+          computed_bboxes, dont_integrate, static_cast<int>(KABSCH_THREADS));
+        if (!hist.empty()) logger.debug("{}", hist);
     }
 
     // Get threading parameters (0 = auto-select)
