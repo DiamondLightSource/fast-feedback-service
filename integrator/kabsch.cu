@@ -109,7 +109,6 @@ __device__ __forceinline__ bool is_foreground(const Vector3D &eps,
  * @param s_pixel Diffracted vector at the current pixel (S′), units of 1/Å
  * @param phi_pixel Rotation angle at the pixel (φ′), in radians
  * @param rot_axis Unit goniometer rotation axis vector (m₂)
- * @param s1_len_out Output parameter for magnitude of s₁ᶜ (|s₁|)
  * @return Transformed coordinates in Kabsch space (ε₁, ε₂, ε₃)
  */
 __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
@@ -117,8 +116,7 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
                                     scalar_t phi_c,
                                     const Vector3D &s_pixel,
                                     scalar_t phi_pixel,
-                                    const Vector3D &rot_axis,
-                                    scalar_t &s1_len_out) {
+                                    const Vector3D &rot_axis) {
     // Define the local Kabsch basis vectors:
 
     // e1 is perpendicular to the scattering plane
@@ -132,7 +130,6 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
 
     // Compute the length of the predicted diffracted vector (|s₁|)
     scalar_t s1_len = norm(s1_c);
-    s1_len_out = s1_len;
 
     // Rotation offset between the pixel and reflection centre
     scalar_t dphi = phi_pixel - phi_c;
@@ -314,7 +311,6 @@ __device__ __forceinline__ bool pixel_is_foreground(
         for (int dx = 0; dx <= 1; ++dx) {
             const Vector3D s_pixel =
               corner_s_pixel(px + dx, py + dy, d_matrix, wavelength, det_params);
-            scalar_t s1_len;  // unused here, required by pixel_to_kabsch
 
             // `if constexpr` resolves at compile time; only the chosen branch is
             // emitted into each kernel specialization, so the unused algorithm's
@@ -322,24 +318,24 @@ __device__ __forceinline__ bool pixel_is_foreground(
             if constexpr (Algo == FGAlgorithm::Ellipsoid) {
                 // Lower z-face (phi_low)
                 Vector3D eps_lo =
-                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis, s1_len);
+                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis);
                 if (is_foreground(eps_lo, delta_b, delta_m)) return true;
 
                 // Upper z-face (phi_high)
                 Vector3D eps_hi =
-                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_high, rot_axis, s1_len);
+                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_high, rot_axis);
                 if (is_foreground(eps_hi, delta_b, delta_m)) return true;
 
                 // Centre z-slice: evaluate at phi_c where ε₃ = 0
                 if (centre_in_z_slice) {
-                    Vector3D eps_c = pixel_to_kabsch(
-                      s0, s1_c, phi_c, s_pixel, phi_c, rot_axis, s1_len);
+                    Vector3D eps_c =
+                      pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_c, rot_axis);
                     if (is_foreground(eps_c, delta_b, delta_m)) return true;
                 }
             } else {
                 // DIALS: single 2D ellipse, evaluated at phi_low; ε₃ ignored
                 Vector3D eps =
-                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis, s1_len);
+                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis);
                 scalar_t inv_delta_b_sq = scalar_t(1.0) / (delta_b * delta_b);
                 scalar_t ellipsoid_val =
                   (eps.x * eps.x + eps.y * eps.y) * inv_delta_b_sq;
