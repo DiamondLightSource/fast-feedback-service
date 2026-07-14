@@ -437,9 +437,9 @@ __global__ void kabsch_transform(pixel_t *d_image,
     const scalar_t phi_c = d_phi_values[refl_idx];
     const BoundingBoxExtents bbox = d_bboxes[refl_idx];
 
-    // The host lists a reflection only under the images its bbox spans, so this
-    // z-test normally passes; kept for parity/safety with the old block filter.
-    if (!(image_num >= bbox.z_min && image_num < bbox.z_max)) return;
+    // The shoebox's z-range is half-open: [z_min, z_max). The current
+    // image_num must be within that range.
+    assert(image_num >= bbox.z_min && image_num < bbox.z_max);
 
     // The voxel's two z-faces, one image apart. slice converts the 0-based
     // image_num to the (z + 1 - image_range_start) frame used everywhere else.
