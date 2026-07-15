@@ -183,7 +183,7 @@ __device__ __forceinline__ scalar_t attenuation_length(scalar_t mu,
     scalar_t cos_t = dot(s1, normal);
 
     return (scalar_t(1.0) / mu)
-           - (t0 / cos_t + scalar_t(1.0) / mu) * exp(-mu * t0 / cos_t);
+           - (t0 / cos_t + scalar_t(1.0) / mu) * CUDA_EXP(-mu * t0 / cos_t);
 }
 
 /**
