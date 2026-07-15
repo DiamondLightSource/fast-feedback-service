@@ -59,27 +59,6 @@
 
 using namespace fastvec;
 
-// Block dimensions for the Kabsch transform kernel.
-// Used by both the kernel (shared memory sizing) and host wrapper (grid launch).
-//
-// Each block of KABSCH_BLOCK_X × KABSCH_BLOCK_Y threads maps 1:1 to corners.
-// A pixel's voxel has 4 xy-corners: (px,py), (px+1,py), (px,py+1), (px+1,py+1).
-// All 4 must be in the same block's shared memory so the pixel thread can read
-// them after __syncthreads(). This means a block of 32×16 corners can only
-// service (32-1)×(16-1) = 31×15 complete pixels. The rightmost column and
-// bottom row of threads are "helper" corners that exist solely so the last
-// interior pixel has a right/bottom neighbour to read.
-//
-// The grid is launched with a stride of (BLOCK-1) so adjacent blocks overlap
-// by one column/row of corners.  That single shared column/row is computed
-// by both blocks (redundantly), which costs ~3-6% extra work but keeps
-// everything in fast shared memory within a single kernel launch.
-constexpr int KABSCH_BLOCK_X = 32;
-constexpr int KABSCH_BLOCK_Y = 16;
-
-// Maximum number of reflections that can overlap a single block's footprint
-constexpr size_t MAX_BLOCK_REFLECTIONS = 64;
-
 /**
  * @brief Check if a pixel is in the foreground region of a reflection
  *
@@ -130,7 +109,6 @@ __device__ __forceinline__ bool is_foreground(const Vector3D &eps,
  * @param s_pixel Diffracted vector at the current pixel (S′), units of 1/Å
  * @param phi_pixel Rotation angle at the pixel (φ′), in radians
  * @param rot_axis Unit goniometer rotation axis vector (m₂)
- * @param s1_len_out Output parameter for magnitude of s₁ᶜ (|s₁|)
  * @return Transformed coordinates in Kabsch space (ε₁, ε₂, ε₃)
  */
 __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
@@ -138,8 +116,7 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
                                     scalar_t phi_c,
                                     const Vector3D &s_pixel,
                                     scalar_t phi_pixel,
-                                    const Vector3D &rot_axis,
-                                    scalar_t &s1_len_out) {
+                                    const Vector3D &rot_axis) {
     // Define the local Kabsch basis vectors:
 
     // e1 is perpendicular to the scattering plane
@@ -153,7 +130,6 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
 
     // Compute the length of the predicted diffracted vector (|s₁|)
     scalar_t s1_len = norm(s1_c);
-    s1_len_out = s1_len;
 
     // Rotation offset between the pixel and reflection centre
     scalar_t dphi = phi_pixel - phi_c;
@@ -251,20 +227,140 @@ __device__ __forceinline__ void px_to_mm(int gx,
 }
 
 /**
- * @brief CUDA kernel with 8-corner voxel foreground classification
+ * @brief Scattered beam wavevector s1 (magnitude 1/λ) at a detector corner
+ *        (cx, cy).
  *
- * Each thread represents a corner in the (width+1)×(height+1) corner grid.
- * Blocks use overlapping tiles: KABSCH_BLOCK_X × KABSCH_BLOCK_Y threads
- * cover that many corners, yielding (KABSCH_BLOCK_X-1) × (KABSCH_BLOCK_Y-1)
- * complete pixels per block.  Adjacent blocks share one row/column of corners.
+ * The px -> reciprocal-space mapping is pure geometry, so it holds fine past
+ * the detector edge. Corners off the image still give real Kabsch coordinates
+ * and classify the same as any other, so we don't guard for them here.
  *
- * Algorithm:
- *   1. Every thread computes Kabsch coordinates for its corner at two φ values
- *      (lower and upper z-faces of the voxel) and writes foreground flags to
- *      shared memory.
- *   2. After sync, interior threads (representing complete pixels) check all
- *      8 voxel corners. If ANY corner is foreground, the pixel is foreground;
- *      otherwise it's background.
+ * @param wavelength Beam wavelength in Å.
+ * @return s1 in lab frame, units of 1/Å (lies on the Ewald sphere).
+ */
+__device__ __forceinline__ Vector3D
+corner_s_pixel(int cx,
+               int cy,
+               const scalar_t *d_matrix,
+               scalar_t wavelength,
+               const DetectorParameters &det_params) {
+    scalar_t cx_mm, cy_mm;
+    px_to_mm(cx, cy, det_params, cx_mm, cy_mm);
+
+    Vector3D lab_coord =
+      make_vector3d(d_matrix[0] * cx_mm + d_matrix[1] * cy_mm + d_matrix[2],
+                    d_matrix[3] * cx_mm + d_matrix[4] * cy_mm + d_matrix[5],
+                    d_matrix[6] * cx_mm + d_matrix[7] * cy_mm + d_matrix[8]);
+    return normalized(lab_coord) / wavelength;
+}
+
+/**
+ * @brief Classify a single pixel as foreground for one reflection.
+ *
+ * A pixel is foreground if ANY of its four voxel corners {px,px+1}×{py,py+1}
+ * is inside the reflection profile in ANY evaluated z-slice. Each thread
+ * computes its own pixel's corners directly, with no shared-memory corner cache
+ * and no inter-thread barrier. The corner Kabsch values are deterministic in
+ * (corner, φ), so neighbouring threads that share a corner compute the same
+ * value independently. This recomputes each interior corner up to four times, a
+ * deliberate trade: the kernel is latency-bound rather than compute-bound (see
+ * kabsch_transform), so the redundant ALU is effectively free, whereas caching
+ * the corners would need a barrier that is not. It returns on the first corner
+ * that lands inside the profile, so foreground pixels bail early and only
+ * fully-background ones pay for all four corners.
+ *
+ * Ellipsoid evaluates three z-slices (phi_low, phi_high, and phi_c when the
+ * centre falls in this slice); DIALS evaluates a single 2D ellipse at phi_low,
+ * ignoring ε₃.
+ *
+ * @tparam Algo Foreground model: Ellipsoid (3D) or DIALS (2D ellipse).
+ * @param px Pixel fast-axis index (lower corner), in pixels.
+ * @param py Pixel slow-axis index (lower corner), in pixels.
+ * @param s0 Incident beam vector (s₀), units of 1/Å.
+ * @param s1_c Predicted diffracted vector at the reflection centre (s₁ᶜ), units of 1/Å.
+ * @param phi_c Rotation angle at the reflection centre (φᶜ), in radians.
+ * @param phi_low Rotation angle at the lower z-face (φ), in radians.
+ * @param phi_high Rotation angle at the upper z-face (φ), in radians.
+ * @param centre_in_z_slice Whether φᶜ falls in this image's z-slice (Ellipsoid centre slice).
+ * @param rot_axis Unit goniometer rotation axis vector (m₂).
+ * @param d_matrix Detector coordinate transformation matrix (3x3).
+ * @param wavelength X-ray wavelength in Å.
+ * @param det_params Detector geometry parameters (pixel size, parallax, etc.).
+ * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D).
+ * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M).
+ * @return true if the pixel is foreground for this reflection, false otherwise.
+ */
+template <FGAlgorithm Algo>
+__device__ __forceinline__ bool pixel_is_foreground(
+  int px,
+  int py,
+  const Vector3D &s0,
+  const Vector3D &s1_c,
+  scalar_t phi_c,
+  scalar_t phi_low,
+  scalar_t phi_high,
+  bool centre_in_z_slice,
+  const Vector3D &rot_axis,
+  const scalar_t *d_matrix,
+  scalar_t wavelength,
+  const DetectorParameters &det_params,
+  scalar_t delta_b,
+  scalar_t delta_m) {
+#pragma unroll
+    for (int dy = 0; dy <= 1; ++dy) {
+#pragma unroll
+        for (int dx = 0; dx <= 1; ++dx) {
+            const Vector3D s_pixel =
+              corner_s_pixel(px + dx, py + dy, d_matrix, wavelength, det_params);
+
+            // `if constexpr` resolves at compile time; only the chosen branch is
+            // emitted into each kernel specialization, so the unused algorithm's
+            // code (and its register footprint) is gone.
+            if constexpr (Algo == FGAlgorithm::Ellipsoid) {
+                // Lower z-face (phi_low)
+                Vector3D eps_lo =
+                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis);
+                if (is_foreground(eps_lo, delta_b, delta_m)) return true;
+
+                // Upper z-face (phi_high)
+                Vector3D eps_hi =
+                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_high, rot_axis);
+                if (is_foreground(eps_hi, delta_b, delta_m)) return true;
+
+                // Centre z-slice: evaluate at phi_c where ε₃ = 0
+                if (centre_in_z_slice) {
+                    Vector3D eps_c =
+                      pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_c, rot_axis);
+                    if (is_foreground(eps_c, delta_b, delta_m)) return true;
+                }
+            } else {
+                // DIALS: single 2D ellipse, evaluated at phi_low; ε₃ ignored
+                Vector3D eps =
+                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis);
+                scalar_t inv_delta_b_sq = scalar_t(1.0) / (delta_b * delta_b);
+                scalar_t ellipsoid_val =
+                  (eps.x * eps.x + eps.y * eps.y) * inv_delta_b_sq;
+                if (ellipsoid_val <= scalar_t(1.0)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Shoebox-parallel Kabsch foreground/background classification kernel.
+ *
+ * One CUDA block per reflection shoebox on the current image
+ * (gridDim.x == num_reflections_this_image; blockIdx.x indexes
+ * d_reflection_indices). Threads in the block stride over the shoebox's w×h
+ * pixels; each thread classifies its own pixel via its four voxel corners
+ * (see pixel_is_foreground) and atomically accumulates into the per-reflection
+ * foreground/background buffers.
+ *
+ * There is no shared memory and no __syncthreads(): every lane works on a real
+ * shoebox pixel, and threads past the last shoebox pixel simply retire. With no
+ * barrier and no idle background lanes, warps never stall waiting on divergent
+ * siblings, which is the point of classifying per shoebox rather than over the
+ * full detector frame.
  *
  * @param d_image Pointer to image data
  * @param image_pitch Pitch of the image data in bytes
@@ -282,10 +378,8 @@ __device__ __forceinline__ void px_to_mm(int gx,
  * @param d_phi_values Array of phi values for each reflection
  * @param d_bboxes Array of bounding box structs for each reflection
  * @param d_reflection_indices Indices of reflections touching this image
- * @param num_reflections_this_image Number of reflections to process
+ * @param num_reflections_this_image Number of reflections (== gridDim.x)
  * @param d_mask Detector mask, flat width*height
- * @param origin_x Pixel x coordinate of the launch grid origin (may be negative)
- * @param origin_y Pixel y coordinate of the launch grid origin (may be negative)
  * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D)
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M)
  * @param d_foreground_sum Output: accumulated foreground intensities per reflection
@@ -317,8 +411,6 @@ __global__ void kabsch_transform(pixel_t *d_image,
                                  const size_t *d_reflection_indices,
                                  size_t num_reflections_this_image,
                                  const uint8_t *d_mask,
-                                 int origin_x,
-                                 int origin_y,
                                  // Summation integration parameters
                                  scalar_t delta_b,
                                  scalar_t delta_m,
@@ -331,53 +423,20 @@ __global__ void kabsch_transform(pixel_t *d_image,
                                  unsigned long long *d_intensity_times_y,
                                  unsigned long long *d_intensity_times_z,
                                  uint8_t *d_success) {
-#pragma region Shared Memory
-    // Foreground flags for each corner. For the Ellipsoid algorithm we need
-    // three slices: [0] phi_low, [1] phi_high, [2] phi_c (centre-in-slice).
-    // For DIALS we only evaluate one slice at phi_low (no e3 term).
-    //
-    // NUM_SLICES depends on Algo (template param), so it's known at compile
-    // time. DIALS launches get the smaller shared-memory allocation, which
-    // helps occupancy. A runtime algorithm flag would force us to size for
-    // the worst case here.
-    constexpr int NUM_SLICES = (Algo == FGAlgorithm::Ellipsoid) ? 3 : 1;
-    // s_is_fg is indexed [z-slice][ty][tx]. The first index selects a foreground
-    // mask in shared memory: Ellipsoid keeps 3 z-slices (phi_low, phi_high,
-    // phi_c), DIALS keeps 1 (phi_low only). Each slice is a full block-sized
-    // 2D plane shared by every thread in the block, so a thread can read its
-    // neighbours' corner flags (tx±1, ty±1) after __syncthreads() without
-    // recomputing them.
-    // Shared memory for corner foreground flags
-    __shared__ bool s_is_fg[NUM_SLICES][KABSCH_BLOCK_Y][KABSCH_BLOCK_X];
+    // One block per reflection shoebox on this image; blockIdx.x indexes the
+    // image-level reflection list directly.
+    const size_t block_refl = blockIdx.x;
+    if (block_refl >= num_reflections_this_image) return;
 
-    // Block-level reflection list: indices into the global reflection arrays
-    __shared__ size_t s_block_refl[MAX_BLOCK_REFLECTIONS];
-    __shared__ size_t s_num_block_refl;
+    const size_t refl_idx = d_reflection_indices[block_refl];
+    const Vector3D s1_c = d_s1_vectors[refl_idx];
+    const scalar_t phi_c = d_phi_values[refl_idx];
+    const BoundingBoxExtents bbox = d_bboxes[refl_idx];
 
-    const int tx = threadIdx.x;  // Thread-local x index (also indexes shared memory)
-    const int ty = threadIdx.y;  // Thread-local y index
+    // The shoebox's z-range is half-open: [z_min, z_max). The current
+    // image_num must be within that range.
+    assert(image_num >= bbox.z_min && image_num < bbox.z_max);
 
-    // Global corner coordinates.
-    // The stride between block origins is (BLOCK-1), NOT BLOCK.  Compare:
-    //   Normal:  gx = blockIdx.x * blockDim.x + tx          (stride 32)
-    //   Here:    gx = blockIdx.x * (KABSCH_BLOCK_X - 1) + tx (stride 31)
-    //
-    // This means Block 0 covers corners 0-31, Block 1 covers 31-62, etc.
-    // Corner 31 is computed by BOTH blocks; that's the overlap.  It ensures
-    // pixel 30 (in Block 0) can read its right-side corner (31) from shared
-    // memory, and pixel 31 (in Block 1) can read its left-side corner (31)
-    // from its own block's shared memory.
-
-    // origin_{x,y} offsets the grid into negative pixel coordinates so the
-    // launch footprint covers bboxes that overflow the detector edge.
-    const int gx =
-      origin_x + blockIdx.x * (KABSCH_BLOCK_X - 1) + tx;  // Global x coordinate
-    const int gy =
-      origin_y + blockIdx.y * (KABSCH_BLOCK_Y - 1) + ty;  // Global y coordinate
-
-#pragma endregion Shared Memory
-
-#pragma region Per-Corner Setup
     // The voxel's two z-faces, one image apart. slice converts the 0-based
     // image_num to the (z + 1 - image_range_start) frame used everywhere else.
     const int slice = image_num - image_range_start + 1;
@@ -385,210 +444,97 @@ __global__ void kabsch_transform(pixel_t *d_image,
       degrees_to_radians(osc_start + (static_cast<scalar_t>(slice) * osc_width));
     const scalar_t phi_high =
       degrees_to_radians(osc_start + (static_cast<scalar_t>(slice + 1) * osc_width));
+    // Whether the reflection centre falls in this image's z-slice (block-uniform).
+    const bool centre_in_z_slice = (phi_c >= phi_low && phi_c <= phi_high);
 
-    // s_pixel depends only on detector position (gx, gy), not phi. The
-    // px_to_mm / d_matrix mapping is geometric and well-defined beyond the
-    // detector edge, so corners outside the image carry valid Kabsch
-    // coordinates and are classified like any other.
-    Vector3D s_pixel = make_vector3d(0, 0, 0);
-    {
-        scalar_t gx_mm, gy_mm;
-        px_to_mm(gx, gy, det_params, gx_mm, gy_mm);
-
-        Vector3D lab_coord =
-          make_vector3d(d_matrix[0] * gx_mm + d_matrix[1] * gy_mm + d_matrix[2],
-                        d_matrix[3] * gx_mm + d_matrix[4] * gy_mm + d_matrix[5],
-                        d_matrix[6] * gx_mm + d_matrix[7] * gy_mm + d_matrix[8]);
-        s_pixel = normalized(lab_coord) / wavelength;
-    }
-
-#pragma endregion Per - Corner Setup
-
-#pragma region Block Reflection Filter
-    // Thread 0 scans the image-level reflection list and keeps only those
-    // whose bbox overlaps this block's corner footprint.
-    if (tx == 0 && ty == 0) {
-        s_num_block_refl = 0;
-
-        const int bx_min =
-          origin_x + static_cast<int>(blockIdx.x) * (KABSCH_BLOCK_X - 1);
-        const int bx_max = bx_min + KABSCH_BLOCK_X - 1;
-        const int by_min =
-          origin_y + static_cast<int>(blockIdx.y) * (KABSCH_BLOCK_Y - 1);
-        const int by_max = by_min + KABSCH_BLOCK_Y - 1;
-
-        for (size_t i = 0; i < num_reflections_this_image; ++i) {
-            const size_t refl_idx = d_reflection_indices[i];
-            const BoundingBoxExtents &bbox = d_bboxes[refl_idx];
-
-            // Does the reflection's bbox overlap this block AND current image?
-            const bool overlaps =
-              (bx_max >= bbox.x_min && bx_min <= bbox.x_max)
-              && (by_max >= bbox.y_min && by_min <= bbox.y_max)
-              && (image_num >= bbox.z_min && image_num < bbox.z_max);
-
-            if (overlaps && s_num_block_refl < MAX_BLOCK_REFLECTIONS) {
-                s_block_refl[s_num_block_refl++] = refl_idx;
-            }
-        }
-    }
-
-    __syncthreads();
-
-    // Early exit if no reflections overlap this block
-    if (s_num_block_refl == 0) return;
     // Pitched image accessor
     size_t elem_pitch = image_pitch / sizeof(pixel_t);
     PitchedArray2D<pixel_t> image(d_image, &elem_pitch);
 
-    // Does this thread represent a complete pixel?
-    // A pixel at (tx, ty) reads corners (tx, ty), (tx+1, ty), (tx, ty+1),
-    // (tx+1, ty+1) from shared memory.  For tx+1 and ty+1 to be valid
-    // indices, we need tx < 31 and ty < 15.  Threads on the right column
-    // (tx == 31) and bottom row (ty == 15) only contribute their corner
-    // during Phase 1; they don't process a pixel in Phase 2.
-    const bool is_pixel_thread = (tx < KABSCH_BLOCK_X - 1) && (ty < KABSCH_BLOCK_Y - 1);
-    const bool pixel_in_image = is_pixel_thread && (gx >= 0)
-                                && (gx < static_cast<int>(width)) && (gy >= 0)
-                                && (gy < static_cast<int>(height));
+    // Shoebox pixel extent. The bbox is half-open in x and y
+    // (x_min <= px < x_max), so w×h is exactly the pixel count.
+    const int w = bbox.x_max - bbox.x_min;
+    const int h = bbox.y_max - bbox.y_min;
+    const int npix = w * h;
 
-#pragma endregion Block Reflection Filter
+    // Threads stride over the shoebox pixels. Threads with p >= npix
+    // never enter the loop and retire immediately, so there is nothing
+    // for idle lanes to stall on.
+    for (int p = static_cast<int>(threadIdx.x); p < npix;
+         p += static_cast<int>(blockDim.x)) {
+        const int px = bbox.x_min + (p % w);
+        const int py = bbox.y_min + (p / w);
 
-#pragma region Reflection Processing Loop
-    // Process each reflection: compute corner flags, sync, then accumulate pixels
-    for (size_t r = 0; r < s_num_block_refl; ++r) {
-        const size_t refl_idx = s_block_refl[r];
-        const Vector3D &s1_c = d_s1_vectors[refl_idx];
-        const scalar_t phi_c = d_phi_values[refl_idx];
-        const BoundingBoxExtents &bbox = d_bboxes[refl_idx];
+        // Out-of-image pixels still classify (geometry is valid beyond the
+        // edge); a foreground pixel outside the image fails the reflection.
+        const bool pixel_in_image = (px >= 0) && (px < static_cast<int>(width))
+                                    && (py >= 0) && (py < static_cast<int>(height));
 
-        // Every thread writes its corner's foreground flag to shared memory.
-        // Per-corner bbox check avoids needless Kabsch computation.
-        const bool in_bbox = (gx >= bbox.x_min && gx <= bbox.x_max)
-                             && (gy >= bbox.y_min && gy <= bbox.y_max);
+        const bool any_fg = pixel_is_foreground<Algo>(px,
+                                                      py,
+                                                      s0,
+                                                      s1_c,
+                                                      phi_c,
+                                                      phi_low,
+                                                      phi_high,
+                                                      centre_in_z_slice,
+                                                      rot_axis,
+                                                      d_matrix,
+                                                      wavelength,
+                                                      det_params,
+                                                      delta_b,
+                                                      delta_m);
 
-        if (in_bbox) {
-            scalar_t s1_len;  // unused here, required by pixel_to_kabsch
-
-            // `if constexpr` resolves at compile time; only the chosen
-            // branch is emitted into each kernel specialization, so the
-            // unused algorithm's code (and its register footprint) is gone.
-            if constexpr (Algo == FGAlgorithm::Ellipsoid) {
-                // Lower z-face (phi_low)
-                Vector3D eps_lo =
-                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis, s1_len);
-                s_is_fg[0][ty][tx] = is_foreground(eps_lo, delta_b, delta_m);
-
-                // Upper z-face (phi_high)
-                Vector3D eps_hi =
-                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_high, rot_axis, s1_len);
-                s_is_fg[1][ty][tx] = is_foreground(eps_hi, delta_b, delta_m);
-
-                // Centre z-slice: evaluate at phi_c where ε₃ = 0
-                const bool centre_in_z_slice = (phi_c >= phi_low && phi_c <= phi_high);
-                if (centre_in_z_slice) {
-                    Vector3D eps_c = pixel_to_kabsch(
-                      s0, s1_c, phi_c, s_pixel, phi_c, rot_axis, s1_len);
-                    s_is_fg[2][ty][tx] = is_foreground(eps_c, delta_b, delta_m);
-                } else {
-                    s_is_fg[2][ty][tx] = false;
-                }
+        if (any_fg) {
+            // Foreground outside the image or on a masked pixel makes the
+            // reflection unusable. d_success is only ever cleared, never set,
+            // so the concurrent writes need no atomic.
+            if (!pixel_in_image || d_mask[static_cast<size_t>(py) * width + px] == 0) {
+                d_success[refl_idx] = 0;
             } else {
-                // DIALS: single 2D ellipse, evaluated at phi_low; ε₃ ignored
-                Vector3D eps =
-                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis, s1_len);
-                scalar_t inv_delta_b_sq = scalar_t(1.0) / (delta_b * delta_b);
-                scalar_t ellipsoid_val =
-                  (eps.x * eps.x + eps.y * eps.y) * inv_delta_b_sq;
-                s_is_fg[0][ty][tx] = (ellipsoid_val <= scalar_t(1.0));
+                const accumulator_t pixel_value =
+                  static_cast<accumulator_t>(image(px, py));
+                atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
+                atomicAdd(&d_foreground_count[refl_idx], 1u);
+                // Accumulate intensity·coord for centre-of-mass (xyzobs.px).
+                // Baseline uses (x+0.5, y+0.5, z+0.5); we approximate the
+                // half-pixel offset by multiplying by 2x+1 etc. and dividing
+                // by 2 in finalisation to stay in integer atomics.
+                const unsigned long long pv64 =
+                  static_cast<unsigned long long>(pixel_value);
+                atomicAdd(&d_intensity_times_x[refl_idx],
+                          pv64 * static_cast<unsigned long long>(2 * px + 1));
+                atomicAdd(&d_intensity_times_y[refl_idx],
+                          pv64 * static_cast<unsigned long long>(2 * py + 1));
+                atomicAdd(&d_intensity_times_z[refl_idx],
+                          pv64 * static_cast<unsigned long long>(2 * image_num + 1));
             }
         } else {
-#pragma unroll
-            for (int z = 0; z < NUM_SLICES; ++z) {
-                s_is_fg[z][ty][tx] = false;
-            }
-        }
-
-        __syncthreads();
-
-        // Pixel centre within the bbox. Out-of-image pixels still enter
-        // here (guarded below): a foreground pixel outside the image
-        // fails the reflection.
-        const bool px_in_bbox = is_pixel_thread && (gx >= bbox.x_min && gx < bbox.x_max)
-                                && (gy >= bbox.y_min && gy < bbox.y_max);
-
-        if (px_in_bbox) {
-            // A pixel is foreground if any of its four surrounding corners
-            // is foreground in any z-slice.
-            bool any_fg = false;
-#pragma unroll
-            for (int z = 0; z < NUM_SLICES; ++z) {
-                const bool corner_00 = s_is_fg[z][ty][tx];
-                const bool corner_01 = s_is_fg[z][ty][tx + 1];
-                const bool corner_10 = s_is_fg[z][ty + 1][tx];
-                const bool corner_11 = s_is_fg[z][ty + 1][tx + 1];
-                any_fg |= corner_00 || corner_01 || corner_10 || corner_11;
-            }
-
-            if (any_fg) {
-                // Foreground outside the image or on a masked pixel makes the
-                // reflection unusable. d_success is only ever cleared, never
-                // set, so the concurrent writes need no atomic.
-                if (!pixel_in_image
-                    || d_mask[static_cast<size_t>(gy) * width + gx] == 0) {
-                    d_success[refl_idx] = 0;
-                } else {
-                    const accumulator_t pixel_value =
-                      static_cast<accumulator_t>(image(gx, gy));
-                    atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
-                    atomicAdd(&d_foreground_count[refl_idx], 1u);
-                    // Accumulate intensity·coord for centre-of-mass (xyzobs.px).
-                    // Baseline uses (x+0.5, y+0.5, z+0.5); we approximate the
-                    // half-pixel offset by multiplying by 2x+1 etc. and dividing
-                    // by 2 in finalisation to stay in integer atomics.
-                    const unsigned long long pv64 =
-                      static_cast<unsigned long long>(pixel_value);
-                    atomicAdd(&d_intensity_times_x[refl_idx],
-                              pv64 * static_cast<unsigned long long>(2 * gx + 1));
-                    atomicAdd(&d_intensity_times_y[refl_idx],
-                              pv64 * static_cast<unsigned long long>(2 * gy + 1));
-                    atomicAdd(
-                      &d_intensity_times_z[refl_idx],
-                      pv64 * static_cast<unsigned long long>(2 * image_num + 1));
-                }
-            } else {
-                // Background is counted only for unmasked pixels inside the
-                // image; masked or out-of-image background is dropped. Each
-                // pixel value increments one bin of this reflection's
-                // histogram (one bin per integer count). Values at or above
-                // NUM_BG_BINS go to the overflow tail. A negative value is a
-                // sentinel/garbage pixel that slipped past the mask (reachable
-                // only when pixel_t is 32-bit and the value exceeds INT_MAX);
-                // it is not a real background measurement, so it is dropped
-                // rather than counted.
-                if (pixel_in_image
-                    && d_mask[static_cast<size_t>(gy) * width + gx] != 0) {
-                    const int bin = static_cast<int>(image(gx, gy));
-                    if (bin >= 0 && bin < NUM_BG_BINS) {
-                        atomicAdd(&d_background_hist[refl_idx * NUM_BG_BINS + bin], 1u);
-                    } else if (bin >= NUM_BG_BINS) {
-                        atomicAdd(&d_background_overflow[refl_idx], 1u);
-                    }
+            // Background is counted only for unmasked pixels inside the image;
+            // masked or out-of-image background is dropped. Each pixel value
+            // increments one bin of this reflection's histogram (one bin per
+            // integer count). Values at or above NUM_BG_BINS go to the overflow
+            // tail. A negative value is a sentinel/garbage pixel that slipped
+            // past the mask (reachable only when pixel_t is 32-bit and the value
+            // exceeds INT_MAX); it is not a real background measurement, so it
+            // is dropped rather than counted.
+            if (pixel_in_image && d_mask[static_cast<size_t>(py) * width + px] != 0) {
+                const int bin = static_cast<int>(image(px, py));
+                if (bin >= 0 && bin < NUM_BG_BINS) {
+                    atomicAdd(&d_background_hist[refl_idx * NUM_BG_BINS + bin], 1u);
+                } else if (bin >= NUM_BG_BINS) {
+                    atomicAdd(&d_background_overflow[refl_idx], 1u);
                 }
             }
         }
-
-        __syncthreads();  // Barrier before next reflection overwrites s_is_fg
     }
-#pragma endregion Reflection Processing Loop
 }
 
 /**
  * @brief Host wrapper function for image-based Kabsch computation
  *
- * Launches the 8-corner Kabsch kernel using overlapping tiles.  Each block
- * of KABSCH_BLOCK_X × KABSCH_BLOCK_Y threads covers that many corners,
- * processing (KABSCH_BLOCK_X-1) × (KABSCH_BLOCK_Y-1) complete pixels.
+ * Launches the shoebox-parallel Kabsch kernel: one block of KABSCH_THREADS
+ * threads per reflection on this image, striding over that shoebox's pixels.
  */
 void compute_kabsch_transform(pixel_t *d_image,
                               size_t image_pitch,
@@ -609,10 +555,6 @@ void compute_kabsch_transform(pixel_t *d_image,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
                               const uint8_t *d_mask,
-                              int origin_x,
-                              int origin_y,
-                              uint32_t grid_w,
-                              uint32_t grid_h,
                               scalar_t delta_b,
                               scalar_t delta_m,
                               FGAlgorithm algorithm,
@@ -625,30 +567,21 @@ void compute_kabsch_transform(pixel_t *d_image,
                               unsigned long long *d_intensity_times_z,
                               uint8_t *d_success,
                               cudaStream_t stream) {
-    // Configure kernel launch parameters.
-    // Every block is always the full 32×16 = 512 threads.
-    dim3 blockDim(KABSCH_BLOCK_X, KABSCH_BLOCK_Y);
+    // One block per reflection shoebox on this image; nothing to launch
+    // if the image has no reflections.
+    if (num_reflections_this_image == 0) return;
 
-    // Each block processes (BLOCK-1) complete pixels per dimension:
-    //   31 pixels in x, 15 pixels in y.
-    // So the number of blocks needed is ceil(image_pixels / pixels_per_block):
-    //   gridDim.x = ceil(width  / 31)
-    //   gridDim.y = ceil(height / 15)
-    // Edge blocks may extend past the image boundary; those threads
-    // simply fail the bounds check in the kernel and write false / skip.
-    // grid_w/grid_h are the padded extent (image plus any bbox overflow past
-    // the detector edge), not the raw image dimensions.
-    dim3 gridDim(ceil_div(grid_w, static_cast<uint32_t>(KABSCH_BLOCK_X - 1)),
-                 ceil_div(grid_h, static_cast<uint32_t>(KABSCH_BLOCK_Y - 1)));
+    // Configure kernel launch parameters.
+    dim3 blockDim(KABSCH_THREADS);
+    dim3 gridDim(static_cast<uint32_t>(num_reflections_this_image));
 
     // The kernel is templated on FGAlgorithm rather than taking it as a
     // runtime parameter, for two reasons:
-    //   - Shared memory size (NUM_SLICES) is allowed to depend on the
-    //     algorithm, so DIALS gets a smaller s_is_fg allocation and better
-    //     occupancy than if we always sized for the ellipsoid path.
-    //   - `if constexpr` inside the kernel deletes the unused branch
-    //     entirely. A runtime `if` would keep both paths live in every
-    //     launch, dragging registers up and occupancy down.
+    //   - The classification maths differs (Ellipsoid evaluates three z-slices,
+    //     DIALS a single 2D ellipse) and `if constexpr` selects the branch at
+    //     compile time.
+    //   - A runtime `if` would keep both paths live in every launch, dragging
+    //     registers up and occupancy down.
     //
     // The catch is that the algorithm choice comes in at runtime from the
     // CLI, but template parameters have to be compile-time. The lambda
@@ -678,8 +611,6 @@ void compute_kabsch_transform(pixel_t *d_image,
                                              d_reflection_indices,
                                              num_reflections_this_image,
                                              d_mask,
-                                             origin_x,
-                                             origin_y,
                                              delta_b,
                                              delta_m,
                                              d_foreground_sum,

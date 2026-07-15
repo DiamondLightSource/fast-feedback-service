@@ -31,6 +31,15 @@
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
 
+/// CUDA block width (threads per block) for the shoebox-parallel Kabsch kernel.
+/// Each block strides this many threads over its shoebox's pixels, so it makes
+/// ceil(w*h / KABSCH_THREADS) passes. A block-size sweep found the kernel is
+/// compute-bound and its time is flat within ~8% from 32 to 512, so this is a
+/// fixed constant, not a tuning knob. Must be a multiple of the 32-lane warp;
+/// note 1024 exceeds the per-SM register budget at ~122 regs/thread and fails
+/// to launch.
+constexpr uint32_t KABSCH_THREADS = 128;
+
 /**
  * @brief Host wrapper function for image-based Kabsch computation
  * 
@@ -58,10 +67,6 @@
  * @param d_reflection_indices Device array of reflection indices for this image
  * @param num_reflections_this_image Number of reflections touching this image
  * @param d_mask Detector mask, flat width*height indexed gy*width + gx (non-zero = valid, 0 = masked)
- * @param origin_x Pixel x coordinate of the launch grid origin (may be negative)
- * @param origin_y Pixel y coordinate of the launch grid origin (may be negative)
- * @param grid_w Padded grid width in pixels (image plus bbox overflow)
- * @param grid_h Padded grid height in pixels (image plus bbox overflow)
  * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D), radians
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M), radians
  * @param d_foreground_sum Device array to accumulate foreground intensities per reflection
@@ -93,10 +98,6 @@ void compute_kabsch_transform(pixel_t *d_image,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
                               const uint8_t *d_mask,
-                              int origin_x,
-                              int origin_y,
-                              uint32_t grid_w,
-                              uint32_t grid_h,
                               scalar_t delta_b,
                               scalar_t delta_m,
                               FGAlgorithm algorithm,
