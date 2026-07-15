@@ -510,33 +510,45 @@ __global__ void kabsch_transform(pixel_t *d_image,
     const int h = bbox.y_max - bbox.y_min;
     const int npix = w * h;
 
-    // Threads stride over the shoebox pixels. Threads with p >= npix
-    // never enter the loop and retire immediately, so there is nothing
-    // for idle lanes to stall on.
-    for (int p = static_cast<int>(threadIdx.x); p < npix;
-         p += static_cast<int>(blockDim.x)) {
-        const int px = bbox.x_min + (p % w);
-        const int py = bbox.y_min + (p / w);
+    // Shared-memory corner-flag tile. corner_is_foreground depends only
+    // on the corner and the block's reflection/image constants, so each
+    // of the (w+1)×(h+1) corners is evaluated once here and reused by
+    // the (up to four) pixels that touch it, removing the full 4x
+    // corner redundancy. Threads stride densely over the corner grid to
+    // fill it, one uniform __syncthreads() separates fill from read,
+    // and that barrier syncs a uniform workload.
+    //
+    // The tile is a fixed static allocation; a shoebox whose corner grid exceeds
+    // it falls back to per-pixel recompute. At ~122 regs/thread occupancy is
+    // register-limited to 4 blocks/SM, so the tile's shared memory is not the
+    // occupancy binder.
+    constexpr int MAX_TILE_DIM = 64;  // corners per side (pixel shoebox up to 63)
+    __shared__ uint8_t s_corner[MAX_TILE_DIM * MAX_TILE_DIM];
 
+    auto corner_fg = [&](int cx, int cy) -> bool {
+        return corner_is_foreground<Algo>(cx,
+                                          cy,
+                                          s0,
+                                          s1_c,
+                                          phi_c,
+                                          phi_low,
+                                          phi_high,
+                                          centre_in_z_slice,
+                                          rot_axis,
+                                          d_matrix,
+                                          wavelength,
+                                          det_params,
+                                          delta_b,
+                                          delta_m);
+    };
+
+    // Classify + accumulate one shoebox pixel. Shared by the tile and fallback
+    // paths; the accumulation itself is unchanged from the per-pixel kernel.
+    auto accumulate = [&](int px, int py, bool any_fg) {
         // Out-of-image pixels still classify (geometry is valid beyond the
         // edge); a foreground pixel outside the image fails the reflection.
         const bool pixel_in_image = (px >= 0) && (px < static_cast<int>(width))
                                     && (py >= 0) && (py < static_cast<int>(height));
-
-        const bool any_fg = pixel_is_foreground<Algo>(px,
-                                                      py,
-                                                      s0,
-                                                      s1_c,
-                                                      phi_c,
-                                                      phi_low,
-                                                      phi_high,
-                                                      centre_in_z_slice,
-                                                      rot_axis,
-                                                      d_matrix,
-                                                      wavelength,
-                                                      det_params,
-                                                      delta_b,
-                                                      delta_m);
 
         if (any_fg) {
             // Foreground outside the image or on a masked pixel makes the
@@ -579,6 +591,59 @@ __global__ void kabsch_transform(pixel_t *d_image,
                     atomicAdd(&d_background_overflow[refl_idx], 1u);
                 }
             }
+        }
+    };
+
+    // Corner grid dimensions (one more than the pixel grid on each axis). The
+    // bbox is block-uniform, so the tile-vs-fallback choice below is taken by
+    // every thread identically and the __syncthreads() is never divergent.
+    const int cw = w + 1;
+    const int ch = h + 1;
+
+    if (cw <= MAX_TILE_DIM && ch <= MAX_TILE_DIM) {
+        // Fill the corner tile: one corner_is_foreground per corner, threads
+        // striding densely over the (w+1)×(h+1) grid.
+        const int num_corners = cw * ch;
+        for (int c = static_cast<int>(threadIdx.x); c < num_corners;
+             c += static_cast<int>(blockDim.x)) {
+            const int lcx = c % cw;
+            const int lcy = c / cw;
+            s_corner[c] = corner_fg(bbox.x_min + lcx, bbox.y_min + lcy) ? 1u : 0u;
+        }
+        __syncthreads();
+
+        // Read the tile: each pixel ORs its four corner bits.
+        for (int p = static_cast<int>(threadIdx.x); p < npix;
+             p += static_cast<int>(blockDim.x)) {
+            const int lx = p % w;
+            const int ly = p / w;
+            const bool any_fg = s_corner[ly * cw + lx] | s_corner[ly * cw + lx + 1]
+                                | s_corner[(ly + 1) * cw + lx]
+                                | s_corner[(ly + 1) * cw + lx + 1];
+            accumulate(bbox.x_min + lx, bbox.y_min + ly, any_fg);
+        }
+    } else {
+        // Oversized shoebox: per-pixel recompute (no reuse), identical result.
+        for (int p = static_cast<int>(threadIdx.x); p < npix;
+             p += static_cast<int>(blockDim.x)) {
+            const int px = bbox.x_min + (p % w);
+            const int py = bbox.y_min + (p / w);
+            accumulate(px,
+                       py,
+                       pixel_is_foreground<Algo>(px,
+                                                 py,
+                                                 s0,
+                                                 s1_c,
+                                                 phi_c,
+                                                 phi_low,
+                                                 phi_high,
+                                                 centre_in_z_slice,
+                                                 rot_axis,
+                                                 d_matrix,
+                                                 wavelength,
+                                                 det_params,
+                                                 delta_b,
+                                                 delta_m));
         }
     }
 }
