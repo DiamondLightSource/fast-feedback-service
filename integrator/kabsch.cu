@@ -254,23 +254,92 @@ corner_s_pixel(int cx,
 }
 
 /**
+ * @brief Classify a single detector corner as inside the reflection profile.
+ *
+ * Evaluates one voxel corner (cx, cy): maps it to its scattered
+ * wavevector, then tests whether that corner falls inside the profile
+ * in any evaluated z-slice. The result depends only on (cx, cy) and the
+ * block's reflection/image constants, so it is the reusable unit shared
+ * between the (up to four) pixels that touch this corner.
+ *
+ * Ellipsoid evaluates three z-slices (phi_low, phi_high, and phi_c when
+ * the centre falls in this slice); DIALS evaluates a single 2D ellipse
+ * at phi_low, ignoring ε₃.
+ *
+ * @tparam Algo Foreground model: Ellipsoid (3D) or DIALS (2D ellipse).
+ * @param cx Corner fast-axis index, in pixels.
+ * @param cy Corner slow-axis index, in pixels.
+ * @param s0 Incident beam vector (s₀), units of 1/Å.
+ * @param s1_c Predicted diffracted vector at the reflection centre (s₁ᶜ), units of 1/Å.
+ * @param phi_c Rotation angle at the reflection centre (φᶜ), in radians.
+ * @param phi_low Rotation angle at the lower z-face (φ), in radians.
+ * @param phi_high Rotation angle at the upper z-face (φ), in radians.
+ * @param centre_in_z_slice Whether φᶜ falls in this image's z-slice (Ellipsoid centre slice).
+ * @param rot_axis Unit goniometer rotation axis vector (m₂).
+ * @param d_matrix Detector coordinate transformation matrix (3x3).
+ * @param wavelength X-ray wavelength in Å.
+ * @param det_params Detector geometry parameters (pixel size, parallax, etc.).
+ * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D).
+ * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M).
+ * @return true if the corner is inside the reflection profile, false otherwise.
+ */
+template <FGAlgorithm Algo>
+__device__ __forceinline__ bool corner_is_foreground(
+  int cx,
+  int cy,
+  const Vector3D &s0,
+  const Vector3D &s1_c,
+  scalar_t phi_c,
+  scalar_t phi_low,
+  scalar_t phi_high,
+  bool centre_in_z_slice,
+  const Vector3D &rot_axis,
+  const scalar_t *d_matrix,
+  scalar_t wavelength,
+  const DetectorParameters &det_params,
+  scalar_t delta_b,
+  scalar_t delta_m) {
+    const Vector3D s_pixel = corner_s_pixel(cx, cy, d_matrix, wavelength, det_params);
+
+    // `if constexpr` resolves at compile time; only the chosen branch is
+    // emitted into each kernel specialization, so the unused algorithm's
+    // code (and its register footprint) is gone.
+    if constexpr (Algo == FGAlgorithm::Ellipsoid) {
+        // Lower z-face (phi_low)
+        Vector3D eps_lo = pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis);
+        if (is_foreground(eps_lo, delta_b, delta_m)) return true;
+
+        // Upper z-face (phi_high)
+        Vector3D eps_hi = pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_high, rot_axis);
+        if (is_foreground(eps_hi, delta_b, delta_m)) return true;
+
+        // Centre z-slice: evaluate at phi_c where ε₃ = 0
+        if (centre_in_z_slice) {
+            Vector3D eps_c = pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_c, rot_axis);
+            if (is_foreground(eps_c, delta_b, delta_m)) return true;
+        }
+        return false;
+    } else {
+        // DIALS: single 2D ellipse, evaluated at phi_low; ε₃ ignored
+        Vector3D eps = pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis);
+        scalar_t inv_delta_b_sq = scalar_t(1.0) / (delta_b * delta_b);
+        scalar_t ellipsoid_val = (eps.x * eps.x + eps.y * eps.y) * inv_delta_b_sq;
+        return ellipsoid_val <= scalar_t(1.0);
+    }
+}
+
+/**
  * @brief Classify a single pixel as foreground for one reflection.
  *
  * A pixel is foreground if ANY of its four voxel corners {px,px+1}×{py,py+1}
- * is inside the reflection profile in ANY evaluated z-slice. Each thread
+ * is inside the reflection profile (see corner_is_foreground). Each thread
  * computes its own pixel's corners directly, with no shared-memory corner cache
- * and no inter-thread barrier. The corner Kabsch values are deterministic in
+ * and no inter-thread barrier. The corner classification is deterministic in
  * (corner, φ), so neighbouring threads that share a corner compute the same
  * value independently. This recomputes each interior corner up to four times, a
- * deliberate trade: the kernel is latency-bound rather than compute-bound (see
- * kabsch_transform), so the redundant ALU is effectively free, whereas caching
- * the corners would need a barrier that is not. It returns on the first corner
- * that lands inside the profile, so foreground pixels bail early and only
- * fully-background ones pay for all four corners.
- *
- * Ellipsoid evaluates three z-slices (phi_low, phi_high, and phi_c when the
- * centre falls in this slice); DIALS evaluates a single 2D ellipse at phi_low,
- * ignoring ε₃.
+ * deliberate trade: caching the corners would need a barrier. It returns on the
+ * first corner that lands inside the profile, so foreground pixels bail early
+ * and only fully-background ones pay for all four corners.
  *
  * @tparam Algo Foreground model: Ellipsoid (3D) or DIALS (2D ellipse).
  * @param px Pixel fast-axis index (lower corner), in pixels.
@@ -309,37 +378,21 @@ __device__ __forceinline__ bool pixel_is_foreground(
     for (int dy = 0; dy <= 1; ++dy) {
 #pragma unroll
         for (int dx = 0; dx <= 1; ++dx) {
-            const Vector3D s_pixel =
-              corner_s_pixel(px + dx, py + dy, d_matrix, wavelength, det_params);
-
-            // `if constexpr` resolves at compile time; only the chosen branch is
-            // emitted into each kernel specialization, so the unused algorithm's
-            // code (and its register footprint) is gone.
-            if constexpr (Algo == FGAlgorithm::Ellipsoid) {
-                // Lower z-face (phi_low)
-                Vector3D eps_lo =
-                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis);
-                if (is_foreground(eps_lo, delta_b, delta_m)) return true;
-
-                // Upper z-face (phi_high)
-                Vector3D eps_hi =
-                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_high, rot_axis);
-                if (is_foreground(eps_hi, delta_b, delta_m)) return true;
-
-                // Centre z-slice: evaluate at phi_c where ε₃ = 0
-                if (centre_in_z_slice) {
-                    Vector3D eps_c =
-                      pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_c, rot_axis);
-                    if (is_foreground(eps_c, delta_b, delta_m)) return true;
-                }
-            } else {
-                // DIALS: single 2D ellipse, evaluated at phi_low; ε₃ ignored
-                Vector3D eps =
-                  pixel_to_kabsch(s0, s1_c, phi_c, s_pixel, phi_low, rot_axis);
-                scalar_t inv_delta_b_sq = scalar_t(1.0) / (delta_b * delta_b);
-                scalar_t ellipsoid_val =
-                  (eps.x * eps.x + eps.y * eps.y) * inv_delta_b_sq;
-                if (ellipsoid_val <= scalar_t(1.0)) return true;
+            if (corner_is_foreground<Algo>(px + dx,
+                                           py + dy,
+                                           s0,
+                                           s1_c,
+                                           phi_c,
+                                           phi_low,
+                                           phi_high,
+                                           centre_in_z_slice,
+                                           rot_axis,
+                                           d_matrix,
+                                           wavelength,
+                                           det_params,
+                                           delta_b,
+                                           delta_m)) {
+                return true;
             }
         }
     }
