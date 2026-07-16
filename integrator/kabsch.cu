@@ -46,11 +46,15 @@
 
 #include <cuda_runtime.h>
 
+#include <algorithm>
+#include <atomic>
 #include <cstddef>
+#include <mutex>
 #include <type_traits>
 
 #include "cuda_common.hpp"
 #include "device_common.cuh"
+#include "ffs_logger.hpp"
 #include "h5read.h"
 #include "integrator.cuh"
 #include "integrator/extent.hpp"
@@ -409,11 +413,13 @@ __device__ __forceinline__ bool pixel_is_foreground(
  * (see pixel_is_foreground) and atomically accumulates into the per-reflection
  * foreground/background buffers.
  *
- * There is no shared memory and no __syncthreads(): every lane works on a real
- * shoebox pixel, and threads past the last shoebox pixel simply retire. With no
- * barrier and no idle background lanes, warps never stall waiting on divergent
- * siblings, which is the point of classifying per shoebox rather than over the
- * full detector frame.
+ * The block first fills a corner-flag tile in dynamic shared memory
+ * (one corner_is_foreground evaluation per corner of the shoebox's
+ * (w+1)×(h+1) corner grid), then classifies each pixel as the OR of its
+ * four corner flags. The single __syncthreads() between fill and read
+ * separates two uniform, densely-strided phases, so no lane idles at
+ * the barrier. A shoebox whose corner grid exceeds tile_capacity falls
+ * back to per-pixel corner recompute (identical result, no reuse).
  *
  * @param d_image Pointer to image data
  * @param image_pitch Pitch of the image data in bytes
@@ -433,6 +439,8 @@ __device__ __forceinline__ bool pixel_is_foreground(
  * @param d_reflection_indices Indices of reflections touching this image
  * @param num_reflections_this_image Number of reflections (== gridDim.x)
  * @param d_mask Detector mask, flat width*height
+ * @param tile_capacity Corner slots in the dynamic shared-memory tile (the
+ *        launch allocates this many bytes); block-uniform
  * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D)
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M)
  * @param d_foreground_sum Output: accumulated foreground intensities per reflection
@@ -464,6 +472,7 @@ __global__ void kabsch_transform(pixel_t *d_image,
                                  const size_t *d_reflection_indices,
                                  size_t num_reflections_this_image,
                                  const uint8_t *d_mask,
+                                 uint32_t tile_capacity,
                                  // Summation integration parameters
                                  scalar_t delta_b,
                                  scalar_t delta_m,
@@ -518,12 +527,16 @@ __global__ void kabsch_transform(pixel_t *d_image,
     // fill it, one uniform __syncthreads() separates fill from read,
     // and that barrier syncs a uniform workload.
     //
-    // The tile is a fixed static allocation; a shoebox whose corner grid exceeds
-    // it falls back to per-pixel recompute. At ~122 regs/thread occupancy is
-    // register-limited to 4 blocks/SM, so the tile's shared memory is not the
-    // occupancy binder.
-    constexpr int MAX_TILE_DIM = 64;  // corners per side (pixel shoebox up to 63)
-    __shared__ uint8_t s_corner[MAX_TILE_DIM * MAX_TILE_DIM];
+    // The tile lives in dynamic shared memory: the host sizes the
+    // launch to the largest corner grid on this image (clamped to the
+    // per-block limit), so the allocation tracks the data instead of a
+    // compile-time cap. A shoebox whose corner grid still exceeds
+    // tile_capacity falls back to per-pixel recompute. The kernel's
+    // register pressure limits occupancy well before this tile does:
+    // the tile costs one byte per corner, so at realistic shoebox sizes
+    // it is far from the shared-memory limit that would bind first. The
+    // host warns once if a request is large enough to change that.
+    extern __shared__ uint8_t s_corner[];
 
     auto corner_fg = [&](int cx, int cy) -> bool {
         return corner_is_foreground<Algo>(cx,
@@ -594,13 +607,15 @@ __global__ void kabsch_transform(pixel_t *d_image,
         }
     };
 
-    // Corner grid dimensions (one more than the pixel grid on each axis). The
-    // bbox is block-uniform, so the tile-vs-fallback choice below is taken by
-    // every thread identically and the __syncthreads() is never divergent.
+    // Corner grid dimensions (one more than the pixel grid on each axis
+    // as we are calculating corners). The bbox and tile_capacity are
+    // block-uniform, so the tile-vs-fallback choice below is taken by
+    // every thread identically and the __syncthreads() is never
+    // divergent.
     const int cw = w + 1;
     const int ch = h + 1;
 
-    if (cw <= MAX_TILE_DIM && ch <= MAX_TILE_DIM) {
+    if (static_cast<uint32_t>(cw) * static_cast<uint32_t>(ch) <= tile_capacity) {
         // Fill the corner tile: one corner_is_foreground per corner, threads
         // striding densely over the (w+1)×(h+1) grid.
         const int num_corners = cw * ch;
@@ -673,6 +688,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
                               const uint8_t *d_mask,
+                              uint32_t max_corner_tile_corners,
                               scalar_t delta_b,
                               scalar_t delta_m,
                               FGAlgorithm algorithm,
@@ -693,6 +709,24 @@ void compute_kabsch_transform(pixel_t *d_image,
     dim3 blockDim(KABSCH_THREADS);
     dim3 gridDim(static_cast<uint32_t>(num_reflections_this_image));
 
+    // Dynamic shared memory for the corner tile: one byte per corner slot,
+    // sized by the caller to the largest (w+1)*(h+1) corner grid on this
+    // image and clamped to the device's per-block dynamic limit (48 KB
+    // without opt-in). Opting in above that limit is exactly the regime
+    // that costs occupancy, so a shoebox beyond the clamp takes the
+    // kernel's per-pixel fallback instead of a bigger allocation.
+    // Profile opt in on A100?
+    static const uint32_t max_smem_per_block = [] {
+        int device = 0;
+        cudaGetDevice(&device);
+        int bytes = 0;
+        cudaDeviceGetAttribute(&bytes, cudaDevAttrMaxSharedMemoryPerBlock, device);
+        return static_cast<uint32_t>(bytes);
+    }();
+    const uint32_t tile_capacity =
+      std::min(max_corner_tile_corners, max_smem_per_block);
+    const size_t smem_bytes = tile_capacity * sizeof(uint8_t);
+
     // The kernel is templated on FGAlgorithm rather than taking it as a
     // runtime parameter, for two reasons:
     //   - The classification maths differs (Ellipsoid evaluates three z-slices,
@@ -706,39 +740,82 @@ void compute_kabsch_transform(pixel_t *d_image,
     // fixes this by passing an integral_constant tag that forces a
     // fresh instantiation per call site with `algo` bound to a literal, which
     // then names the right specialisation. The argument list also only has
-    // to be written once, which is a nice
+    // to be written once.
     auto launch = [&](auto algo_tag) {
         constexpr FGAlgorithm algo = decltype(algo_tag)::value;
+        // Warn if a tile allocation is large enough to cost occupancy:
+        // compare achievable blocks/SM with and without the dynamic
+        // allocation. Registers bind first on this kernel, so this only
+        // fires for genuinely large shoeboxes.
+        //
+        // The occupancy query is a CUDA runtime call, and running it on
+        // every launch serialises the worker threads on the runtime lock.
+        // A smaller request can never occupy worse than a larger one, so
+        // the query only has to run when a launch asks for more shared
+        // memory than any before it. So we track the high-water mark in
+        // an atomic and only query when it is exceeded.
+        static std::atomic<uint32_t> smem_high_water{0};
+        uint32_t prev_high = smem_high_water.load(std::memory_order_relaxed);
+        if (smem_bytes > prev_high
+            && smem_high_water.compare_exchange_strong(
+              prev_high, static_cast<uint32_t>(smem_bytes))) {
+            int blocks_no_smem = 0;
+            int blocks_with_smem = 0;
+            cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+              &blocks_no_smem,
+              kabsch_transform<algo>,
+              static_cast<int>(KABSCH_THREADS),
+              0);
+            cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+              &blocks_with_smem,
+              kabsch_transform<algo>,
+              static_cast<int>(KABSCH_THREADS),
+              smem_bytes);
+            if (blocks_with_smem < blocks_no_smem) {
+                static std::once_flag occupancy_warning_flag;
+                std::call_once(occupancy_warning_flag, [&] {
+                    logger.warn(
+                      "Kabsch corner tile of {} B (largest shoebox on image {}) "
+                      "reduces occupancy from {} to {} blocks/SM; further "
+                      "occurrences are not reported",
+                      smem_bytes,
+                      image_num,
+                      blocks_no_smem,
+                      blocks_with_smem);
+                });
+            }
+        }
         kabsch_transform<algo>
-          <<<gridDim, blockDim, 0, stream>>>(d_image,
-                                             image_pitch,
-                                             width,
-                                             height,
-                                             image_num,
-                                             d_matrix,
-                                             wavelength,
-                                             det_params,
-                                             osc_start,
-                                             osc_width,
-                                             image_range_start,
-                                             s0,
-                                             rot_axis,
-                                             d_s1_vectors,
-                                             d_phi_values,
-                                             d_bboxes,
-                                             d_reflection_indices,
-                                             num_reflections_this_image,
-                                             d_mask,
-                                             delta_b,
-                                             delta_m,
-                                             d_foreground_sum,
-                                             d_foreground_count,
-                                             d_background_hist,
-                                             d_background_overflow,
-                                             d_intensity_times_x,
-                                             d_intensity_times_y,
-                                             d_intensity_times_z,
-                                             d_success);
+          <<<gridDim, blockDim, smem_bytes, stream>>>(d_image,
+                                                      image_pitch,
+                                                      width,
+                                                      height,
+                                                      image_num,
+                                                      d_matrix,
+                                                      wavelength,
+                                                      det_params,
+                                                      osc_start,
+                                                      osc_width,
+                                                      image_range_start,
+                                                      s0,
+                                                      rot_axis,
+                                                      d_s1_vectors,
+                                                      d_phi_values,
+                                                      d_bboxes,
+                                                      d_reflection_indices,
+                                                      num_reflections_this_image,
+                                                      d_mask,
+                                                      tile_capacity,
+                                                      delta_b,
+                                                      delta_m,
+                                                      d_foreground_sum,
+                                                      d_foreground_count,
+                                                      d_background_hist,
+                                                      d_background_overflow,
+                                                      d_intensity_times_x,
+                                                      d_intensity_times_y,
+                                                      d_intensity_times_z,
+                                                      d_success);
     };
     if (algorithm == FGAlgorithm::Ellipsoid) {
         launch(std::integral_constant<FGAlgorithm, FGAlgorithm::Ellipsoid>{});

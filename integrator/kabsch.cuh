@@ -36,8 +36,8 @@
 /// ceil(w*h / KABSCH_THREADS) passes. A block-size sweep found the kernel is
 /// compute-bound and its time is flat within ~8% from 32 to 512, so this is a
 /// fixed constant, not a tuning knob. Must be a multiple of the 32-lane warp;
-/// note 1024 exceeds the per-SM register budget at ~122 regs/thread and fails
-/// to launch.
+/// note 1024 exceeds the per-block register budget at this kernel's register
+/// pressure and fails to launch.
 constexpr uint32_t KABSCH_THREADS = 128;
 
 /**
@@ -67,6 +67,11 @@ constexpr uint32_t KABSCH_THREADS = 128;
  * @param d_reflection_indices Device array of reflection indices for this image
  * @param num_reflections_this_image Number of reflections touching this image
  * @param d_mask Detector mask, flat width*height indexed gy*width + gx (non-zero = valid, 0 = masked)
+ * @param max_corner_tile_corners Corner slots for the shared-memory corner tile:
+ *        the maximum (w+1)*(h+1) over this image's reflection shoeboxes. Sizes
+ *        the kernel's dynamic shared memory (one byte per corner), clamped
+ *        internally to the device per-block limit; a shoebox beyond the clamp
+ *        falls back to per-pixel corner recompute
  * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D), radians
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M), radians
  * @param d_foreground_sum Device array to accumulate foreground intensities per reflection
@@ -98,6 +103,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                               const size_t *d_reflection_indices,
                               size_t num_reflections_this_image,
                               const uint8_t *d_mask,
+                              uint32_t max_corner_tile_corners,
                               scalar_t delta_b,
                               scalar_t delta_m,
                               FGAlgorithm algorithm,

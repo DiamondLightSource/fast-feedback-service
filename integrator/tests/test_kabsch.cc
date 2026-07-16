@@ -332,9 +332,16 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
 
     for (int image_num = image_range_start; image_num <= image_range_end; ++image_num) {
         refl_indices_this_image.clear();
+        // Largest (w+1)*(h+1) corner grid on this image, sizing the kernel's
+        // dynamic shared-memory corner tile (as the integrator does).
+        uint32_t max_corner_tile = 0;
         for (size_t i = 0; i < num_reflections; ++i) {
             if (bboxes[i].z_min <= image_num && image_num < bboxes[i].z_max) {
                 refl_indices_this_image.push_back(i);
+                const uint32_t corner_grid =
+                  static_cast<uint32_t>(bboxes[i].x_max - bboxes[i].x_min + 1)
+                  * static_cast<uint32_t>(bboxes[i].y_max - bboxes[i].y_min + 1);
+                max_corner_tile = std::max(max_corner_tile, corner_grid);
             }
         }
         if (refl_indices_this_image.empty()) continue;
@@ -364,6 +371,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                                  d_reflection_indices.data(),
                                  refl_indices_this_image.size(),
                                  d_mask.data(),
+                                 max_corner_tile,
                                  delta_b,
                                  delta_m,
                                  algo,
@@ -596,9 +604,16 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
 
     for (int image_num = 0; image_num < num_images; ++image_num) {
         refl_indices_this_image.clear();
+        // Largest (w+1)*(h+1) corner grid on this image, sizing the kernel's
+        // dynamic shared-memory corner tile (as the integrator does).
+        uint32_t max_corner_tile = 0;
         for (size_t i = 0; i < num_reflections; ++i) {
             if (in.bboxes[i].z_min <= image_num && image_num < in.bboxes[i].z_max) {
                 refl_indices_this_image.push_back(i);
+                const uint32_t corner_grid =
+                  static_cast<uint32_t>(in.bboxes[i].x_max - in.bboxes[i].x_min + 1)
+                  * static_cast<uint32_t>(in.bboxes[i].y_max - in.bboxes[i].y_min + 1);
+                max_corner_tile = std::max(max_corner_tile, corner_grid);
             }
         }
         if (refl_indices_this_image.empty()) continue;
@@ -643,6 +658,7 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
                                  d_reflection_indices.data(),
                                  refl_indices_this_image.size(),
                                  d_mask.data(),
+                                 max_corner_tile,
                                  in.delta_b,
                                  in.delta_m,
                                  algo,

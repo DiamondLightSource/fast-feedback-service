@@ -593,15 +593,26 @@ int main(int argc, char **argv) {
     // Map reflections by z layer (image number), excluding dont_integrate ones
     logger.info("Mapping reflections by image number (z layer)");
     std::unordered_map<int, std::vector<size_t>> reflections_by_image;
+    // Per-image maximum (w+1)*(h+1) corner grid, which sizes the Kabsch
+    // kernel's dynamic shared-memory corner tile for that image's launch.
+    std::unordered_map<int, uint32_t> corner_tile_by_image;
 
     for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
         if (dont_integrate[refl_id]) continue;
         const auto &bbox = computed_bboxes[refl_id];
 
+        // The bbox is half-open in x and y, so w×h is exactly the pixel
+        // count and the corner grid is one larger on each axis.
+        const uint32_t corner_grid =
+          static_cast<uint32_t>(bbox.x_max - bbox.x_min + 1)
+          * static_cast<uint32_t>(bbox.y_max - bbox.y_min + 1);
+
         // Add this reflection to all images it spans. The shoebox z
         // range is half-open [z_min, z_max), so z_max is excluded.
         for (int z = bbox.z_min; z < bbox.z_max; ++z) {
             reflections_by_image[z].push_back(refl_id);
+            uint32_t &image_max = corner_tile_by_image[z];
+            image_max = std::max(image_max, corner_grid);
         }
     }
 
@@ -974,6 +985,7 @@ int main(int argc, char **argv) {
                                          d_reflection_indices.data(),
                                          num_refls_this_image,
                                          d_mask.data(),
+                                         corner_tile_by_image.at(image_num),
                                          delta_b,
                                          delta_m,
                                          fg_algorithm,
