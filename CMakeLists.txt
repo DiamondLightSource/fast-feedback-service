@@ -40,8 +40,12 @@ project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# Option to use double precision for CUDA calculations
-option(USE_DOUBLE_PRECISION "Use double precision for CUDA calculations" OFF)
+# Precision for CUDA calculations. Double is the default because it is
+# bit-exact against the CPU baseline; the reduced-precision (single) path
+# is faster on FP64-throttled GPUs but drifts the pixel classification off
+# the double result on ~1% of reflections (intensity impact stays within
+# noise, but parity is lost). Opt into it deliberately.
+option(USE_REDUCED_PRECISION "Use reduced (single) precision for CUDA calculations - faster but drifts pixel classification off the bit-exact double result" OFF)
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
@@ -132,11 +136,11 @@ add_library(version STATIC version.cc)
 add_library(compile_options INTERFACE)
 
 # Add compile definitions if enabled
-if(USE_DOUBLE_PRECISION)
-    target_compile_definitions(compile_options INTERFACE USE_DOUBLE_PRECISION)
-    message(STATUS "Building with double precision")
+if(USE_REDUCED_PRECISION)
+    target_compile_definitions(compile_options INTERFACE USE_REDUCED_PRECISION)
+    message(STATUS "Building with reduced (single) precision")
 else()
-    message(STATUS "Building with single precision")
+    message(STATUS "Building with double precision")
 endif()
 
 # Make a common C++ library for shared code

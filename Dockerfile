@@ -33,7 +33,8 @@ RUN cmake /opt/ffs_src \
     -DCMAKE_INSTALL_PREFIX=/opt/ffs \
     -DHDF5_ROOT=/opt/ffs \
     -DPython3_ROOT_DIR=/opt/ffs \
-    -DCUDA_ARCH=80
+    -DCUDA_ARCH=80 \
+    -DUSE_REDUCED_PRECISION=OFF
 
 RUN cmake --build .
 
