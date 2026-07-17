@@ -44,7 +44,6 @@
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
-#include "integrator.cuh"
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
 #include "integrator/coordinate_system.hpp"
@@ -379,7 +378,7 @@ int main(int argc, char **argv) {
     const auto [osc_start, osc_width] = scan.get_oscillation();
     int image_range_start = scan.get_image_range()[0];
     int image_range_end = scan.get_image_range()[1];
-    double wl = beam.get_wavelength();
+    double wavelength = beam.get_wavelength();
     gemmi::UnitCell cell = crystal.get_unit_cell();
 
     // Foreground algorithm and zeta cutoff for host-side filtering.
@@ -454,7 +453,7 @@ int main(int argc, char **argv) {
     }
     auto flags = *flags_column_opt;
     bool all_predicted = true;
-    for (int i = 0; i < flags.extent(0); ++i) {
+    for (size_t i = 0; i < flags.extent(0); ++i) {
         auto f = flags(i, 0);
         if (!(f & predicted_flag)) {
             all_predicted = false;
@@ -482,7 +481,6 @@ int main(int argc, char **argv) {
             logger.info("Monochromatic static prediction");
         }
 
-        double wavelength = beam.get_wavelength();
         double dmin_min = 0.5 * wavelength;
         // FIXME: Need a better dmin_default from .expt file (like in DIALS)
         double dmin_default = dmin_min;
@@ -555,18 +553,6 @@ int main(int argc, char **argv) {
                                     beam);
 
     logger.info("Bounding box computation completed");
-
-    // Convert BoundingBoxExtents to flat array format for storage
-    std::vector<double> computed_bbox_data(num_reflections * 6);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        const int step = 6 * i;
-        computed_bbox_data[step + 0] = computed_bboxes[i].x_min;
-        computed_bbox_data[step + 1] = computed_bboxes[i].x_max;
-        computed_bbox_data[step + 2] = computed_bboxes[i].y_min;
-        computed_bbox_data[step + 3] = computed_bboxes[i].y_max;
-        computed_bbox_data[step + 4] = static_cast<double>(computed_bboxes[i].z_min);
-        computed_bbox_data[step + 5] = static_cast<double>(computed_bboxes[i].z_max);
-    }
 
     // Build per-reflection coordinate systems and apply host-side min_zeta
     // filter. Reflections with |zeta| < min_zeta are skipped (dont_integrate).
@@ -769,7 +755,7 @@ int main(int argc, char **argv) {
     // Convert beam parameters to Vector3D
     fastvec::Vector3D s0_vec = to_vector3d(s0);
     fastvec::Vector3D rot_axis_vec = to_vector3d(rotation_axis);
-    scalar_t wavelength = static_cast<scalar_t>(wl);
+    scalar_t wavelength_scalar = static_cast<scalar_t>(wavelength);
     scalar_t osc_start_scalar = static_cast<scalar_t>(osc_start);
     scalar_t osc_width_scalar = static_cast<scalar_t>(osc_width);
 
@@ -972,7 +958,7 @@ int main(int argc, char **argv) {
                                          height,
                                          image_num,
                                          d_d_matrix.data(),
-                                         wavelength,
+                                         wavelength_scalar,
                                          det_params,
                                          osc_start_scalar,
                                          osc_width_scalar,
