@@ -702,25 +702,19 @@ int main(int argc, char **argv) {
     double time_waiting_for_images = 0.0;
 
 #pragma region Prep GPU Data Buffers
-    // Get detector d_matrix and flatten for GPU
-    Eigen::Matrix3d d_matrix_eigen = panel.get_d_matrix();
-    std::vector<scalar_t> d_matrix_flat(9);
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            d_matrix_flat[i * 3 + j] = static_cast<scalar_t>(d_matrix_eigen(i, j));
-        }
-    }
+    // Flatten the detector d-matrix to row-major scalar_t for the GPU.
+    // Eigen stores column-major, so cast into an explicitly row-major
+    // matrix; that reorders and converts precision in one expression and
+    // leaves .data() as the contiguous row-major block the kernel wants.
+    Eigen::Matrix<scalar_t, 3, 3, Eigen::RowMajor> d_matrix_flat =
+      panel.get_d_matrix().cast<scalar_t>();
 
-    // Convert s1_vectors to Vector3D array for GPU
+    // Pack the per-reflection GPU inputs in one pass: the s1 vectors as
+    // fastvec::Vector3D, and the phi rotation angle (column 2 of xyzcal.mm).
     std::vector<fastvec::Vector3D> s1_vectors_vec(num_reflections);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        s1_vectors_vec[i] = to_vector3d(s1_vectors, i);
-    }
-
-    // phi_positions_converted_data already contains phi values (column index 2 of xyzcal.mm)
-    // Need to extract just the phi component (3rd column)
     std::vector<scalar_t> phi_values_vec(num_reflections);
     for (size_t i = 0; i < num_reflections; ++i) {
+        s1_vectors_vec[i] = to_vector3d(s1_vectors, i);
         phi_values_vec[i] = static_cast<scalar_t>(phi_column(i, 2));
     }
 
