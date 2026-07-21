@@ -19,9 +19,10 @@
  * - Data access: span() for mdspan integration
  * 
  * Precision Control:
- * The library supports compile-time precision switching via USE_DOUBLE_PRECISION:
- * - Default: single precision (float3) for optimal GPU performance
- * - With -DUSE_DOUBLE_PRECISION: double precision (double3) for accuracy
+ * The library supports compile-time precision switching via USE_REDUCED_PRECISION:
+ * - Default: double precision (double3) for accuracy and bit-exact parity
+ * - With -DUSE_REDUCED_PRECISION: single precision (float3) for speed on
+ *   FP64-throttled GPUs (drifts pixel classification off the double result)
  * 
  * Usage Examples:
  * ```cpp
@@ -57,13 +58,14 @@
 
 namespace fastvec {
 
-// Type configuration
-#ifdef USE_DOUBLE_PRECISION
-using Vector3D = double3;
-#define MAKE_VECTOR3D make_double3
-#else
+// Type configuration. Double is the default; defining USE_REDUCED_PRECISION
+// switches to single.
+#ifdef USE_REDUCED_PRECISION
 using Vector3D = float3;
 #define MAKE_VECTOR3D make_float3
+#else
+using Vector3D = double3;
+#define MAKE_VECTOR3D make_double3
 #endif
 
 // Convenience aliases for mdspan types

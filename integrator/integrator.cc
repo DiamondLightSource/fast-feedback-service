@@ -44,7 +44,6 @@
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
-#include "integrator.cuh"
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
 #include "integrator/coordinate_system.hpp"
@@ -379,7 +378,7 @@ int main(int argc, char **argv) {
     const auto [osc_start, osc_width] = scan.get_oscillation();
     int image_range_start = scan.get_image_range()[0];
     int image_range_end = scan.get_image_range()[1];
-    double wl = beam.get_wavelength();
+    double wavelength = beam.get_wavelength();
     gemmi::UnitCell cell = crystal.get_unit_cell();
 
     // Foreground algorithm and zeta cutoff for host-side filtering.
@@ -454,7 +453,7 @@ int main(int argc, char **argv) {
     }
     auto flags = *flags_column_opt;
     bool all_predicted = true;
-    for (int i = 0; i < flags.extent(0); ++i) {
+    for (size_t i = 0; i < flags.extent(0); ++i) {
         auto f = flags(i, 0);
         if (!(f & predicted_flag)) {
             all_predicted = false;
@@ -482,7 +481,6 @@ int main(int argc, char **argv) {
             logger.info("Monochromatic static prediction");
         }
 
-        double wavelength = beam.get_wavelength();
         double dmin_min = 0.5 * wavelength;
         // FIXME: Need a better dmin_default from .expt file (like in DIALS)
         double dmin_default = dmin_min;
@@ -556,18 +554,6 @@ int main(int argc, char **argv) {
 
     logger.info("Bounding box computation completed");
 
-    // Convert BoundingBoxExtents to flat array format for storage
-    std::vector<double> computed_bbox_data(num_reflections * 6);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        const int step = 6 * i;
-        computed_bbox_data[step + 0] = computed_bboxes[i].x_min;
-        computed_bbox_data[step + 1] = computed_bboxes[i].x_max;
-        computed_bbox_data[step + 2] = computed_bboxes[i].y_min;
-        computed_bbox_data[step + 3] = computed_bboxes[i].y_max;
-        computed_bbox_data[step + 4] = static_cast<double>(computed_bboxes[i].z_min);
-        computed_bbox_data[step + 5] = static_cast<double>(computed_bboxes[i].z_max);
-    }
-
     // Build per-reflection coordinate systems and apply host-side min_zeta
     // filter. Reflections with |zeta| < min_zeta are skipped (dont_integrate).
     std::vector<CoordinateSystem> coord_system_vector;
@@ -593,15 +579,26 @@ int main(int argc, char **argv) {
     // Map reflections by z layer (image number), excluding dont_integrate ones
     logger.info("Mapping reflections by image number (z layer)");
     std::unordered_map<int, std::vector<size_t>> reflections_by_image;
+    // Per-image maximum (w+1)*(h+1) corner grid, which sizes the Kabsch
+    // kernel's dynamic shared-memory corner tile for that image's launch.
+    std::unordered_map<int, uint32_t> corner_tile_by_image;
 
     for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
         if (dont_integrate[refl_id]) continue;
         const auto &bbox = computed_bboxes[refl_id];
 
+        // The bbox is half-open in x and y, so w×h is exactly the pixel
+        // count and the corner grid is one larger on each axis.
+        const uint32_t corner_grid =
+          static_cast<uint32_t>(bbox.x_max - bbox.x_min + 1)
+          * static_cast<uint32_t>(bbox.y_max - bbox.y_min + 1);
+
         // Add this reflection to all images it spans. The shoebox z
         // range is half-open [z_min, z_max), so z_max is excluded.
         for (int z = bbox.z_min; z < bbox.z_max; ++z) {
             reflections_by_image[z].push_back(refl_id);
+            uint32_t &image_max = corner_tile_by_image[z];
+            image_max = std::max(image_max, corner_grid);
         }
     }
 
@@ -705,25 +702,19 @@ int main(int argc, char **argv) {
     double time_waiting_for_images = 0.0;
 
 #pragma region Prep GPU Data Buffers
-    // Get detector d_matrix and flatten for GPU
-    Eigen::Matrix3d d_matrix_eigen = panel.get_d_matrix();
-    std::vector<scalar_t> d_matrix_flat(9);
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            d_matrix_flat[i * 3 + j] = static_cast<scalar_t>(d_matrix_eigen(i, j));
-        }
-    }
+    // Flatten the detector d-matrix to row-major scalar_t for the GPU.
+    // Eigen stores column-major, so cast into an explicitly row-major
+    // matrix; that reorders and converts precision in one expression and
+    // leaves .data() as the contiguous row-major block the kernel wants.
+    Eigen::Matrix<scalar_t, 3, 3, Eigen::RowMajor> d_matrix_flat =
+      panel.get_d_matrix().cast<scalar_t>();
 
-    // Convert s1_vectors to Vector3D array for GPU
+    // Pack the per-reflection GPU inputs in one pass: the s1 vectors as
+    // fastvec::Vector3D, and the phi rotation angle (column 2 of xyzcal.mm).
     std::vector<fastvec::Vector3D> s1_vectors_vec(num_reflections);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        s1_vectors_vec[i] = to_vector3d(s1_vectors, i);
-    }
-
-    // phi_positions_converted_data already contains phi values (column index 2 of xyzcal.mm)
-    // Need to extract just the phi component (3rd column)
     std::vector<scalar_t> phi_values_vec(num_reflections);
     for (size_t i = 0; i < num_reflections; ++i) {
+        s1_vectors_vec[i] = to_vector3d(s1_vectors, i);
         phi_values_vec[i] = static_cast<scalar_t>(phi_column(i, 2));
     }
 
@@ -758,7 +749,7 @@ int main(int argc, char **argv) {
     // Convert beam parameters to Vector3D
     fastvec::Vector3D s0_vec = to_vector3d(s0);
     fastvec::Vector3D rot_axis_vec = to_vector3d(rotation_axis);
-    scalar_t wavelength = static_cast<scalar_t>(wl);
+    scalar_t wavelength_scalar = static_cast<scalar_t>(wavelength);
     scalar_t osc_start_scalar = static_cast<scalar_t>(osc_start);
     scalar_t osc_width_scalar = static_cast<scalar_t>(osc_width);
 
@@ -961,7 +952,7 @@ int main(int argc, char **argv) {
                                          height,
                                          image_num,
                                          d_d_matrix.data(),
-                                         wavelength,
+                                         wavelength_scalar,
                                          det_params,
                                          osc_start_scalar,
                                          osc_width_scalar,
@@ -974,6 +965,7 @@ int main(int argc, char **argv) {
                                          d_reflection_indices.data(),
                                          num_refls_this_image,
                                          d_mask.data(),
+                                         corner_tile_by_image.at(image_num),
                                          delta_b,
                                          delta_m,
                                          fg_algorithm,
