@@ -130,7 +130,7 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
     Vector3D e2 = normalized(cross(s1_c, e1));
 
     // e3 bisects the angle between s0 and s1
-    Vector3D e3 = normalized(s1_c + s0);
+    // Vector3D e3 = normalized(s1_c + s0); // Temporarily disable improved calculation
 
     // Compute the length of the predicted diffracted vector (|s₁|)
     scalar_t s1_len = norm(s1_c);
