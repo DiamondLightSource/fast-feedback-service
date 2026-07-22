@@ -563,15 +563,26 @@ __global__ void kabsch_transform(pixel_t *d_image,
         const bool pixel_in_image = (px >= 0) && (px < static_cast<int>(width))
                                     && (py >= 0) && (py < static_cast<int>(height));
 
+        // Both paths below need the mask flag and the pixel value, so the two
+        // loads are issued together rather than letting the mask test gate the
+        // image load and serialise two L1TEX round trips per pixel. Hoisting
+        // them past the corner-fill barrier goes further still, but costs
+        // registers, and registers bind occupancy on this kernel.
+        uint8_t mask_flag = 0;
+        pixel_t raw_value = 0;
+        if (pixel_in_image) {
+            mask_flag = d_mask[static_cast<size_t>(py) * width + px];
+            raw_value = image(px, py);
+        }
+
         if (any_fg) {
             // Foreground outside the image or on a masked pixel makes the
             // reflection unusable. d_success is only ever cleared, never set,
             // so the concurrent writes need no atomic.
-            if (!pixel_in_image || d_mask[static_cast<size_t>(py) * width + px] == 0) {
+            if (!pixel_in_image || mask_flag == 0) {
                 d_success[refl_idx] = 0;
             } else {
-                const accumulator_t pixel_value =
-                  static_cast<accumulator_t>(image(px, py));
+                const accumulator_t pixel_value = static_cast<accumulator_t>(raw_value);
                 atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
                 atomicAdd(&d_foreground_count[refl_idx], 1u);
                 // Accumulate intensity·coord for centre-of-mass (xyzobs.px).
@@ -596,8 +607,8 @@ __global__ void kabsch_transform(pixel_t *d_image,
             // past the mask (reachable only when pixel_t is 32-bit and the value
             // exceeds INT_MAX); it is not a real background measurement, so it
             // is dropped rather than counted.
-            if (pixel_in_image && d_mask[static_cast<size_t>(py) * width + px] != 0) {
-                const int bin = static_cast<int>(image(px, py));
+            if (pixel_in_image && mask_flag != 0) {
+                const int bin = static_cast<int>(raw_value);
                 if (bin >= 0 && bin < NUM_BG_BINS) {
                     atomicAdd(&d_background_hist[refl_idx * NUM_BG_BINS + bin], 1u);
                 } else if (bin >= NUM_BG_BINS) {
