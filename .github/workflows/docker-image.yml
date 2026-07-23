@@ -45,7 +45,7 @@ jobs:
           platform="${{ matrix.platform }}"
           echo "platform-pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
 
-      # Persist the ccache dir across runs. actions/cache moves it in and out of the GHA cache.
+      # Persist the ccache and FetchContent dirs across runs. actions/cache moves them in and out of the GHA cache.
       - name: Restore ccache
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: actions/cache@v6
@@ -55,12 +55,24 @@ jobs:
           restore-keys: |
             ccache-${{ steps.prep.outputs.platform-pair }}-
 
-      - name: Inject ccache into buildx
+      - name: Restore FetchContent deps
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/deps-${{ steps.prep.outputs.platform-pair }}
+          key: deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            deps-${{ steps.prep.outputs.platform-pair }}-
+
+      - name: Inject caches into buildx
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: reproducible-containers/buildkit-cache-dance@v3
         with:
           cache-map: |
-            { "${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}": "/ccache" }
+            {
+              "${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}": "/ccache",
+              "${{ runner.temp }}/deps-${{ steps.prep.outputs.platform-pair }}": "/deps"
+            }
 
       - name: Build and push by digest
         id: build

@@ -30,7 +30,8 @@ ENV CCACHE_DIR=/ccache
 
 # Build the C++/CUDA backend
 WORKDIR /opt/build
-RUN cmake /opt/ffs_src \
+RUN --mount=type=cache,target=/deps \
+    cmake /opt/ffs_src \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/opt/ffs \
     -DHDF5_ROOT=/opt/ffs \
@@ -39,10 +40,13 @@ RUN cmake /opt/ffs_src \
     -DUSE_REDUCED_PRECISION=OFF \
     # Route both the host and CUDA compilers through ccache
     -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-    -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache
+    -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+    # Persist the fetched dependency sources so they download once and are reused
+    -DFETCHCONTENT_BASE_DIR=/deps
 
-# Mount the persistent ccache dir for the compile and print stats
+# Mount the persistent ccache and /deps dirs for the compile and print stats
 RUN --mount=type=cache,target=/ccache \
+    --mount=type=cache,target=/deps \
     cmake --build . && ccache -s
 
 RUN cmake --install .
