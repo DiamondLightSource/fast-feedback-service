@@ -52,6 +52,11 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          # Reuse the build-stage layers (base image, conda envs) from the
+          # GHA cache across runs, scoped per arch. mode=max caches the
+          # throwaway build stage, not just the runtime image.
+          cache-from: type=gha,scope=${{ steps.prep.outputs.platform-pair }}
+          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.platform-pair }}
           # Push the per-arch image with no tag; it is addressable only by
           # its digest. This keeps intermediate arch builds out of the tag
           # list - the manifest job assembles the real tag from digests.
