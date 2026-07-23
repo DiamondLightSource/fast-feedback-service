@@ -45,6 +45,23 @@ jobs:
           platform="${{ matrix.platform }}"
           echo "platform-pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
 
+      # Persist the ccache dir across runs. actions/cache moves it in and out of the GHA cache.
+      - name: Restore ccache
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}
+          key: ccache-${{ steps.prep.outputs.platform-pair }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ steps.prep.outputs.platform-pair }}-
+
+      - name: Inject ccache into buildx
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          cache-map: |
+            { "${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}": "/ccache" }
+
       - name: Build and push by digest
         id: build
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
@@ -52,6 +69,11 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          # Reuse the build-stage layers (base image, conda envs) from the
+          # GHA cache across runs, scoped per arch. mode=max caches the
+          # throwaway build stage, not just the runtime image.
+          cache-from: type=gha,scope=${{ steps.prep.outputs.platform-pair }}
+          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.platform-pair }}
           # Push the per-arch image with no tag; it is addressable only by
           # its digest. This keeps intermediate arch builds out of the tag
           # list - the manifest job assembles the real tag from digests.
