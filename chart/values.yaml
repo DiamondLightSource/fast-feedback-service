@@ -12,6 +12,7 @@ zocalo:
 # Additional environment variables
 extraEnv:
   # SPOTFINDER: "/opt/ffs/bin/spotfinder"
+    SPOTFINDER_TIMEOUT: 60
 
 # Additional node selector labels
 nodeSelector:
