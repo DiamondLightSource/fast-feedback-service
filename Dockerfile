@@ -24,7 +24,7 @@ RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
 
 # Copy source
 COPY . /opt/ffs_src
-ENV CMAKE_GENERATOR Ninja
+ENV CMAKE_GENERATOR=Ninja
 
 # Build the C++/CUDA backend
 WORKDIR /opt/build
