@@ -32,3 +32,6 @@ _build*/
 # Profiling artifacts
 profiling/
 out/
+
+# Local notebook (notes, ncu reports, etc.)
+/notes/
