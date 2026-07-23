@@ -289,6 +289,17 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
     }
 
     void add_spotfinder_arguments() {
+        // Default timeout can be overridden via environment variable
+        float default_timeout = 30.0f;
+        if (const char *env_timeout = std::getenv("SPOTFINDER_TIMEOUT")) {
+            try {
+                default_timeout = std::stof(env_timeout);
+            } catch (const std::exception &) {
+                spdlog::warn("Ignoring invalid SPOTFINDER_TIMEOUT value: {}",
+                             env_timeout);
+            }
+        }
+
         add_argument("-n", "--threads")
           .help("Number of parallel reader threads")
           .default_value<uint32_t>(1)
@@ -338,9 +349,11 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
           .scan<'u', uint32_t>();
 
         add_argument("-t", "--timeout")
-          .help("Amount of time (in seconds) to wait for new images before failing.")
+          .help(
+            "Amount of time (in seconds) to wait for new images before failing. "
+            "Defaults to the SPOTFINDER_TIMEOUT environment variable if set.")
           .metavar("S")
-          .default_value<float>(30)
+          .default_value<float>(default_timeout)
           .scan<'f', float>();
 
         add_argument("-fd", "--pipe_fd")
