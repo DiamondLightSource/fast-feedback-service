@@ -120,5 +120,16 @@ jobs:
 
       - name: Inspect manifest
         run: |
-          docker buildx imagetools inspect \
-            ${{ steps.tags.outputs.image-name }}:${{ steps.tags.outputs.manifest-tag }}
+          image="${{ steps.tags.outputs.image-name }}:${{ steps.tags.outputs.manifest-tag }}"
+          # GHCR takes a moment to make a freshly pushed tag readable, so
+          # the create above can succeed while an immediate inspect still
+          # 404s. Retry for a bit instead of failing the job over that gap.
+          for attempt in 1 2 3 4 5; do
+            if docker buildx imagetools inspect "$image"; then
+              exit 0
+            fi
+            echo "Manifest not visible yet (attempt ${attempt}); retrying..."
+            sleep 3
+          done
+          echo "Manifest still not visible after retries" >&2
+          exit 1
