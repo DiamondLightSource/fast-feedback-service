@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 ARG CUDA_VERSION=13.0.2
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
@@ -6,7 +5,7 @@ FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
 # Install dependencies
 RUN DEBIAN_FRONTEND=noninteractive \
     apt-get update && \
-    apt-get install -y --no-install-recommends git ca-certificates curl ccache
+    apt-get install -y --no-install-recommends git ca-certificates curl
 
 # Install micromamba. Prefer install script so we don't have to determine platform here
 RUN curl -sL micro.mamba.pm/install.sh | BIN_FOLDER=/opt/bin INIT_YES=no bash
@@ -26,7 +25,6 @@ RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
 # Copy source
 COPY . /opt/ffs_src
 ENV CMAKE_GENERATOR=Ninja
-ENV CCACHE_DIR=/ccache
 
 # Build the C++/CUDA backend
 WORKDIR /opt/build
@@ -36,14 +34,9 @@ RUN cmake /opt/ffs_src \
     -DHDF5_ROOT=/opt/ffs \
     -DPython3_ROOT_DIR=/opt/ffs \
     -DCUDA_ARCH=80 \
-    -DUSE_REDUCED_PRECISION=OFF \
-    # Route both the host and CUDA compilers through ccache
-    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-    -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache
+    -DUSE_REDUCED_PRECISION=OFF
 
-# Mount the persistent ccache dir for the compile and print stats
-RUN --mount=type=cache,target=/ccache \
-    cmake --build . && ccache -s
+RUN cmake --build .
 
 RUN cmake --install .
 
