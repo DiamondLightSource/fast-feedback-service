@@ -353,7 +353,7 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
             "Amount of time (in seconds) to wait for new images before failing. "
             "Defaults to the SPOTFINDER_TIMEOUT environment variable if set.")
           .metavar("S")
-          .default_value<float>(default_timeout)
+          .default_value<float>(std::move(default_timeout))
           .scan<'f', float>();
 
         add_argument("-fd", "--pipe_fd")
