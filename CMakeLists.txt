@@ -9,31 +9,9 @@ include(ResolveGitVersion)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 20)
 
-# Set CUDA compute capability target
-# Override with just the number: cmake -DCUDA_ARCH=86 ..
-# Set default to 7.5 (Turing)
-set(CUDA_ARCH "75 - Turing (RTX 20xx, GTX 16xx)" CACHE STRING "CUDA compute capability target architecture")
-set_property(CACHE CUDA_ARCH PROPERTY STRINGS 
-    "52 - Maxwell (GTX 9xx, Titan X)"
-    "60 - Pascal (GTX 10xx, P100)"
-    "61 - Pascal (GTX 1050/1030)"
-    "70 - Volta (V100, Titan V100)"
-    "75 - Turing (RTX 20xx, GTX 16xx)"
-    "80 - Ampere (A100)"
-    "86 - Ampere (RTX 30xx)"
-    "89 - Ada Lovelace (RTX 40xx)"
-    "90 - Hopper (H100)"
-    "100 - Blackwell (GB200, B200)"
-    "103 - Blackwell (GB300, B300)"
-    "110 - Blackwell Jetson (T5000, T4000)"
-    "120 - Blackwell (RTX 50xx, RTX PRO)"
-    "121 - Blackwell (DGX Spark GB10)"
-)
-
-# Extract just the number from the selection (digits before the " - " label)
-string(REGEX MATCH "^[0-9]+" CUDA_ARCH_NUMBER "${CUDA_ARCH}")
-set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_NUMBER})
-message(STATUS "CUDA architecture set to: sm_${CMAKE_CUDA_ARCHITECTURES}")
+# Set the CUDA compute capability target(s). Defaults to autodetecting
+# the GPU in the build machine and building for that
+include(SetCudaArchitectures)
 
 project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
 
@@ -165,31 +143,38 @@ if (CUDAToolkit_FOUND)
     message(STATUS "CUDA found: Building CUDA components.")
     set(FFS_ENABLE_CUDA ON)
     
-    # Try to detect GPU compute capability
-    execute_process(
-        COMMAND nvidia-smi --query-gpu=compute_cap --format=csv,noheader
-        OUTPUT_VARIABLE DETECTED_GPU_CAPS
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-    
-    if(DETECTED_GPU_CAPS)
-        # nvidia-smi returns "7.5" format, convert to "75"
-        string(REPLACE "." "" DETECTED_GPU_ARCH "${DETECTED_GPU_CAPS}")
-        # Get first GPU if multiple
-        string(REGEX MATCH "[0-9]+" DETECTED_GPU_ARCH "${DETECTED_GPU_ARCH}")
-        message(STATUS "Detected GPU compute capability: sm_${DETECTED_GPU_ARCH}")
-        
-        # Warn if configured architecture doesn't match detected GPU
-        if(NOT CUDA_ARCH_NUMBER STREQUAL DETECTED_GPU_ARCH)
-            message(WARNING 
-                "Target CUDA architecture (sm_${CUDA_ARCH_NUMBER}) differs from detected GPU (sm_${DETECTED_GPU_ARCH}).\n"
-                "   The compiled code may not run optimally or at all on this system.\n"
-                "   To build for the detected GPU: cmake -DCUDA_ARCH=${DETECTED_GPU_ARCH} ..\n"
-                "   To build for a different target: ensure the target system has sm_${CUDA_ARCH_NUMBER} or newer."
-            )
+    # SetCudaArchitectures already probed the local GPU; check that what
+    # we are about to compile can actually run on it.
+    if(FFS_DETECTED_GPU_ARCH)
+        # A cubin loads on any later minor revision of its own major
+        # generation but never across one (an sm_80 cubin runs on 8.6,
+        # 8.7 and 8.9), and the driver can JIT PTX onto any device at or
+        # above its virtual architecture. Warn only when neither route
+        # covers the card that is actually here.
+        set(GPU_IS_COVERED FALSE)
+        math(EXPR DETECTED_MAJOR "${FFS_DETECTED_GPU_ARCH} / 10")
+        foreach(arch IN LISTS FFS_CUDA_ARCH_REAL)
+            math(EXPR ARCH_MAJOR "${arch} / 10")
+            if(ARCH_MAJOR EQUAL DETECTED_MAJOR AND NOT arch GREATER FFS_DETECTED_GPU_ARCH)
+                set(GPU_IS_COVERED TRUE)
+            endif()
+        endforeach()
+        foreach(arch IN LISTS FFS_CUDA_ARCH_VIRTUAL)
+            if(NOT arch GREATER FFS_DETECTED_GPU_ARCH)
+                set(GPU_IS_COVERED TRUE)
+            endif()
+        endforeach()
+
+        if(GPU_IS_COVERED)
+            message(STATUS "✓ Compiled architectures cover the detected GPU")
         else()
-            message(STATUS "✓ Configured architecture matches detected GPU")
+            message(WARNING
+                "Nothing being compiled can run on the GPU in this machine (sm_${FFS_DETECTED_GPU_ARCH}).\n"
+                "   Building for: ${CMAKE_CUDA_ARCHITECTURES}\n"
+                "   The resulting binaries will fail to load here.\n"
+                "   To build for the detected GPU: cmake -DCUDA_ARCH=native ..\n"
+                "   To build what the container ships: cmake -DCUDA_ARCH=all-supported .."
+            )
         endif()
     else()
         message(STATUS "Could not detect GPU compute capability (nvidia-smi not available or no GPU present)")

@@ -92,6 +92,40 @@ make                        # Compile the code
 ```
 This will create the executable `spotfinder` in the [`build/bin/`] directory.
 
+#### Choosing a GPU architecture
+CUDA code is compiled for specific compute capabilities, and a binary
+will not load on a GPU it was not compiled for. The `CUDA_ARCH` cmake
+option controls this:
+
+```bash
+cmake ..                            # native: auto detect the GPU in this machine (default)
+cmake .. -DCUDA_ARCH=86             # a specific compute capability
+cmake .. -DCUDA_ARCH="80;90"        # several
+cmake .. -DCUDA_ARCH=all-supported  # everything the container image ships
+```
+
+The default, `native`, reads the compute capability from `nvidia-smi`
+and builds a single cubin for it, which is the fastest option for local
+development. If no GPU is present it falls back to `sm_75`.
+
+`all-supported` is what the published container image is built with. It
+produces a fat binary carrying native code for every architecture from
+Turing to Blackwell, plus PTX so that a card newer than any of them is
+JIT-compiled by the driver rather than rejected. It takes considerably
+longer to compile.
+
+Note that CUDA 13 dropped Maxwell, Pascal and Volta, so `sm_75` (Turing)
+is the oldest architecture the container image can target.
+
+For what a fat binary actually contains and how the driver picks out of
+it, see [nvcc GPU Compilation][nvcc-gpu-compilation] on virtual versus
+real architectures, cubins and PTX, and the [Blackwell Compatibility
+Guide][blackwell-compat] for the rules on which cubin runs on which
+card.
+
+[nvcc-gpu-compilation]: https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#gpu-compilation
+[blackwell-compat]: https://docs.nvidia.com/cuda/blackwell-compatibility-guide/
+
 ### Installing the python module (for indexing)
 This project defines a small python module, to provide functionality for indexing.
 To run indexing code, this needs to be installed into the python environment by
