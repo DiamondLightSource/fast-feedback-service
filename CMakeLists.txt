@@ -110,6 +110,9 @@ project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
+# Drop the resolved version somewhere the container build can read it
+file(WRITE "${CMAKE_BINARY_DIR}/FFS_VERSION" "${FFS_VERSION_FULL}")
+
 # Create an interface library for compile definitions
 add_library(compile_options INTERFACE)
 

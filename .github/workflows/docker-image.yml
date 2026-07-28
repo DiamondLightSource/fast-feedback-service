@@ -26,6 +26,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: true
+          # Full history and tags, so `git describe` below has something to describe
+          fetch-depth: 0
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Login to GitHub Container Registry
@@ -44,6 +46,7 @@ jobs:
           # linux/amd64 becomes linux-amd64, for a filesystem-safe artifact name.
           platform="${{ matrix.platform }}"
           echo "platform-pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
+          echo "version-describe=$(git describe --tags --long --first-parent)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push by digest
         id: build
@@ -52,6 +55,8 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          build-args: |
+            FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
           # Push the per-arch image with no tag; it is addressable only by
           # its digest. This keeps intermediate arch builds out of the tag
           # list - the manifest job assembles the real tag from digests.
