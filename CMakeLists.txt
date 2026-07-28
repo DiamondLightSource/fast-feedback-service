@@ -113,6 +113,11 @@ add_library(version STATIC version.cc)
 # Create an interface library for compile definitions
 add_library(compile_options INTERFACE)
 
+# Eigen's device std::complex helpers need constexpr as __host__ __device__ (#20015).
+target_compile_options(compile_options INTERFACE
+    "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>"
+)
+
 # Add compile definitions if enabled
 if(USE_REDUCED_PRECISION)
     target_compile_definitions(compile_options INTERFACE USE_REDUCED_PRECISION)
