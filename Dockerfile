@@ -47,7 +47,7 @@ RUN cmake --install .
 # Install Python package. setuptools_scm has no git history to read
 # here, so hand it the version cmake already resolved.
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="$(cat /opt/build/FFS_VERSION)" \
-    /opt/ffs/bin/pip3 install /opt/ffs_src
+    /opt/ffs/bin/pip3 install --root-user-action=ignore /opt/ffs_src
 
 # Now copy this into an isolated runtime container
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
