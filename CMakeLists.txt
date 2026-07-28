@@ -110,8 +110,16 @@ project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
+# Drop the resolved version somewhere the container build can read it
+file(WRITE "${CMAKE_BINARY_DIR}/FFS_VERSION" "${FFS_VERSION_FULL}")
+
 # Create an interface library for compile definitions
 add_library(compile_options INTERFACE)
+
+# Eigen's device std::complex helpers need constexpr as __host__ __device__ (#20015).
+target_compile_options(compile_options INTERFACE
+    "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>"
+)
 
 # Add compile definitions if enabled
 if(USE_REDUCED_PRECISION)

@@ -26,6 +26,9 @@ RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
 COPY . /opt/ffs_src
 ENV CMAKE_GENERATOR=Ninja
 
+# Placeholder for the version string to be passed from the build system.
+ARG FFS_VERSION_DESCRIBE=
+
 # Build the C++/CUDA backend
 WORKDIR /opt/build
 RUN cmake /opt/ffs_src \
@@ -34,14 +37,19 @@ RUN cmake /opt/ffs_src \
     -DHDF5_ROOT=/opt/ffs \
     -DPython3_ROOT_DIR=/opt/ffs \
     -DCUDA_ARCH=all-supported \
+    -DFFS_VERSION_DESCRIBE="${FFS_VERSION_DESCRIBE}" \
+    -DCMAKE_INSTALL_RPATH=/opt/ffs/lib \
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
     -DUSE_REDUCED_PRECISION=OFF
 
 RUN cmake --build .
 
 RUN cmake --install .
 
-# Install Python package
-RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS=1.0 /opt/ffs/bin/pip3 install /opt/ffs_src
+# Install Python package. setuptools_scm has no git history to read
+# here, so hand it the version cmake already resolved.
+RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="$(cat /opt/build/FFS_VERSION)" \
+    /opt/ffs/bin/pip3 install --root-user-action=ignore /opt/ffs_src
 
 # Now copy this into an isolated runtime container
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
