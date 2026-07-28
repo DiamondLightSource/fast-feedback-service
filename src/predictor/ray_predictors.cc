@@ -27,14 +27,14 @@ std::optional<Ray> predict_ray_monochromatic_stills(const std::array<int, 3> &in
     // Find the angle by which the reciprocal lattice vector must be rotated to intersect
     // with the Ewald sphere, and the corresponding rotation matrix.
     double delta_psi = acos(-r_unit.dot(s0_unit)) - acos(r / (2 * s));
-    if (abs(delta_psi) < delta_psi_tolerance) return std::nullopt;
+    if (std::abs(delta_psi) < delta_psi_tolerance) return std::nullopt;
     Rotator rotator(s0_unit.cross(r_unit));
     const Vector3d rotated_r = rotator.rotate(r_vec, delta_psi * 180 / M_PI);
     const Vector3d s1 = s0 + rotated_r;
 
     // Create a Ray object, where the angle now represents |delta_phi|,
     // NOT the goniometer angle.
-    return Ray{s1, abs(delta_psi), false};
+    return Ray{s1, std::abs(delta_psi), false};
 }
 
 std::array<std::optional<Ray>, 2> predict_ray_monochromatic_static(

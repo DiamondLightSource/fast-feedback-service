@@ -11,6 +11,7 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <gemmi/symmetry.hpp>
 #include <optional>
@@ -164,16 +165,16 @@ class ReekeIndexGenerator {
         // Conditionally combine the Ewald and resolution limits
         // The logic here is that is if the point of tangency between a plane of constant h and the Ewald sphere lies
         // outside the resolution sphere, we use the corresponding resolution limit. Otherwise, we keep the Ewald limit.
-        if (2 * (s0_1_len * s0_1_len + abs(s0_1_len * s0_1_dot_a1) / a1_len)
+        if (2 * (s0_1_len * s0_1_len + std::abs(s0_1_len * s0_1_dot_a1) / a1_len)
             > 1 / (dmin * dmin))
             h_limits_1->first = h_limits_resolution_1.first;
-        if (2 * (s0_1_len * s0_1_len - abs(s0_1_len * s0_1_dot_a1) / a1_len)
+        if (2 * (s0_1_len * s0_1_len - std::abs(s0_1_len * s0_1_dot_a1) / a1_len)
             > 1 / (dmin * dmin))
             h_limits_1->second = h_limits_resolution_1.second;
-        if (2 * (s0_2_len * s0_2_len + abs(s0_2_len * s0_2_dot_a2) / a2_len)
+        if (2 * (s0_2_len * s0_2_len + std::abs(s0_2_len * s0_2_dot_a2) / a2_len)
             > 1 / (dmin * dmin))
             h_limits_2->first = h_limits_resolution_2.first;
-        if (2 * (s0_2_len * s0_2_len - abs(s0_2_len * s0_2_dot_a2) / a2_len)
+        if (2 * (s0_2_len * s0_2_len - std::abs(s0_2_len * s0_2_dot_a2) / a2_len)
             > 1 / (dmin * dmin))
             h_limits_2->second = h_limits_resolution_2.second;
 
