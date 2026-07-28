@@ -14,6 +14,7 @@ dependencies:
   - gtest=1.17.0
   - hdf5=1.14.6
   - hdf5-external-filter-plugins=0.1.0
+  - lz4-c=1.10.0
   - nlohmann_json=3.12.0
   - numpy=2.3.4
   - pre-commit=4.3.0

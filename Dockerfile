@@ -38,6 +38,8 @@ RUN cmake /opt/ffs_src \
     -DPython3_ROOT_DIR=/opt/ffs \
     -DCUDA_ARCH=all-supported \
     -DFFS_VERSION_DESCRIBE="${FFS_VERSION_DESCRIBE}" \
+    -DCMAKE_INSTALL_RPATH=/opt/ffs/lib \
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
     -DUSE_REDUCED_PRECISION=OFF
 
 RUN cmake --build .
