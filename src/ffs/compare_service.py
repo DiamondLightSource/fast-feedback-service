@@ -8,8 +8,9 @@ from typing import Any, Tuple, TypeAlias
 
 import workflows.recipe
 from pydantic import BaseModel, ValidationError
-from rich.logging import RichHandler
 from workflows.services.common_service import CommonService
+
+from ffs._common import setup_rich_logging
 
 logger = logging.getLogger(__name__)
 logger.level = logging.DEBUG
@@ -47,22 +48,6 @@ class Result(BaseModel):
     header: Any
 
 
-def _setup_rich_logging(level=logging.DEBUG):
-    """Setup a rich-based logging output. Using for debug running."""
-    rootLogger = logging.getLogger()
-
-    for handler in list(rootLogger.handlers):
-        # We want to replace the streamhandler
-        if isinstance(handler, logging.StreamHandler):
-            rootLogger.handlers.remove(handler)
-        # We also want to lower the output level, so pin this to the existing
-        handler.setLevel(rootLogger.level)
-
-    rootLogger.handlers.append(
-        RichHandler(level=level, log_time_format="[%Y-%m-%d %H:%M:%S]")
-    )
-
-
 class XRCResultCompare(CommonService):
     _service_name = "GPU Per-Image-Analysis"
     _logger_name = "spotfinder.service"
@@ -71,7 +56,7 @@ class XRCResultCompare(CommonService):
 
     def initializing(self):
         self._result: dict[int, Result] = {}
-        _setup_rich_logging()
+        setup_rich_logging()
         workflows.recipe.wrap_subscribe(
             self._transport,
             self._environment.get("queue") or DEFAULT_QUEUE_NAME,

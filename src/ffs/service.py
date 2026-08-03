@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import threading
@@ -20,10 +19,10 @@ import numpy as np
 import pydantic
 import workflows.recipe
 from pydantic import BaseModel, Field, PrivateAttr, ValidationError
-from rich.logging import RichHandler
 from workflows.services.common_service import CommonService
 
 import ffs.index
+from ffs._common import find_executable, setup_rich_logging
 from ffs.ssx_index import GPUIndexer
 
 logger = logging.getLogger(__name__)
@@ -153,34 +152,6 @@ class DetectorGeometry(BaseModel):
         return json.dumps(d, indent=4)
 
 
-def _setup_rich_logging(level=logging.DEBUG):
-    """Setup a rich-based logging output. Using for debug running."""
-    rootLogger = logging.getLogger()
-
-    for handler in list(rootLogger.handlers):
-        # We want to replace the streamhandler
-        if isinstance(handler, logging.StreamHandler):
-            rootLogger.handlers.remove(handler)
-        # We also want to lower the output level, so pin this to the existing
-        handler.setLevel(rootLogger.level)
-
-    # Check if we're in a TTY (interactive) or not (k8s container)
-    is_tty = sys.stdout.isatty()
-
-    if is_tty:
-        # Interactive mode: use RichHandler with formatting
-        rootLogger.handlers.append(
-            RichHandler(level=level, log_time_format="[%Y-%m-%d %H:%M:%S]")
-        )
-    else:
-        # Container mode: simple output for Graylog
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(level)
-        # Simple format: just the message
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        rootLogger.handlers.append(handler)
-
-
 def _find_spotfinder() -> tuple[Path, Path]:
     """
     Finds and sets the path to the spotfinder executable
@@ -190,43 +161,7 @@ def _find_spotfinder() -> tuple[Path, Path]:
     Returns:
         Path: The path to the spotfinder executable
     """
-    # Try to get the path from the environment
-    spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
-
-    if not spotfinder_path:
-        spotfinder_path = shutil.which("spotfinder")
-
-    # If environment variable is not set, check for directories
-    if spotfinder_path is None:
-        logger.warning(
-            "SPOTFINDER environment variable not set, and cannot find in PATH"
-        )
-
-        for path in {"build", "_build", "."}:
-            if Path(path).exists():
-                spotfinder_path = path
-            logger.debug("No spotfinder found at %s", path)
-
-    # This must be set, and must exist
-    if not spotfinder_path or not Path(spotfinder_path).is_file():
-        logger.fatal(
-            "Error: Could not find spotfinder executable. Please set SPOTFINDER environment variable."
-        )
-        sys.exit(1)
-
-    spotfinder_path = Path(spotfinder_path)
-
-    # Let's run this, to enumerate GPU and check it works
-    proc = subprocess.run(
-        [spotfinder_path, "--list-devices"], capture_output=True, text=True
-    )
-    if proc.returncode:
-        logger.fatal(
-            f"Error: Spotfinder at {spotfinder_path} failed to enumerate devices."
-        )
-        sys.exit(1)
-
-    logger.info(f"Using spotfinder: {spotfinder_path}")
+    spotfinder_path = find_executable("SPOTFINDER", "spotfinder")
 
     # Make sure that we have a spotfinder32 at the same location
     spotfinder_32 = spotfinder_path.parent / "spotfinder32"
@@ -292,7 +227,7 @@ class GPUPerImageAnalysis(CommonService):
     _spotfind_proc: subprocess.Popen | None = None
 
     def initializing(self):
-        _setup_rich_logging()
+        setup_rich_logging()
         # self.log.debug("Checking Node GPU capabilities")
         # TODO: Write node sanity checks
         workflows.recipe.wrap_subscribe(
