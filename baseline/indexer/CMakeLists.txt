@@ -57,6 +57,8 @@ target_link_libraries(baseline_indexer
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
+install(TARGETS baseline_indexer RUNTIME COMPONENT Runtime)
+
 # Create Python module
 nanobind_add_module(index index_module.cpp)
 target_include_directories(index PRIVATE ${CMAKE_SOURCE_DIR}/baseline/predictor)
