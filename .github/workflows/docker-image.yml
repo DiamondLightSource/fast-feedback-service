@@ -48,12 +48,15 @@ jobs:
           echo "platform-pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
           echo "version-describe=$(git describe --tags --long --first-parent)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push by digest
-        id: build
+      # Both images are built in this one job, rather than on a matrix
+      # axis, so they can shared a compiled image
+      - name: Build and push service image by digest
+        id: build-service
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: docker/build-push-action@v7
         with:
           context: .
+          target: service
           platforms: ${{ matrix.platform }}
           build-args: |
             FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
@@ -62,21 +65,46 @@ jobs:
           # list - the manifest job assembles the real tag from digests.
           outputs: type=image,name=${{ steps.prep.outputs.image-name }},push-by-digest=true,name-canonical=true,push=true
 
-      - name: Export digest
+      - name: Build and push index-integrate image by digest
+        id: build-index-integrate
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: index-integrate
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
+          outputs: type=image,name=${{ steps.prep.outputs.image-name }}-index-integrate,push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digests
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         run: |
-          mkdir -p "${{ runner.temp }}/digests"
           # Empty file whose name is the digest (minus the sha256: prefix);
-          # the merge job only needs the names.
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          # the merge job only needs the names. Kept in a per-image
+          # directory so that one image's digests can never be spliced
+          # into the other's manifest.
+          mkdir -p "${{ runner.temp }}/digests/service" "${{ runner.temp }}/digests/index-integrate"
+          service_digest="${{ steps.build-service.outputs.digest }}"
+          index_integrate_digest="${{ steps.build-index-integrate.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/service/${service_digest#sha256:}"
+          touch "${{ runner.temp }}/digests/index-integrate/${index_integrate_digest#sha256:}"
 
-      - name: Upload digest
+      - name: Upload service digest
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: actions/upload-artifact@v7
         with:
-          name: digests-${{ steps.prep.outputs.platform-pair }}
-          path: ${{ runner.temp }}/digests/*
+          name: digests-service-${{ steps.prep.outputs.platform-pair }}
+          path: ${{ runner.temp }}/digests/service/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload index-integrate digest
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-index-integrate-${{ steps.prep.outputs.platform-pair }}
+          path: ${{ runner.temp }}/digests/index-integrate/*
           if-no-files-found: error
           retention-days: 1
 
@@ -85,12 +113,22 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
 
+    # Run the two images in parallel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: service
+            suffix: ""
+          - image: index-integrate
+            suffix: "-index-integrate"
+
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-*
+          pattern: digests-${{ matrix.image }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
@@ -105,7 +143,7 @@ jobs:
       - name: Determine tags
         id: tags
         run: |
-          IMAGE_NAME="ghcr.io/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')"
+          IMAGE_NAME="ghcr.io/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')${{ matrix.suffix }}"
           echo "image-name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
 
           if [ "${{ github.event_name }}" == "pull_request" ]; then
