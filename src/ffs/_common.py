@@ -54,7 +54,7 @@ def setup_rich_logging(level=logging.DEBUG):
         rootLogger.handlers.append(handler)
 
 
-def find_executable(env_var: str, name: str) -> Path:
+def find_executable(env_var: str, name: str, probe: bool = True) -> Path:
     """
     Find one of the compiled FFS executables and check that it runs.
 
@@ -64,6 +64,9 @@ def find_executable(env_var: str, name: str) -> Path:
     Args:
         env_var: Environment variable holding an explicit path
         name:    Executable name to fall back to searching PATH for
+        probe:   Run the executable to enumerate GPU devices. Only the
+                 CUDA executables accept --list-devices; the baseline
+                 tools do not.
 
     Returns:
         Path: The path to the executable

@@ -26,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 ssx_index = "ffs.ssx_index:run"
+ffs_index_integrate = "ffs.index_integrate:run"
 
 [dependency-groups]
 dev = [
