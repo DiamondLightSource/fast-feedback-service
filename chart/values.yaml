@@ -9,6 +9,11 @@ zocalo:
   config: "/dls_sw/apps/zocalo/live/configuration.yaml"
   queue: "per_image_analysis.i24"
 
+resources:
+  cpu: 40
+  memory: 100Gi
+  gpu: 1
+
 # Additional environment variables
 extraEnv:
   # SPOTFINDER: "/opt/ffs/bin/spotfinder"
