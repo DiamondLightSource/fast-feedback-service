@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import subprocess
-import sys
 import threading
 import time
 from datetime import datetime
@@ -22,7 +21,12 @@ from pydantic import BaseModel, Field, PrivateAttr, ValidationError
 from workflows.services.common_service import CommonService
 
 import ffs.index
-from ffs._common import find_executable, setup_rich_logging
+from ffs._common import (
+    DeviceProbeFailed,
+    ExecutableNotFound,
+    find_executable,
+    setup_rich_logging,
+)
 from ffs.ssx_index import GPUIndexer
 
 logger = logging.getLogger(__name__)
@@ -160,17 +164,29 @@ def _find_spotfinder() -> tuple[Path, Path]:
 
     Returns:
         Path: The path to the spotfinder executable
+
+    Raises:
+        ExecutableNotFound: Either variant is missing.
+        DeviceProbeFailed: A variant ran but could not enumerate GPU
+            devices.
     """
     spotfinder_path = find_executable("SPOTFINDER", "spotfinder")
 
     # Make sure that we have a spotfinder32 at the same location
     spotfinder_32 = spotfinder_path.parent / "spotfinder32"
     if not spotfinder_32.is_file():
-        sys.exit("Could not find spotfinder32 variant")
-    if subprocess.run(
+        raise ExecutableNotFound("Could not find spotfinder32 variant")
+
+    proc = subprocess.run(
         [spotfinder_32, "--list-devices"], capture_output=True, text=True
-    ).returncode:
-        sys.exit("Error: Found spotfinder32 but failed to enumerate devices")
+    )
+    if proc.returncode:
+        detail = (
+            proc.stderr.strip() or proc.stdout.strip() or f"exit code {proc.returncode}"
+        )
+        raise DeviceProbeFailed(
+            f"Found spotfinder32 but it failed to enumerate devices: {detail}"
+        )
 
     return (spotfinder_path, spotfinder_32)
 

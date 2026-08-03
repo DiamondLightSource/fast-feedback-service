@@ -14,6 +14,18 @@ from rich.logging import RichHandler
 logger = logging.getLogger(__name__)
 
 
+class ExecutableError(RuntimeError):
+    """A compiled FFS executable cannot be used."""
+
+
+class ExecutableNotFound(ExecutableError):
+    """The executable is missing. A packaging or configuration fault."""
+
+
+class DeviceProbeFailed(ExecutableError):
+    """The executable runs but cannot enumerate GPU devices. A node fault."""
+
+
 def setup_rich_logging(level=logging.DEBUG):
     """Setup a rich-based logging output. Using for debug running."""
     rootLogger = logging.getLogger()
@@ -57,7 +69,8 @@ def find_executable(env_var: str, name: str) -> Path:
         Path: The path to the executable
 
     Raises:
-        SystemExit: The executable is missing, or failed to enumerate
+        ExecutableNotFound: The executable is missing.
+        DeviceProbeFailed: The executable ran but could not enumerate
             GPU devices.
     """
     path: str | Path | None = os.getenv(env_var)
@@ -66,16 +79,24 @@ def find_executable(env_var: str, name: str) -> Path:
         path = shutil.which(name)
 
     if not path or not Path(path).is_file():
-        sys.exit(
-            f"Error: Could not find {name} executable. Please set the {env_var} environment variable."
+        raise ExecutableNotFound(
+            f"Could not find {name} executable. Please set the {env_var} environment variable."
         )
 
     path = Path(path)
 
-    # Run this, to enumerate GPUs and check it works
-    proc = subprocess.run([path, "--list-devices"], capture_output=True, text=True)
-    if proc.returncode:
-        sys.exit(f"Error: {name} at {path} failed to enumerate devices.")
+    if probe:
+        # Run this, to enumerate GPUs and check it works
+        proc = subprocess.run([path, "--list-devices"], capture_output=True, text=True)
+        if proc.returncode:
+            detail = (
+                proc.stderr.strip()
+                or proc.stdout.strip()
+                or f"exit code {proc.returncode}"
+            )
+            raise DeviceProbeFailed(
+                f"{name} at {path} failed to enumerate devices: {detail}"
+            )
 
     logger.info(f"Using {name}: {path}")
 
