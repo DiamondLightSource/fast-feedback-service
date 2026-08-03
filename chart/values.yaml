@@ -8,11 +8,26 @@ beamline: "i24"
 zocalo:
   config: "/dls_sw/apps/zocalo/live/configuration.yaml"
   queue: "per_image_analysis.i24"
+  # Which service in the image this release runs
+  service: "GPUPerImageAnalysis"
 
 resources:
   cpu: 40
   memory: 100Gi
   gpu: 1
+
+# Set enabled to run a batch indexing and integration Job instead
+# of the long-running service Deployment. See values.index-integrate.yaml.
+job:
+  enabled: false
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  reflection: ""
+  experiment: ""
+  workingDirectory: ""
+  maxCell: ""
+  dmin: ""
+  extraArgs: []
 
 # Additional environment variables
 extraEnv:

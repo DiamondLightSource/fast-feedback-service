@@ -1,0 +1,41 @@
+# Batch indexing and integration of a single dataset. This renders
+# a Job instead of the service Deployment, using the index-integrate
+# image, and mounts the beamline filesystem read-write so that results
+# can be written to the working directory.
+image:
+  repository: ghcr.io/diamondlightsource/fast-feedback-service-index-integrate
+  tag: latest
+
+# The beamline whose filesystem this release mounts. The paths below
+# name it again, carrying a visit directory that changes every run.
+beamline: "i24"
+
+# Explicitly null, not {}: helm coalesces maps, so an empty map would
+# leave the service defaults in place rather than clearing them
+extraEnv: null
+
+# Inputs and output location for one run, passed to the container as
+# command line arguments.
+job:
+  enabled: true
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  reflection: "/dls/i24/data/2026/cm12345-1/processed/strong.refl"
+  experiment: "/dls/i24/data/2026/cm12345-1/processed/imported.expt"
+  workingDirectory: "/dls/i24/data/2026/cm12345-1/processed/gpu-integration"
+  maxCell: "100"
+  dmin: ""
+  extraArgs: []
+
+nodeSelector:
+  kubernetes.io/hostname: "cs05r-i24-k8s-serv-02.diamond.ac.uk"
+
+podSecurityContext:
+  # dls_softinst group
+  supplementalGroups:
+    - 37910
+    - 37948
+
+containerSecurityContext:
+  # k8s-i24-beamline user
+  runAsUser: 36145
