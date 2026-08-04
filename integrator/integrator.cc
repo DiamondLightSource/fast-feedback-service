@@ -515,8 +515,8 @@ int main(int argc, char **argv) {
             return 1;
         }
         xyzcal_px = std::vector<double>(
-            xyzcal_px_opt.value().data_handle(),
-            xyzcal_px_opt.value().data_handle() + xyzcal_px_opt.value().size());
+          xyzcal_px_opt.value().data_handle(),
+          xyzcal_px_opt.value().data_handle() + xyzcal_px_opt.value().size());
         auto phi_column_opt = reflections.column<double>("xyzcal.mm");
         if (!phi_column_opt) {
             logger.error("Column 'xyzcal.mm' not found for phi positions.");
@@ -1320,7 +1320,8 @@ int main(int argc, char **argv) {
     integrated_data.add_column("d", num_reflections, 1, d_values);
     integrated_data.add_column("xyzcal.mm", num_reflections, 3, xyzcal_mm);
     integrated_data.add_column("xyzobs.px.value", num_reflections, 3, xyzobs_px);
-    integrated_data.add_column("xyzcal.px", num_reflections, 3, xyzcal_px); // to allow mtz export
+    integrated_data.add_column(
+      "xyzcal.px", num_reflections, 3, xyzcal_px);  // to allow mtz export
     integrated_data.add_column("s1", num_reflections, 3, s1_out);
     integrated_data.add_column("id", num_reflections, 1, id_col);
     integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_out);

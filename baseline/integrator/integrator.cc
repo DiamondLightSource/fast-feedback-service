@@ -746,8 +746,8 @@ int main(int argc, char **argv) {
             return 1;
         }
         xyzcal_px = std::vector<double>(
-            xyzcal_px_opt.value().data_handle(),
-            xyzcal_px_opt.value().data_handle() + xyzcal_px_opt.value().size());
+          xyzcal_px_opt.value().data_handle(),
+          xyzcal_px_opt.value().data_handle() + xyzcal_px_opt.value().size());
         auto phi_column_opt = reflections.column<double>("xyzcal.mm");
         if (!phi_column_opt) {
             logger.error("Column 'xyzcal.mm' not found for phi positions.");
