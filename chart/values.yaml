@@ -35,6 +35,16 @@ indexIntegrate:
   dmin: ""
   extraArgs: []
 
+# Inputs for mode: process. Anything beyond these, such as the
+# spotfinder tuning, goes through extraArgs.
+process:
+  data: ""
+  experiment: ""
+  workingDirectory: ""
+  maxCell: ""
+  dmin: ""
+  extraArgs: []
+
 # Additional environment variables
 extraEnv:
   # SPOTFINDER: "/opt/ffs/bin/spotfinder"

@@ -1,0 +1,58 @@
+{{- if eq .Values.mode "process" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  backoffLimit: {{ .Values.batch.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.batch.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      name: {{ .Release.Name }}
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- end }}
+      containers:
+        - image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: Always
+          name: {{ .Release.Name }}
+          command: ["/opt/ffs/bin/ffs_process"]
+          args:
+            - "--data"
+            - {{ .Values.process.data | quote }}
+            - "--experiment"
+            - {{ .Values.process.experiment | quote }}
+            - "--working-directory"
+            - {{ .Values.process.workingDirectory | quote }}
+            - "--max-cell"
+            - {{ .Values.process.maxCell | quote }}
+            {{- if .Values.process.dmin }}
+            - "--dmin"
+            - {{ .Values.process.dmin | quote }}
+            {{- end }}
+            {{- range .Values.process.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          {{- if .Values.extraEnv }}
+          env:
+            {{- range $key, $value := .Values.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
+          {{- include "ffs.resources" . | nindent 10 }}
+          {{- if .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          {{- end }}
+          {{- include "ffs.volumeMounts" (dict "Values" .Values "readOnlyDls" false) | nindent 10 }}
+      {{- include "ffs.nodeSelector" . | nindent 6 }}
+      {{- include "ffs.tolerations" . | nindent 6 }}
+      {{- include "ffs.volumes" . | nindent 6 }}
+{{- end }}
