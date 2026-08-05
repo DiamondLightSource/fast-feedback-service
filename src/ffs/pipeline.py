@@ -33,6 +33,7 @@ class PipelineResult(BaseModel):
     dcid: Optional[int] = None
     working_directory: Path
     stages: list[StageResult]
+    strong_reflections: Optional[Path] = None
     indexed_experiments: Optional[Path] = None
     indexed_reflections: Optional[Path] = None
     integrated_reflections: Optional[Path] = None
