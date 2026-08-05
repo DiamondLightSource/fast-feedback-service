@@ -69,11 +69,14 @@ ENV INTEGRATOR=/opt/ffs/bin/integrator
 ENV LD_LIBRARY_PATH=/opt/ffs/lib:$LD_LIBRARY_PATH
 # ENV ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
 
-# Batch image: index then integrate a single dataset, then exit
-FROM runtime_base AS index-integrate
+# Batch image: run a pipeline over a single dataset, then exit. It
+# carries every batch entrypoint rather than one each, since they differ
+# only in which of the same three binaries they call. The caller selects
+# one by overriding the command.
+FROM runtime_base AS batch
 
-LABEL org.opencontainers.image.title="fast-feedback-service-index-integrate" \
-      org.opencontainers.image.description="Batch GPU indexing and integration of a single dataset"
+LABEL org.opencontainers.image.title="fast-feedback-service-batch" \
+      org.opencontainers.image.description="Batch GPU processing of a single dataset"
 
 CMD ["/opt/ffs/bin/ffs_index_integrate"]
 

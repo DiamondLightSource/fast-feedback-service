@@ -65,17 +65,17 @@ jobs:
           # list - the manifest job assembles the real tag from digests.
           outputs: type=image,name=${{ steps.prep.outputs.image-name }},push-by-digest=true,name-canonical=true,push=true
 
-      - name: Build and push index-integrate image by digest
-        id: build-index-integrate
+      - name: Build and push batch image by digest
+        id: build-batch
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: docker/build-push-action@v7
         with:
           context: .
-          target: index-integrate
+          target: batch
           platforms: ${{ matrix.platform }}
           build-args: |
             FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
-          outputs: type=image,name=${{ steps.prep.outputs.image-name }}-index-integrate,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ steps.prep.outputs.image-name }}-batch,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digests
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
@@ -84,11 +84,11 @@ jobs:
           # the merge job only needs the names. Kept in a per-image
           # directory so that one image's digests can never be spliced
           # into the other's manifest.
-          mkdir -p "${{ runner.temp }}/digests/service" "${{ runner.temp }}/digests/index-integrate"
+          mkdir -p "${{ runner.temp }}/digests/service" "${{ runner.temp }}/digests/batch"
           service_digest="${{ steps.build-service.outputs.digest }}"
-          index_integrate_digest="${{ steps.build-index-integrate.outputs.digest }}"
+          batch_digest="${{ steps.build-batch.outputs.digest }}"
           touch "${{ runner.temp }}/digests/service/${service_digest#sha256:}"
-          touch "${{ runner.temp }}/digests/index-integrate/${index_integrate_digest#sha256:}"
+          touch "${{ runner.temp }}/digests/batch/${batch_digest#sha256:}"
 
       - name: Upload service digest
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
@@ -99,12 +99,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      - name: Upload index-integrate digest
+      - name: Upload batch digest
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: actions/upload-artifact@v7
         with:
-          name: digests-index-integrate-${{ steps.prep.outputs.platform-pair }}
-          path: ${{ runner.temp }}/digests/index-integrate/*
+          name: digests-batch-${{ steps.prep.outputs.platform-pair }}
+          path: ${{ runner.temp }}/digests/batch/*
           if-no-files-found: error
           retention-days: 1
 
@@ -120,8 +120,8 @@ jobs:
         include:
           - image: service
             suffix: ""
-          - image: index-integrate
-            suffix: "-index-integrate"
+          - image: batch
+            suffix: "-batch"
 
     steps:
       - name: Download digests
