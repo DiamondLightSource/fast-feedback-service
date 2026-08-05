@@ -1,12 +1,12 @@
-{{- if .Values.job.enabled }}
+{{- if eq .Values.mode "index-integrate" }}
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ .Release.Name }}
   namespace: {{ .Release.Namespace }}
 spec:
-  backoffLimit: {{ .Values.job.backoffLimit }}
-  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  backoffLimit: {{ .Values.batch.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.batch.ttlSecondsAfterFinished }}
   template:
     metadata:
       name: {{ .Release.Name }}
@@ -25,18 +25,18 @@ spec:
           command: ["/opt/ffs/bin/ffs_index_integrate"]
           args:
             - "--reflection"
-            - {{ .Values.job.reflection | quote }}
+            - {{ .Values.indexIntegrate.reflection | quote }}
             - "--experiment"
-            - {{ .Values.job.experiment | quote }}
+            - {{ .Values.indexIntegrate.experiment | quote }}
             - "--working-directory"
-            - {{ .Values.job.workingDirectory | quote }}
+            - {{ .Values.indexIntegrate.workingDirectory | quote }}
             - "--max-cell"
-            - {{ .Values.job.maxCell | quote }}
-            {{- if .Values.job.dmin }}
+            - {{ .Values.indexIntegrate.maxCell | quote }}
+            {{- if .Values.indexIntegrate.dmin }}
             - "--dmin"
-            - {{ .Values.job.dmin | quote }}
+            - {{ .Values.indexIntegrate.dmin | quote }}
             {{- end }}
-            {{- range .Values.job.extraArgs }}
+            {{- range .Values.indexIntegrate.extraArgs }}
             - {{ . | quote }}
             {{- end }}
           {{- if .Values.extraEnv }}

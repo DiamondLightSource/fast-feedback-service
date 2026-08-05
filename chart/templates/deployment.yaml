@@ -1,4 +1,4 @@
-{{- if not .Values.job.enabled }}
+{{- if eq .Values.mode "service" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -16,12 +16,18 @@ resources:
   memory: 100Gi
   gpu: 1
 
-# Set enabled to run a batch indexing and integration Job instead
-# of the long-running service Deployment. See values.index-integrate.yaml.
-job:
-  enabled: false
+# Which workload this release runs. "service" is the long-running
+# Deployment, every other mode is a batch Job. Each has a values
+# file alongside this one.
+mode: service
+
+# Settings common to the batch Jobs, whichever mode is selected
+batch:
   backoffLimit: 0
   ttlSecondsAfterFinished: 3600
+
+# Inputs for mode: index-integrate
+indexIntegrate:
   reflection: ""
   experiment: ""
   workingDirectory: ""

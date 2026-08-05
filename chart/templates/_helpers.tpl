@@ -1,6 +1,6 @@
 {{/*
-Pod-level scheduling and storage shared by the Deployment and the Job,
-so that the two cannot drift apart.
+Pod-level scheduling and storage shared by the Deployment and the
+batch Jobs, so that they cannot drift apart.
 */}}
 
 {{- define "ffs.nodeSelector" -}}
@@ -33,8 +33,8 @@ volumes:
 {{- end }}
 
 {{/*
-Mounts for the beamline filesystem. The index-integrate job writes
-its results under /dls, so it takes the mount read-write; the service
+Mounts for the beamline filesystem. The batch Jobs write their
+results under /dls, so they take the mount read-write; the service
 only reads.
 */}}
 {{- define "ffs.volumeMounts" -}}
