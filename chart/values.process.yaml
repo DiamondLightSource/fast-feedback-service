@@ -20,10 +20,10 @@ mode: process
 # command line arguments. The experiment list is required: the image
 # carries no DIALS, so it cannot produce one from the data.
 process:
-  data: "/dls/i24/data/2026/cm12345-1/i24_1.nxs"
-  experiment: "/dls/i24/data/2026/cm12345-1/processed/imported.expt"
-  workingDirectory: "/dls/i24/data/2026/cm12345-1/processed/gpu-processing"
-  maxCell: "100"
+  data: ""
+  experiment: ""
+  workingDirectory: ""
+  maxCell: ""
   dmin: ""
   extraArgs: []
 

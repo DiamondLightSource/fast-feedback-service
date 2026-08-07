@@ -25,13 +25,13 @@ spec:
           command: ["/opt/ffs/bin/ffs_process"]
           args:
             - "--data"
-            - {{ .Values.process.data | quote }}
+            - {{ required "process.data must be set" .Values.process.data | quote }}
             - "--experiment"
-            - {{ .Values.process.experiment | quote }}
+            - {{ required "process.experiment must be set" .Values.process.experiment | quote }}
             - "--working-directory"
-            - {{ .Values.process.workingDirectory | quote }}
+            - {{ required "process.workingDirectory must be set" .Values.process.workingDirectory | quote }}
             - "--max-cell"
-            - {{ .Values.process.maxCell | quote }}
+            - {{ required "process.maxCell must be set" .Values.process.maxCell | quote }}
             {{- if .Values.process.dmin }}
             - "--dmin"
             - {{ .Values.process.dmin | quote }}

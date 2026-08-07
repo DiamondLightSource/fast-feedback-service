@@ -25,13 +25,13 @@ spec:
           command: ["/opt/ffs/bin/ffs_index_integrate"]
           args:
             - "--reflection"
-            - {{ .Values.indexIntegrate.reflection | quote }}
+            - {{ required "indexIntegrate.reflection must be set" .Values.indexIntegrate.reflection | quote }}
             - "--experiment"
-            - {{ .Values.indexIntegrate.experiment | quote }}
+            - {{ required "indexIntegrate.experiment must be set" .Values.indexIntegrate.experiment | quote }}
             - "--working-directory"
-            - {{ .Values.indexIntegrate.workingDirectory | quote }}
+            - {{ required "indexIntegrate.workingDirectory must be set" .Values.indexIntegrate.workingDirectory | quote }}
             - "--max-cell"
-            - {{ .Values.indexIntegrate.maxCell | quote }}
+            - {{ required "indexIntegrate.maxCell must be set" .Values.indexIntegrate.maxCell | quote }}
             {{- if .Values.indexIntegrate.dmin }}
             - "--dmin"
             - {{ .Values.indexIntegrate.dmin | quote }}

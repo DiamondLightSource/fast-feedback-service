@@ -41,6 +41,31 @@ helm -n i24-beamline upgrade --install ffs-test chart/ -f chart/values.test.yaml
 
 **Note:** The `-n i24-beamline` flag specifies the Kubernetes namespace. Always include this to deploy to the correct namespace.
 
+## Running a Batch Job
+
+The `mode` value selects the workload. `service` is the default and deploys the long-running Deployment. `index-integrate` and `process` each render a single Job that processes one dataset and exits.
+
+Each batch mode has a values file carrying the beamline, image and security settings. The inputs in it are deliberately blank, because they describe one run rather than a configuration:
+
+```bash
+helm -n i24-beamline upgrade --install ffs-proc-42 chart/ \
+  -f chart/values.process.yaml \
+  --set process.data=/dls/i24/data/2026/mx31234-5/i24_7.nxs \
+  --set process.experiment=/dls/i24/data/2026/mx31234-5/processed/imported.expt \
+  --set process.workingDirectory=/dls/i24/data/2026/mx31234-5/processed/gpu \
+  --set process.maxCell=100
+```
+
+Leave one out and the install fails before anything is scheduled, naming what is missing:
+
+```
+Error: execution error at (ffs/templates/process.yaml:28:17): process.data must be set
+```
+
+`index-integrate` takes the same shape with `-f chart/values.index-integrate.yaml` and `indexIntegrate.reflection` in place of `process.data`. It starts from a strong reflection table the spotfinder service has already produced, rather than from raw images.
+
+The experiment list is required either way. The image carries no DIALS, so it cannot produce one with `dials.import`.
+
 ## Checking the Deployment
 
 Verify the deployment is running:

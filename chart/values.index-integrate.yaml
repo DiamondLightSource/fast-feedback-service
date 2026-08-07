@@ -18,10 +18,10 @@ mode: index-integrate
 # Inputs and output location for one run, passed to the container as
 # command line arguments.
 indexIntegrate:
-  reflection: "/dls/i24/data/2026/cm12345-1/processed/strong.refl"
-  experiment: "/dls/i24/data/2026/cm12345-1/processed/imported.expt"
-  workingDirectory: "/dls/i24/data/2026/cm12345-1/processed/gpu-integration"
-  maxCell: "100"
+  reflection: ""
+  experiment: ""
+  workingDirectory: ""
+  maxCell: ""
   dmin: ""
   extraArgs: []
 
