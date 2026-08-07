@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from ffs.stages import PipelineRequest, build_indexer_command, build_integrator_command
 
@@ -10,15 +11,26 @@ def request_for(tmp_path):
     """Build a minimal request, with room to override fields."""
 
     def make(**overrides):
-        return PipelineRequest(
-            reflection=tmp_path / "strong.refl",
-            experiment=tmp_path / "imported.expt",
-            working_directory=tmp_path / "work",
-            max_cell=100.0,
-            **overrides,
-        )
+        params = {
+            "reflection": tmp_path / "strong.refl",
+            "experiment": tmp_path / "imported.expt",
+            "working_directory": tmp_path / "work",
+            "max_cell": 100.0,
+        }
+        return PipelineRequest(**{**params, **overrides})
 
     return make
+
+
+@pytest.mark.parametrize(
+    "field", ["reflection", "experiment", "working_directory", "output"]
+)
+def test_an_empty_path_is_rejected_rather_than_becoming_the_current_directory(
+    request_for, field
+):
+    """Path("") is Path("."), which exists, so an unset value must not reach it."""
+    with pytest.raises(ValidationError, match="must not be empty"):
+        request_for(**{field: ""})
 
 
 def test_indexer_command_omits_unset_options(request_for):

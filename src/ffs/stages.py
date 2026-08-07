@@ -11,9 +11,22 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ffs.pipeline import append_optional
+
+
+def reject_empty_path(value: object) -> object:
+    """
+    Refuse a path argument that was supplied as an empty string.
+
+    Path("") is Path("."), so an unset value would otherwise be taken
+    as the current directory and pass every existence check.
+    """
+    if isinstance(value, str) and not value.strip():
+        raise ValueError("must not be empty")
+    return value
+
 
 # Written by the indexer under fixed names, relative to the CWD
 INDEXED_EXPERIMENTS = Path("indexed.expt")
@@ -48,6 +61,10 @@ class PipelineRequest(BaseModel):
     min_bbox_depth: Optional[int] = None
     threads: Optional[int] = None
     timeout: Optional[float] = None
+
+    _no_empty_paths = field_validator(
+        "reflection", "experiment", "working_directory", "output", mode="before"
+    )(reject_empty_path)
 
 
 def build_indexer_command(executable: Path, params: PipelineRequest) -> list[str]:

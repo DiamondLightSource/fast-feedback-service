@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from pydantic import ValidationError
+from pydantic import ValidationError, field_validator
 
 from ffs._common import ExecutableError, find_executable, setup_rich_logging
 from ffs.pipeline import PipelineResult, append_optional, run_stage, write_summary
@@ -26,6 +26,7 @@ from ffs.stages import (
     add_tuning_arguments,
     build_indexer_command,
     build_integrator_command,
+    reject_empty_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,8 @@ class ProcessRequest(PipelineRequest):
     min_spot_size_3d: Optional[int] = None
     max_peak_centroid_separation: Optional[float] = None
     detector: Optional[str] = None
+
+    _no_empty_data = field_validator("data", mode="before")(reject_empty_path)
 
 
 def build_spotfinder_command(executable: Path, params: ProcessRequest) -> list[str]:

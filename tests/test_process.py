@@ -4,6 +4,7 @@ import stat
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from ffs._common import ExecutableNotFound
 from ffs.process import (
@@ -30,13 +31,13 @@ def request_for(tmp_path, inputs):
     data, experiment = inputs
 
     def make(**overrides):
-        return ProcessRequest(
-            data=data,
-            experiment=experiment,
-            working_directory=tmp_path / "work",
-            max_cell=100.0,
-            **overrides,
-        )
+        params = {
+            "data": data,
+            "experiment": experiment,
+            "working_directory": tmp_path / "work",
+            "max_cell": 100.0,
+        }
+        return ProcessRequest(**{**params, **overrides})
 
     return make
 
@@ -84,6 +85,41 @@ def working_stubs(stub_binaries):
         spotfinder_body="touch results_ffs.h5",
         indexer_body="touch indexed.expt indexed.refl",
         integrator_body="touch integrated.refl",
+    )
+
+
+def test_an_empty_data_path_is_rejected(request_for):
+    """--data is checked with exists(), and Path("") is Path("."), which exists."""
+    with pytest.raises(ValidationError, match="must not be empty"):
+        request_for(data="")
+
+
+def test_entrypoint_rejects_an_empty_data_path(tmp_path, inputs, monkeypatch):
+    """A values file that renders --data "" must not reach the spotfinder."""
+    from ffs.process import run
+
+    _, experiment = inputs
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit) as exit_info:
+        run(
+            [
+                "--data",
+                "",
+                "--experiment",
+                os.fspath(experiment),
+                "--working-directory",
+                os.fspath(tmp_path / "work"),
+                "--max-cell",
+                "100",
+            ]
+        )
+
+    assert "must not be empty" in str(exit_info.value), (
+        "the failure must name the empty value, not report a missing file named '.'"
+    )
+    assert not (tmp_path / "work").exists(), (
+        "nothing must be created for a request that never validated"
     )
 
 
