@@ -12,13 +12,20 @@ import argparse
 import logging
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Optional
 
 from pydantic import ValidationError, field_validator
 
 from ffs._common import ExecutableError, find_executable, setup_rich_logging
-from ffs.pipeline import PipelineResult, append_optional, run_stage, write_summary
+from ffs.pipeline import (
+    PipelineResult,
+    StageResult,
+    append_optional,
+    run_stage,
+    write_summary,
+)
 from ffs.stages import (
     INDEXED_EXPERIMENTS,
     INDEXED_REFLECTIONS,
@@ -108,7 +115,10 @@ def build_spotfinder_command(executable: Path, params: ProcessRequest) -> list[s
     return command
 
 
-def run_pipeline(params: ProcessRequest) -> PipelineResult:
+def run_pipeline(
+    params: ProcessRequest,
+    on_stage: Callable[[StageResult], None] | None = None,
+) -> PipelineResult:
     """
     Spotfind, index and then integrate one dataset.
 
@@ -117,7 +127,9 @@ def run_pipeline(params: ProcessRequest) -> PipelineResult:
     one. Stops at the first stage that fails.
 
     Args:
-        params: The validated request
+        params:   The validated request
+        on_stage: Called with each stage as it finishes, for callers
+                  that report progress while the pipeline runs
 
     Returns:
         PipelineResult: What ran, and what it produced
@@ -155,23 +167,25 @@ def run_pipeline(params: ProcessRequest) -> PipelineResult:
         stages=[],
     )
 
-    result.stages.append(
-        run_stage("spotfinder", build_spotfinder_command(spotfinder, params))
-    )
-    if result.stages[-1].exit_code:
+    def record(stage: str, command: list[str]) -> StageResult:
+        stage_result = run_stage(stage, command)
+        result.stages.append(stage_result)
+        if on_stage is not None:
+            on_stage(stage_result)
+        return stage_result
+
+    if record("spotfinder", build_spotfinder_command(spotfinder, params)).exit_code:
         return result
     result.strong_reflections = working_directory / STRONG_REFLECTIONS
 
-    result.stages.append(run_stage("indexer", build_indexer_command(indexer, params)))
-    if result.stages[-1].exit_code:
+    if record("indexer", build_indexer_command(indexer, params)).exit_code:
         return result
     result.indexed_experiments = working_directory / INDEXED_EXPERIMENTS
     result.indexed_reflections = working_directory / INDEXED_REFLECTIONS
 
-    result.stages.append(
-        run_stage("integrator", build_integrator_command(integrator, params, output))
-    )
-    if result.stages[-1].exit_code:
+    if record(
+        "integrator", build_integrator_command(integrator, params, output)
+    ).exit_code:
         return result
     result.integrated_reflections = output
 
