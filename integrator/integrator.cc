@@ -467,6 +467,7 @@ int main(int argc, char **argv) {
 
     mdspan_type<double> phi_column;
     mdspan_type<double> s1_vectors;
+    std::vector<double> xyzcal_px;
     std::vector<int> hkl_vectors;
     size_t num_reflections;
     predicted_data_rotation output_data;  // Define here so that members stay in scope
@@ -497,6 +498,7 @@ int main(int argc, char **argv) {
           mdspan_type<double>(output_data.s1.data(), output_data.s1.size() / 3, 3);
         phi_column = mdspan_type<double>(
           output_data.xyz_mm.data(), output_data.xyz_mm.size() / 3, 3);
+        xyzcal_px = output_data.xyz_px;
         num_reflections = output_data.enter.size();
         hkl_vectors = output_data.hkl;
     } else {
@@ -507,6 +509,14 @@ int main(int argc, char **argv) {
             return 1;
         }
         s1_vectors = *s1_vectors_opt;
+        auto xyzcal_px_opt = reflections.column<double>("xyzcal.px");
+        if (!xyzcal_px_opt) {
+            logger.error("Column 'xyzcal.px' not found in reflection data.");
+            return 1;
+        }
+        xyzcal_px = std::vector<double>(
+          xyzcal_px_opt.value().data_handle(),
+          xyzcal_px_opt.value().data_handle() + xyzcal_px_opt.value().size());
         auto phi_column_opt = reflections.column<double>("xyzcal.mm");
         if (!phi_column_opt) {
             logger.error("Column 'xyzcal.mm' not found for phi positions.");
@@ -1310,6 +1320,8 @@ int main(int argc, char **argv) {
     integrated_data.add_column("d", num_reflections, 1, d_values);
     integrated_data.add_column("xyzcal.mm", num_reflections, 3, xyzcal_mm);
     integrated_data.add_column("xyzobs.px.value", num_reflections, 3, xyzobs_px);
+    integrated_data.add_column(
+      "xyzcal.px", num_reflections, 3, xyzcal_px);  // to allow mtz export
     integrated_data.add_column("s1", num_reflections, 3, s1_out);
     integrated_data.add_column("id", num_reflections, 1, id_col);
     integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_out);
