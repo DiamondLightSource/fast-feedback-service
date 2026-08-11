@@ -1,4 +1,3 @@
-{{- if eq .Values.mode "service" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,8 +27,6 @@ spec:
         - image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           imagePullPolicy: Always
           name: {{ .Release.Name }}
-          command: ["/opt/ffs/bin/zocalo.service"]
-          args: ["-s", {{ .Values.zocalo.service | quote }}]
           env:
             - name: ZOCALO_CONFIG
               value: {{ .Values.zocalo.config | quote }}
@@ -39,13 +36,41 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-          {{- include "ffs.resources" . | nindent 10 }}
+          resources:
+            limits:
+              cpu: 40
+              memory: 100Gi
+              nvidia.com/gpu: 1
           {{- if .Values.containerSecurityContext }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           {{- end }}
-          {{- include "ffs.volumeMounts" (dict "Values" .Values "readOnlyDls" true) | nindent 10 }}
-      {{- include "ffs.nodeSelector" . | nindent 6 }}
-      {{- include "ffs.tolerations" . | nindent 6 }}
-      {{- include "ffs.volumes" . | nindent 6 }}
-{{- end }}
+          volumeMounts:
+            - mountPath: /dls/{{ .Values.beamline }}
+              name: dls
+              mountPropagation: HostToContainer
+              readOnly: true
+            - mountPath: /dls_sw/apps
+              name: dlssw
+              mountPropagation: HostToContainer
+              readOnly: true
+      nodeSelector:
+        {{- range $key, $value := .Values.nodeSelector }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+      tolerations:
+        - key: nodetype
+          value: gpu
+          effect: NoSchedule
+        - key: location
+          value: cs05r
+          effect: NoSchedule
+      volumes:
+        - name: dls
+          hostPath:
+            path: /dls/{{ .Values.beamline }}
+            type: Directory
+        - name: dlssw
+          hostPath:
+            path: /dls_sw/apps
+            type: Directory

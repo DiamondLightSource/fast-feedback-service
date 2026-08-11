@@ -8,42 +8,6 @@ beamline: "i24"
 zocalo:
   config: "/dls_sw/apps/zocalo/live/configuration.yaml"
   queue: "per_image_analysis.i24"
-  # Which service in the image this release runs
-  service: "GPUPerImageAnalysis"
-
-resources:
-  cpu: 40
-  memory: 100Gi
-  gpu: 1
-
-# Which workload this release runs. "service" is the long-running
-# Deployment, every other mode is a batch Job. Each has a values
-# file alongside this one.
-mode: service
-
-# Settings common to the batch Jobs, whichever mode is selected
-batch:
-  backoffLimit: 0
-  ttlSecondsAfterFinished: 3600
-
-# Inputs for mode: index-integrate
-indexIntegrate:
-  reflection: ""
-  experiment: ""
-  workingDirectory: ""
-  maxCell: ""
-  dmin: ""
-  extraArgs: []
-
-# Inputs for mode: process. Anything beyond these, such as the
-# spotfinder tuning, goes through extraArgs.
-process:
-  data: ""
-  experiment: ""
-  workingDirectory: ""
-  maxCell: ""
-  dmin: ""
-  extraArgs: []
 
 # Additional environment variables
 extraEnv:
