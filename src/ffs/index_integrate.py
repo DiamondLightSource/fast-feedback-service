@@ -11,7 +11,6 @@ import argparse
 import logging
 import os
 import sys
-from collections.abc import Callable
 
 from pydantic import ValidationError
 
@@ -31,10 +30,7 @@ logger = logging.getLogger(__name__)
 SUMMARY_FILENAME = "ffs_index_integrate.json"
 
 
-def run_pipeline(
-    params: PipelineRequest,
-    on_stage: Callable[[StageResult], None] | None = None,
-) -> PipelineResult:
+def run_pipeline(params: PipelineRequest) -> PipelineResult:
     """
     Index and then integrate one dataset.
 
@@ -43,9 +39,7 @@ def run_pipeline(
     integrated output. Stops at the first stage that fails.
 
     Args:
-        params:   The validated request
-        on_stage: Called with each stage as it finishes, for callers
-                  that report progress while the pipeline runs
+        params: The validated request
 
     Returns:
         PipelineResult: What ran, and what it produced
@@ -84,8 +78,6 @@ def run_pipeline(
     def record(stage: str, command: list[str]) -> StageResult:
         stage_result = run_stage(stage, command)
         result.stages.append(stage_result)
-        if on_stage is not None:
-            on_stage(stage_result)
         return stage_result
 
     if record("indexer", build_indexer_command(indexer, params)).exit_code:
