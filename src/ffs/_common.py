@@ -54,59 +54,6 @@ def setup_rich_logging(level=logging.DEBUG):
         rootLogger.handlers.append(handler)
 
 
-def create_parent_symlink(
-    destination: Path, name: str, levels: int = 2, overwrite: bool = False
-) -> bool:
-    """
-    Link to a results directory from further up the visit tree.
-
-    Processing output is buried under a per-run directory, so the
-    beamline convention gives it a short, stable name at a fixed depth
-    above: <visit>/processing/ffs points at whichever run produced it.
-    The link target is relative, so it survives the visit tree being
-    mounted at a different root.
-
-    A real file or directory already holding the name is left alone.
-    Only a symlink is replaced, and only when asked.
-
-    Args:
-        destination: Directory the link should point at
-        name:        Name of the link
-        levels:      How far above the destination to place it
-        overwrite:   Replace an existing symlink of that name
-
-    Returns:
-        bool: Whether a link was created
-
-    Raises:
-        ValueError: The destination is too shallow to sit that many
-            levels below a link, or levels is below the two the
-            relative target needs.
-    """
-    if levels < 2:
-        raise ValueError(f"levels must be at least 2, got {levels}")
-
-    destination = Path(destination)
-    parts = destination.parts
-    if len(parts) <= levels:
-        raise ValueError(f"{destination} is not {levels} levels below anything")
-
-    link = Path(*parts[:-levels]) / name
-    target = Path(*parts[-levels:])
-
-    if link.exists(follow_symlinks=False) and not (overwrite and link.is_symlink()):
-        return False
-
-    # symlink() will not replace an existing name, so build the link
-    # beside its final position and rename over it. Staging in the same
-    # directory keeps the rename within one filesystem.
-    staging = link.with_name(f".tmp.{name}")
-    staging.unlink(missing_ok=True)
-    staging.symlink_to(target)
-    staging.replace(link)
-    return True
-
-
 def find_executable(env_var: str, name: str, probe: bool = True) -> Path:
     """
     Find one of the compiled FFS executables and check that it runs.
