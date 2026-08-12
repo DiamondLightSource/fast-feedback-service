@@ -7,9 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from ffs._common import ExecutableNotFound
-from ffs.process import (
+from ffs.spotfind_index_integrate import (
     SUMMARY_FILENAME,
-    ProcessRequest,
+    SpotfindIndexIntegrateRequest,
     build_spotfinder_command,
     run_pipeline,
 )
@@ -37,7 +37,7 @@ def request_for(tmp_path, inputs):
             "working_directory": tmp_path / "work",
             "max_cell": 100.0,
         }
-        return ProcessRequest(**{**params, **overrides})
+        return SpotfindIndexIntegrateRequest(**{**params, **overrides})
 
     return make
 
@@ -96,7 +96,7 @@ def test_an_empty_data_path_is_rejected(request_for):
 
 def test_entrypoint_rejects_an_empty_data_path(tmp_path, inputs, monkeypatch):
     """A values file that renders --data "" must not reach the spotfinder."""
-    from ffs.process import run
+    from ffs.spotfind_index_integrate import run
 
     _, experiment = inputs
     monkeypatch.chdir(tmp_path)
@@ -269,7 +269,7 @@ def test_pipeline_stops_when_the_indexer_fails(
 
 
 def test_entrypoint_writes_a_summary(tmp_path, inputs, working_stubs, monkeypatch):
-    from ffs.process import run
+    from ffs.spotfind_index_integrate import run
 
     data, experiment = inputs
     monkeypatch.chdir(tmp_path)
@@ -308,7 +308,7 @@ def test_the_two_pipelines_do_not_share_a_summary_filename():
 
 
 def test_entrypoint_rejects_missing_inputs(tmp_path, monkeypatch):
-    from ffs.process import run
+    from ffs.spotfind_index_integrate import run
 
     monkeypatch.chdir(tmp_path)
 
@@ -331,7 +331,7 @@ def test_entrypoint_accepts_a_directory_of_images(
     tmp_path, inputs, working_stubs, monkeypatch
 ):
     """Live processing points the spotfinder at /dev/shm, not at a file."""
-    from ffs.process import run
+    from ffs.spotfind_index_integrate import run
 
     _, experiment = inputs
     data_directory = tmp_path / "shm"

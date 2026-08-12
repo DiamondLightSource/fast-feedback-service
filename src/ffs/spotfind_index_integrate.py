@@ -38,13 +38,13 @@ from ffs.stages import (
 
 logger = logging.getLogger(__name__)
 
-SUMMARY_FILENAME = "ffs_process.json"
+SUMMARY_FILENAME = "ffs_spotfind_index_integrate.json"
 
 # Written by the spotfinder under a fixed name, relative to the CWD
 STRONG_REFLECTIONS = Path("results_ffs.h5")
 
 
-class ProcessRequest(PipelineRequest):
+class SpotfindIndexIntegrateRequest(PipelineRequest):
     """
     Parameters for the pipeline, including the spotfinder's.
 
@@ -76,7 +76,9 @@ class ProcessRequest(PipelineRequest):
     _no_empty_data = field_validator("data", mode="before")(reject_empty_path)
 
 
-def build_spotfinder_command(executable: Path, params: ProcessRequest) -> list[str]:
+def build_spotfinder_command(
+    executable: Path, params: SpotfindIndexIntegrateRequest
+) -> list[str]:
     """
     Assemble the spotfinder command line.
 
@@ -116,7 +118,7 @@ def build_spotfinder_command(executable: Path, params: ProcessRequest) -> list[s
 
 
 def run_pipeline(
-    params: ProcessRequest,
+    params: SpotfindIndexIntegrateRequest,
     on_stage: Callable[[StageResult], None] | None = None,
 ) -> PipelineResult:
     """
@@ -290,7 +292,7 @@ def run(args=None) -> int:
     supplied = {k: v for k, v in vars(options).items() if v is not None}
 
     try:
-        params = ProcessRequest(**supplied)
+        params = SpotfindIndexIntegrateRequest(**supplied)
     except ValidationError as e:
         sys.exit(f"Invalid parameters:\n{e}")
 
