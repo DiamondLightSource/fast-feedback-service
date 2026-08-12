@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,16 @@ class PipelineResult(BaseModel):
     indexed_reflections: Optional[Path] = None
     integrated_reflections: Optional[Path] = None
 
+    # mypy rejects any decorator above a property, so the pydantic
+    # docs' own workaround applies here
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def success(self) -> bool:
+        """Whether every stage ran and none of them failed.
+
+        Serialised rather than derived on read, so that the summary
+        stands alone once it is attached to a processing record.
+        """
         return bool(self.stages) and all(s.exit_code == 0 for s in self.stages)
 
 
