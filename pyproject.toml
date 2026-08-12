@@ -40,6 +40,11 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = "tests"
 
+# Names a recipe passes to zocalo.wrap --wrap
+[project.entry-points."zocalo.wrappers"]
+"ffs_spotfind_index_integrate" = "ffs.wrapper:SpotfindIndexIntegrateWrapper"
+"ffs_index_integrate" = "ffs.wrapper:IndexIntegrateWrapper"
+
 [project.entry-points."workflows.services"]
 "GPUPerImageAnalysis" = "ffs.service:GPUPerImageAnalysis"
 "XRCResultCompare" = "compare_service:XRCResultCompare"
