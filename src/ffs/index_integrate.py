@@ -94,15 +94,18 @@ def run_pipeline(params: PipelineRequest) -> PipelineResult:
     return result
 
 
-def run(args=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     """
-    Command line entrypoint.
+    Assemble the command line.
+
+    Every field of the request model has a flag here, named by
+    replacing its underscores with hyphens. Whatever runs this as a
+    subprocess relies on that, so it is locked by a test rather than
+    left as a convention.
 
     Returns:
-        int: Zero when both stages succeeded
+        argparse.ArgumentParser: The parser the entrypoint runs
     """
-    setup_rich_logging()
-
     parser = argparse.ArgumentParser(
         description="Index and integrate a single dataset, then exit."
     )
@@ -133,8 +136,19 @@ def run(args=None) -> int:
         help="Resolution limit",
     )
     add_tuning_arguments(parser)
+    return parser
 
-    options = parser.parse_args(args)
+
+def run(args=None) -> int:
+    """
+    Command line entrypoint.
+
+    Returns:
+        int: Zero when both stages succeeded
+    """
+    setup_rich_logging()
+
+    options = build_parser().parse_args(args)
     # Drop unset options so that the model defaults apply
     supplied = {k: v for k, v in vars(options).items() if v is not None}
 

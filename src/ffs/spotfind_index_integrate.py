@@ -186,15 +186,19 @@ def run_pipeline(params: SpotfindIndexIntegrateRequest) -> PipelineResult:
     return result
 
 
-def run(args=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     """
-    Command line entrypoint, mirroring the recipe parameters.
+    Assemble the command line.
+
+    Every field of the request model has a flag here, named by
+    replacing its underscores with hyphens, except the reflection
+    table, which the spotfinder writes rather than the caller
+    supplying. Whatever runs this as a subprocess relies on that, so it
+    is locked by a test rather than left as a convention.
 
     Returns:
-        int: Zero when all three stages succeeded
+        argparse.ArgumentParser: The parser the entrypoint runs
     """
-    setup_rich_logging()
-
     parser = argparse.ArgumentParser(
         description="Spotfind, index and integrate a single dataset, then exit."
     )
@@ -278,8 +282,19 @@ def run(args=None) -> int:
         help="Detector geometry JSON, if not in the data",
     )
     add_tuning_arguments(parser)
+    return parser
 
-    options = parser.parse_args(args)
+
+def run(args=None) -> int:
+    """
+    Command line entrypoint.
+
+    Returns:
+        int: Zero when all three stages succeeded
+    """
+    setup_rich_logging()
+
+    options = build_parser().parse_args(args)
     # Drop unset options so that the model defaults apply
     supplied = {k: v for k, v in vars(options).items() if v is not None}
 
