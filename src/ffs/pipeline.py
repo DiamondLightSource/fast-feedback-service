@@ -38,8 +38,9 @@ class PipelineResult(BaseModel):
     indexed_reflections: Optional[Path] = None
     integrated_reflections: Optional[Path] = None
 
-    # mypy rejects any decorator above a property, so the pydantic
-    # docs' own workaround applies here
+    # @property is what types success as a bool attribute rather than a
+    # method; pydantic would otherwise wrap the bare function itself.
+    # mypy has no rule for a decorator above a property, hence the ignore.
     @computed_field  # type: ignore[prop-decorator]
     @property
     def success(self) -> bool:

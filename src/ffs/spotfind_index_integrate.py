@@ -163,6 +163,7 @@ def run_pipeline(params: SpotfindIndexIntegrateRequest) -> PipelineResult:
         stages=[],
     )
 
+    # Run a stage, record its result and return it.
     def record(stage: str, command: list[str]) -> StageResult:
         stage_result = run_stage(stage, command)
         result.stages.append(stage_result)
@@ -189,12 +190,6 @@ def run_pipeline(params: SpotfindIndexIntegrateRequest) -> PipelineResult:
 def build_parser() -> argparse.ArgumentParser:
     """
     Assemble the command line.
-
-    Every field of the request model has a flag here, named by
-    replacing its underscores with hyphens, except the reflection
-    table, which the spotfinder writes rather than the caller
-    supplying. Whatever runs this as a subprocess relies on that, so it
-    is locked by a test rather than left as a convention.
 
     Returns:
         argparse.ArgumentParser: The parser the entrypoint runs
@@ -295,11 +290,14 @@ def run(args=None) -> int:
     setup_rich_logging()
 
     options = build_parser().parse_args(args)
-    # Drop unset options so that the model defaults apply
-    supplied = {k: v for k, v in vars(options).items() if v is not None}
+    # argparse derives each dest from the flag, so these keys are the
+    # model's own field names. Unset ones drop out to leave the defaults.
+    supplied_fields = {
+        field: value for field, value in vars(options).items() if value is not None
+    }
 
     try:
-        params = SpotfindIndexIntegrateRequest(**supplied)
+        params = SpotfindIndexIntegrateRequest(**supplied_fields)
     except ValidationError as e:
         sys.exit(f"Invalid parameters:\n{e}")
 

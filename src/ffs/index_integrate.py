@@ -34,10 +34,6 @@ def run_pipeline(params: PipelineRequest) -> PipelineResult:
     """
     Index and then integrate one dataset.
 
-    Creates the working directory and changes into it, so that the
-    files the indexer writes under fixed names land alongside the
-    integrated output. Stops at the first stage that fails.
-
     Args:
         params: The validated request
 
@@ -75,6 +71,7 @@ def run_pipeline(params: PipelineRequest) -> PipelineResult:
         stages=[],
     )
 
+    # Run a stage, record its result and return it.
     def record(stage: str, command: list[str]) -> StageResult:
         stage_result = run_stage(stage, command)
         result.stages.append(stage_result)
@@ -97,11 +94,6 @@ def run_pipeline(params: PipelineRequest) -> PipelineResult:
 def build_parser() -> argparse.ArgumentParser:
     """
     Assemble the command line.
-
-    Every field of the request model has a flag here, named by
-    replacing its underscores with hyphens. Whatever runs this as a
-    subprocess relies on that, so it is locked by a test rather than
-    left as a convention.
 
     Returns:
         argparse.ArgumentParser: The parser the entrypoint runs
@@ -149,11 +141,14 @@ def run(args=None) -> int:
     setup_rich_logging()
 
     options = build_parser().parse_args(args)
-    # Drop unset options so that the model defaults apply
-    supplied = {k: v for k, v in vars(options).items() if v is not None}
+    # argparse derives each dest from the flag, so these keys are the
+    # model's own field names. Unset ones drop out to leave the defaults.
+    supplied_fields = {
+        field: value for field, value in vars(options).items() if value is not None
+    }
 
     try:
-        params = PipelineRequest(**supplied)
+        params = PipelineRequest(**supplied_fields)
     except ValidationError as e:
         sys.exit(f"Invalid parameters:\n{e}")
 

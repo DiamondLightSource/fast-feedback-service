@@ -1,11 +1,10 @@
 """
 The command line is what an external caller drives these pipelines by.
 
-Anything wrapping them for a facility's own scheduler builds an argv
-from the same parameter names the request models use, so the mapping
-between a model field and its flag is an interface, not an internal
-detail. These tests fail here rather than in the wrapper's repository
-when the two drift apart.
+Anything wrapping them builds an argv from the same parameter names the
+request models use, so the mapping between a model field and its flag is
+an interface, not an internal detail. These tests fail here rather than
+in the wrapper's repository when the two drift apart.
 """
 
 import pytest
