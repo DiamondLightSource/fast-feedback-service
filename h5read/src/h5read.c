@@ -88,6 +88,33 @@ static void _validate_data_type_size(hid_t datatype) {
 #endif
 }
 
+/// Match dtypes for debugging.
+///
+/// @param dtype The dtype to name
+/// @return A static string naming the dtype
+static const char *_dtype_name(h5read_dtype dtype) {
+    switch (dtype) {
+    case H5READ_DTYPE_UINT8:
+        return "uint8";
+    case H5READ_DTYPE_UINT16:
+        return "uint16";
+    case H5READ_DTYPE_UINT32:
+        return "uint32";
+    case H5READ_DTYPE_INT8:
+        return "int8";
+    case H5READ_DTYPE_INT16:
+        return "int16";
+    case H5READ_DTYPE_INT32:
+        return "int32";
+    case H5READ_DTYPE_FLOAT32:
+        return "float32";
+    case H5READ_DTYPE_FLOAT64:
+        return "float64";
+    default:
+        return "unknown";
+    }
+}
+
 h5read_dtype h5read_get_dtype(h5read_handle *obj) { return obj->dtype; }
 
 void h5read_free(h5read_handle *obj) {
@@ -326,11 +353,16 @@ h5_data_file *get_data_file(h5read_handle *obj, size_t index) {
         current->dataset = dataset;
         // Now we have a dataset, validate that it matches our expected layout
         hid_t datatype = H5Dget_type(dataset);
-        // For now, with our basic dtype approach, verify this matches
-        if (_detect_hdf5_dtype(datatype) != obj->dtype) {
+        // Every data file behind one VDS has to share a dtype, because the
+        // pixel size is fixed once for the whole handle
+        h5read_dtype file_dtype = _detect_hdf5_dtype(datatype);
+        if (file_dtype != obj->dtype) {
             fprintf(stderr,
-                    "Fatal Error: Child data set in %s does not match VDS datatype\n",
-                    current->filename);
+                    "Fatal Error: Data file %s holds %s, but this dataset is "
+                    "being read as %s\n",
+                    current->filename,
+                    _dtype_name(file_dtype),
+                    _dtype_name(obj->dtype));
             exit(1);
         }
         H5Tclose(datatype);
@@ -1064,11 +1096,44 @@ static h5read_dtype _detect_hdf5_dtype(hid_t datatype) {
     return H5READ_DTYPE_UNKNOWN;
 }
 
+/// Detect the pixel dtype from the first readable data file.
+///
+/// Files are opened and closed independently of the handles cached in
+/// get_data_file, so this is safe to call before any frame is read. A
+/// data file that does not exist yet is normal partway through a live
+/// collection, hence the tolerance of a failure to open one.
+///
+/// @param obj The h5read handle, with its VDS already unpacked
+/// @return The dtype of the first data file that could be read, or
+///         H5READ_DTYPE_UNKNOWN if none of them could be
+static h5read_dtype _dtype_from_data_files(h5read_handle *obj) {
+    for (int i = 0; i < obj->data_file_count; i++) {
+        h5_data_file *current = &(obj->data_files[i]);
+        if (access(current->filename, F_OK) != 0) {
+            continue;
+        }
+        hid_t file =
+          H5Fopen(current->filename, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ, H5P_DEFAULT);
+        if (file < 0) {
+            continue;
+        }
+        hid_t dataset = H5Dopen(file, current->dsetname, H5P_DEFAULT);
+        if (dataset < 0) {
+            H5Fclose(file);
+            continue;
+        }
+        hid_t datatype = H5Dget_type(dataset);
+        h5read_dtype dtype = _detect_hdf5_dtype(datatype);
+        H5Tclose(datatype);
+        H5Dclose(dataset);
+        H5Fclose(file);
+        return dtype;
+    }
+    return H5READ_DTYPE_UNKNOWN;
+}
+
 void setup_data(h5read_handle *obj) {
     hid_t vds_dataset = H5Dopen2(obj->master_file, "/entry/data/data", H5P_DEFAULT);
-
-    hid_t datatype = H5Dget_type(vds_dataset);
-    obj->dtype = _detect_hdf5_dtype(datatype);
 
     hid_t space = H5Dget_space(vds_dataset);
 
@@ -1083,6 +1148,15 @@ void setup_data(h5read_handle *obj) {
     obj->frames = dims[0];
     obj->slow = dims[1];
     obj->fast = dims[2];
+
+    obj->dtype = _dtype_from_data_files(obj);
+    if (obj->dtype == H5READ_DTYPE_UNKNOWN) {
+        // No data file is readable yet, so the VDS is the only description
+        // available. get_data_file rejects any file that later disagrees.
+        hid_t datatype = H5Dget_type(vds_dataset);
+        obj->dtype = _detect_hdf5_dtype(datatype);
+        H5Tclose(datatype);
+    }
 
     printf("Total data size: %ldx%ldx%ld\n", obj->frames, obj->slow, obj->fast);
     H5Dclose(vds_dataset);
