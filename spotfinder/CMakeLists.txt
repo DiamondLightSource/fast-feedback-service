@@ -76,3 +76,5 @@ target_compile_options(spotfinder32 PRIVATE "$<$<AND:$<CONFIG:Debug>,$<COMPILE_L
 target_compile_options(spotfinder32 PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:--generate-line-info>")
 
 install(TARGETS spotfinder32 RUNTIME COMPONENT Runtime)
+
+add_subdirectory(tests)
