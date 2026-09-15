@@ -20,8 +20,15 @@
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # Architectures the published container image is built for: one cubin
   # per compute capability target, so the image needs no JIT anywhere
-  # from Turing to Blackwell.
-  set(_ffs_deploy_real 75 80 86 89 90 100 103 120 121)
+  # from Volta to Blackwell.
+  #
+  # Including sm_70 pins a deployment build to CUDA 12.9. CUDA 13
+  # dropped Volta and no 12.x before 12.8 knows Blackwell, so 12.9 is
+  # the only toolkit that compiles this whole list. Moving to CUDA 13
+  # therefore means dropping sm_70 from it, which leaves the Volta
+  # nodes on cs05r with no cubin and no PTX route onto them, since
+  # cubins never cross a major revision and PTX only JITs upward.
+  set(_ffs_deploy_real 70 75 80 86 89 90 100 103 120 121)
 
   # PTX to fall back on when no cubin above matches, so the driver JITs
   # instead of refusing to load. compute_120 catches cards newer than
@@ -38,6 +45,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   set_property(CACHE CUDA_ARCH PROPERTY STRINGS
       "native"
       "all-supported"
+      "70 - Volta (V100, V100S)"
       "75 - Turing (RTX 20xx, Quadro RTX)"
       "80 - Ampere (A100)"
       "86 - Ampere (RTX 30xx, A40)"
