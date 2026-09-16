@@ -67,7 +67,7 @@ void ssx_integrate(const std::vector<Vector3d>& xyzcal_px,
     // for the sigma6 mosaicity model, sigma_b is used as the starting point for the diagonal terms
     // in the matrix
 
-    // Note model must outlive MLTarget due to reference.
+    // Note model must outlive max likelihood target due to reference.
     Simple6MosaicityParameterisation model = Simple6MosaicityParameterisation::from_sigma_d(overall_sigma_b);
     double s0_length = s0.norm();
     const std::size_t n1 = miller_indices_f.size();

@@ -1,6 +1,6 @@
 include(GoogleTest)
 
-add_executable(test_ssx_integrate test_ssx_integrate.cc)
+add_executable(test_ssx_integrate test_ssx_integrate.cpp)
 target_include_directories(test_ssx_integrate PRIVATE "${PROJECT_SOURCE_DIR}")
 target_link_libraries(test_ssx_integrate
 GTest::gtest_main dx2 Eigen3::Eigen nlohmann_json::nlohmann_json spdlog::spdlog

@@ -1,8 +1,5 @@
 #include "fisher_scoring_ml.hpp"
 
-using ParameterVector = Eigen::Matrix<double, 6, 1>;
-using FisherMatrix = Eigen::Matrix<double, 6, 6>;
-
 double FisherScoringMaximumLikelihood::log_likelihood(
     const ParameterVector& x)
 {
@@ -43,7 +40,11 @@ FisherScoringMaximumLikelihood::solve_update_equation(
     const ParameterVector& S,
     const FisherMatrix& I) const
 {
-    return I.ldlt().solve(S);
+    Eigen::LDLT<FisherMatrix> ldlt(I);
+    if (ldlt.info() != Eigen::Success) {
+        throw std::runtime_error("Failed to compute decomposition");
+    }
+    return ldlt.solve(S);
 }
 
 double FisherScoringMaximumLikelihood::line_search(
@@ -84,10 +85,9 @@ ParameterVector
 FisherScoringMaximumLikelihood::gradient_search(
     const ParameterVector& x)
 {
-    const ParameterVector g =
-        score(x);
+    const ParameterVector g = score(x);
 
-    double alpha = 1e-3;
+    double alpha = line_search(x, g);
 
     return x + alpha * g;
 }
@@ -133,7 +133,7 @@ void FisherScoringMaximumLikelihood::solve()
     ParameterVector x =
         parameters_;
 
-    for (int iter = 0;
+    for (std::size_t iter = 0;
          iter < max_iter_;
          ++iter)
     {

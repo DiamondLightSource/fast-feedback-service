@@ -12,7 +12,7 @@ using Matrix3d = Eigen::Matrix3d;
 
 using ParameterVector = Eigen::Matrix<double, 6, 1>;
 using FisherMatrix = Eigen::Matrix<double, 6, 6>;
-using DerivativeMatrices = Simple6MosaicityParameterisation::DerivativeMatrices;
+using DerivativeMatrices = std::array<Eigen::Matrix3d, 6>;
 using DerivativeVectors = std::array<Vector3d, 6>;
 using SigmaDerivativeMatrices = std::array<Matrix2d, 6>;
 using MuDerivativeVectors = std::array<Vector2d, 6>;

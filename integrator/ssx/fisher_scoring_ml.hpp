@@ -20,7 +20,7 @@ public:
     FisherScoringMaximumLikelihood(
         Simple6MosaicityParameterisation& model,
         MaximumLikelihoodTarget& target,
-        int max_iter = 1000,
+        std::size_t max_iter = 1000,
         double tolerance = 1e-7,
         double ll_tolerance = 1e-6)
         :
@@ -79,7 +79,7 @@ private:
 
     ParameterVector parameters_;
 
-    int max_iter_;
+    std::size_t max_iter_;
     double tolerance_;
     double ll_tolerance_;
 
