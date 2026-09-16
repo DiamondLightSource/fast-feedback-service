@@ -2,6 +2,7 @@
 #include <math.h>
 
 #include <Eigen/Dense>
+
 #include "../mosaicity_parameterisation.hpp"
 
 using Eigen::Matrix3d;
@@ -19,7 +20,7 @@ TEST(BaselineIntegrator, mosaicity_parameterisation) {
     EXPECT_DOUBLE_EQ(m_param.parameters()[3], 5e-3);
     EXPECT_DOUBLE_EQ(m_param.parameters()[4], 6e-3);
     EXPECT_DOUBLE_EQ(m_param.parameters()[5], 7e-3);
-    
+
     // check derivative calculation against finite differences
     Vector6d p;
     p << 0.1, 0.2, 0.3, 0.4, 0.5, 0.6;
@@ -31,7 +32,6 @@ TEST(BaselineIntegrator, mosaicity_parameterisation) {
     constexpr double eps = 1e-7;
 
     for (int i = 0; i < 6; ++i) {
-
         Vector6d p_plus = p;
         Vector6d p_minus = p;
 
@@ -39,13 +39,12 @@ TEST(BaselineIntegrator, mosaicity_parameterisation) {
         p_minus(i) -= eps;
 
         Eigen::Matrix3d numerical =
-            (Simple6MosaicityParameterisation(p_plus).sigma() -
-            Simple6MosaicityParameterisation(p_minus).sigma()) /
-            (2.0 * eps);
+          (Simple6MosaicityParameterisation(p_plus).sigma()
+           - Simple6MosaicityParameterisation(p_minus).sigma())
+          / (2.0 * eps);
 
         Eigen::Matrix3d diff = analytical[i] - numerical;
 
-        EXPECT_LT(diff.cwiseAbs().maxCoeff(), 1e-8)
-            << "Derivative " << i << " failed";
-  }
+        EXPECT_LT(diff.cwiseAbs().maxCoeff(), 1e-8) << "Derivative " << i << " failed";
+    }
 }

@@ -1,13 +1,13 @@
 #include "max_likelihood_target.hpp"
-#include "mosaicity_parameterisation.hpp"
-#include "reflection_likelihood.hpp"
 
 #include <algorithm>
 #include <ranges>
 
+#include "mosaicity_parameterisation.hpp"
+#include "reflection_likelihood.hpp"
+
 std::vector<double> MaximumLikelihoodTarget::damp_outlier_intensity_weights(
-    const std::vector<double>& values)
-{
+  const std::vector<double> &values) {
     if (values.empty()) {
         return {};
     }
@@ -23,7 +23,7 @@ std::vector<double> MaximumLikelihoodTarget::damp_outlier_intensity_weights(
     const double iqr = q3 - q1;
     const double threshold = q3 + 1.5 * iqr;
 
-    for (auto& value : damped) {
+    for (auto &value : damped) {
         if (value > threshold) {
             value = threshold;
         }
@@ -32,91 +32,83 @@ std::vector<double> MaximumLikelihoodTarget::damp_outlier_intensity_weights(
     return damped;
 }
 
-static Eigen::Matrix2d covariance_matrix_from_data(const Eigen::Vector3d& c)
-{
+static Eigen::Matrix2d covariance_matrix_from_data(const Eigen::Vector3d &c) {
     Eigen::Matrix2d result;
-    result << c[0], c[2],
-              c[2], c[1];
+    result << c[0], c[2], c[2], c[1];
     return result;
 }
 
 MaximumLikelihoodTarget::MaximumLikelihoodTarget(
-    const Simple6MosaicityParameterisation& model,
-    const Eigen::Matrix3d& A,
-    const Eigen::Vector3d& s0,
-    const std::vector<Eigen::Vector3d>& sp_list,
-    const std::vector<Eigen::Vector3d>& covariances,
-    const std::vector<double>& intensities,
-    const std::vector<Eigen::Vector3i>& miller_indices,
-    const std::vector<Eigen::Vector2d>& mobs)
-    : model_(model)
-{
+  const Simple6MosaicityParameterisation &model,
+  const Eigen::Matrix3d &A,
+  const Eigen::Vector3d &s0,
+  const std::vector<Eigen::Vector3d> &sp_list,
+  const std::vector<Eigen::Vector3d> &covariances,
+  const std::vector<double> &intensities,
+  const std::vector<Eigen::Vector3i> &miller_indices,
+  const std::vector<Eigen::Vector2d> &mobs)
+    : model_(model) {
     const std::size_t n = miller_indices.size();
 
-    if (n == 0){
-        throw std::runtime_error("No reflection data provided to maximum likelihood target");
+    if (n == 0) {
+        throw std::runtime_error(
+          "No reflection data provided to maximum likelihood target");
     }
 
-    if (sp_list.size() != n ||
-        covariances.size() != n ||
-        intensities.size() != n ||
-        mobs.size() != n) {
-        throw std::invalid_argument(
-            "Input arrays must have identical lengths");
+    if (sp_list.size() != n || covariances.size() != n || intensities.size() != n
+        || mobs.size() != n) {
+        throw std::invalid_argument("Input arrays must have identical lengths");
     }
 
     data_.reserve(n);
 
-    std::vector<double> damped_intensities = damp_outlier_intensity_weights(intensities);
+    std::vector<double> damped_intensities =
+      damp_outlier_intensity_weights(intensities);
 
     for (std::size_t i = 0; i < n; ++i) {
         Eigen::Matrix2d sobs = covariance_matrix_from_data(covariances[i]);
-        data_.emplace_back(
-            model_,
-            A,
-            s0,
-            sp_list[i],
-            miller_indices[i],
-            damped_intensities[i],
-            mobs[i],
-            sobs);
+        data_.emplace_back(model_,
+                           A,
+                           s0,
+                           sp_list[i],
+                           miller_indices[i],
+                           damped_intensities[i],
+                           mobs[i],
+                           sobs);
     }
 }
 
 MaximumLikelihoodTarget::MaximumLikelihoodTarget(
-    const Simple6MosaicityParameterisation& model,
-    const Eigen::Matrix3d& A,
-    const Eigen::Vector3d& s0,
-    const std::vector<Eigen::Vector3d>& xyzobs_px,
-    const std::vector<Eigen::Vector3d>& covariances,
-    const std::vector<double>& intensities,
-    const std::vector<Eigen::Vector3i>& miller_indices,
-    const std::vector<Eigen::Vector2d>& mobs,
-    const Panel& panel)
-    : model_(model)
-{
+  const Simple6MosaicityParameterisation &model,
+  const Eigen::Matrix3d &A,
+  const Eigen::Vector3d &s0,
+  const std::vector<Eigen::Vector3d> &xyzobs_px,
+  const std::vector<Eigen::Vector3d> &covariances,
+  const std::vector<double> &intensities,
+  const std::vector<Eigen::Vector3i> &miller_indices,
+  const std::vector<Eigen::Vector2d> &mobs,
+  const Panel &panel)
+    : model_(model) {
     const std::size_t n = miller_indices.size();
 
-    if (n == 0){
-        throw std::runtime_error("No reflection data provided to maximum likelihood target");
+    if (n == 0) {
+        throw std::runtime_error(
+          "No reflection data provided to maximum likelihood target");
     }
 
-    if (xyzobs_px.size() != n ||
-        covariances.size() != n ||
-        intensities.size() != n ||
-        mobs.size() != n) {
-        throw std::invalid_argument(
-            "Input arrays must have identical lengths");
+    if (xyzobs_px.size() != n || covariances.size() != n || intensities.size() != n
+        || mobs.size() != n) {
+        throw std::invalid_argument("Input arrays must have identical lengths");
     }
 
     const double s0_length = s0.norm();
 
     data_.reserve(n);
 
-    std::vector<double> damped_intensities = damp_outlier_intensity_weights(intensities);
+    std::vector<double> damped_intensities =
+      damp_outlier_intensity_weights(intensities);
 
     for (std::size_t i = 0; i < n; ++i) {
-
         auto [xomm, yomm] = panel.px_to_mm(xyzobs_px[i][0], xyzobs_px[i][1]);
         Vector3d sp = panel.get_lab_coord(xomm, yomm);
         sp.normalize();
@@ -124,43 +116,30 @@ MaximumLikelihoodTarget::MaximumLikelihoodTarget(
 
         Eigen::Matrix2d sobs = covariance_matrix_from_data(covariances[i]);
         data_.emplace_back(
-            model_,
-            A,
-            s0,
-            sp,
-            miller_indices[i],
-            damped_intensities[i],
-            mobs[i],
-            sobs);
+          model_, A, s0, sp, miller_indices[i], damped_intensities[i], mobs[i], sobs);
     }
 }
 
-void MaximumLikelihoodTarget::update()
-{
-    for (auto& r : data_) {
+void MaximumLikelihoodTarget::update() {
+    for (auto &r : data_) {
         r.update();
     }
 }
 
-double MaximumLikelihoodTarget::log_likelihood() const
-{
+double MaximumLikelihoodTarget::log_likelihood() const {
     double lnL = 0.0;
 
-    for (const auto& r : data_) {
+    for (const auto &r : data_) {
         lnL += r.log_likelihood();
     }
     return lnL;
 }
 
-double MaximumLikelihoodTarget::mse() const
-{
+double MaximumLikelihoodTarget::mse() const {
     double mse = 0.0;
 
-    for (const auto& r : data_) {
-
-        Eigen::Vector2d diff =
-            r.mobs() -
-            r.conditional().mean();
+    for (const auto &r : data_) {
+        Eigen::Vector2d diff = r.mobs() - r.conditional().mean();
 
         mse += diff.squaredNorm();
     }
@@ -168,26 +147,20 @@ double MaximumLikelihoodTarget::mse() const
     return mse / static_cast<double>(data_.size());
 }
 
-ParameterVector
-MaximumLikelihoodTarget::first_derivatives() const
-{
-    ParameterVector dL =
-        ParameterVector::Zero();
+ParameterVector MaximumLikelihoodTarget::first_derivatives() const {
+    ParameterVector dL = ParameterVector::Zero();
 
-    for (const auto& r : data_) {
+    for (const auto &r : data_) {
         dL += r.first_derivatives();
     }
 
     return dL;
 }
 
-FisherMatrix
-MaximumLikelihoodTarget::fisher_information() const
-{
-    FisherMatrix I =
-        FisherMatrix::Zero();
+FisherMatrix MaximumLikelihoodTarget::fisher_information() const {
+    FisherMatrix I = FisherMatrix::Zero();
 
-    for (const auto& r : data_) {
+    for (const auto &r : data_) {
         I += r.fisher_information();
     }
 

@@ -8,36 +8,37 @@ using Vector6d = Eigen::Matrix<double, 6, 1>;
 using Matrix3d = Eigen::Matrix3d;
 
 struct Mosaicity {
-  double min;
-  double mid;
-  double max;
+    double min;
+    double mid;
+    double max;
 };
 
 class Simple6MosaicityParameterisation {
-public:
+  public:
+    Simple6MosaicityParameterisation();
 
-  Simple6MosaicityParameterisation();
-  
-  explicit Simple6MosaicityParameterisation(const Vector6d& params);
-  
-  static Simple6MosaicityParameterisation from_sigma_d(double sigma_d);
+    explicit Simple6MosaicityParameterisation(const Vector6d &params);
 
-  static constexpr int num_parameters() {return 6;}
+    static Simple6MosaicityParameterisation from_sigma_d(double sigma_d);
 
-  const Vector6d& parameters() const;
+    static constexpr int num_parameters() {
+        return 6;
+    }
 
-  void set_parameters(const Vector6d& p);
+    const Vector6d &parameters() const;
 
-  Matrix3d M() const;
+    void set_parameters(const Vector6d &p);
 
-  Matrix3d sigma() const;
+    Matrix3d M() const;
 
-  DerivativeMatrices first_derivatives() const;
+    Matrix3d sigma() const;
 
-  Mosaicity mosaicity() const;
+    DerivativeMatrices first_derivatives() const;
 
-  void print_mosaicity() const;
+    Mosaicity mosaicity() const;
 
-private:
-  Vector6d parameters_;
+    void print_mosaicity() const;
+
+  private:
+    Vector6d parameters_;
 };

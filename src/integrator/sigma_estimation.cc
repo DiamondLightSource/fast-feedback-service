@@ -54,7 +54,7 @@ double squaredev_in_kabsch_space_2d(const Vector3d &xyzcal,  //px
                                     const Vector3d &s0,
                                     const Panel &panel) {
     std::array<double, 2> xycalmm = panel.px_to_mm(xyzcal[0], xyzcal[1]);
-    std::array<double, 2> xyobsmm = panel.px_to_mm(xyzobs[0], xyzobs[1]);                                               
+    std::array<double, 2> xyobsmm = panel.px_to_mm(xyzobs[0], xyzobs[1]);
     Vector3d s1cal = panel.get_lab_coord(xycalmm[0], xycalmm[1]);
     Vector3d s1obs = panel.get_lab_coord(xyobsmm[0], xyobsmm[1]);
     Vector3d e1 = s1cal.cross(s0);
@@ -70,17 +70,15 @@ double squaredev_in_kabsch_space_2d(const Vector3d &xyzcal,  //px
 }
 
 double estimate_sigmab_2d(const std::vector<Vector3d> xyzcal,
-    const std::vector<Vector3d> xyzobs,
-    const Vector3d &s0,
-    const Panel &panel
-){
+                          const std::vector<Vector3d> xyzobs,
+                          const Vector3d &s0,
+                          const Panel &panel) {
     double tot_rmsd = 0;
     int count = 0;
     for (int i = 0; i < xyzcal.size(); ++i) {
         //Eigen::Map<Vector3d> xyzcal_this(&xyzcal(i, 0));
         //Eigen::Map<Vector3d> xyzobs_this(&xyzobs(i, 0));
-        double valxy =
-          squaredev_in_kabsch_space_2d(xyzcal[i], xyzobs[i], s0, panel);
+        double valxy = squaredev_in_kabsch_space_2d(xyzcal[i], xyzobs[i], s0, panel);
         if (radians_to_degrees(std::pow(valxy, 0.5))
             < 0.1) {  // Guard against mispredictions in indexing.
             tot_rmsd += valxy;
@@ -95,8 +93,8 @@ double estimate_sigmab_2d(const std::vector<Vector3d> xyzcal,
     double rmsd_deviation_radians = std::pow(tot_rmsd / count, 0.5);
     logger.info("  σ_b (positional residual) [deg]: {:.6f} on {} reflections",
                 radians_to_degrees(rmsd_deviation_radians),
-                count);       
-    return rmsd_deviation_radians;                             
+                count);
+    return rmsd_deviation_radians;
 }
 
 std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
