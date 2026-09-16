@@ -38,7 +38,7 @@ add_library(standalone SHARED standalone.cc )
 target_link_libraries(standalone PUBLIC h5read)
 target_include_directories(standalone PUBLIC .)
 
-install(TARGETS standalone LIBRARY COMPONENT Runtime)
+install(TARGETS standalone LIBRARY DESTINATION lib COMPONENT Runtime)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     find_package(benchmark)
