@@ -17,7 +17,7 @@
 #include "integrator/sigma_estimation.hpp"
 #include "../calculations.hpp"
 #include "../fisher_scoring_ml.hpp"
-#include "../target.hpp"
+#include "../max_likelihood_target.hpp"
 
 using Matrix3d = Eigen::Matrix3d;
 using Vector2d = Eigen::Vector2d;

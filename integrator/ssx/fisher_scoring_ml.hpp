@@ -3,7 +3,7 @@
 #include <Eigen/Core>
 #include <vector>
 #include "mosaicity_parameterisation.hpp"
-#include "target.hpp"
+#include "max_likelihood_target.hpp"
 
 using ParameterVector = Eigen::Matrix<double, 6, 1>;
 using FisherMatrix = Eigen::Matrix<double, 6, 6>;

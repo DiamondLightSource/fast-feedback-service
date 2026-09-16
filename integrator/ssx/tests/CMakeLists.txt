@@ -11,6 +11,6 @@ target_include_directories(test_mosaicity_parameterisation PRIVATE "${PROJECT_SO
 target_link_libraries(test_mosaicity_parameterisation
 GTest::gtest_main dx2 Eigen3::Eigen ssx_integrator)
 
-gtest_discover_tests(test_ssx_integrate PROPERTIES LABELS baseline-integrator-tests)
+gtest_discover_tests(test_ssx_integrate PROPERTIES LABELS ssx-integrator-tests)
 
-gtest_discover_tests(test_mosaicity_parameterisation PROPERTIES LABELS baseline-integrator-tests)
+gtest_discover_tests(test_mosaicity_parameterisation PROPERTIES LABELS ssx-integrator-tests)

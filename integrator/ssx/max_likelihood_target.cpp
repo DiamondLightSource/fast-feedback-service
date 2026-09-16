@@ -1,12 +1,11 @@
-#include "target.hpp"
+#include "max_likelihood_target.hpp"
 #include "mosaicity_parameterisation.hpp"
 #include "calculations.hpp"
 
 #include <algorithm>
 #include <ranges>
 
-std::vector<double>
-MaximumLikelihoodTarget::damp_outlier_intensity_weights(
+std::vector<double> MaximumLikelihoodTarget::damp_outlier_intensity_weights(
     const std::vector<double>& values)
 {
     if (values.empty()) {
@@ -33,6 +32,14 @@ MaximumLikelihoodTarget::damp_outlier_intensity_weights(
     return damped;
 }
 
+static Eigen::Matrix2d covariance_matrix_from_data(const Eigen::Vector3d& c)
+{
+    Eigen::Matrix2d result;
+    result << c[0], c[2],
+              c[2], c[1];
+    return result;
+}
+
 MaximumLikelihoodTarget::MaximumLikelihoodTarget(
     const Simple6MosaicityParameterisation& model,
     const Eigen::Matrix3d& A,
@@ -46,19 +53,24 @@ MaximumLikelihoodTarget::MaximumLikelihoodTarget(
 {
     const std::size_t n = miller_indices.size();
 
+    if (n == 0){
+        throw std::runtime_error("No reflection data provided to maximum likelihood target");
+    }
+
+    if (sp_list.size() != n ||
+        covariances.size() != n ||
+        intensities.size() != n ||
+        mobs.size() != n) {
+        throw std::invalid_argument(
+            "Input arrays must have identical lengths");
+    }
+
     data_.reserve(n);
 
-    std::vector<double> damped_intensities =
-        damp_outlier_intensity_weights(intensities);
+    std::vector<double> damped_intensities = damp_outlier_intensity_weights(intensities);
 
     for (std::size_t i = 0; i < n; ++i) {
-        Eigen::Matrix2d sobs;
-
-        sobs << covariances[i][0],
-                covariances[i][2],
-                covariances[i][2],
-                covariances[i][1];
-
+        Eigen::Matrix2d sobs = covariance_matrix_from_data(covariances[i]);
         data_.emplace_back(
             model_,
             A,
@@ -85,31 +97,32 @@ MaximumLikelihoodTarget::MaximumLikelihoodTarget(
 {
     const std::size_t n = miller_indices.size();
 
+    if (n == 0){
+        throw std::runtime_error("No reflection data provided to maximum likelihood target");
+    }
+
+    if (xyzobs_px.size() != n ||
+        covariances.size() != n ||
+        intensities.size() != n ||
+        mobs.size() != n) {
+        throw std::invalid_argument(
+            "Input arrays must have identical lengths");
+    }
+
     const double s0_length = s0.norm();
 
     data_.reserve(n);
 
-    std::vector<double> damped_intensities =
-        damp_outlier_intensity_weights(intensities);
+    std::vector<double> damped_intensities = damp_outlier_intensity_weights(intensities);
 
     for (std::size_t i = 0; i < n; ++i) {
 
-        auto [xomm, yomm] =
-            panel.px_to_mm(xyzobs_px[i][0], xyzobs_px[i][1]);
-
-        Vector3d sp =
-            panel.get_lab_coord(xomm, yomm);
-
+        auto [xomm, yomm] = panel.px_to_mm(xyzobs_px[i][0], xyzobs_px[i][1]);
+        Vector3d sp = panel.get_lab_coord(xomm, yomm);
         sp.normalize();
         sp *= s0_length;
 
-        Eigen::Matrix2d sobs;
-
-        sobs << covariances[i][0],
-                covariances[i][2],
-                covariances[i][2],
-                covariances[i][1];
-
+        Eigen::Matrix2d sobs = covariance_matrix_from_data(covariances[i]);
         data_.emplace_back(
             model_,
             A,

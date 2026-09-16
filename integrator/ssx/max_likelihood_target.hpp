@@ -49,7 +49,7 @@ private:
 
     ReflectionList data_;
 
-    std::vector<double> damp_outlier_intensity_weights(
+    static std::vector<double> damp_outlier_intensity_weights(
         const std::vector<double>& values);
 };
 

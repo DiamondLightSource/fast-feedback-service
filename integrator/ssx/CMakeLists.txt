@@ -2,7 +2,7 @@ add_library(ssx_integrator STATIC
     fisher_scoring_ml.cc
     mosaicity_parameterisation.cpp
     ssx_integrate.cc
-    target.cc
+    max_likelihood_target.cpp
     calculations.cc
     ${CMAKE_SOURCE_DIR}/src/integrator/sigma_estimation.cc
 )
