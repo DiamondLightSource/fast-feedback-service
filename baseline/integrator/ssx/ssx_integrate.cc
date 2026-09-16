@@ -6,7 +6,6 @@
 #include <cmath>
 #include <math/math_utils.cuh>
 #include <vector>
-#include "predictor/predict.hpp"
 
 using Matrix3d = Eigen::Matrix3d;
 using Vector2d = Eigen::Vector2d;
@@ -63,9 +62,7 @@ void ssx_integrate(const std::vector<Vector3d>& xyzcal_px,
         tot_sigma_b += (covariances_f[i][0] + covariances_f[i][1])/2.0;
     }
     double sigma_b_spot = std::pow(tot_sigma_b / n, 0.5);
-    double sigma_b_rmsd = estimate_sigmab_2d(
-            xyzcal_f, xyzobs_f,s0,
-            panel);
+    double sigma_b_rmsd = estimate_sigmab_2d(xyzcal_f, xyzobs_f, s0, panel);
     double overall_sigma_b = std::pow(std::pow(sigma_b_rmsd, 2) + std::pow(sigma_b_spot,2), 0.5);
     // for the sigma6 mosaicity model, sigma_b is used as the starting point for the diagonal terms
     // in the matrix
@@ -107,7 +104,5 @@ void ssx_integrate(const std::vector<Vector3d>& xyzcal_px,
     panels.push_back(panel);
     const Detector detector(panels);
     
-    predicted_data_stills results = predict_still(sigma, s0, detector, A, crystal_symmetry_operations);
-    std::cout << "predicted " << results.hkl.size() / 3 << std::endl;
-
+    //predicted_data_stills results = predict_still(sigma, s0, detector, A, crystal_symmetry_operations);
 }

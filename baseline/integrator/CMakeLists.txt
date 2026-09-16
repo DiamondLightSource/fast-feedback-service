@@ -3,14 +3,6 @@ project(baseline_integrator CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 
-FetchContent_Declare(
-    mdspan
-    GIT_REPOSITORY https://github.com/kokkos/mdspan
-    GIT_TAG mdspan-0.6.0
-    EXCLUDE_FROM_ALL
-    FIND_PACKAGE_ARGS
-)
-FetchContent_MakeAvailable(mdspan)
 
 add_executable(baseline_integrator
     integrator.cc

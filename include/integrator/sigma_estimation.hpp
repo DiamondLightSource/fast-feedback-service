@@ -29,6 +29,11 @@ std::pair<double, double> squaredev_in_kabsch_space(const Eigen::Vector3d &xyzca
                                                     const Panel &panel,
                                                     Eigen::Vector3d m2);
 
+double estimate_sigmab_2d(const std::vector<Vector3d> xyzcal,
+    const std::vector<Vector3d> xyzobs,
+    const Vector3d &s0,
+    const Panel &panel);
+
 /**
  * @brief Estimate the total spot extent parameters (σ_b, σ_m) from a set of
  * indexed/refined reflections.

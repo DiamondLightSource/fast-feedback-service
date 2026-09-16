@@ -49,6 +49,56 @@ std::pair<double, double> squaredev_in_kabsch_space(const Vector3d &xyzcal,  //m
     return std::make_pair(varxy, varz);
 }
 
+double squaredev_in_kabsch_space_2d(const Vector3d &xyzcal,  //px
+                                    const Vector3d &xyzobs,  //px
+                                    const Vector3d &s0,
+                                    const Panel &panel) {
+    std::array<double, 2> xycalmm = panel.px_to_mm(xyzcal[0], xyzcal[1]);
+    std::array<double, 2> xyobsmm = panel.px_to_mm(xyzobs[0], xyzobs[1]);                                               
+    Vector3d s1cal = panel.get_lab_coord(xycalmm[0], xycalmm[1]);
+    Vector3d s1obs = panel.get_lab_coord(xyobsmm[0], xyobsmm[1]);
+    Vector3d e1 = s1cal.cross(s0);
+    e1.normalize();
+    Vector3d e2 = s1cal.cross(e1);
+    e2.normalize();
+    double mags1 = std::sqrt(s1cal.dot(s1cal));
+    Vector3d delta_s1 = s1obs - s1cal;
+    double eps1 = e1.dot(delta_s1) / mags1;
+    double eps2 = e2.dot(delta_s1) / mags1;
+    double varxy = (eps1 * eps1) + (eps2 * eps2);
+    return varxy;
+}
+
+double estimate_sigmab_2d(const std::vector<Vector3d> xyzcal,
+    const std::vector<Vector3d> xyzobs,
+    const Vector3d &s0,
+    const Panel &panel
+){
+    double tot_rmsd = 0;
+    int count = 0;
+    for (int i = 0; i < xyzcal.size(); ++i) {
+        //Eigen::Map<Vector3d> xyzcal_this(&xyzcal(i, 0));
+        //Eigen::Map<Vector3d> xyzobs_this(&xyzobs(i, 0));
+        double valxy =
+          squaredev_in_kabsch_space_2d(xyzcal[i], xyzobs[i], s0, panel);
+        if (radians_to_degrees(std::pow(valxy, 0.5))
+            < 0.1) {  // Guard against mispredictions in indexing.
+            tot_rmsd += valxy;
+            count++;
+        }
+    }
+    if (count == 0) {
+        throw std::runtime_error(
+          "Unable to estimate rmsd deviation, predicted reflections are too far from "
+          "observed");
+    }
+    double rmsd_deviation_radians = std::pow(tot_rmsd / count, 0.5);
+    logger.info("  σ_b (positional residual) [deg]: {:.6f} on {} reflections",
+                radians_to_degrees(rmsd_deviation_radians),
+                count);       
+    return rmsd_deviation_radians;                             
+}
+
 std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
                                           Experiment &expt,
                                           int min_bbox_depth) {
