@@ -1,4 +1,4 @@
-#include "fisher_scoring_ml.hpp"
+#include "fisher_scoring_max_likelihood.hpp"
 
 double FisherScoringMaximumLikelihood::log_likelihood(
     const ParameterVector& x)

@@ -1,5 +1,5 @@
 add_library(ssx_integrator STATIC
-    fisher_scoring_ml.cc
+    fisher_scoring_max_likelihood.cpp
     mosaicity_parameterisation.cpp
     ssx_integrate.cpp
     max_likelihood_target.cpp

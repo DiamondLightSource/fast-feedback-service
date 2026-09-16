@@ -16,7 +16,7 @@
 #include "../mosaicity_parameterisation.hpp"
 #include "integrator/sigma_estimation.hpp"
 #include "../reflection_likelihood.hpp"
-#include "../fisher_scoring_ml.hpp"
+#include "../fisher_scoring_max_likelihood.hpp"
 #include "../max_likelihood_target.hpp"
 
 using Matrix3d = Eigen::Matrix3d;
