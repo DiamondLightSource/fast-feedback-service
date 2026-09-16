@@ -13,7 +13,7 @@
 #include <iostream>
 #include <fstream>
 #include "../ssx_integrate.hpp"
-#include "../ellipsoid_parameterisation.hpp"
+#include "../mosaicity_parameterisation.hpp"
 #include "integrator/sigma_estimation.hpp"
 #include "../calculations.hpp"
 #include "../fisher_scoring_ml.hpp"

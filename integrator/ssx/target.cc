@@ -1,5 +1,5 @@
 #include "target.hpp"
-#include "ellipsoid_parameterisation.hpp"
+#include "mosaicity_parameterisation.hpp"
 #include "calculations.hpp"
 
 #include <algorithm>

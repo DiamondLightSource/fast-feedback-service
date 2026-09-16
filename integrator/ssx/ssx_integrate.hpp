@@ -1,7 +1,6 @@
 #pragma once
-//#include <cmath>
-//#include <math/math_utils.cuh>
 #include <vector>
+#include <Eigen/Dense>
 #include <dx2/detector.hpp>
 
 void ssx_integrate(const std::vector<Eigen::Vector3d>& xyzcal_px,

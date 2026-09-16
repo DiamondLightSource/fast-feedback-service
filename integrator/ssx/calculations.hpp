@@ -3,7 +3,7 @@
 #include <Eigen/Core>
 #include <array>
 
-#include "ellipsoid_parameterisation.hpp"
+#include "mosaicity_parameterisation.hpp"
 
 using Matrix3d = Eigen::Matrix3d;
 using Matrix2d = Eigen::Matrix2d;

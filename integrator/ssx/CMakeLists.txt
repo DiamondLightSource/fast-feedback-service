@@ -1,6 +1,6 @@
 add_library(ssx_integrator STATIC
     fisher_scoring_ml.cc
-    ellipsoid_parameterisation.cc
+    mosaicity_parameterisation.cpp
     ssx_integrate.cc
     target.cc
     calculations.cc

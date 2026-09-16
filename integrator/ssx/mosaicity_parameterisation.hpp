@@ -17,13 +17,14 @@ class Simple6MosaicityParameterisation {
 public:
 
   Simple6MosaicityParameterisation();
-  explicit Simple6MosaicityParameterisation(
-      const Vector6d& params);
+  
+  explicit Simple6MosaicityParameterisation(const Vector6d& params);
+  
   static Simple6MosaicityParameterisation from_sigma_d(double sigma_d);
 
-  static constexpr int num_parameters();
+  static constexpr int num_parameters() {return 6;}
 
-  const Vector6d& parameters();
+  const Vector6d& parameters() const;
 
   void set_parameters(const Vector6d& p);
 
@@ -35,8 +36,8 @@ public:
 
   Mosaicity mosaicity() const;
 
+  void print_mosaicity() const;
+
 private:
   Vector6d parameters_;
 };
-
-void print_eigen_values_and_vectors_static(const Eigen::Matrix3d& A);

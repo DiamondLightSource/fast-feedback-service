@@ -1,4 +1,4 @@
-#include "ellipsoid_parameterisation.hpp"
+#include "mosaicity_parameterisation.hpp"
 #include "integrator/sigma_estimation.hpp"
 #include "calculations.hpp"
 #include "fisher_scoring_ml.hpp"
@@ -93,7 +93,7 @@ void ssx_integrate(const std::vector<Vector3d>& xyzcal_px,
     FisherScoringMaximumLikelihood scorer = FisherScoringMaximumLikelihood(model, target);
     scorer.solve();
     Matrix3d sigma = model.sigma();
-    print_eigen_values_and_vectors_static(sigma);
+    model.print_mosaicity();
 
     // now predict
     gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");

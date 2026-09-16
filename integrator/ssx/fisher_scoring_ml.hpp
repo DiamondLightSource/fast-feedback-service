@@ -2,7 +2,7 @@
 
 #include <Eigen/Core>
 #include <vector>
-#include "ellipsoid_parameterisation.hpp"
+#include "mosaicity_parameterisation.hpp"
 #include "target.hpp"
 
 using ParameterVector = Eigen::Matrix<double, 6, 1>;
