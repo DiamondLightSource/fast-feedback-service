@@ -33,5 +33,6 @@ _build*/
 profiling/
 out/
 
-# Local notebook (notes, ncu reports, etc.)
+# Local scratch
 /notes/
+/scratchpad/
