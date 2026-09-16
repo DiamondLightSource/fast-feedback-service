@@ -10,7 +10,7 @@
 using Matrix3d = Eigen::Matrix3d;
 using Vector2d = Eigen::Vector2d;
 
-void ssx_integrate(const std::vector<Vector3d>& xyzcal_px,
+Vector3d ssx_integrate(const std::vector<Vector3d>& xyzcal_px,
     const std::vector<Vector3d>& xyzobs_px,
     const std::vector<Vector3d>& covariances,
     const std::vector<double>& intensities,
@@ -103,6 +103,11 @@ void ssx_integrate(const std::vector<Vector3d>& xyzcal_px,
     std::vector<Panel> panels;
     panels.push_back(panel);
     const Detector detector(panels);
+
+    // For now return the mosaicity values for testing
+    auto m = model.mosaicity();
+    Vector3d m_vals = {m.min, m.mid, m.max};
+    return m_vals;
     
     //predicted_data_stills results = predict_still(sigma, s0, detector, A, crystal_symmetry_operations);
 }

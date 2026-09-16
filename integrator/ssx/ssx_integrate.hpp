@@ -3,7 +3,9 @@
 #include <Eigen/Dense>
 #include <dx2/detector.hpp>
 
-void ssx_integrate(const std::vector<Eigen::Vector3d>& xyzcal_px,
+using Vector3d = Eigen::Vector3d;
+
+Vector3d ssx_integrate(const std::vector<Eigen::Vector3d>& xyzcal_px,
     const std::vector<Eigen::Vector3d>& xyzobs_px,
     const std::vector<Eigen::Vector3d>& covariances,
     const std::vector<double>& intensities,

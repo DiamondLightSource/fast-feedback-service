@@ -198,7 +198,7 @@ TEST(BaselineIntegrator, ssx_integrate_function) {
        {2214.822603879991, 2095.0326031574145, 0.5},
        {1200.8093508947643, 2138.240046372163, 0.5}});
 
-    ssx_integrate(
+    auto m = ssx_integrate(
         xyzcal_px,
         xyzobs_px,
         covariances,
@@ -209,6 +209,9 @@ TEST(BaselineIntegrator, ssx_integrate_function) {
         panel,
         A
     );
+    EXPECT_NEAR(m(0)*1e6, 80.1153, 1e-3);
+    EXPECT_NEAR(m(1)*1e6, 629.709, 1e-3);
+    EXPECT_NEAR(m(2)*1e6, 724.904, 1e-3);
     /* expected result (dials)
         Eigen Values:
     | 5.25e-07        0        0|
