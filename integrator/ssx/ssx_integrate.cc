@@ -1,6 +1,6 @@
 #include "mosaicity_parameterisation.hpp"
 #include "integrator/sigma_estimation.hpp"
-#include "calculations.hpp"
+#include "reflection_likelihood.hpp"
 #include "fisher_scoring_ml.hpp"
 #include "max_likelihood_target.hpp"
 #include <cmath>

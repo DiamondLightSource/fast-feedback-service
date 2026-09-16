@@ -1,7 +1,7 @@
 #pragma once
 
 #include <dx2/detector.hpp>
-#include "calculations.hpp"
+#include "reflection_likelihood.hpp"
 
 class MaximumLikelihoodTarget {
 public:

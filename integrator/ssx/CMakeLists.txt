@@ -3,7 +3,7 @@ add_library(ssx_integrator STATIC
     mosaicity_parameterisation.cpp
     ssx_integrate.cc
     max_likelihood_target.cpp
-    calculations.cc
+    reflection_likelihood.cpp
     ${CMAKE_SOURCE_DIR}/src/integrator/sigma_estimation.cc
 )
 

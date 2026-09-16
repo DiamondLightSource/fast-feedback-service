@@ -1,4 +1,4 @@
-#include "calculations.hpp"
+#include "reflection_likelihood.hpp"
 
 #include <cmath>
 #include <Eigen/Dense>
@@ -13,6 +13,7 @@ Matrix2d compute_dSbar(
     const Matrix3d& S,
     const Matrix3d& dS)
 {
+    // how to efficiently assert that abs(S(2,2)) > eps during refinement cycles?
     Eigen::Vector2d S12 = S.block<2,1>(0,2);
     Eigen::RowVector2d S21 = S.block<1,2>(2,0);
     double S22_inv = 1.0 / S(2,2);
@@ -29,6 +30,7 @@ Vector2d compute_dmbar(
     const Matrix3d& dS,
     double epsilon)
 {
+    // how to efficiently assert that abs(S(2,2)) > eps during refinement cycles?
     double S22_inv = 1.0 / S(2,2);
     Vector2d B = dS.block<2,1>(0,2) * (S22_inv * epsilon);
     Vector2d C = -S.block<2,1>(0,2) * (S22_inv * dS(2,2) * S22_inv * epsilon);
@@ -51,6 +53,7 @@ Eigen::Matrix3d compute_change_of_basis_operation(
     const Eigen::Vector3d& s0,
     const Eigen::Vector3d& s2)
 {
+    // add check that s0 and s2 are not nearly parallel?
     const Eigen::Vector3d e1 = s2.cross(s0).normalized();
     const Eigen::Vector3d e2 = s2.cross(e1).normalized();
     const Eigen::Vector3d e3 = s2.normalized();
@@ -83,19 +86,19 @@ DerivativeMatrices compute_dS(
 
 ConditionalDistribution::ConditionalDistribution(
     double norm_s0,
-    const Vec3& mu,
-    const Mat3& S,
+    const Vector3d& mu,
+    const Matrix3d& S,
     const DerivativeMatrices& dS)
     : mu_(mu),
       S_(S),
       dS_(dS)
 {
-    Mat2 S11 = S.block<2,2>(0,0);
+    Matrix2d S11 = S.block<2,2>(0,0);
     Eigen::Vector2d S12 = S.block<2,1>(0,2);
     Eigen::RowVector2d S21 = S.block<1,2>(2,0);
 
     double S22 = S(2,2);
-    Vec2 mu1 = mu.head<2>();
+    Vector2d mu1 = mu.head<2>();
     double mu2 = mu(2);
 
     epsilon_ = norm_s0 - mu2;
@@ -110,11 +113,11 @@ ConditionalDistribution::ConditionalDistribution(
     }
 }
 
-const Vec2& ConditionalDistribution::mean() const {
+const Vector2d& ConditionalDistribution::mean() const {
     return mubar_;
 }
 
-const Mat2& ConditionalDistribution::sigma() const {
+const Matrix2d& ConditionalDistribution::sigma() const {
     return Sbar_;
 }
 
@@ -182,9 +185,9 @@ double ReflectionLikelihood::log_likelihood() const {
     double mu2 = mu_(2);
 
     // Conditional
-    const Mat2& Sbar = conditional_.sigma();
-    Vec2 mubar = conditional_.mean();
-    Mat2 Sbar_inv = Sbar.inverse();
+    const Matrix2d& Sbar = conditional_.sigma();
+    Vector2d mubar = conditional_.mean();
+    Matrix2d Sbar_inv = Sbar.inverse();
     double Sbar_det = Sbar.determinant();
 
     // Use ctot as weights for marginal and conditional components
@@ -194,7 +197,7 @@ double ReflectionLikelihood::log_likelihood() const {
     double m_lnL = ctot_ * (std::log(S22) + S22_inv * std::pow(m_d,2));
 
     //Compute the conditional likelihood
-    Vec2 c_d = mobs_ - mubar;
+    Vector2d c_d = mobs_ - mubar;
     Eigen::Matrix2d V = sobs_ + c_d * c_d.transpose();
     double c_lnL = ctot_ * (std::log(Sbar_det) + (Sbar_inv * V).trace());
 
@@ -211,21 +214,21 @@ ParameterVector ReflectionLikelihood::first_derivatives() const {
     const double mu2 = mu_(2);
 
     // Conditional
-    const Mat2 Sbar = conditional_.sigma();
-    const Vec2 mubar = conditional_.mean();
+    const Matrix2d& Sbar = conditional_.sigma();
+    const Vector2d& mubar = conditional_.mean();
     const SigmaDerivativeMatrices& dSbar = conditional_.first_derivatives_of_sigma();
     const MuDerivativeVectors& dmbar = conditional_.first_derivatives_of_mean();
-    const Mat2 Sbar_inv = Sbar.inverse();
+    const Matrix2d Sbar_inv = Sbar.inverse();
 
     const double epsilon = norm_s0_ - mu2;
-    const Vec2 c_d = mobs_ - mubar;
+    const Vector2d c_d = mobs_ - mubar;
 
     // Use ctot as weights for marginal and conditional components
     // Precalculate a few things.
-    const Mat2 I = Mat2::Identity();
-    const Mat2 V1 = sobs_ + c_d * c_d.transpose();
-    const Mat2 V2 = I - Sbar_inv * V1;
-    const Vec2 Sbar_inv_cd = Sbar_inv * c_d;
+    const Matrix2d I = Matrix2d::Identity();
+    const Matrix2d V1 = sobs_ + c_d * c_d.transpose();
+    const Matrix2d V2 = I - Sbar_inv * V1;
+    const Vector2d Sbar_inv_cd = Sbar_inv * c_d;
 
     ParameterVector U_vec = ParameterVector::Zero();
     ParameterVector V_vec = ParameterVector::Zero();
@@ -244,10 +247,10 @@ FisherMatrix ReflectionLikelihood::fisher_information() const {
 
     const double S22 = S_(2, 2);
     const double S22_inv = 1.0 / S22;
-    const Mat2 Sbar = conditional_.sigma();
-    const SigmaDerivativeMatrices dSbar = conditional_.first_derivatives_of_sigma();
-    const MuDerivativeVectors dmbar = conditional_.first_derivatives_of_mean();
-    const Mat2 Sbar_inv = Sbar.inverse();
+    const Matrix2d& Sbar = conditional_.sigma();
+    const SigmaDerivativeMatrices& dSbar = conditional_.first_derivatives_of_sigma();
+    const MuDerivativeVectors& dmbar = conditional_.first_derivatives_of_mean();
+    const Matrix2d Sbar_inv = Sbar.inverse();
     FisherMatrix I = FisherMatrix::Zero();
 
     for (std::size_t j = 0; j < 6; ++j) {

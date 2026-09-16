@@ -1,6 +1,6 @@
 #include "max_likelihood_target.hpp"
 #include "mosaicity_parameterisation.hpp"
-#include "calculations.hpp"
+#include "reflection_likelihood.hpp"
 
 #include <algorithm>
 #include <ranges>

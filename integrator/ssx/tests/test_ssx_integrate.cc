@@ -15,7 +15,7 @@
 #include "../ssx_integrate.hpp"
 #include "../mosaicity_parameterisation.hpp"
 #include "integrator/sigma_estimation.hpp"
-#include "../calculations.hpp"
+#include "../reflection_likelihood.hpp"
 #include "../fisher_scoring_ml.hpp"
 #include "../max_likelihood_target.hpp"
 
@@ -25,7 +25,7 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using json = nlohmann::json;
 
-TEST(BaselineIntegrator, MLTarget) {
+TEST(BaselineIntegrator, target_calculations) {
     Vector3d a(
         -49.87873210808719,
         -15.20510152622829,
@@ -85,7 +85,7 @@ TEST(BaselineIntegrator, MLTarget) {
     EXPECT_NEAR(ll2, 6680.304116342, 1e-3);
 }
 
-TEST(BaselineIntegrator, ssxintegratetest) {
+TEST(BaselineIntegrator, ssx_integrate_function) {
     // Define some test data to compare to an equivalent dials.ssx_integrate job
     Panel panel(260, {1625.53,1801.84}, {0.075,0.075}, {3108,3262}, "x", "-y", 0.75, 13.2916);
     Vector3d a(
