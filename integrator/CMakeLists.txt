@@ -49,4 +49,5 @@ target_compile_options(integrator PRIVATE "$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<OR
 
 install(TARGETS integrator RUNTIME COMPONENT Runtime)
 
+add_subdirectory(ssx)
 add_subdirectory(tests)
