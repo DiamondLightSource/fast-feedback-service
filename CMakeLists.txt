@@ -18,6 +18,10 @@ project(fast-feedback-service LANGUAGES CXX VERSION ${FFS_VERSION_CMAKE})
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Static libraries here are linked into the nanobind Python modules, which
+# are shared objects; CMake only implies -fPIC for SHARED and MODULE targets.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # Precision for CUDA calculations. Double is the default because it is
 # bit-exact against the CPU baseline; the reduced-precision (single) path
 # is faster on FP64-throttled GPUs but drifts the pixel classification off
