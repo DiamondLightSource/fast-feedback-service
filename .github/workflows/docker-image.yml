@@ -22,20 +22,17 @@ jobs:
 
     runs-on: ${{ matrix.runner }}
 
+    # A pull request from a fork gets a read-only token and no access to
+    # secrets, so it cannot push to the registry. It can still build.
+    env:
+      CAN_PUSH: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push' }}
+
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: true
           # Full history and tags, so `git describe` below has something to describe
           fetch-depth: 0
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepare
         id: prep
@@ -47,23 +44,39 @@ jobs:
           platform="${{ matrix.platform }}"
           echo "platform-pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
           echo "version-describe=$(git describe --tags --long --first-parent)" >> "$GITHUB_OUTPUT"
+          # Push the per-arch image with no tag; it is addressable only by
+          # its digest. This keeps intermediate arch builds out of the tag
+          # list - the manifest job assembles the real tag from digests.
+          # Without push access the image is built and discarded, so the
+          # compile and link are still checked.
+          if [ "${CAN_PUSH}" = "true" ]; then
+            echo "build-output=type=image,name=${IMAGE_NAME},push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build-output=type=cacheonly" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Build and push by digest
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Login to GitHub Container Registry
+        if: env.CAN_PUSH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
         id: build
-        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
           build-args: |
             FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
-          # Push the per-arch image with no tag; it is addressable only by
-          # its digest. This keeps intermediate arch builds out of the tag
-          # list - the manifest job assembles the real tag from digests.
-          outputs: type=image,name=${{ steps.prep.outputs.image-name }},push-by-digest=true,name-canonical=true,push=true
+          outputs: ${{ steps.prep.outputs.build-output }}
 
       - name: Export digest
-        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        if: env.CAN_PUSH == 'true'
         run: |
           mkdir -p "${{ runner.temp }}/digests"
           # Empty file whose name is the digest (minus the sha256: prefix);
@@ -72,7 +85,7 @@ jobs:
           touch "${{ runner.temp }}/digests/${digest#sha256:}"
 
       - name: Upload digest
-        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        if: env.CAN_PUSH == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: digests-${{ steps.prep.outputs.platform-pair }}
@@ -81,7 +94,8 @@ jobs:
           retention-days: 1
 
   create-manifest:
-    if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+    # Nothing to assemble when the build could not push its per-arch digests.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push' }}
     needs: build
     runs-on: ubuntu-latest
 
