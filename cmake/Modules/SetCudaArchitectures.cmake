@@ -21,6 +21,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # Architectures the published container image is built for: one cubin
   # per compute capability target, so the image needs no JIT anywhere
   # from Turing to Blackwell.
+  #
+  # Volta is deliberately absent. sm_70 needs CUDA 12.9, the last
+  # version that will support Volta all the way up to Blackwell, any
+  # newer version has since dropped Volta support and would prevent
+  # further updates.
   set(_ffs_deploy_real 75 80 86 89 90 100 103 120 121)
 
   # PTX to fall back on when no cubin above matches, so the driver JITs
