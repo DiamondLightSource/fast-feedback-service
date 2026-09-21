@@ -9,7 +9,10 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <Eigen/Core>
+#include <cassert>
 #include <algorithm>
+#include <iostream>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -21,6 +24,213 @@ using Eigen::Matrix3d;
 using Eigen::Matrix4d;
 using Eigen::MatrixXd;
 using Eigen::Vector3d;
+/*
+class MillerIndexRange {
+public:
+  using Index = Eigen::Vector3i;
+
+  class Iterator {
+  public:
+    using iterator_category = std::input_iterator_tag;
+    using value_type = Index;
+    using difference_type = std::ptrdiff_t;
+    using pointer = const Index*;
+    using reference = const Index&;
+
+    Iterator(Index begin, Index end, bool is_end = false)
+        : begin_(begin),
+          end_(end),
+          current_(begin),
+          at_end_(is_end)
+    {
+      if (!is_end) {
+        for (int i = 0; i < 3; ++i) {
+          if (begin_[i] >= end_[i]) {
+            at_end_ = true;
+            break;
+          }
+        }
+      }
+    }
+
+    reference operator*() const {
+      return current_;
+    }
+
+    pointer operator->() const {
+      return &current_;
+    }
+
+    Iterator& operator++() {
+      for (int i = 2; i >= 0; --i) {
+        ++current_[i];
+
+        if (current_[i] < end_[i]) {
+          return *this;
+        }
+
+        current_[i] = begin_[i];
+      }
+
+      at_end_ = true;
+      return *this;
+    }
+
+    bool operator==(const Iterator& other) const {
+      return at_end_ == other.at_end_;
+    }
+
+    bool operator!=(const Iterator& other) const {
+      return !(*this == other);
+    }
+
+  private:
+    Index begin_;
+    Index end_;
+    Index current_;
+    bool at_end_;
+  };
+
+  MillerIndexRange(Index begin, Index end)
+      : begin_(std::move(begin)),
+        end_(std::move(end)) {}
+
+  Iterator begin() const {
+    return Iterator(begin_, end_);
+  }
+
+  Iterator end() const {
+    return Iterator(begin_, end_, true);
+  }
+
+private:
+  Index begin_;
+  Index end_;
+};
+*/
+
+class NestedLoop3D {
+public:
+  using Index = Eigen::Vector3i;
+
+  NestedLoop3D() = default;
+
+  // Open interval [0,end)
+  explicit NestedLoop3D(const Index& end)
+      : begin_(Index::Zero()),
+        end_(end),
+        current_(begin_) {
+    initialise();
+  }
+
+  // Open interval [begin,end)
+  NestedLoop3D(const Index& begin, const Index& end)
+      : begin_(begin),
+        end_(end),
+        current_(begin_) {
+    initialise();
+  }
+
+  bool over() const noexcept {
+    return over_;
+  }
+
+  const Index& operator()() const noexcept {
+    return current_;
+  }
+
+  const Index& current() const noexcept {
+    return current_;
+  }
+
+  const Index& begin() const noexcept {
+    return begin_;
+  }
+
+  const Index& end() const noexcept {
+    return end_;
+  }
+
+  bool incr() {
+    for (int i = 2; i >= 0; --i) {
+      ++current_[i];
+
+      if (current_[i] < end_[i]) {
+        return true;
+      }
+
+      current_[i] = begin_[i];
+    }
+
+    over_ = true;
+    return false;
+  }
+
+private:
+  void initialise() {
+    over_ = true;
+
+    for (int i = 0; i < 3; ++i) {
+      assert(end_[i] >= begin_[i]);
+
+      if (end_[i] > begin_[i]) {
+        over_ = false;
+      }
+    }
+  }
+
+  Index begin_ = Index::Zero();
+  Index end_ = Index::Zero();
+  Index current_ = Index::Zero();
+  bool over_ = true;
+};
+
+class IndexGenerator {
+  public: IndexGenerator(
+    gemmi::UnitCell &cell,
+    gemmi::GroupOps &crystal_symmetry_operations,
+                        const double dmin)
+      : cell(cell), crystal_symmetry_operations(crystal_symmetry_operations), dmin(dmin) {
+        Eigen::Vector3i reference_h_max(67, 67, 67);
+        loop_ = NestedLoop3D(-reference_h_max, reference_h_max + Eigen::Vector3i::Ones());
+      }
+
+  // use unit cell to calc max miller indices
+
+  std::optional<Eigen::Vector3i> next(){
+    std::array<int, 3> result;
+    while (!loop_.over()) {
+      const Eigen::Vector3i& h = loop_();
+      loop_.incr();
+      if (h.isZero()) {
+        continue;
+      }
+      result = std::array<int, 3>{h[0], h[1], h[2]};
+      if (cell.calculate_d(result) >= dmin){
+        if (!crystal_symmetry_operations.is_systematically_absent(result)) {
+          return h;
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  std::vector<Eigen::Vector3i> to_array(){
+    std::vector<Eigen::Vector3i> result;
+    result.reserve(500000);
+
+    while (auto h = next()) {
+      result.push_back(*h);
+    }
+    return result;
+  }
+
+  private:
+    gemmi::UnitCell cell;
+    gemmi::GroupOps crystal_symmetry_operations;
+    double dmin;
+    NestedLoop3D loop_;
+};
 
 /**
  * A class to generate miller indices for rotational experiments using the Reeke algorithm.

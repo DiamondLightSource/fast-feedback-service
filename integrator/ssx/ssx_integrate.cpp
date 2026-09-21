@@ -94,6 +94,9 @@ Vector3d ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
     gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
     gemmi::GroupOps crystal_symmetry_operations = space_group.operations();
 
+    /*IndexGenerator g(crystal_symmetry_operations, 2.0);
+    std::vector<Vector3i> indices = g.to_array();*/
+
     // Make detector from panel
     std::vector<Panel> panels;
     panels.push_back(panel);
@@ -103,6 +106,7 @@ Vector3d ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
     auto m = model.mosaicity();
     Vector3d m_vals = {m.min, m.mid, m.max};
     return m_vals;
+
 
     //predicted_data_stills results = predict_still(sigma, s0, detector, A, crystal_symmetry_operations);
 }
