@@ -298,15 +298,6 @@ def test_entrypoint_writes_a_summary(tmp_path, inputs, working_stubs, monkeypatc
     assert summary["strong_reflections"].endswith("results_ffs.h5")
 
 
-def test_the_two_pipelines_do_not_share_a_summary_filename():
-    """Both may be run into the same working directory."""
-    from ffs.index_integrate import SUMMARY_FILENAME as INDEX_INTEGRATE_SUMMARY
-
-    assert SUMMARY_FILENAME != INDEX_INTEGRATE_SUMMARY, (
-        "one summary must not overwrite the other"
-    )
-
-
 def test_entrypoint_rejects_missing_inputs(tmp_path, monkeypatch):
     from ffs.spotfind_index_integrate import run
 

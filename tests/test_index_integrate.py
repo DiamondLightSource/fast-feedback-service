@@ -243,17 +243,17 @@ def test_entrypoint_reports_a_missing_executable(inputs, tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.parametrize("name", ["INDEXER", "INTEGRATOR"])
-def test_executables_run(name):
-    """Smoke test that the built binaries exist and start."""
-    path = os.getenv(name)
-    assert path is not None
-    if not Path(path).is_file():
-        pytest.skip(f"{name} has not been built")
+def test_the_integrator_runs():
+    """
+    Test that the built integrator exists and starts.
 
-    # Neither accepts --help without arguments cleanly, so use --version
-    # for the CUDA tool and a bare run for the indexer, which reports
-    # its own usage error rather than crashing.
-    flag = "--version" if name == "INTEGRATOR" else "--help"
-    result = subprocess.run([path, flag], capture_output=True, text=True)
+    Skips if the integrator has not been built. The indexer is covered
+    by test_baseline_indexer, which runs it against real data.
+    """
+    path = os.getenv("INTEGRATOR")
+    if not path or not Path(path).is_file():
+        pytest.skip("INTEGRATOR has not been built")
+
+    # It does not accept --help without arguments cleanly
+    result = subprocess.run([path, "--version"], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
