@@ -160,11 +160,14 @@ else
     rm -rf "${SRC:?}/${BUILD_DIR:?}"
 fi
 
+# nvcc defaults its host compiler to the g++ on PATH, and nothing
+# activates the build environment, so it is named alongside the others
 print_status "Configuring"
 "$cmake" -S "$SRC" -B "$SRC/$BUILD_DIR" -G Ninja \
     -DCMAKE_PREFIX_PATH="$BUILD_ENV" \
     -DCMAKE_C_COMPILER="$BUILD_ENV/bin/cc" \
     -DCMAKE_CXX_COMPILER="$BUILD_ENV/bin/c++" \
+    -DCMAKE_CUDA_HOST_COMPILER="$BUILD_ENV/bin/c++" \
     -DCMAKE_MAKE_PROGRAM="$BUILD_ENV/bin/ninja" \
     -DPython3_ROOT_DIR="$BUILD_ENV" \
     -DCMAKE_BUILD_TYPE=Release \
