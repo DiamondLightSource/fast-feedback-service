@@ -10,6 +10,8 @@
  */
 #include "thread_count.hpp"
 
+#include <cerrno>
+#include <system_error>
 #include <thread>
 
 #include "ffs_logger.hpp"
@@ -27,12 +29,26 @@ uint32_t auto_select_thread_count() {
         if (count > 0) {
             return static_cast<uint32_t>(count);
         }
+        logger.warn(
+          "sched_getaffinity reported an empty CPU set; pass --threads to set the "
+          "count explicitly");
     } else {
-        logger.debug("sched_getaffinity failed, falling back to hardware_concurrency");
+        std::error_code ec(errno, std::generic_category());
+        logger.warn(
+          "sched_getaffinity failed ({}, errno {}); the thread count will ignore any "
+          "cpuset confining this process",
+          ec.message(),
+          ec.value());
     }
 #endif
     uint32_t hw_threads = std::thread::hardware_concurrency();
     logger.debug("std::thread::hardware_concurrency() reports {} thread(s)",
                  hw_threads);
-    return hw_threads ? hw_threads : 1;
+    if (hw_threads == 0) {
+        logger.warn(
+          "Could not determine the CPU count; running single-threaded. Pass "
+          "--threads to set the count explicitly");
+        return 1;
+    }
+    return hw_threads;
 }
