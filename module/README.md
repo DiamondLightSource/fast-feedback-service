@@ -37,6 +37,8 @@ OPTIONS:
                            clean. Faster while iterating, but a cached
                            path from an earlier prefix will be believed.
     -m, --modulefile       Also install the modulefile
+    -l, --latest           Point the latest symlink at this module.
+                           Requires --modulefile.
     -h, --help             Show this help
 ```
 
@@ -56,6 +58,27 @@ is how to stage a build somewhere private before publishing:
 
 The modulefile is only written with `--modulefile`, since that is the
 step that makes a build visible to everyone on the machine.
+
+## latest
+
+`--latest` points `fast-feedback-service/latest` at the module just
+published, so a recipe can say
+
+```
+module load fast-feedback-service/latest
+```
+
+and follow releases without being edited. It is a symlink in the module
+directory beside the versions, which is how the rest of `/dls_sw/apps`
+does it, and it is a separate flag from `--modulefile` because it
+changes what existing recipes resolve to rather than adding something
+new alongside them.
+
+The symlinked file carries the concrete version in its `module-whatis`,
+so `module whatis fast-feedback-service/latest` names the release that
+is actually loaded rather than the word latest. Nothing sorts version
+names: latest means the last one deployed with the flag, so publishing
+an older release with `--latest` moves the pointer backwards.
 
 ## The modulefile
 

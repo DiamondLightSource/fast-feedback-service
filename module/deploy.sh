@@ -29,6 +29,7 @@ BUILD_DIR=build_module
 RECREATE=false
 INCREMENTAL=false
 INSTALL_MODULEFILE=false
+INSTALL_LATEST=false
 JOBS=
 
 # Function to show usage
@@ -54,15 +55,19 @@ OPTIONS:
                            clean. Faster while iterating, but a cached
                            path from an earlier prefix will be believed.
     -m, --modulefile       Also install the modulefile
+    -l, --latest           Point the latest symlink at this module.
+                           Requires --modulefile.
     -h, --help             Show this help
 
 The modulefile is only written with --modulefile, since that makes the
-build visible to everyone on the machine.
+build visible to everyone on the machine. The latest symlink is what an
+unversioned recipe resolves to, so moving it is a second deliberate step.
 
 EXAMPLES:
     $0                                       # build .../ffs/dev, no module
     $0 --modulefile                          # ... and publish it as dev
     $0 --version 1.0.0 --modulefile          # a release
+    $0 --version 1.0.0 --modulefile --latest # ... that recipes pick up
     $0 --prefix /scratch/ffs --module-root /scratch/modules --modulefile
 EOF
 }
@@ -81,6 +86,7 @@ while [[ $# -gt 0 ]]; do
         -r|--recreate)   RECREATE=true; shift ;;
         -i|--incremental) INCREMENTAL=true; shift ;;
         -m|--modulefile) INSTALL_MODULEFILE=true; shift ;;
+        -l|--latest)     INSTALL_LATEST=true; shift ;;
         -h|--help)       show_help; exit 0 ;;
         *) print_error "Unknown option: $1"; show_help; exit 1 ;;
     esac
@@ -94,6 +100,12 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Validate arguments
 [[ -f "$SRC/CMakeLists.txt" ]] || { print_error "Not a source tree: $SRC"; exit 1; }
 command -v mamba >/dev/null || { print_error "mamba not found"; exit 1; }
+if [[ "$INSTALL_LATEST" == "true" ]]; then
+    [[ "$INSTALL_MODULEFILE" == "true" ]] \
+        || { print_error "--latest needs --modulefile"; exit 1; }
+    [[ "$MODULE_NAME" != "latest" ]] \
+        || { print_error "The module is already named latest"; exit 1; }
+fi
 
 # Show what will be built and where
 print_status "Source:      $SRC"
@@ -105,6 +117,9 @@ if [[ "$INSTALL_MODULEFILE" == "true" ]]; then
     print_status "Module:      $MODULE_ROOT/$MODULE_NAME"
 else
     print_status "Module:      not published (pass --modulefile)"
+fi
+if [[ "$INSTALL_LATEST" == "true" ]]; then
+    print_status "Latest:      $MODULE_ROOT/latest -> $MODULE_NAME"
 fi
 
 # Create the build and runtime environments
@@ -257,6 +272,13 @@ if [[ "$INSTALL_MODULEFILE" == "true" ]]; then
     cp "$staged" "$target"
     chmod 664 "$target"
     print_success "Published fast-feedback-service/$MODULE_NAME -> $PREFIX"
+
+    if [[ "$INSTALL_LATEST" == "true" ]]; then
+        # A relative target keeps the link valid if the module root moves.
+        # -n stops an existing link being followed into its own target.
+        ln -sfn "$MODULE_NAME" "$MODULE_ROOT/latest"
+        print_success "fast-feedback-service/latest -> $MODULE_NAME"
+    fi
 else
     print_status "Skipping the modulefile. Rerun with --modulefile to publish it."
 fi
