@@ -1,0 +1,32 @@
+#%Module1.0#####################################################################
+##
+## fast-feedback-service modulefile
+##
+## Template. deploy.sh substitutes the @...@ placeholders and installs the
+## result; it is not usable until they are replaced.
+##
+proc ModulesHelp { } {
+  puts stderr "Loads the GPU fast feedback service: the spotfinder, indexer"
+  puts stderr "and integrator binaries, and the batch pipeline entry points."
+}
+module-whatis "GPU fast feedback service @FFS_VERSION@ (cuda @CUDA_MODULE@)"
+
+set prefix @PREFIX@
+set cuda   @CUDA_MODULE@
+
+# The binaries link libcudart from the toolkit rather than from the
+# install tree, so the toolkit has to be loaded and has to be the one
+# they were built against.
+if { ! [is-loaded $cuda] } { module load $cuda }
+prereq $cuda
+
+# Two versions on PATH at once resolve to whichever prepended last.
+conflict fast-feedback-service
+
+# The runtime conda environment is the install tree. The CUDA binaries
+# find their libraries through an install RPATH into lib and lib64, and
+# the Python entry points find their interpreter through a shebang into
+# bin.
+prepend-path PATH $prefix/bin
+prepend-path LD_LIBRARY_PATH $prefix/lib
+prepend-path LD_LIBRARY_PATH $prefix/lib64

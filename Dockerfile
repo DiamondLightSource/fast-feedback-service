@@ -51,22 +51,41 @@ RUN cmake --install .
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="$(cat /opt/build/FFS_VERSION)" \
     /opt/ffs/bin/pip3 install --root-user-action=ignore /opt/ffs_src
 
-# Now copy this into an isolated runtime container
-FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
+# Now copy this into an isolated runtime container. Both published
+# images derive from this stage, so the build above runs once.
+FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04 AS runtime_base
 
-LABEL org.opencontainers.image.title="fast-feedback-service" \
-      org.opencontainers.image.description="GPU-accelerated fast-feedback X-ray diffraction analysis service" \
-      org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitrios Vlachos <dimitrios.vlachos@diamond.ac.uk>, James Beilsten-Edmands <james.beilsten-edmands@diamond.ac.uk>" \
+LABEL org.opencontainers.image.authors="Nicholas Devenish <nicholas.devenish@diamond.ac.uk>, Dimitrios Vlachos <dimitrios.vlachos@diamond.ac.uk>, James Beilsten-Edmands <james.beilsten-edmands@diamond.ac.uk>" \
       org.opencontainers.image.source="https://github.com/DiamondLightSource/fast-feedback-service" \
       org.opencontainers.image.licenses="BSD-3-Clause"
 
 COPY --from=build /opt/ffs /opt/ffs
 
-# Set environment variables for the service
+# Set environment variables for the executables
 ENV PATH=/opt/ffs/bin:$PATH
 ENV SPOTFINDER=/opt/ffs/bin/spotfinder
+ENV INDEXER=/opt/ffs/bin/baseline_indexer
+ENV INTEGRATOR=/opt/ffs/bin/integrator
 ENV LD_LIBRARY_PATH=/opt/ffs/lib:$LD_LIBRARY_PATH
 # ENV ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
+
+# Batch image: run a pipeline over a single dataset, then exit. It
+# carries every batch entrypoint rather than one each, since they differ
+# only in which of the same three binaries they call. The caller selects
+# one by overriding the command.
+FROM runtime_base AS batch
+
+LABEL org.opencontainers.image.title="fast-feedback-service-batch" \
+      org.opencontainers.image.description="Batch GPU processing of a single dataset"
+
+CMD ["/opt/ffs/bin/ffs_index_integrate"]
+
+# Long-running service image. Kept last so that a bare `docker build`
+# with no --target still produces the service image.
+FROM runtime_base AS service
+
+LABEL org.opencontainers.image.title="fast-feedback-service" \
+      org.opencontainers.image.description="GPU-accelerated fast-feedback X-ray diffraction analysis service"
 
 # # Start the service
 CMD ["/opt/ffs/bin/zocalo.service", "-s", "GPUPerImageAnalysis"]

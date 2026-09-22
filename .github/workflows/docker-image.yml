@@ -50,9 +50,11 @@ jobs:
           # Without push access the image is built and discarded, so the
           # compile and link are still checked.
           if [ "${CAN_PUSH}" = "true" ]; then
-            echo "build-output=type=image,name=${IMAGE_NAME},push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
+            echo "build-output-service=type=image,name=${IMAGE_NAME},push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
+            echo "build-output-batch=type=image,name=${IMAGE_NAME}-batch,push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
           else
-            echo "build-output=type=cacheonly" >> "$GITHUB_OUTPUT"
+            echo "build-output-service=type=cacheonly" >> "$GITHUB_OUTPUT"
+            echo "build-output-batch=type=cacheonly" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Docker Buildx
@@ -65,31 +67,58 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image
-        id: build
+      # Both images are built in this one job, rather than on a matrix
+      # axis, so they can shared a compiled image
+      - name: Build service image
+        id: build-service
         uses: docker/build-push-action@v7
         with:
           context: .
+          target: service
           platforms: ${{ matrix.platform }}
           build-args: |
             FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
-          outputs: ${{ steps.prep.outputs.build-output }}
+          outputs: ${{ steps.prep.outputs.build-output-service }}
 
-      - name: Export digest
+      - name: Build batch image
+        id: build-batch
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: batch
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
+          outputs: ${{ steps.prep.outputs.build-output-batch }}
+
+      - name: Export digests
         if: env.CAN_PUSH == 'true'
         run: |
-          mkdir -p "${{ runner.temp }}/digests"
           # Empty file whose name is the digest (minus the sha256: prefix);
-          # the merge job only needs the names.
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          # the merge job only needs the names. Kept in a per-image
+          # directory so that one image's digests can never be spliced
+          # into the other's manifest.
+          mkdir -p "${{ runner.temp }}/digests/service" "${{ runner.temp }}/digests/batch"
+          service_digest="${{ steps.build-service.outputs.digest }}"
+          batch_digest="${{ steps.build-batch.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/service/${service_digest#sha256:}"
+          touch "${{ runner.temp }}/digests/batch/${batch_digest#sha256:}"
 
-      - name: Upload digest
+      - name: Upload service digest
         if: env.CAN_PUSH == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: digests-${{ steps.prep.outputs.platform-pair }}
-          path: ${{ runner.temp }}/digests/*
+          name: digests-service-${{ steps.prep.outputs.platform-pair }}
+          path: ${{ runner.temp }}/digests/service/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload batch digest
+        if: env.CAN_PUSH == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-batch-${{ steps.prep.outputs.platform-pair }}
+          path: ${{ runner.temp }}/digests/batch/*
           if-no-files-found: error
           retention-days: 1
 
@@ -99,12 +128,22 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
 
+    # Run the two images in parallel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: service
+            suffix: ""
+          - image: batch
+            suffix: "-batch"
+
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-*
+          pattern: digests-${{ matrix.image }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
@@ -119,7 +158,7 @@ jobs:
       - name: Determine tags
         id: tags
         run: |
-          IMAGE_NAME="ghcr.io/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')"
+          IMAGE_NAME="ghcr.io/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')${{ matrix.suffix }}"
           echo "image-name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
 
           if [ "${{ github.event_name }}" == "pull_request" ]; then
