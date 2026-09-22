@@ -14,7 +14,7 @@ TEST(BaselineIntegrator, ssx_index_generator) {
 
     gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P 21 3");
     gemmi::GroupOps crystal_symmetry_operations = space_group.operations();
-    gemmi::UnitCell cell = {96.410, 96.410, 96.410, 90.000, 90.000, 90.000};
+    gemmi::UnitCell cell = {96.41, 96.41, 96.41, 90.0, 90.0, 90.0};
 
     auto t1 = std::chrono::system_clock::now();
     IndexGenerator g(cell, crystal_symmetry_operations, 1.58);
@@ -24,7 +24,5 @@ TEST(BaselineIntegrator, ssx_index_generator) {
     std::cout << indices.size() << std::endl;
     std::chrono::duration<double> elapsed_time = t2 - t1;
     std::cout << "Total time for index generator: " << elapsed_time.count() << std::endl;
-
-    //throw std::runtime_error("TEST");
-
+    ASSERT_EQ(indices.size(), 951424);
 }

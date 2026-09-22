@@ -191,7 +191,7 @@ class IndexGenerator {
     gemmi::GroupOps &crystal_symmetry_operations,
                         const double dmin)
       : cell(cell), crystal_symmetry_operations(crystal_symmetry_operations), dmin(dmin) {
-        Eigen::Vector3i reference_h_max(67, 67, 67);
+        Eigen::Vector3i reference_h_max(67, 67, 67); //FIXME
         loop_ = NestedLoop3D(-reference_h_max, reference_h_max + Eigen::Vector3i::Ones());
       }
 
