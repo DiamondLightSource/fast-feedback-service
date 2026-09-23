@@ -141,7 +141,30 @@ void ConnectedComponents::generate_boxes(const uint32_t width,
 
 #pragma region Reflection3D
 bool Reflection3D::is_signal_preferred(const Signal &candidate,
-                                       const Signal &current) const {
+                                       const Signal &current,
+                                       double com_x,
+                                       double com_y,
+                                       double com_z) const {
+    // Prefer the pixel nearest the centroid (see
+    // https://github.com/dials/dials/issues/3014). Squared distance
+    // avoids a per-pixel sqrt; the 0.5 offset puts the position at the
+    // pixel centre, as in center_of_mass().
+    auto distance_sq = [](const Signal &s, double cx, double cy, double cz) {
+        double dx = (static_cast<double>(s.x) + 0.5) - cx;
+        double dy = (static_cast<double>(s.y) + 0.5) - cy;
+        double dz = (static_cast<double>(s.z.value()) + 0.5) - cz;
+        return dx * dx + dy * dy + dz * dz;
+    };
+
+    double candidate_dist_sq = distance_sq(candidate, com_x, com_y, com_z);
+    double current_dist_sq = distance_sq(current, com_x, com_y, com_z);
+    if (candidate_dist_sq != current_dist_sq) {
+        return candidate_dist_sq < current_dist_sq;
+    }
+
+    // Equal distance to the centroid: fall back to a deterministic z, y, x
+    // ordering so the choice is independent of signal iteration order.
+
     // Compare z-coordinates first
     if (candidate.z.value() != current.z.value()) {
         return candidate.z.value() < current.z.value();
