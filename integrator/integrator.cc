@@ -676,6 +676,20 @@ int main(int argc, char **argv) {
     Reader &reader = *reader_ptr;
     auto reader_mutex = std::mutex{};
 
+    // The raw-chunk path decompresses at the compile-time pixel_t width, so a
+    // file of a different element width unshuffles against the wrong stride and
+    // decodes to scrambled bits. h5read's own type check covers only the
+    // whole-image path.
+    const size_t bytes_per_pixel = reader.get_element_size();
+    if (bytes_per_pixel != sizeof(pixel_t)) {
+        logger.error(
+          "Image data is {}-bit, but this integrator is built for "
+          "{}-bit pixels.",
+          bytes_per_pixel * 8,
+          sizeof(pixel_t) * 8);
+        return 1;
+    }
+
     uint32_t num_images_in_file = reader.get_number_of_images();
     uint32_t height = reader.image_shape()[0];
     uint32_t width = reader.image_shape()[1];
@@ -916,13 +930,23 @@ int main(int argc, char **argv) {
 
                 // Decompress the data into pinned host memory
                 switch (reader.get_raw_chunk_compression()) {
-                case Reader::ChunkCompression::BITSHUFFLE_LZ4:
-                    bshuf_decompress_lz4(buffer.data() + 12,
-                                         host_image.get(),
-                                         width * height,
-                                         sizeof(pixel_t),
-                                         0);
+                case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
+                    // Returns the bytes consumed from the chunk, or a
+                    // negative error code.
+                    const int64_t consumed = bshuf_decompress_lz4(buffer.data() + 12,
+                                                                  host_image.get(),
+                                                                  width * height,
+                                                                  sizeof(pixel_t),
+                                                                  0);
+                    if (consumed < 0) {
+                        throw std::runtime_error(
+                          fmt::format("bitshuffle/LZ4 decompression of image {} "
+                                      "failed with code {}",
+                                      image_num,
+                                      consumed));
+                    }
                     break;
+                }
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
                     decompress_byte_offset<pixel_t>(
                       buffer,
