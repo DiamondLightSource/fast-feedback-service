@@ -34,6 +34,7 @@
 #include "kernels/masking.cuh"
 #include "shmread.hpp"
 #include "standalone.h"
+#include "thread_count.hpp"
 #include "version.hpp"
 
 using namespace std::chrono_literals;
@@ -301,8 +302,8 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
         }
 
         add_argument("-n", "--threads")
-          .help("Number of parallel reader threads")
-          .default_value<uint32_t>(1)
+          .help("Number of parallel reader threads (default: 0 = auto-select)")
+          .default_value<uint32_t>(0)
           .metavar("NUM")
           .scan<'u', uint32_t>();
 
@@ -426,10 +427,11 @@ int main(int argc, char **argv) {
     fmt::print("Algorithm: {}\n",
                fmt::styled(dispersion_algorithm.algorithm_str, fmt_green));
 
+    // Get threading parameters (0 = auto-select)
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
-    if (num_cpu_threads < 1) {
-        fmt::print("Error: Thread count must be >= 1\n");
-        std::exit(1);
+    if (num_cpu_threads == 0) {
+        num_cpu_threads = auto_select_thread_count();
+        logger.info("Auto-selected {} CPU threads", num_cpu_threads);
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
     uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
