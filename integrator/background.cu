@@ -2,7 +2,7 @@
  * @file background.cu
  * @brief GPU per-reflection background reduction kernel.
  *
- * Reduces the per-reflection background histograms accumulated by the Kabsch
+ * Reduces the per-reflection background slot tables accumulated by the Kabsch
  * kernel into background estimates, using the single-source model code in
  * integrator/background.hpp so the result matches the baseline CPU path.
  */
@@ -24,11 +24,17 @@ constexpr int BACKGROUND_REDUCE_THREADS = 128;
 
 /**
  * @brief One thread per reflection: evaluate the background model over that
- *        reflection's histogram slice.
+ *        reflection's slot table.
+ *
+ * The slot table is compacted and sorted IN PLACE: occupied slots move to the
+ * front of the reflection's range and are ordered ascending by value, which is
+ * the precondition SparseHistogramView carries. The table is consumed once, so
+ * rewriting it costs nothing and avoids per-thread scratch, keeping register
+ * and local-memory use independent of NUM_BG_SLOTS.
  */
 __global__ void background_reduce_kernel(BackgroundModel model,
-                                         const uint32_t *d_background_hist,
-                                         const uint32_t *d_background_overflow,
+                                         unsigned long long *d_background_slots,
+                                         const uint32_t *d_background_spill,
                                          size_t num_reflections,
                                          double *d_background_mean,
                                          double *d_background_sum_value,
@@ -37,15 +43,42 @@ __global__ void background_reduce_kernel(BackgroundModel model,
     const size_t r = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (r >= num_reflections) return;
 
-    ConstHistogramView view;
-    view.bins = d_background_hist + r * NUM_BG_BINS;
-    view.num_bins = NUM_BG_BINS;
-    view.overflow_count = d_background_overflow[r];
+    unsigned long long *slots = d_background_slots + r * NUM_BG_SLOTS;
 
-    // Total background pixel count for this reflection (num_pixels.background).
-    uint32_t total = view.overflow_count;
-    for (int v = 0; v < NUM_BG_BINS; ++v) {
-        total += view.bins[v];
+    // Compact. The write index never runs ahead of the read index, so no
+    // unread slot is overwritten.
+    int num_entries = 0;
+    for (int i = 0; i < NUM_BG_SLOTS; ++i) {
+        const unsigned long long entry = slots[i];
+        if (entry != 0ull) {
+            slots[num_entries++] = entry;
+        }
+    }
+
+    // Insertion sort ascending by value. Occupancy is a median of 2-3 entries
+    // and a measured worst case in the tens, so this beats anything with a
+    // better asymptotic bound.
+    for (int i = 1; i < num_entries; ++i) {
+        const unsigned long long entry = slots[i];
+        const uint32_t value = background_entry_value(entry);
+        int j = i - 1;
+        while (j >= 0 && background_entry_value(slots[j]) > value) {
+            slots[j + 1] = slots[j];
+            --j;
+        }
+        slots[j + 1] = entry;
+    }
+
+    SparseHistogramView view;
+    view.entries = slots;
+    view.num_entries = num_entries;
+    view.spill_count = d_background_spill[r];
+
+    // Total background pixel count for this reflection (num_pixels.background),
+    // spilled pixels included: they were measured, just not recorded.
+    uint32_t total = view.spill_count;
+    for (int i = 0; i < num_entries; ++i) {
+        total += background_entry_count(slots[i]);
     }
     d_background_count[r] = total;
 
@@ -55,9 +88,6 @@ __global__ void background_reduce_kernel(BackgroundModel model,
         res = tukey_constant_background(view);
         break;
     case BackgroundModel::Glm:
-        // Robust-Poisson GLM constant background (DIALS "glm constant3d"),
-        // evaluated over the same histogram view by the shared single-source
-        // core so the device matches the baseline.
         res = glm_constant_background(view);
         break;
     }
@@ -68,8 +98,8 @@ __global__ void background_reduce_kernel(BackgroundModel model,
 }
 
 void compute_background(BackgroundModel model,
-                        const uint32_t *d_background_hist,
-                        const uint32_t *d_background_overflow,
+                        unsigned long long *d_background_slots,
+                        const uint32_t *d_background_spill,
                         size_t num_reflections,
                         double *d_background_mean,
                         double *d_background_sum_value,
@@ -83,8 +113,8 @@ void compute_background(BackgroundModel model,
 
     background_reduce_kernel<<<blocks, BACKGROUND_REDUCE_THREADS, 0, stream>>>(
       model,
-      d_background_hist,
-      d_background_overflow,
+      d_background_slots,
+      d_background_spill,
       num_reflections,
       d_background_mean,
       d_background_sum_value,

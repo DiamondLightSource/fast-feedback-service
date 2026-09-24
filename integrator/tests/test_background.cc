@@ -13,88 +13,13 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <utility>
 #include <vector>
 
 #include "integrator/background.hpp"
-
-namespace {
-
-// Build a ConstHistogramView over a caller-owned bins vector.
-ConstHistogramView view_of(const std::vector<uint32_t> &bins, uint32_t overflow = 0) {
-    return ConstHistogramView{bins.data(), static_cast<int>(bins.size()), overflow};
-}
-
-}  // namespace
-
-// Empty histogram -> no estimate.
-TEST(TukeyConstantBackground, EmptyHistogramFails) {
-    std::vector<uint32_t> bins(16, 0);
-    BackgroundResult r = tukey_constant_background(view_of(bins));
-    EXPECT_FALSE(r.valid);
-}
-
-// Uniform spread 0..9 (one pixel each). No outliers: mean is the plain mean.
-TEST(TukeyConstantBackground, UniformNoOutliers) {
-    std::vector<uint32_t> bins(64, 0);
-    for (int v = 0; v <= 9; ++v) bins[v] = 1;  // N = 10
-
-    BackgroundResult r = tukey_constant_background(view_of(bins));
-    ASSERT_TRUE(r.valid);
-    // q1=2, q3=6, IQR=4 -> bounds [-4, 12]; all of 0..9 survive.
-    EXPECT_DOUBLE_EQ(r.weighted_sum, 45.0);
-    EXPECT_DOUBLE_EQ(r.mean, 4.5);
-}
-
-// A single extreme value in the overflow tail must be rejected and must not
-// perturb the mean of the inliers.
-TEST(TukeyConstantBackground, HighOutlierInOverflowRejected) {
-    std::vector<uint32_t> bins(64, 0);
-    for (int v = 0; v <= 9; ++v) bins[v] = 1;
-    const uint32_t overflow = 1;  // one pixel with value >= num_bins (e.g. 5000)
-
-    BackgroundResult r = tukey_constant_background(view_of(bins, overflow));
-    ASSERT_TRUE(r.valid);
-    // Inliers remain 0..9; the overflow pixel is above the upper bound.
-    EXPECT_DOUBLE_EQ(r.weighted_sum, 45.0);
-    EXPECT_DOUBLE_EQ(r.mean, 4.5);
-}
-
-// A high outlier inside the binned range (not overflow) is also rejected.
-TEST(TukeyConstantBackground, HighOutlierInBinsRejected) {
-    std::vector<uint32_t> bins(64, 0);
-    for (int v = 0; v <= 9; ++v) bins[v] = 1;
-    bins[60] = 1;  // clear outlier well above q3 + 1.5*IQR
-
-    BackgroundResult r = tukey_constant_background(view_of(bins));
-    ASSERT_TRUE(r.valid);
-    EXPECT_DOUBLE_EQ(r.weighted_sum, 45.0);
-    EXPECT_DOUBLE_EQ(r.mean, 4.5);
-}
-
-// A spread wide enough that the upper fence q3 + 1.5*IQR reaches num_bins is
-// rejected, even with an empty overflow tail: the range is too small to apply
-// Tukey rejection, so the estimate is untrustworthy.
-TEST(TukeyConstantBackground, UpperFenceReachingOverflowRejected) {
-    std::vector<uint32_t> bins(16, 1);  // N = 16, uniform 0..15, no overflow
-
-    BackgroundResult r = tukey_constant_background(view_of(bins));
-    // q1=3, q3=11, IQR=8 -> upper_bound = 23 >= num_bins (16).
-    EXPECT_FALSE(r.valid);
-}
-
-// Degenerate: every pixel has the same value -> IQR 0, mean equals that value.
-TEST(TukeyConstantBackground, ConstantValue) {
-    std::vector<uint32_t> bins(64, 0);
-    bins[5] = 20;  // N = 20, all value 5
-
-    BackgroundResult r = tukey_constant_background(view_of(bins));
-    ASSERT_TRUE(r.valid);
-    EXPECT_DOUBLE_EQ(r.mean, 5.0);
-    EXPECT_DOUBLE_EQ(r.weighted_sum, 100.0);
-}
 
 // Reference means below were produced by DIALS RobustPoissonMean (tuning
 // constant 1.345, tolerance 1e-3, max_iter 100) on the expanded histograms.
@@ -128,245 +53,6 @@ TEST(TukeyConstantBackground, ConstantValue) {
 namespace {
 constexpr double kDialsParityTol = 1e-6;
 }  // namespace
-
-// Tight low background, no outliers. N = 24, median seed 4.
-TEST(GlmConstantBackground, TightLowNoOutliers) {
-    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
-    bins[2] = 3;
-    bins[3] = 5;
-    bins[4] = 8;
-    bins[5] = 6;
-    bins[6] = 2;
-
-    BackgroundResult r = glm_constant_background(view_of(bins));
-    ASSERT_TRUE(r.valid);
-    EXPECT_NEAR(r.mean, 4.0304431542, kDialsParityTol);
-    // GLM models every background pixel at mean, so the reported sum is mean*N.
-    EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 24.0);
-}
-
-// A single in-range high outlier is down-weighted, not rejected outright, so it
-// shifts the mean slightly. N = 25, median seed 4.
-TEST(GlmConstantBackground, HighOutlierDownweighted) {
-    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
-    bins[2] = 3;
-    bins[3] = 5;
-    bins[4] = 8;
-    bins[5] = 6;
-    bins[6] = 2;
-    bins[120] = 1;
-
-    BackgroundResult r = glm_constant_background(view_of(bins));
-    ASSERT_TRUE(r.valid);
-    EXPECT_NEAR(r.mean, 4.1427022177, kDialsParityTol);
-    // Sum is mean over all N background pixels, the outlier included.
-    EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 25.0);
-}
-
-// Overflow-tail pixels clip to the Huber bound regardless of their
-// exact value, so the overflow count alone reproduces the DIALS result.
-// N = 89 (4 overflow).
-TEST(GlmConstantBackground, OverflowTailClips) {
-    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
-    bins[2] = 10;
-    bins[3] = 20;
-    bins[4] = 30;
-    bins[5] = 25;
-
-    BackgroundResult r = glm_constant_background(view_of(bins, 4));
-    ASSERT_TRUE(r.valid);
-    EXPECT_NEAR(r.mean, 4.0257619071, kDialsParityTol);
-    // N counts the 4 overflow pixels too, so the sum is mean over all 89.
-    EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 89.0);
-}
-
-// Higher background level. N = 27, median seed 50.
-TEST(GlmConstantBackground, ModerateLevel) {
-    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
-    bins[48] = 4;
-    bins[50] = 10;
-    bins[52] = 8;
-    bins[55] = 3;
-    bins[60] = 2;
-
-    BackgroundResult r = glm_constant_background(view_of(bins));
-    ASSERT_TRUE(r.valid);
-    EXPECT_NEAR(r.mean, 51.6834964586, kDialsParityTol);
-    EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 27.0);
-}
-
-// Fewer than kGlmMinPixels background pixels -> no estimate (matches DIALS,
-// which asserts num_background >= min_pixels).
-TEST(GlmConstantBackground, TooFewPixelsFails) {
-    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
-    for (int v = 3; v < 8; ++v) bins[v] = 1;  // N = 5 < kGlmMinPixels
-
-    BackgroundResult r = glm_constant_background(view_of(bins));
-    EXPECT_FALSE(r.valid);
-}
-
-// Too much of the background in the overflow tail -> range too small, rejected.
-TEST(GlmConstantBackground, ExcessiveOverflowRejected) {
-    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
-    bins[3] = 10;
-    bins[4] = 10;  // 20 in range
-
-    BackgroundResult r = glm_constant_background(view_of(bins, 20));  // 50% overflow
-    EXPECT_FALSE(r.valid);
-}
-
-// The tests above feed a ConstHistogramView straight into the model
-// functions, which bypasses the baseline host adapter. The cases below
-// test compute_background_constant_3d, which flattens a
-// BackgroundAggregator into the same view before dispatching. They pin
-// the adapter's binning (the small/large split versus the NUM_BG_BINS
-// range, negative-sentinel drop, overflow tail) by asserting it
-// reproduces the already-DIALS-pinned direct-view results.
-namespace {
-
-// Build an aggregator by adding each (value, count) pair count times, matching
-// how the Kabsch kernel feeds pixels in one at a time.
-BackgroundAggregator aggregator_of(
-  const std::vector<std::pair<int, int>> &value_counts) {
-    BackgroundAggregator agg;
-    for (const auto &[value, count] : value_counts) {
-        for (int n = 0; n < count; ++n) agg.add(value);
-    }
-    return agg;
-}
-
-// Assert two BackgroundResults are bit-for-bit identical (same bins in, so the
-// adapter and the direct view must agree exactly, not just to a tolerance).
-void expect_same_result(const BackgroundResult &a, const BackgroundResult &b) {
-    EXPECT_EQ(a.valid, b.valid);
-    if (a.valid && b.valid) {
-        EXPECT_DOUBLE_EQ(a.mean, b.mean);
-        EXPECT_DOUBLE_EQ(a.weighted_sum, b.weighted_sum);
-    }
-}
-
-}  // namespace
-
-// No background pixels -> no estimate, for either model.
-TEST(BackgroundAdapter, EmptyAggregatorFails) {
-    BackgroundAggregator agg;  // num_pixels() == 0
-    EXPECT_FALSE(compute_background_constant_3d(
-                   agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant)
-                   .valid);
-    EXPECT_FALSE(compute_background_constant_3d(
-                   agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm)
-                   .valid);
-}
-
-// The adapter's flattened histogram must reproduce the direct-view GLM result.
-// Same data as GlmConstantBackground.TightLowNoOutliers.
-TEST(BackgroundAdapter, MatchesDirectViewGlm) {
-    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
-    bins[2] = 3;
-    bins[3] = 5;
-    bins[4] = 8;
-    bins[5] = 6;
-    bins[6] = 2;
-    BackgroundResult direct = glm_constant_background(view_of(bins));
-
-    BackgroundAggregator agg = aggregator_of({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
-    BackgroundResult adapted = compute_background_constant_3d(
-      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
-
-    ASSERT_TRUE(adapted.valid);
-    expect_same_result(adapted, direct);
-}
-
-// Same parity check for the Tukey/constant model.
-// Same data as TukeyConstantBackground.UniformNoOutliers.
-TEST(BackgroundAdapter, MatchesDirectViewTukey) {
-    std::vector<uint32_t> bins(64, 0);
-    for (int v = 0; v <= 9; ++v) bins[v] = 1;
-    BackgroundResult direct = tukey_constant_background(view_of(bins));
-
-    std::vector<std::pair<int, int>> value_counts;
-    for (int v = 0; v <= 9; ++v) value_counts.push_back({v, 1});
-    BackgroundAggregator agg = aggregator_of(value_counts);
-    BackgroundResult adapted = compute_background_constant_3d(
-      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant);
-
-    ASSERT_TRUE(adapted.valid);
-    expect_same_result(adapted, direct);
-}
-
-// A value in [VECTOR_LIMIT, NUM_BG_BINS) lands in the aggregator's large_hist
-// map but must be flattened to an in-range bin, not the overflow tail. 120 is
-// the outlier value from GlmConstantBackground.HighOutlierDownweighted.
-TEST(BackgroundAdapter, LargeHistValueBinnedInRange) {
-    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
-    bins[2] = 3;
-    bins[3] = 5;
-    bins[4] = 8;
-    bins[5] = 6;
-    bins[6] = 2;
-    bins[120] = 1;  // in-range, not overflow
-    BackgroundResult direct = glm_constant_background(view_of(bins));
-
-    BackgroundAggregator agg =
-      aggregator_of({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}, {120, 1}});
-    BackgroundResult adapted = compute_background_constant_3d(
-      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
-
-    ASSERT_TRUE(adapted.valid);
-    expect_same_result(adapted, direct);
-}
-
-// Values at or above NUM_BG_BINS must be counted in the overflow tail, where
-// they clip to the Huber bound. Same data as GlmConstantBackground.OverflowTailClips
-// (4 overflow pixels), here fed as concrete out-of-range values.
-TEST(BackgroundAdapter, OverflowTailCounted) {
-    std::vector<uint32_t> bins(NUM_BG_BINS, 0);
-    bins[2] = 10;
-    bins[3] = 20;
-    bins[4] = 30;
-    bins[5] = 25;
-    BackgroundResult direct = glm_constant_background(view_of(bins, 4));
-
-    BackgroundAggregator agg =
-      aggregator_of({{2, 10}, {3, 20}, {4, 30}, {5, 25}, {5000, 4}});
-    BackgroundResult adapted = compute_background_constant_3d(
-      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
-
-    ASSERT_TRUE(adapted.valid);
-    expect_same_result(adapted, direct);
-}
-
-// Negative pixels are sentinels, dropped by the adapter rather than counted.
-// Adding them must not change the estimate.
-TEST(BackgroundAdapter, NegativeSentinelDropped) {
-    std::vector<std::pair<int, int>> base = {{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}};
-    BackgroundAggregator clean = aggregator_of(base);
-    BackgroundResult without = compute_background_constant_3d(
-      clean, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
-
-    std::vector<std::pair<int, int>> with_sentinels = base;
-    with_sentinels.push_back({-1, 3});
-    with_sentinels.push_back({-100, 2});
-    BackgroundAggregator dirty = aggregator_of(with_sentinels);
-    BackgroundResult with = compute_background_constant_3d(
-      dirty, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm);
-
-    ASSERT_TRUE(without.valid);
-    expect_same_result(with, without);
-}
-
-// Too much of the background in the overflow tail trips the adapter's
-// overflow-fraction guard before the model runs.
-TEST(BackgroundAdapter, ExcessiveOverflowRejected) {
-    // 20 in range, 20 overflow -> 50% overflow, above kBackgroundMaxOverflowFraction.
-    BackgroundAggregator agg = aggregator_of({{3, 10}, {4, 10}, {5000, 20}});
-    EXPECT_FALSE(compute_background_constant_3d(
-                   agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm)
-                   .valid);
-    EXPECT_FALSE(compute_background_constant_3d(
-                   agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant)
-                   .valid);
-}
 
 namespace {
 
@@ -421,25 +107,23 @@ TEST(ConstantBackgroundImplComparison, NegativesDroppedBeforeEstimation) {
     EXPECT_DOUBLE_EQ(shared.mean, dials.mean);
 }
 
-// A large fraction of pixels above NUM_BG_BINS overflows the shared core's
-// bounded histogram, which it rejects (valid=false); the unbounded dials-like
-// baseline still produces an estimate from the full range.
-TEST(ConstantBackgroundImplComparison, HighOverflowRejectedOnlyByShared) {
+// Half the pixels sit far above any plausible background. The shared core
+// holds their values exactly, like the unbounded dials-like baseline, so the
+// two agree instead of the shared core rejecting the reflection.
+TEST(ConstantBackgroundImplComparison, AgreeOnValuesFarAboveTheBackground) {
     BackgroundAggregator agg;
     for (int v = 0; v <= 9; ++v) agg.add(v);  // 10 low pixels
-    add_n(agg, 5000, 10);                     // 10 pixels above NUM_BG_BINS
+    add_n(agg, 5000, 10);                     // 10 far above the rest
 
-    // Shared core: overflow fraction (50%) exceeds the permitted limit.
     BackgroundResult shared = compute_background_constant_3d(
       agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant);
-    EXPECT_FALSE(shared.valid);
-
-    // Dials-like baseline: unbounded, so it still returns an estimate.
     BackgroundResult dials =
       compute_background_constant_3d(agg, ConstantBackgroundImpl::DialsIndependent);
-    ASSERT_TRUE(dials.valid);
-    EXPECT_GT(dials.weighted_sum, 0.0);
-    EXPECT_TRUE(std::isfinite(dials.mean));
+
+    ASSERT_TRUE(dials.valid) << "the dials-like baseline is unbounded";
+    ASSERT_TRUE(shared.valid) << "the shared core holds any value exactly";
+    EXPECT_DOUBLE_EQ(shared.mean, dials.mean) << "both span the full range";
+    EXPECT_DOUBLE_EQ(shared.weighted_sum, dials.weighted_sum) << "identical inliers";
 }
 
 // The default implementation is the independent dials-like baseline.
@@ -456,4 +140,263 @@ TEST(ConstantBackgroundImplComparison, DefaultIsDialsIndependent) {
     ASSERT_TRUE(dials.valid);
     EXPECT_DOUBLE_EQ(def.mean, dials.mean);
     EXPECT_DOUBLE_EQ(def.weighted_sum, dials.weighted_sum);
+}
+
+// The cases below drive the model functions directly over hand-built
+// histograms, which bypasses the baseline host adapter.
+
+namespace {
+
+// Build the sorted entry list a slot table would produce for a bins vector
+// indexed by value, which is a compact way to write a fixture.
+std::vector<unsigned long long> entries_of(const std::vector<uint32_t> &bins) {
+    std::vector<unsigned long long> entries;
+    for (std::size_t v = 0; v < bins.size(); ++v) {
+        if (bins[v] != 0) {
+            entries.push_back(background_entry_pack(static_cast<uint32_t>(v), bins[v]));
+        }
+    }
+    return entries;
+}
+
+// Build an entry list from explicit (value, count) pairs. Sorted here so
+// callers need not be.
+std::vector<unsigned long long> entries_from(
+  std::vector<std::pair<uint32_t, uint32_t>> value_counts) {
+    std::sort(value_counts.begin(), value_counts.end());
+    std::vector<unsigned long long> entries;
+    entries.reserve(value_counts.size());
+    for (const auto &[value, count] : value_counts) {
+        entries.push_back(background_entry_pack(value, count));
+    }
+    return entries;
+}
+
+// Build an aggregator holding the given (value, count) pairs.
+BackgroundAggregator aggregator_of(
+  const std::vector<std::pair<int, int>> &value_counts) {
+    BackgroundAggregator agg;
+    for (const auto &[value, count] : value_counts) {
+        for (int n = 0; n < count; ++n) agg.add(value);
+    }
+    return agg;
+}
+
+// The adapter must reproduce a directly built view exactly, not approximately,
+// so these compare with EXPECT_DOUBLE_EQ rather than a tolerance.
+void expect_same_result(const BackgroundResult &a, const BackgroundResult &b) {
+    EXPECT_EQ(a.valid, b.valid) << "validity must match";
+    if (a.valid && b.valid) {
+        EXPECT_DOUBLE_EQ(a.mean, b.mean) << "background level must match";
+        EXPECT_DOUBLE_EQ(a.weighted_sum, b.weighted_sum) << "inlier sum must match";
+    }
+}
+
+SparseHistogramView sparse_view_of(const std::vector<unsigned long long> &entries,
+                                   uint32_t spill = 0) {
+    return SparseHistogramView{entries.data(), static_cast<int>(entries.size()), spill};
+}
+
+}  // namespace
+
+TEST(TukeyConstantBackground, EmptyHistogramFails) {
+    std::vector<unsigned long long> entries;
+    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    EXPECT_FALSE(r.valid) << "an empty histogram must not produce an estimate";
+}
+
+// Uniform spread 0..9 (one pixel each). No outliers: mean is the plain mean.
+TEST(TukeyConstantBackground, UniformNoOutliers) {
+    std::vector<uint32_t> bins(64, 0);
+    for (int v = 0; v <= 9; ++v) bins[v] = 1;  // N = 10
+    auto entries = entries_of(bins);
+
+    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    ASSERT_TRUE(r.valid) << "a clean uniform spread must produce an estimate";
+    EXPECT_DOUBLE_EQ(r.weighted_sum, 45.0) << "inlier sum over 0..9";
+    EXPECT_DOUBLE_EQ(r.mean, 4.5) << "mean of 0..9";
+}
+
+TEST(TukeyConstantBackground, HighOutlierRejected) {
+    std::vector<uint32_t> bins(64, 0);
+    for (int v = 0; v <= 9; ++v) bins[v] = 1;
+    bins[60] = 1;  // clear outlier well above q3 + 1.5*IQR
+    auto entries = entries_of(bins);
+
+    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    ASSERT_TRUE(r.valid) << "one outlier must not fail the estimate";
+    EXPECT_DOUBLE_EQ(r.weighted_sum, 45.0) << "the outlier must not enter the sum";
+    EXPECT_DOUBLE_EQ(r.mean, 4.5) << "the outlier must not shift the mean";
+}
+
+TEST(TukeyConstantBackground, ConstantValue) {
+    auto entries = entries_from({{5, 20}});
+
+    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    ASSERT_TRUE(r.valid) << "a zero-IQR histogram is still estimable";
+    EXPECT_DOUBLE_EQ(r.mean, 5.0) << "mean of a single repeated value";
+    EXPECT_DOUBLE_EQ(r.weighted_sum, 100.0) << "20 pixels of value 5";
+}
+
+// A spread wide enough that the upper fence q3 + 1.5*IQR runs well past the
+// widest value present. Entries carry their own values, so there is no range
+// to run out of and the spread is estimated normally.
+TEST(TukeyConstantBackground, WideSpreadAccepted) {
+    std::vector<uint32_t> bins(16, 1);  // N = 16, uniform 0..15
+    auto entries = entries_of(bins);
+
+    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    ASSERT_TRUE(r.valid) << "there is no range limit to trip";
+    // q1=3, q3=11, IQR=8 -> bounds [-9, 23]; all of 0..15 survive.
+    EXPECT_DOUBLE_EQ(r.weighted_sum, 120.0) << "inlier sum over 0..15";
+    EXPECT_DOUBLE_EQ(r.mean, 7.5) << "mean of 0..15";
+}
+
+// Values far above any plausible background are held exactly, with no tail.
+TEST(TukeyConstantBackground, LargeValuesRepresentedExactly) {
+    std::vector<std::pair<uint32_t, uint32_t>> value_counts;
+    for (uint32_t v = 5000; v <= 5009; ++v) value_counts.push_back({v, 1});
+    auto entries = entries_from(value_counts);
+
+    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    ASSERT_TRUE(r.valid) << "a background of thousands of counts must be estimable";
+    EXPECT_DOUBLE_EQ(r.mean, 5004.5) << "mean of 5000..5009";
+    EXPECT_DOUBLE_EQ(r.weighted_sum, 50045.0) << "inlier sum over 5000..5009";
+}
+
+// A full slot table loses pixels of unknown value, so the estimate is refused
+// rather than computed from a truncated histogram.
+TEST(TukeyConstantBackground, SpillRejected) {
+    std::vector<uint32_t> bins(64, 0);
+    for (int v = 0; v <= 9; ++v) bins[v] = 1;
+    auto entries = entries_of(bins);
+
+    BackgroundResult r = tukey_constant_background(sparse_view_of(entries, 1));
+    EXPECT_FALSE(r.valid) << "any spill must fail the reflection";
+}
+
+// The DIALS parity fixtures. The reference means and their regeneration recipe
+// are documented above.
+TEST(GlmConstantBackground, TightLowNoOutliers) {
+    auto entries = entries_from({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
+
+    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    ASSERT_TRUE(r.valid) << "the fit must converge on a clean low background";
+    EXPECT_NEAR(r.mean, 4.0304431542, kDialsParityTol) << "DIALS RobustPoissonMean";
+    EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 24.0) << "GLM sum is mean over all N";
+}
+
+TEST(GlmConstantBackground, HighOutlierDownweighted) {
+    auto entries = entries_from({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}, {120, 1}});
+
+    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    ASSERT_TRUE(r.valid) << "one outlier must not fail the fit";
+    EXPECT_NEAR(r.mean, 4.1427022177, kDialsParityTol) << "DIALS RobustPoissonMean";
+    EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 25.0) << "the outlier counts in N";
+}
+
+// A high tail is recorded at its true value, and reproduces the DIALS number
+// for a folded-in tail, since psi clips it either way.
+TEST(GlmConstantBackground, HighTailRecordedExactly) {
+    auto entries = entries_from({{2, 10}, {3, 20}, {4, 30}, {5, 25}, {5000, 4}});
+
+    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    ASSERT_TRUE(r.valid) << "a recorded high tail must still fit";
+    EXPECT_NEAR(r.mean, 4.0257619071, kDialsParityTol) << "DIALS RobustPoissonMean";
+    EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 89.0) << "N counts the tail pixels";
+}
+
+TEST(GlmConstantBackground, ModerateLevel) {
+    auto entries = entries_from({{48, 4}, {50, 10}, {52, 8}, {55, 3}, {60, 2}});
+
+    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    ASSERT_TRUE(r.valid) << "a higher background must still fit";
+    EXPECT_NEAR(r.mean, 51.6834964586, kDialsParityTol) << "DIALS RobustPoissonMean";
+    EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 27.0) << "GLM sum is mean over all N";
+}
+
+TEST(GlmConstantBackground, TooFewPixelsFails) {
+    auto entries = entries_from({{3, 1}, {4, 1}, {5, 1}, {6, 1}, {7, 1}});  // N = 5
+
+    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    EXPECT_FALSE(r.valid) << "fewer than kGlmMinPixels must not be fitted";
+}
+
+TEST(GlmConstantBackground, SpillRejected) {
+    auto entries = entries_from({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
+
+    BackgroundResult r = glm_constant_background(sparse_view_of(entries, 1));
+    EXPECT_FALSE(r.valid) << "any spill must fail the reflection";
+}
+
+// The cases below test the host adapter,
+// compute_background_constant_3d(..., SharedCore, ...), which builds the entry
+// list from a BackgroundAggregator the way the device builds it from a slot
+// table.
+
+TEST(BackgroundAdapter, EmptyAggregatorFails) {
+    BackgroundAggregator agg;
+    BackgroundResult r = compute_background_constant_3d(
+      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant);
+    EXPECT_FALSE(r.valid) << "an aggregator with no pixels must not be estimated";
+}
+
+TEST(BackgroundAdapter, MatchesDirectViewTukey) {
+    BackgroundAggregator agg = aggregator_of({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
+    auto entries = entries_from({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
+
+    expect_same_result(
+      compute_background_constant_3d(
+        agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant),
+      tukey_constant_background(sparse_view_of(entries)));
+}
+
+TEST(BackgroundAdapter, MatchesDirectViewGlm) {
+    BackgroundAggregator agg = aggregator_of({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
+    auto entries = entries_from({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
+
+    expect_same_result(compute_background_constant_3d(
+                         agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm),
+                       glm_constant_background(sparse_view_of(entries)));
+}
+
+// Values spanning the aggregator's small array and its large map, so the
+// adapter's ordering of the two halves is exercised against a directly built
+// entry list.
+TEST(BackgroundAdapter, SpansSmallArrayAndLargeMap) {
+    BackgroundAggregator agg =
+      aggregator_of({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}, {70, 1}, {120, 1}});
+    auto entries =
+      entries_from({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}, {70, 1}, {120, 1}});
+
+    expect_same_result(
+      compute_background_constant_3d(
+        agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant),
+      tukey_constant_background(sparse_view_of(entries)));
+}
+
+// A background of thousands of counts is held exactly, with no tail and no
+// rejection.
+TEST(BackgroundAdapter, LargeValueEstimatedExactly) {
+    BackgroundAggregator agg = aggregator_of({{5000, 10}, {5001, 10}});
+
+    BackgroundResult r = compute_background_constant_3d(
+      agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant);
+    ASSERT_TRUE(r.valid) << "the adapter must estimate a high background";
+    EXPECT_DOUBLE_EQ(r.mean, 5000.5) << "mean of ten 5000s and ten 5001s";
+    EXPECT_DOUBLE_EQ(r.weighted_sum, 100010.0) << "inlier sum over both values";
+}
+
+// Negative sentinels are dropped by the aggregator and must not reach the
+// entry list, matching the GPU kernel.
+TEST(BackgroundAdapter, NegativeSentinelDropped) {
+    BackgroundAggregator with_sentinels = aggregator_of({{4, 10}, {5, 10}});
+    add_n(with_sentinels, -1, 5);
+    BackgroundAggregator clean = aggregator_of({{4, 10}, {5, 10}});
+
+    expect_same_result(
+      compute_background_constant_3d(
+        with_sentinels, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant),
+      compute_background_constant_3d(
+        clean, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant));
 }
