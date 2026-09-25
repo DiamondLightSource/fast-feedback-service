@@ -192,16 +192,17 @@ void expect_same_result(const BackgroundResult &a, const BackgroundResult &b) {
     }
 }
 
-SparseHistogramView sparse_view_of(const std::vector<unsigned long long> &entries,
-                                   uint32_t spill = 0) {
-    return SparseHistogramView{entries.data(), static_cast<int>(entries.size()), spill};
+BackgroundHistogramView view_of(const std::vector<unsigned long long> &entries,
+                                uint32_t spill = 0) {
+    return BackgroundHistogramView{
+      entries.data(), static_cast<int>(entries.size()), spill};
 }
 
 }  // namespace
 
 TEST(TukeyConstantBackground, EmptyHistogramFails) {
     std::vector<unsigned long long> entries;
-    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    BackgroundResult r = tukey_constant_background(view_of(entries));
     EXPECT_FALSE(r.valid) << "an empty histogram must not produce an estimate";
 }
 
@@ -211,7 +212,7 @@ TEST(TukeyConstantBackground, UniformNoOutliers) {
     for (int v = 0; v <= 9; ++v) bins[v] = 1;  // N = 10
     auto entries = entries_of(bins);
 
-    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    BackgroundResult r = tukey_constant_background(view_of(entries));
     ASSERT_TRUE(r.valid) << "a clean uniform spread must produce an estimate";
     EXPECT_DOUBLE_EQ(r.weighted_sum, 45.0) << "inlier sum over 0..9";
     EXPECT_DOUBLE_EQ(r.mean, 4.5) << "mean of 0..9";
@@ -223,7 +224,7 @@ TEST(TukeyConstantBackground, HighOutlierRejected) {
     bins[60] = 1;  // clear outlier well above q3 + 1.5*IQR
     auto entries = entries_of(bins);
 
-    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    BackgroundResult r = tukey_constant_background(view_of(entries));
     ASSERT_TRUE(r.valid) << "one outlier must not fail the estimate";
     EXPECT_DOUBLE_EQ(r.weighted_sum, 45.0) << "the outlier must not enter the sum";
     EXPECT_DOUBLE_EQ(r.mean, 4.5) << "the outlier must not shift the mean";
@@ -232,7 +233,7 @@ TEST(TukeyConstantBackground, HighOutlierRejected) {
 TEST(TukeyConstantBackground, ConstantValue) {
     auto entries = entries_from({{5, 20}});
 
-    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    BackgroundResult r = tukey_constant_background(view_of(entries));
     ASSERT_TRUE(r.valid) << "a zero-IQR histogram is still estimable";
     EXPECT_DOUBLE_EQ(r.mean, 5.0) << "mean of a single repeated value";
     EXPECT_DOUBLE_EQ(r.weighted_sum, 100.0) << "20 pixels of value 5";
@@ -245,7 +246,7 @@ TEST(TukeyConstantBackground, WideSpreadAccepted) {
     std::vector<uint32_t> bins(16, 1);  // N = 16, uniform 0..15
     auto entries = entries_of(bins);
 
-    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    BackgroundResult r = tukey_constant_background(view_of(entries));
     ASSERT_TRUE(r.valid) << "there is no range limit to trip";
     // q1=3, q3=11, IQR=8 -> bounds [-9, 23]; all of 0..15 survive.
     EXPECT_DOUBLE_EQ(r.weighted_sum, 120.0) << "inlier sum over 0..15";
@@ -258,7 +259,7 @@ TEST(TukeyConstantBackground, LargeValuesRepresentedExactly) {
     for (uint32_t v = 5000; v <= 5009; ++v) value_counts.push_back({v, 1});
     auto entries = entries_from(value_counts);
 
-    BackgroundResult r = tukey_constant_background(sparse_view_of(entries));
+    BackgroundResult r = tukey_constant_background(view_of(entries));
     ASSERT_TRUE(r.valid) << "a background of thousands of counts must be estimable";
     EXPECT_DOUBLE_EQ(r.mean, 5004.5) << "mean of 5000..5009";
     EXPECT_DOUBLE_EQ(r.weighted_sum, 50045.0) << "inlier sum over 5000..5009";
@@ -271,7 +272,7 @@ TEST(TukeyConstantBackground, SpillRejected) {
     for (int v = 0; v <= 9; ++v) bins[v] = 1;
     auto entries = entries_of(bins);
 
-    BackgroundResult r = tukey_constant_background(sparse_view_of(entries, 1));
+    BackgroundResult r = tukey_constant_background(view_of(entries, 1));
     EXPECT_FALSE(r.valid) << "any spill must fail the reflection";
 }
 
@@ -280,7 +281,7 @@ TEST(TukeyConstantBackground, SpillRejected) {
 TEST(GlmConstantBackground, TightLowNoOutliers) {
     auto entries = entries_from({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
 
-    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    BackgroundResult r = glm_constant_background(view_of(entries));
     ASSERT_TRUE(r.valid) << "the fit must converge on a clean low background";
     EXPECT_NEAR(r.mean, 4.0304431542, kDialsParityTol) << "DIALS RobustPoissonMean";
     EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 24.0) << "GLM sum is mean over all N";
@@ -289,7 +290,7 @@ TEST(GlmConstantBackground, TightLowNoOutliers) {
 TEST(GlmConstantBackground, HighOutlierDownweighted) {
     auto entries = entries_from({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}, {120, 1}});
 
-    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    BackgroundResult r = glm_constant_background(view_of(entries));
     ASSERT_TRUE(r.valid) << "one outlier must not fail the fit";
     EXPECT_NEAR(r.mean, 4.1427022177, kDialsParityTol) << "DIALS RobustPoissonMean";
     EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 25.0) << "the outlier counts in N";
@@ -300,7 +301,7 @@ TEST(GlmConstantBackground, HighOutlierDownweighted) {
 TEST(GlmConstantBackground, HighTailRecordedExactly) {
     auto entries = entries_from({{2, 10}, {3, 20}, {4, 30}, {5, 25}, {5000, 4}});
 
-    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    BackgroundResult r = glm_constant_background(view_of(entries));
     ASSERT_TRUE(r.valid) << "a recorded high tail must still fit";
     EXPECT_NEAR(r.mean, 4.0257619071, kDialsParityTol) << "DIALS RobustPoissonMean";
     EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 89.0) << "N counts the tail pixels";
@@ -309,7 +310,7 @@ TEST(GlmConstantBackground, HighTailRecordedExactly) {
 TEST(GlmConstantBackground, ModerateLevel) {
     auto entries = entries_from({{48, 4}, {50, 10}, {52, 8}, {55, 3}, {60, 2}});
 
-    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    BackgroundResult r = glm_constant_background(view_of(entries));
     ASSERT_TRUE(r.valid) << "a higher background must still fit";
     EXPECT_NEAR(r.mean, 51.6834964586, kDialsParityTol) << "DIALS RobustPoissonMean";
     EXPECT_DOUBLE_EQ(r.weighted_sum, r.mean * 27.0) << "GLM sum is mean over all N";
@@ -318,14 +319,14 @@ TEST(GlmConstantBackground, ModerateLevel) {
 TEST(GlmConstantBackground, TooFewPixelsFails) {
     auto entries = entries_from({{3, 1}, {4, 1}, {5, 1}, {6, 1}, {7, 1}});  // N = 5
 
-    BackgroundResult r = glm_constant_background(sparse_view_of(entries));
+    BackgroundResult r = glm_constant_background(view_of(entries));
     EXPECT_FALSE(r.valid) << "fewer than kGlmMinPixels must not be fitted";
 }
 
 TEST(GlmConstantBackground, SpillRejected) {
     auto entries = entries_from({{2, 3}, {3, 5}, {4, 8}, {5, 6}, {6, 2}});
 
-    BackgroundResult r = glm_constant_background(sparse_view_of(entries, 1));
+    BackgroundResult r = glm_constant_background(view_of(entries, 1));
     EXPECT_FALSE(r.valid) << "any spill must fail the reflection";
 }
 
@@ -348,7 +349,7 @@ TEST(BackgroundAdapter, MatchesDirectViewTukey) {
     expect_same_result(
       compute_background_constant_3d(
         agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant),
-      tukey_constant_background(sparse_view_of(entries)));
+      tukey_constant_background(view_of(entries)));
 }
 
 TEST(BackgroundAdapter, MatchesDirectViewGlm) {
@@ -357,7 +358,7 @@ TEST(BackgroundAdapter, MatchesDirectViewGlm) {
 
     expect_same_result(compute_background_constant_3d(
                          agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Glm),
-                       glm_constant_background(sparse_view_of(entries)));
+                       glm_constant_background(view_of(entries)));
 }
 
 // Values spanning the aggregator's small array and its large map, so the
@@ -372,7 +373,7 @@ TEST(BackgroundAdapter, SpansSmallArrayAndLargeMap) {
     expect_same_result(
       compute_background_constant_3d(
         agg, ConstantBackgroundImpl::SharedCore, BackgroundModel::Constant),
-      tukey_constant_background(sparse_view_of(entries)));
+      tukey_constant_background(view_of(entries)));
 }
 
 // A background of thousands of counts is held exactly, with no tail and no

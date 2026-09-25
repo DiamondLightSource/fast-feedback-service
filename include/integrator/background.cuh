@@ -28,28 +28,14 @@
  *
  * Open addressing with linear probing over NUM_BG_SLOTS slots. A slot is one
  * 64-bit word packing (value, count); an all-zero word is empty, since a
- * stored entry always has a count of at least 1.
+ * stored entry always has a count of at least 1. The home slot comes from
+ * Fibonacci hashing (see kSlotHashMultiplier).
  *
- * Lock-free because a slot's KEY is immutable once claimed: only the count
- * ever changes afterwards. That makes every outcome of a racing read safe. A
- * read of zero may be stale, and the atomicCAS that follows re-checks it
- * atomically. A read of a key is either the final key or nothing at all, so a
- * key that matches is always genuinely this value's slot, and a key that does
- * not match will never later become one.
- *
- * The first probe read uses __ldcg, which bypasses the non-coherent per-SM L1
- * and reads L2, the same point global atomics serialise at. A plain load could
- * return an L1 line predating another SM's claim, and the thread would probe
- * past an occupied slot and create a second entry for the same value, breaking
- * the one-entry-per-value invariant the ordered scan depends on.
- *
- * Steady state, where the value already has a slot, is one L2 read plus one
- * 64-bit atomic add; the compare-and-swap is paid only on a value's first
- * appearance.
- *
- * Fibonacci hashing (the multiplier is 2^64/φ) is used rather than the value
- * itself so that values sharing low bits, which alias under a mask, land in
- * unrelated slots.
+ * A slot's key is immutable once claimed, so a stale read can report a slot as
+ * empty but never as holding the wrong key. The atomicCAS re-checks that case
+ * at L2, and is therefore what enforces one entry per value. __ldcg keeps the
+ * probe read out of the per-SM L1, which is not coherent between SMs, so a
+ * claimed slot does not read as empty and waste a compare-and-swap.
  *
  * @param slots This reflection's NUM_BG_SLOTS slots.
  * @param value Background pixel value to record.
@@ -58,8 +44,22 @@
  */
 __device__ inline bool background_slot_insert(unsigned long long *slots,
                                               uint32_t value) {
+    // 2^64/φ rounded odd, giving Fibonacci hashing (Knuth, TAOCP vol. 3, 6.4).
+    // Taking the high bits of the product is floor(NUM_BG_SLOTS*frac(value/φ)),
+    // a step of 0.618 of a turn around the table per unit of value, so
+    // consecutive values spread rather than cluster. A mask steps one
+    // slot instead, aliasing values NUM_BG_SLOTS apart onto the same
+    // home slot.
+    //
+    // Collisions are resolved by probing, not prevented, and placement
+    // does not reach the result: the reduction sorts by value. A run of
+    // consecutive values stays collision-free to about half the table,
+    // against a measured occupancy of 3 values and a worst case of 18.
+    // The cost is locality, since a mask would keep low values on one
+    // cache line.
     constexpr unsigned long long kSlotHashMultiplier = 0x9E3779B97F4A7C15ull;
 
+    // Home slot. The shift leaves exactly background_slot_bits(), so no mask.
     uint32_t idx = static_cast<uint32_t>(
       (static_cast<unsigned long long>(value) * kSlotHashMultiplier)
       >> (64 - background_slot_bits()));
@@ -74,13 +74,15 @@ __device__ inline bool background_slot_insert(unsigned long long *slots,
             }
             cur = old;  // lost the race; old holds whichever value won
         }
+        // The stored key, not the hash, settles identity.
         if (background_entry_value(cur) == value) {
-            // The count occupies the low word and is bounded by this
-            // reflection's background pixel count, so a 64-bit add of one
-            // increments it without reaching the value.
+            // The count is bounded by this reflection's background pixel count,
+            // so a 64-bit add of one cannot carry into the value.
             atomicAdd(&slots[idx], 1ull);
             return true;
         }
+        // A step of one over a power-of-two table visits every slot, so the
+        // loop bound is reached only once the table is full.
         idx = (idx + 1) & (NUM_BG_SLOTS - 1);
     }
     return false;

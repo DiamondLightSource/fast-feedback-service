@@ -168,7 +168,7 @@ BackgroundResult compute_background_constant_3d_shared(const BackgroundAggregato
         }
     }
 
-    SparseHistogramView view{entries.data(), static_cast<int>(entries.size()), 0};
+    BackgroundHistogramView view{entries.data(), static_cast<int>(entries.size()), 0};
 
     // No default case, so adding a BackgroundModel raises a -Wswitch warning
     // here until it is handled.

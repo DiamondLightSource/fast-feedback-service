@@ -28,7 +28,7 @@ constexpr int BACKGROUND_REDUCE_THREADS = 128;
  *
  * The slot table is compacted and sorted IN PLACE: occupied slots move to the
  * front of the reflection's range and are ordered ascending by value, which is
- * the precondition SparseHistogramView carries. The table is consumed once, so
+ * the precondition BackgroundHistogramView carries. The table is consumed once, so
  * rewriting it costs nothing and avoids per-thread scratch, keeping register
  * and local-memory use independent of NUM_BG_SLOTS.
  */
@@ -69,7 +69,7 @@ __global__ void background_reduce_kernel(BackgroundModel model,
         slots[j + 1] = entry;
     }
 
-    SparseHistogramView view;
+    BackgroundHistogramView view;
     view.entries = slots;
     view.num_entries = num_entries;
     view.spill_count = d_background_spill[r];

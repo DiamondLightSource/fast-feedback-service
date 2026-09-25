@@ -4,7 +4,7 @@
  *        integrator and the GPU integrator.
  *
  * The constant (Tukey/IQR) background model is implemented once, as a
- * device-safe function over a sparse histogram view (::SparseHistogramView).
+ * device-safe function over a sparse histogram view (::BackgroundHistogramView).
  * The same code compiles for the host (baseline) and for CUDA device code (GPU
  * reduction kernel), so both paths produce identical results. Background pixel
  * values are integer counts, so one entry per distinct value makes the
@@ -111,7 +111,7 @@ constexpr uint32_t kGlmMinPixels = 10;
  * Ascending order is a precondition: both models locate quartiles by a
  * cumulative scan and rely on it.
  */
-struct SparseHistogramView {
+struct BackgroundHistogramView {
     const unsigned long long *entries = nullptr;
     int num_entries = 0;
     uint32_t spill_count = 0;
@@ -171,7 +171,7 @@ struct BackgroundResult {
  * than computed from a truncated histogram.
  */
 FFS_HD inline BackgroundResult tukey_constant_background(
-  const SparseHistogramView &hist) {
+  const BackgroundHistogramView &hist) {
     constexpr double iqr_multiplier = 1.5;
 
     // Defaults to valid=false; set true only once a mean has been computed from
@@ -370,7 +370,7 @@ FFS_HD inline GlmExpectation glm_expectation(double mu, double svar, double c) {
  * dials/algorithms/background/glm/robust_poisson_mean.h.
  */
 FFS_HD inline BackgroundResult glm_constant_background(
-  const SparseHistogramView &hist) {
+  const BackgroundHistogramView &hist) {
     BackgroundResult result;
 
     // Total pixel count across the histogram.
@@ -545,8 +545,9 @@ class BackgroundAggregator {
 /**
  * @brief Estimate a constant background level from an aggregated histogram.
  *
- * Flattens the aggregator into the shared SparseHistogramView and dispatches to
- * the selected single-source model: tukey_constant_background (Constant) or
+ * Flattens the aggregator into the shared BackgroundHistogramView and
+ * dispatches to the selected single-source model: tukey_constant_background
+ * (Constant) or
  * glm_constant_background (Glm), so the baseline runs the same math as the GPU.
  *
  * @param data Aggregated background pixel histogram for one reflection.
