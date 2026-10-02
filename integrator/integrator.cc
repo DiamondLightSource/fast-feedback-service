@@ -647,6 +647,20 @@ int main(int argc, char **argv) {
     Reader &reader = *reader_ptr;
     auto reader_mutex = std::mutex{};
 
+    // The raw-chunk path decompresses at the compile-time pixel_t width, so a
+    // file of a different element width unshuffles against the wrong stride and
+    // decodes to scrambled bits. h5read's own type check covers only the
+    // whole-image path.
+    const size_t bytes_per_pixel = reader.get_element_size();
+    if (bytes_per_pixel != sizeof(pixel_t)) {
+        logger.error(
+          "Image data is {}-bit, but this integrator is built for "
+          "{}-bit pixels.",
+          bytes_per_pixel * 8,
+          sizeof(pixel_t) * 8);
+        return 1;
+    }
+
     uint32_t num_images_in_file = reader.get_number_of_images();
     uint32_t height = reader.image_shape()[0];
     uint32_t width = reader.image_shape()[1];
@@ -748,16 +762,17 @@ int main(int argc, char **argv) {
     // These persist across all images and accumulate atomically
     DeviceBuffer<accumulator_t> d_foreground_sum(num_reflections);
     DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
-    // Per-reflection background histogram: one bin per integer pixel value over
-    // [0, NUM_BG_BINS), plus an overflow counter for the high tail. The Kabsch
-    // kernel fills these; compute_background() reduces them into an estimate
-    // after the image loop.
-    DeviceBuffer<uint32_t> d_background_hist(num_reflections * NUM_BG_BINS);
-    DeviceBuffer<uint32_t> d_background_overflow(num_reflections);
-    logger.info("Background histograms: {} reflections x {} bins = {:.1f} MiB",
+    // Per-reflection background slot table: one entry per distinct pixel value,
+    // keyed on the value, plus a spill counter for pixels dropped by a full
+    // table. The Kabsch kernel fills these; compute_background() reduces them
+    // into an estimate after the image loop.
+    DeviceBuffer<unsigned long long> d_background_slots(num_reflections * NUM_BG_SLOTS);
+    DeviceBuffer<uint32_t> d_background_spill(num_reflections);
+    logger.info("Background slot tables: {} reflections x {} slots = {:.1f} MiB",
                 num_reflections,
-                NUM_BG_BINS,
-                (num_reflections * NUM_BG_BINS * sizeof(uint32_t)) / (1024.0 * 1024.0));
+                NUM_BG_SLOTS,
+                (num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long))
+                  / (1024.0 * 1024.0));
     // Reduced background estimates (written by compute_background()).
     DeviceBuffer<double> d_background_mean(num_reflections);
     DeviceBuffer<double> d_background_sum_value(num_reflections);
@@ -780,9 +795,12 @@ int main(int argc, char **argv) {
 
     cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(
-      d_background_hist.data(), 0, num_reflections * NUM_BG_BINS * sizeof(uint32_t));
-    cudaMemset(d_background_overflow.data(), 0, num_reflections * sizeof(uint32_t));
+    // An all-zero slot is empty, because a stored entry always has a count of
+    // at least 1.
+    cudaMemset(d_background_slots.data(),
+               0,
+               num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long));
+    cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t));
     cudaMemset(
       d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
     cudaMemset(
@@ -887,13 +905,23 @@ int main(int argc, char **argv) {
 
                 // Decompress the data into pinned host memory
                 switch (reader.get_raw_chunk_compression()) {
-                case Reader::ChunkCompression::BITSHUFFLE_LZ4:
-                    bshuf_decompress_lz4(buffer.data() + 12,
-                                         host_image.get(),
-                                         width * height,
-                                         sizeof(pixel_t),
-                                         0);
+                case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
+                    // Returns the bytes consumed from the chunk, or a
+                    // negative error code.
+                    const int64_t consumed = bshuf_decompress_lz4(buffer.data() + 12,
+                                                                  host_image.get(),
+                                                                  width * height,
+                                                                  sizeof(pixel_t),
+                                                                  0);
+                    if (consumed < 0) {
+                        throw std::runtime_error(
+                          fmt::format("bitshuffle/LZ4 decompression of image {} "
+                                      "failed with code {}",
+                                      image_num,
+                                      consumed));
+                    }
                     break;
+                }
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
                     decompress_byte_offset<pixel_t>(
                       buffer,
@@ -952,8 +980,8 @@ int main(int argc, char **argv) {
                                          fg_algorithm,
                                          d_foreground_sum.data(),
                                          d_foreground_count.data(),
-                                         d_background_hist.data(),
-                                         d_background_overflow.data(),
+                                         d_background_slots.data(),
+                                         d_background_spill.data(),
                                          d_intensity_times_x.data(),
                                          d_intensity_times_y.data(),
                                          d_intensity_times_z.data(),
@@ -1002,8 +1030,8 @@ int main(int argc, char **argv) {
     // device (Tukey/IQR constant model), then copy the small results back.
     logger.info("Reducing background histograms for {} reflections", num_reflections);
     compute_background(background_model,
-                       d_background_hist.data(),
-                       d_background_overflow.data(),
+                       d_background_slots.data(),
+                       d_background_spill.data(),
                        num_reflections,
                        d_background_mean.data(),
                        d_background_sum_value.data(),
@@ -1025,7 +1053,7 @@ int main(int argc, char **argv) {
     std::vector<double> h_background_mean(num_reflections);
     std::vector<double> h_background_sum_value(num_reflections);
     std::vector<uint32_t> h_background_count(num_reflections);
-    std::vector<uint32_t> h_background_overflow(num_reflections);
+    std::vector<uint32_t> h_background_spill(num_reflections);
     std::vector<uint8_t> h_background_success(num_reflections);
     std::vector<unsigned long long> h_intensity_times_x(num_reflections);
     std::vector<unsigned long long> h_intensity_times_y(num_reflections);
@@ -1038,41 +1066,34 @@ int main(int argc, char **argv) {
     d_background_mean.extract(h_background_mean.data());
     d_background_sum_value.extract(h_background_sum_value.data());
     d_background_count.extract(h_background_count.data());
-    d_background_overflow.extract(h_background_overflow.data());
+    d_background_spill.extract(h_background_spill.data());
     d_background_success.extract(h_background_success.data());
     d_intensity_times_x.extract(h_intensity_times_x.data());
     d_intensity_times_y.extract(h_intensity_times_y.data());
     d_intensity_times_z.extract(h_intensity_times_z.data());
     d_success.extract(h_success.data());
 
-    // The background histogram only covers pixel values [0, NUM_BG_BINS). If a
-    // reflection pushes more than kBackgroundMaxOverflowFraction of its
-    // background pixels into the overflow tail, that range is too small to
-    // characterise its background and the device Tukey estimate diverges from a
-    // full-range computation. Fail loudly so the histogram range is raised
-    // rather than silently producing a degraded intensity.
+    // A slot table holds any pixel value, so it has no range to run out of;
+    // what it can exhaust is the number of DISTINCT values per reflection. A
+    // reflection that spills has lost pixels of unknown value, so the reduction
+    // already failed it. Report the count rather than aborting: the rest of the
+    // run is unaffected, and the number is what says whether NUM_BG_SLOTS needs
+    // raising.
     {
-        size_t overflowing = 0;
-        double worst_fraction = 0.0;
+        size_t spilling = 0;
         for (size_t i = 0; i < num_reflections; ++i) {
-            const uint32_t total = h_background_count[i];
-            if (total == 0) continue;
-            const double fraction = static_cast<double>(h_background_overflow[i])
-                                    / static_cast<double>(total);
-            if (fraction > kBackgroundMaxOverflowFraction) {
-                overflowing++;
-                worst_fraction = std::max(worst_fraction, fraction);
+            if (h_background_spill[i] > 0) {
+                spilling++;
             }
         }
-        if (overflowing > 0) {
-            throw std::runtime_error(fmt::format(
-              "{} reflection(s) put more than {:.0f}% of their background pixels "
-              "above NUM_BG_BINS={} (worst {:.1f}%); the background histogram "
-              "range is too small. Increase NUM_BG_BINS.",
-              overflowing,
-              kBackgroundMaxOverflowFraction * 100.0,
-              NUM_BG_BINS,
-              worst_fraction * 100.0));
+        if (spilling > 0) {
+            logger.warn(
+              "{} of {} reflection(s) held more than NUM_BG_SLOTS={} distinct "
+              "background values and were not integrated; raise NUM_BG_SLOTS if "
+              "this is a significant fraction",
+              spilling,
+              num_reflections,
+              NUM_BG_SLOTS);
         }
     }
 
@@ -1148,8 +1169,7 @@ int main(int argc, char **argv) {
     if (background_failures > 0) {
         logger.warn(
           "Background estimate rejected for {} of {} reflections with "
-          "foreground pixels; NUM_BG_BINS may be too small for their "
-          "background level",
+          "foreground pixels; NUM_BG_SLOTS may be too small for their background",
           background_failures,
           num_reflections);
     }
