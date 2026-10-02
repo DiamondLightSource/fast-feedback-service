@@ -189,15 +189,23 @@ print_status "Installing binaries"
 "$cmake" --install "$SRC/$BUILD_DIR"
 
 # Drop the build environment from the RPATHs; conda's gcc specs file adds it
-print_status "Rewriting RPATHs"
 rpath="$PREFIX/lib:$PREFIX/lib64"
+patch_rpaths() {
+    local file
+    for file in "$@"; do
+        [[ -f "$file" ]] || continue
+        case "$(file -b "$file" 2>/dev/null)" in
+            ELF*) "$BUILD_ENV/bin/patchelf" --set-rpath "$rpath" "$file" ;;
+        esac
+    done
+}
+
+print_status "Rewriting RPATHs"
 # cmake writes the manifest without a trailing newline
 while read -r installed || [[ -n "$installed" ]]; do
     # The manifest also lists files outside the prefix
-    [[ "$installed" == "$PREFIX"/* && -f "$installed" ]] || continue
-    case "$(file -b "$installed" 2>/dev/null)" in
-        ELF*) "$BUILD_ENV/bin/patchelf" --set-rpath "$rpath" "$installed" ;;
-    esac
+    [[ "$installed" == "$PREFIX"/* ]] || continue
+    patch_rpaths "$installed"
 done < "$SRC/$BUILD_DIR/install_manifest.txt"
 
 # Install the Python package, not editable, at the version cmake resolved
@@ -206,9 +214,37 @@ print_status "Installing the Python package ($ffs_version)"
 SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="$ffs_version" \
     "$PREFIX/bin/pip" install --no-deps "$SRC"
 
+# The extension modules come from the wheel rather than from cmake, so
+# they are absent from the install manifest and need the same treatment
+site_ffs="$("$PREFIX/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')/ffs"
+shopt -s nullglob
+extensions=("$site_ffs"/*.so)
+shopt -u nullglob
+if [[ ${#extensions[@]} -eq 0 ]]; then
+    print_error "The installed package carries no extension modules."
+    print_error "The wheel collects them from $SRC/src/ffs, which the build populates."
+    exit 1
+fi
+print_status "Rewriting RPATHs in the extension modules"
+patch_rpaths "${extensions[@]}"
+
 # Verify the install
 print_status "Verifying the install"
 failed=false
+
+check_elf() {
+    local path="$1" name="${1##*/}" missing
+    if missing=$(ldd "$path" 2>/dev/null | grep "not found"); then
+        print_error "$name has unresolved libraries:"
+        echo "$missing"
+        failed=true
+    fi
+    if readelf -d "$path" 2>/dev/null | grep -qE 'R(UN)?PATH.*(/tmp/|/home/)'; then
+        print_error "$name has a build-time path in its RPATH:"
+        readelf -d "$path" | grep -E 'R(UN)?PATH'
+        failed=true
+    fi
+}
 
 for binary in spotfinder spotfinder32 baseline_indexer integrator; do
     path="$PREFIX/bin/$binary"
@@ -217,16 +253,11 @@ for binary in spotfinder spotfinder32 baseline_indexer integrator; do
         failed=true
         continue
     fi
-    if missing=$(ldd "$path" 2>/dev/null | grep "not found"); then
-        print_error "$binary has unresolved libraries:"
-        echo "$missing"
-        failed=true
-    fi
-    if readelf -d "$path" 2>/dev/null | grep -qE 'R(UN)?PATH.*(/tmp/|/home/)'; then
-        print_error "$binary has a build-time path in its RPATH:"
-        readelf -d "$path" | grep -E 'R(UN)?PATH'
-        failed=true
-    fi
+    check_elf "$path"
+done
+
+for extension in "${extensions[@]}"; do
+    check_elf "$extension"
 done
 
 for script in ffs_spotfind_index_integrate ffs_index_integrate ssx_index; do
