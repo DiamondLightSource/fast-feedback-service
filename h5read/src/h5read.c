@@ -28,8 +28,8 @@ typedef struct h5_data_file {
     char dsetname[MAXFILENAME];
     hid_t file;
     hid_t dataset;
-    size_t frames;
-    size_t offset;
+    size_t frames;  ///< Number of frames the virtual dataset maps from this file
+    size_t offset;  ///< Index of the first mapped frame within this file
 } h5_data_file;
 
 struct _h5read_handle {
@@ -376,14 +376,17 @@ h5_data_file *get_data_file(h5read_handle *obj, size_t index) {
         hsize_t dims[3];
         H5Sget_simple_extent_dims(space, dims, NULL);
         H5Sclose(space);
-        // Do a load of validation that this data file matches what we expect
-        if (dims[0] != current->frames) {
-            fprintf(
-              stderr,
-              "Validation Error: Data file %s data has %ld frames, expected %ld\n",
-              current->filename,
-              dims[0],
-              current->frames);
+        // Do a load of validation that this data file matches what we expect.
+        // A virtual dataset can map a sub-range of a longer source file, so the
+        // source only has to be long enough to cover the range that is mapped.
+        if (current->offset + current->frames > dims[0]) {
+            fprintf(stderr,
+                    "Validation Error: Data file %s data has %ld frames, too few "
+                    "for the %ld mapped from frame %ld\n",
+                    current->filename,
+                    dims[0],
+                    current->frames,
+                    current->offset);
             exit(1);
         }
         if (dims[1] != obj->slow) {

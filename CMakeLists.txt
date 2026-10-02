@@ -31,6 +31,7 @@ option(USE_REDUCED_PRECISION "Use reduced (single) precision for CUDA calculatio
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
+include(FFSPythonModule)
 
 include_directories(include)
 
@@ -137,6 +138,7 @@ endif()
 add_library(ffs_common STATIC 
     src/ffs/ffs_logger.cc
     src/ffs/arg_parser.cc
+    src/ffs/thread_count.cc
 )
 target_include_directories(ffs_common PUBLIC
     ${CMAKE_SOURCE_DIR}/include

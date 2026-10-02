@@ -47,7 +47,8 @@ testpaths = "tests"
 [tool.setuptools.packages.find]
 where = ["src"]
 [tool.setuptools.package-data]
-"ffs" = ["index*.so"]
+# cmake places the built extension modules here; see FFSPythonModule.cmake
+"ffs" = ["*.so"]
 
 [tool.ruff]
 lint.ignore = ["E501", "E741"]

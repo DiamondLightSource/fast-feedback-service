@@ -66,13 +66,15 @@ class FFSLogger {
             // Initialize spdlog asynchronous mode with a background worker thread
             spdlog::init_thread_pool(queue_size, 1);
 
-            // Create sinks based on whether we're running in a TTY (k8s container or interactive)
+            // A terminal on standard output means an interactive run, and
+            // anything else means the output is being collected, by a
+            // container log scraper or a redirect
             std::vector<spdlog::sink_ptr> sinks;
 
-            bool is_tty = isatty(STDIN_FILENO);
+            bool stdout_is_tty = isatty(STDOUT_FILENO);
 
             // Create console sink with appropriate pattern
-            if (is_tty) {
+            if (stdout_is_tty) {
                 // Interactive mode: colorful, detailed output
                 auto console_sink =
                   std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
@@ -87,7 +89,7 @@ class FFSLogger {
             }
 
             // Only add file sink if running in a TTY (interactive mode)
-            if (is_tty) {
+            if (stdout_is_tty) {
                 auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
                   "ffs_log.txt", 5 * 1024 * 1024, 3);
                 file_sink->set_pattern(

@@ -34,6 +34,7 @@
 #include "kernels/masking.cuh"
 #include "shmread.hpp"
 #include "standalone.h"
+#include "thread_count.hpp"
 #include "version.hpp"
 
 using namespace std::chrono_literals;
@@ -301,8 +302,8 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
         }
 
         add_argument("-n", "--threads")
-          .help("Number of parallel reader threads")
-          .default_value<uint32_t>(1)
+          .help("Number of parallel reader threads (default: 0 = auto-select)")
+          .default_value<uint32_t>(0)
           .metavar("NUM")
           .scan<'u', uint32_t>();
 
@@ -426,10 +427,11 @@ int main(int argc, char **argv) {
     fmt::print("Algorithm: {}\n",
                fmt::styled(dispersion_algorithm.algorithm_str, fmt_green));
 
+    // Get threading parameters (0 = auto-select)
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
-    if (num_cpu_threads < 1) {
-        fmt::print("Error: Thread count must be >= 1\n");
-        std::exit(1);
+    if (num_cpu_threads == 0) {
+        num_cpu_threads = auto_select_thread_count();
+        logger.info("Auto-selected {} CPU threads", num_cpu_threads);
     }
     uint32_t min_spot_size = parser.get<uint32_t>("min-spot-size");
     uint32_t min_spot_size_3d = parser.get<uint32_t>("min-spot-size-3d");
@@ -776,8 +778,8 @@ int main(int argc, char **argv) {
                             .count();
 
                         if (elapsed_wait_time > wait_timeout) {
-                            fmt::print("Timeout waiting for image {}\n",
-                                       offset_image_num);
+                            logger.warn("Timeout waiting for image {}",
+                                        offset_image_num);
                             global_stop.request_stop();
                             break;
                         }
@@ -810,10 +812,10 @@ int main(int argc, char **argv) {
                     }
                     // /dev/shm we might not have an atomic write
                     if (buffer.size() == 0) {
-                        fmt::print(fmt::runtime(
+                        logger.warn(
                           "\033[1mRace Condition?!?? Got buffer size 0 for image "
-                          "{image_num}. "
-                          "Sleeping.\033[0m\n"));
+                          "{}. Sleeping.\033[0m",
+                          image_num);
                         std::this_thread::sleep_for(100ms);
                         continue;
                     }
@@ -1036,16 +1038,16 @@ int main(int argc, char **argv) {
                                                               &mismatch_x,
                                                               &mismatch_y);
                     if (validation_matches) {
-                        fmt::print(
+                        logger.info(
                           "Thread {:2d}, Image {:4d}: Compared: \033[32mMatch {} "
-                          "px\033[0m\n",
+                          "px\033[0m",
                           thread_id,
                           image_num,
                           num_strong_pixels);
                     } else {
-                        fmt::print(
+                        logger.error(
                           "Thread {:2d}, Image {:4d}: Compared: "
-                          "\033[1;31mMismatch ({} px from kernel)\033[0m\n",
+                          "\033[1;31mMismatch ({} px from kernel)\033[0m",
                           thread_id,
                           image_num,
                           num_strong_pixels);
@@ -1053,7 +1055,7 @@ int main(int argc, char **argv) {
 
                 } else {
                     if (num_cpu_threads == 1) {
-                        fmt::print(
+                        logger.info(
                           "Thread {:2d} finished image {:4d}\n"
                           "       Copy: {:5.1f} ms\n"
                           "     Kernel: {:5.1f} ms\n"
@@ -1062,7 +1064,7 @@ int main(int argc, char **argv) {
                           "             ════════\n"
                           "     Total:  {:5.1f} ms ({:.1f} GBps)\n"
                           "    {} strong pixels\n"
-                          "    {} filtered reflections ({} pixels)\n",
+                          "    {} filtered reflections ({} pixels)",
                           thread_id,
                           image_num,
                           copy.elapsed_time(start),
@@ -1075,9 +1077,9 @@ int main(int argc, char **argv) {
                           bold(boxes.size()),
                           bold(num_strong_pixels_filtered));
                     } else {
-                        fmt::print(
+                        logger.info(
                           "Thread {:2d} finished image {:4d} with {:5d} strong pixels, "
-                          "{:4d} filtered reflections ({} pixels)\n",
+                          "{:4d} filtered reflections ({} pixels)",
                           thread_id,
                           image_num,
                           num_strong_pixels,

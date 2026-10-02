@@ -127,10 +127,24 @@ card.
 [blackwell-compat]: https://docs.nvidia.com/cuda/blackwell-compatibility-guide/
 
 ### Installing the python module (for indexing)
-This project defines a small python module, to provide functionality for indexing.
-To run indexing code, this needs to be installed into the python environment by
-running this command in the root directory:
+The python package in `src/ffs` carries compiled extension modules,
+`ffs.index` and `ffs.integrate`, which the C++ build produces. Build
+first and install second: the build places each module in `src/ffs`,
+which is the only directory python will look in for an `ffs` submodule,
+and pip collects the same files into a wheel. Installing without building
+gives a package whose extensions are simply absent, and the failure shows
+up later as an `ImportError`.
+
+For development, install the package into the environment once, as
+editable, and every later build is picked up without reinstalling:
+
 ```bash
+./build.sh
+pip install -e .
+```
+
+```bash
+./build.sh
 pip install .
 ```
 
