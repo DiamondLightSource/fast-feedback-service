@@ -102,7 +102,16 @@ set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
 
 if(EXISTS ${dx2_SOURCE_DIR}/CMakeLists.txt)
+    # dx2 declares its library without a type, so it follows
+    # BUILD_SHARED_LIBS. Build it static: it is then absorbed into the
+    # binaries and the extension modules, which leaves the wheel carrying no
+    # shared library of its own and nothing to resolve at runtime. Restored
+    # afterwards so the setting does not reach the fetched dependencies.
+    set(_ffs_build_shared_libs ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF)
     add_subdirectory(${dx2_SOURCE_DIR})
+    set(BUILD_SHARED_LIBS ${_ffs_build_shared_libs})
+    unset(_ffs_build_shared_libs)
     message(STATUS "Found dx2: ${dx2_SOURCE_DIR}")
 else()
     message(FATAL_ERROR "dx2 submodule not found. Please run 'git submodule update --init --recursive'.")
