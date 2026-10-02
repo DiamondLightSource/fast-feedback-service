@@ -36,6 +36,7 @@ include(FFSPythonModule)
 include_directories(include)
 
 find_package(Python COMPONENTS Interpreter Development.Module NumPy REQUIRED)
+include(PythonSitePackages)
 
 # Dependency fetching
 # Find packages that are in conda environment
@@ -68,8 +69,10 @@ set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
 set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
 set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
 
-# ffbidx uses this to find site-packages
-set(PYTHON_MODULE_PATH ${Python_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+# ffbidx uses this to find site-packages. It is relative to the install
+# prefix, matching ffbidx's own default of CMAKE_INSTALL_LIBDIR, so that
+# installing does not reach outside the prefix it was given.
+set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
 
 FetchContent_Declare(
   ffbidx
