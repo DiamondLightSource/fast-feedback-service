@@ -176,6 +176,35 @@ build_directory() {
     print_success "Successfully built $description"
 }
 
+# Report whether the active environment will import what was just built.
+# src/ffs is the only directory an editable install puts on the ffs
+# package __path__, so an environment resolving ffs anywhere else is
+# reading a different, possibly stale copy.
+check_active_environment() {
+    local resolved root
+    root="$(pwd -P)"
+
+    if ! resolved="$(python -c 'import ffs, pathlib; print(pathlib.Path(ffs.__file__).resolve().parent)' 2>/dev/null)"; then
+        print_warning "The active environment cannot import ffs, so it will not see"
+        print_warning "the modules just built. Install the package into it once:"
+        print_warning "    pip install -e ."
+        return 0
+    fi
+
+    if [[ "$resolved" != "$root/src/ffs" ]]; then
+        print_warning "The active environment imports ffs from"
+        print_warning "    $resolved"
+        print_warning "not from this worktree, so it will not see the modules just"
+        print_warning "built. Install this worktree into it:"
+        print_warning "    pip install -e ."
+        print_warning "A copy left in a site-packages by an older build is not managed"
+        print_warning "by pip and has to be removed by hand."
+        return 0
+    fi
+
+    print_success "The active environment imports ffs from this worktree"
+}
+
 # Main build logic
 main() {
     print_status "Fast Feedback Service Build Script"
@@ -241,6 +270,8 @@ main() {
         [[ -f build_32bit/bin/baseline_integrator ]] && echo -e "  - ${GREEN}baseline_integrator${NC}"
         [[ -f build_32bit/bin/integrator ]] && echo -e "  - ${GREEN}integrator${NC}"
     fi
+
+    check_active_environment
 }
 
 # Run main function

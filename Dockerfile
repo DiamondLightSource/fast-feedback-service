@@ -51,6 +51,10 @@ RUN cmake --install .
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="$(cat /opt/build/FFS_VERSION)" \
     /opt/ffs/bin/pip3 install --root-user-action=ignore /opt/ffs_src
 
+# The extension modules arrive with the wheel rather than with cmake, so
+# prove they import before the runtime stage copies the prefix
+RUN /opt/ffs/bin/python3 -c "import ffs.index, ffs.integrate, ffs.pipeline, ffs.ssx_index"
+
 # Now copy this into an isolated runtime container. Both published
 # images derive from this stage, so the build above runs once.
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04 AS runtime_base

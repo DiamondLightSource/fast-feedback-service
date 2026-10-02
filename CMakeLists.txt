@@ -31,6 +31,7 @@ option(USE_REDUCED_PRECISION "Use reduced (single) precision for CUDA calculatio
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
+include(FFSPythonModule)
 
 include_directories(include)
 

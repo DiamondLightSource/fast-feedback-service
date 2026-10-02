@@ -26,4 +26,6 @@ nanobind_add_module(integrate
 
 target_link_libraries(integrate PRIVATE ssx_integrator)
 
+ffs_python_module(integrate)
+
 add_subdirectory(tests)

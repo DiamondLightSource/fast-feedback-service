@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 *.pyo
 build/
+build_32bit/
+build_python/
 _build/
 .env
 .vscode/
