@@ -13,18 +13,29 @@
 #       X.Y.Z.
 #
 # Accepts:
+#   SKBUILD_PROJECT_VERSION_FULL, SKBUILD_PROJECT_VERSION
+#       Set by the python build, which resolves the version with
+#       setuptools_scm. Preferred when present, so that the python
+#       metadata and the compiled binaries carry one resolved version
+#       rather than two independently calculated ones.
 #   FFS_VERSION_DESCRIBE
 #       A `git describe --tags --long --first-parent` string to use in
-#       place of asking git. Set this where the build tree has no git
-#       history to query - the container build copies the source without
-#       .git, so the binaries still carry the real version instead of
-#       the 0.0.0.dev0 fallback.
+#       place of asking git. For a build tree with no git history to
+#       query and no python build to take the version from.
 
 set(FFS_VERSION_DESCRIBE "" CACHE STRING "git describe output to use instead of querying git")
 
 find_package(Git QUIET)
 
-if(FFS_VERSION_DESCRIBE)
+if(SKBUILD_PROJECT_VERSION_FULL)
+    set(FFS_VERSION_FULL "${SKBUILD_PROJECT_VERSION_FULL}")
+    set(FFS_VERSION_CMAKE "${SKBUILD_PROJECT_VERSION}")
+    message(STATUS "Version from the python build: ${FFS_VERSION_FULL}")
+endif()
+
+if(DEFINED FFS_VERSION_FULL)
+    # already resolved above
+elseif(FFS_VERSION_DESCRIBE)
     set(REPO_VERSION "${FFS_VERSION_DESCRIBE}")
     message(STATUS "Using supplied version description: ${REPO_VERSION}")
 elseif(NOT Git_FOUND)

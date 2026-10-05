@@ -26,6 +26,6 @@ nanobind_add_module(integrate
 
 target_link_libraries(integrate PRIVATE ssx_integrator)
 
-install(TARGETS integrate LIBRARY DESTINATION ${SKBUILD_PLATLIB_DIR}/ffs COMPONENT ffs)
+install(TARGETS integrate LIBRARY DESTINATION ${FFS_INSTALL_PYTHONDIR} COMPONENT ffs)
 
 add_subdirectory(tests)

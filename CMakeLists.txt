@@ -37,6 +37,17 @@ include_directories(include)
 find_package(Python COMPONENTS Interpreter Development.Module NumPy REQUIRED)
 include(PythonSitePackages)
 
+# Where things install to. pip supplies these, pointing into the wheel it is
+# assembling; a plain cmake build falls back to the prefix's own layout so that
+# `cmake --install` still does something sensible.
+if(SKBUILD)
+    set(FFS_INSTALL_BINDIR ${SKBUILD_SCRIPTS_DIR})
+    set(FFS_INSTALL_PYTHONDIR ${SKBUILD_PLATLIB_DIR}/ffs)
+else()
+    set(FFS_INSTALL_BINDIR bin)
+    set(FFS_INSTALL_PYTHONDIR ${FFS_PYTHON_SITEARCH}/ffs)
+endif()
+
 # Dependency fetching
 # Find packages that are in conda environment
 find_package(fmt REQUIRED)
@@ -131,8 +142,6 @@ project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
-# Drop the resolved version somewhere the container build can read it
-file(WRITE "${CMAKE_BINARY_DIR}/FFS_VERSION" "${FFS_VERSION_FULL}")
 
 # Create an interface library for compile definitions
 add_library(compile_options INTERFACE)
