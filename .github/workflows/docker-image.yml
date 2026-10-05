@@ -43,7 +43,11 @@ jobs:
           # linux/amd64 becomes linux-amd64, for a filesystem-safe artifact name.
           platform="${{ matrix.platform }}"
           echo "platform-pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
-          echo "version-describe=$(git describe --tags --long --first-parent)" >> "$GITHUB_OUTPUT"
+          # The image build has no git history, so resolve the version here and
+          # pass it in. setuptools_scm is the same resolver the package uses, so
+          # the image and a local install agree.
+          python3 -m pip install --quiet --disable-pip-version-check setuptools-scm
+          echo "version=$(python3 -m setuptools_scm)" >> "$GITHUB_OUTPUT"
           # Push the per-arch image with no tag; it is addressable only by
           # its digest. This keeps intermediate arch builds out of the tag
           # list - the manifest job assembles the real tag from digests.
@@ -77,7 +81,7 @@ jobs:
           target: service
           platforms: ${{ matrix.platform }}
           build-args: |
-            FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
+            FFS_VERSION=${{ steps.prep.outputs.version }}
           outputs: ${{ steps.prep.outputs.build-output-service }}
 
       - name: Build batch image
@@ -88,7 +92,7 @@ jobs:
           target: batch
           platforms: ${{ matrix.platform }}
           build-args: |
-            FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
+            FFS_VERSION=${{ steps.prep.outputs.version }}
           outputs: ${{ steps.prep.outputs.build-output-batch }}
 
       - name: Export digests
