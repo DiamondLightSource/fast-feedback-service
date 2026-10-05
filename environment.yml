@@ -5,6 +5,7 @@ dependencies:
   - benchmark=1.9.4
   - bitshuffle=0.5.2
   - boost-cpp=1.85.0
+  - ccache
   - cmake=4.1.1
   - compilers
   - dials-data=2.4.134
@@ -20,5 +21,7 @@ dependencies:
   - pre-commit=4.3.0
   - pydantic=2.12.3
   - pytest=8.4.2
+  - scikit-build-core=1.1.1
   - python=3.13.7
+  - setuptools_scm=10.3.4
   - spdlog=1.15.3
