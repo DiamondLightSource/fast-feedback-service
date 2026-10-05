@@ -57,11 +57,11 @@ target_link_libraries(baseline_indexer
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
-install(TARGETS baseline_indexer RUNTIME COMPONENT Runtime)
+install(TARGETS baseline_indexer RUNTIME DESTINATION ${SKBUILD_SCRIPTS_DIR} COMPONENT ffs)
 
 # Create Python module
 nanobind_add_module(index index_module.cpp)
 target_include_directories(index PRIVATE ${CMAKE_SOURCE_DIR}/baseline/predictor)
 target_link_libraries(index PRIVATE Eigen3::Eigen dx2 Python::Module)
 
-ffs_python_module(index)
+install(TARGETS index LIBRARY DESTINATION ${SKBUILD_PLATLIB_DIR}/ffs COMPONENT ffs)

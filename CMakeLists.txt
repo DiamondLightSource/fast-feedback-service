@@ -31,7 +31,6 @@ option(USE_REDUCED_PRECISION "Use reduced (single) precision for CUDA calculatio
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
-include(FFSPythonModule)
 
 include_directories(include)
 
@@ -69,10 +68,15 @@ set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
 set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
 set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
 
-# ffbidx uses this to find site-packages. It is relative to the install
-# prefix, matching ffbidx's own default of CMAKE_INSTALL_LIBDIR, so that
-# installing does not reach outside the prefix it was given.
-set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+# ffbidx installs its own python module here, and the module's runtime path
+# expects its library one directory tree up. Under a wheel build that is the
+# site-packages being assembled; a plain cmake build gets the prefix-relative
+# path instead, so the destination stays inside whatever prefix it is given.
+if(SKBUILD)
+    set(PYTHON_MODULE_PATH ${SKBUILD_PLATLIB_DIR} CACHE PATH "ffbidx python site-packages path" FORCE)
+else()
+    set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+endif()
 
 FetchContent_Declare(
   ffbidx

@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=64", "setuptools_scm>=8"]
-build-backend = "setuptools.build_meta"
+requires = ["scikit-build-core>=0.10", "setuptools_scm>=8"]
+build-backend = "scikit_build_core.build"
 
 [project]
 name = "ffs"
@@ -34,6 +34,10 @@ dev = [
     "pytest",
 ]
 
+# setuptools_scm still supplies the version, now as a metadata provider
+[[tool.dynamic-metadata]]
+provider = "scikit_build_core.metadata.setuptools_scm"
+
 [tool.setuptools_scm]
 
 # pytest.ini
@@ -44,11 +48,26 @@ testpaths = "tests"
 "GPUPerImageAnalysis" = "ffs.service:GPUPerImageAnalysis"
 "XRCResultCompare" = "compare_service:XRCResultCompare"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-[tool.setuptools.package-data]
-# cmake places the built extension modules here; see FFSPythonModule.cmake
-"ffs" = ["*.so"]
+[tool.scikit-build]
+# Keep this in step with build-system.requires above
+minimum-version = "build-system.requires"
+# A persistent build directory, so repeated installs are incremental and the
+# compiled programs stay where the tests look for them, in build/bin
+build-dir = "build"
+wheel.packages = ["src/ffs"]
+# The wheel carries exactly what is tagged, so a new install rule has to say
+# COMPONENT ffs to be shipped. Everything else the dependencies install, their
+# headers, static libraries, cmake packages and pkgconfig files, stays out.
+# ffbidx's module carries a runtime path relative to its own library, so both
+# of its components ship together
+install.components = ["ffs", "ffbidx_python", "ffbidx_libraries"]
+# Some C++ sources live under src/ffs and are compiled into ffs_common; they are
+# not part of the python package
+wheel.exclude = ["ffs/*.cc"]
+# The build directory holds cmake's cache and dependency sources, and an sdist
+# cannot carry the submodule or the fetched dependencies anyway
+sdist.exclude = ["build*", "notes", "docs"]
+messages.after-failure = "The C++ build failed. See the build notes in README.md; a CUDA configure failure usually means CUDA_ARCH needs setting for this card."
 
 [tool.ruff]
 lint.ignore = ["E501", "E741"]
