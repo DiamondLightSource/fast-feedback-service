@@ -90,3 +90,33 @@ predicted_data_rotation predict_rotation(Experiment &experiment,
 std::tuple<bool, scan_varying_data> extract_scan_varying_data(
   nlohmann::json elist_json_obj,
   Scan scan);
+
+struct Prediction {
+  Eigen::Vector3i h;
+
+  Eigen::Vector3d s1;
+  Eigen::Vector3d s2;
+
+  Eigen::Vector3d xyzcal_px;
+  Eigen::Vector3d xyzcal_mm;
+
+  std::size_t panel;
+
+  bool entering = false;
+  int experiment_id = 0;
+};
+
+class SSXPredictor {
+public:
+  SSXPredictor(const Eigen::Matrix3d& sigma)
+      : sigma_(sigma) {}
+
+  std::vector<Prediction> predict(
+    const std::vector<Eigen::Vector3i>& miller_indices,
+    const Eigen::Vector3d& s0,
+    const Eigen::Matrix3d& A,
+    const Detector& detector) const;
+
+private:
+  Eigen::Matrix3d sigma_;
+};

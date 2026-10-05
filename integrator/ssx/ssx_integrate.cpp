@@ -7,6 +7,8 @@
 #include "max_likelihood_target.hpp"
 #include "mosaicity_parameterisation.hpp"
 #include "reflection_likelihood.hpp"
+#include "predictor/index_generators.hpp"
+#include "predictor/predict.hpp"
 
 using Matrix3d = Eigen::Matrix3d;
 using Vector2d = Eigen::Vector2d;
@@ -105,6 +107,22 @@ Vector3d ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
     // For now return the mosaicity values for testing
     auto m = model.mosaicity();
     Vector3d m_vals = {m.min, m.mid, m.max};
+
+    Crystal crystal(A, space_group);
+
+    const gemmi::UnitCell cell = crystal.get_unit_cell();
+
+    IndexGenerator idxgen(cell, crystal_symmetry_operations, 1.58);
+
+    std::vector<Eigen::Vector3i> pred_miller_indices = idxgen.to_array();
+    SSXPredictor predictor(sigma);
+    std::vector<Prediction> predictions = predictor.predict(
+        pred_miller_indices, s0, A, detector
+    );
+    std::cout << "Predictions size " << predictions.size() << std::endl;
+
+
+
     return m_vals;
 
 

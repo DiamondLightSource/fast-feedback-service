@@ -273,3 +273,105 @@ std::tuple<bool, scan_varying_data> extract_scan_varying_data(json elist_json_ob
     }
     return std::make_tuple(scan_varying, sv_data);
 }
+
+
+Eigen::Matrix3d compute_change_of_basis_operation2(const Eigen::Vector3d &s0,
+                                                  const Eigen::Vector3d &s2) {
+    // add check that s0 and s2 are not nearly parallel?
+    const Eigen::Vector3d e1 = s2.cross(s0).normalized();
+    const Eigen::Vector3d e2 = s2.cross(e1).normalized();
+    const Eigen::Vector3d e3 = s2.normalized();
+
+    Eigen::Matrix3d R;
+    R << e1.x(), e1.y(), e1.z(), e2.x(), e2.y(), e2.z(), e3.x(), e3.y(), e3.z();
+    return R;
+}
+
+// FIXME define in hpp too
+std::vector<Prediction> SSXPredictor::predict(
+    const std::vector<Eigen::Vector3i>& miller_indices,
+    const Eigen::Vector3d& s0,
+    const Eigen::Matrix3d& A,
+    const Detector& detector) const {
+
+  const double quantile = 14.1563;//chisq_quantile(3, probability_);
+
+  std::vector<Prediction> predictions;
+  predictions.reserve(miller_indices.size());
+
+  const Eigen::Matrix3d sigma_inv = sigma_.inverse();
+  double s0_len = s0.norm();
+
+  for (const auto& h : miller_indices) {
+
+    const Eigen::Vector3d r = A * h.cast<double>();
+    const Eigen::Vector3d s2 = s0 + r;
+    const Eigen::Vector3d s3 = s2.normalized() * s0_len;
+    const Eigen::Vector3d delta = s3 - s2;
+
+    const double d =
+        delta.transpose()
+        * sigma_inv
+        * delta;
+
+    if (d >= quantile) {
+      continue;
+    }
+
+    const Eigen::Matrix3d R =
+        compute_change_of_basis_operation2(s0, s2);
+
+    const Eigen::Matrix3d S =
+        R * sigma_ * R.transpose();
+
+    const Eigen::Vector3d mu =
+        R * s2;
+
+    const Eigen::Vector3d zaxis =
+        Eigen::Vector3d::UnitZ();
+
+    //assert(std::abs(mu.normalized().dot(zaxis) - 1.0)< tiny);
+
+    //const Eigen::Matrix2d S11 = S.block<2, 2>(0, 0);
+    const Eigen::Vector2d S12 = S.block<2, 1>(0, 2);
+    const double S22 = S(2,2);
+    const Eigen::Vector2d mu1 = mu.head<2>();
+    const double mu2 = mu[2];
+    const double epsilon = s0_len - mu2;
+
+    //assert(S22 > 0.0);
+
+    //const double S22_inv = 1.0 / S22;
+
+    const Eigen::Vector2d mubar = mu1 + (S12 * epsilon / S22);
+
+    const Eigen::Vector3d v(mubar[0], mubar[1], s0_len);
+
+    const Eigen::Vector3d s1 = R.transpose()* (v.normalized() * s0_len);
+    auto impact = detector.get_ray_intersection(s1);
+    if (!impact.has_value()) continue;
+    /*auto impact =
+        detector.try_get_ray_intersection(s1);
+
+    if (!impact) {
+      continue;
+    }*/
+
+    Prediction p;
+    p.h = h;
+    p.s1 = s1;
+    p.s2 = s2;
+    intersection result = impact.value();
+    p.panel = result.panel_id;;
+
+    //const auto& xymm = impact->second;
+
+    p.xyzcal_mm = Eigen::Vector3d(result.xymm[0], result.xymm[1], 0.0);
+    std::array<double, 2> xycoords_px =
+      detector.panels()[p.panel].mm_to_px(result.xymm[0], result.xymm[1]);
+    p.xyzcal_px = Eigen::Vector3d(xycoords_px[0], xycoords_px[1], 0.0);
+    predictions.push_back(std::move(p));
+  }
+
+  return predictions;
+}
