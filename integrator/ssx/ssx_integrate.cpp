@@ -5,16 +5,20 @@
 #include "fisher_scoring_max_likelihood.hpp"
 #include "integrator/sigma_estimation.hpp"
 #include "max_likelihood_target.hpp"
-#include "mosaicity_parameterisation.hpp"
 #include "reflection_likelihood.hpp"
 #include "predictor/index_generators.hpp"
-#include "predictor/predict.hpp"
+
 #include "integrator/extent.hpp"
+#include "ssx_integrate.hpp"
 
 using Matrix3d = Eigen::Matrix3d;
 using Vector2d = Eigen::Vector2d;
 
-Vector3d ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
+/*
+The input vectors are typically short (<100 values),
+as they are the data for successfully indexed spots.
+*/
+Simple6MosaicityParameterisation refine_mosaicity(const std::vector<Vector3d> &xyzcal_px,
                        const std::vector<Vector3d> &xyzobs_px,
                        const std::vector<Vector3d> &covariances,
                        const std::vector<double> &intensities,
@@ -94,13 +98,18 @@ Vector3d ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
     scorer.solve();
     Matrix3d sigma = model.sigma();
     model.print_mosaicity();
+    return model;
+}
+
+std::vector<Prediction> predict_ssx(
+    const Simple6MosaicityParameterisation& model,
+    const Vector3d &s0,
+    const Panel &panel,
+    const Matrix3d &A){
 
     // now predict
     gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
     gemmi::GroupOps crystal_symmetry_operations = space_group.operations();
-
-    /*IndexGenerator g(crystal_symmetry_operations, 2.0);
-    std::vector<Vector3i> indices = g.to_array();*/
 
     // Make detector from panel
     std::vector<Panel> panels;
@@ -108,58 +117,63 @@ Vector3d ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
     const Detector detector(panels);
 
     // For now return the mosaicity values for testing
-    auto m = model.mosaicity();
-    Vector3d m_vals = {m.min, m.mid, m.max};
+    auto mosaicity = model.mosaicity();
+    //Vector3d m_vals = {m.min, m.mid, m.max};
 
     Crystal crystal(A, space_group);
-
     const gemmi::UnitCell cell = crystal.get_unit_cell();
 
-    IndexGenerator idxgen(cell, crystal_symmetry_operations, 1.58);
+    // FIXME, ideally do idxgen once on a best cell estimate and provide as input,
+    // to avoid repeated calcs.
+    double dmin = panel.get_max_resolution_at_corners(s0);
+    IndexGenerator idxgen(cell, crystal_symmetry_operations, dmin);
 
     std::vector<Eigen::Vector3i> pred_miller_indices = idxgen.to_array();
+    Matrix3d sigma = model.sigma();
     SSXPredictor predictor(sigma);
     std::vector<Prediction> predictions = predictor.predict(
-        pred_miller_indices, s0, A, detector, m.min
+        pred_miller_indices, s0, A, detector, mosaicity.min
     );
-    std::cout << "Predictions size " << predictions.size() << std::endl;
+    return predictions;
+}
 
-    BoundingBoxExtents e = predictions[0].bbox_extent;
-
-    std::cout << e.x_min << " " << e.x_max << " " << e.y_min << " " << e.y_max << std::endl;
-    std::cout << predictions[0].partiality << std::endl;
-    std::cout << predictions[10].partiality << std::endl;
-    std::cout << predictions[20].partiality << std::endl;
-    std::cout << predictions[30].partiality << std::endl;
-    std::cout << predictions[40].partiality << std::endl;
-    std::vector<BoundingBoxExtents> computed_bounding_boxes;
-    // now use sigma_d to estimate foreground/background?
+// now use sigma_d to estimate foreground/background?
 
 
-    // loop through bboxes    
+// loop through bboxes    
 
-    /*
-    shoebox_probability=FULL_PARTIALITY
-    FULL_PARTIALITY = math.erf(3 / math.sqrt(2))
-    profile = experiment.crystal.mosaicity
-    // predictions have s1 and s2
+/*
+shoebox_probability=FULL_PARTIALITY
+FULL_PARTIALITY = math.erf(3 / math.sqrt(2))
+profile = experiment.crystal.mosaicity
+// predictions have s1 and s2
 
-    // compute bbox extent, then iterate through, determining either fg or bg - if 
-    // fg, sum, if bg, add to hist as before.
+// compute bbox extent, then iterate through, determining either fg or bg - if 
+// fg, sum, if bg, add to hist as before.
 
-    profile.parameterisation.compute_bbox(
-        experiments, reflection_table, shoebox_probability
-    )
-    profile.parameterisation.compute_mask(
-        experiments, reflection_table, shoebox_probability
-    )
-        
-    then do summed intensity, background, corrections, partiality
-    profile.parameterisation.compute_partiality(experiments, reflection_table)
-    */
+profile.parameterisation.compute_bbox(
+    experiments, reflection_table, shoebox_probability
+)
+profile.parameterisation.compute_mask(
+    experiments, reflection_table, shoebox_probability
+)
+    
+then do summed intensity, background, corrections, partiality
+profile.parameterisation.compute_partiality(experiments, reflection_table)
+*/
 
-    return m_vals;
-
-
-    //predicted_data_stills results = predict_still(sigma, s0, detector, A, crystal_symmetry_operations);
+void ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
+                       const std::vector<Vector3d> &xyzobs_px,
+                       const std::vector<Vector3d> &covariances,
+                       const std::vector<double> &intensities,
+                       const std::vector<Eigen::Vector3i> &miller_indices,
+                       const std::vector<Vector2d> &mobs,
+                       const Vector3d &s0,
+                       const Panel &panel,
+                       const Matrix3d &A){
+    Simple6MosaicityParameterisation model = refine_mosaicity(
+        xyzcal_px, xyzobs_px, covariances, intensities,
+        miller_indices, mobs, s0, panel, A
+    );
+    std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);
 }

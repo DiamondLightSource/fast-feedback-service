@@ -175,19 +175,27 @@ TEST(BaselineIntegrator, ssx_integrate_function) {
                                      {2214.822603879991, 2095.0326031574145, 0.5},
                                      {1200.8093508947643, 2138.240046372163, 0.5}});
 
-    auto m = ssx_integrate(xyzcal_px,
-                           xyzobs_px,
-                           covariances,
-                           intensities,
-                           miller_indices,
-                           mobs,
-                           s0,
-                           panel,
-                           A);
-    EXPECT_NEAR(m(0) * 1e6, 80.1153, 1e-3);
-    EXPECT_NEAR(m(1) * 1e6, 629.709, 1e-3);
-    EXPECT_NEAR(m(2) * 1e6, 724.904, 1e-3);
-    EXPECT_NEAR(m(2) * 1e6, 0, 1e-3);
+    Simple6MosaicityParameterisation model = refine_mosaicity(
+      xyzcal_px,
+      xyzobs_px,
+      covariances,
+      intensities,
+      miller_indices,
+      mobs,
+      s0,
+      panel,
+      A
+    );
+    auto mosaicity = model.mosaicity();
+    EXPECT_NEAR(mosaicity.min * 1e6, 80.1153, 1e-3); // Verified calculations
+    EXPECT_NEAR(mosaicity.mid * 1e6, 629.709, 1e-3); // Verified calculations
+    EXPECT_NEAR(mosaicity.max * 1e6, 724.904, 1e-3); // Verified calculations
+    
+    std::vector<Prediction> predictions = predict_ssx(
+      model, s0, panel, A
+    );
+    EXPECT_EQ(predictions.size(), 567); // Not yet verified calculations.
+    
     /* expected result (dials)
         Eigen Values:
     | 5.25e-07        0        0|

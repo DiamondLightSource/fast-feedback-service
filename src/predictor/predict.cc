@@ -289,7 +289,7 @@ Eigen::Matrix3d compute_change_of_basis_operation2(const Eigen::Vector3d &s0,
     return R;
 }
 
-// FIXME define in hpp too
+
 std::vector<Prediction> SSXPredictor::predict(
     const std::vector<Eigen::Vector3i>& miller_indices,
     const Eigen::Vector3d& s0,
@@ -299,14 +299,12 @@ std::vector<Prediction> SSXPredictor::predict(
     const int bbox_border) const {
 
   const double quantile = 14.1563;//chisq_quantile(3, probability_);
-
+  const double D = 11.8292; //chisq_quantile(2, probability_);
   std::vector<Prediction> predictions;
   predictions.reserve(miller_indices.size());
-
   const Eigen::Matrix3d sigma_inv = sigma_.inverse();
   double s0_len = s0.norm();
-
-  const double D = 11.8292;//chisq_quantile(2, probability_);
+  
 
   for (const auto& h : miller_indices) {
 
@@ -314,54 +312,25 @@ std::vector<Prediction> SSXPredictor::predict(
     const Eigen::Vector3d s2 = s0 + r;
     const Eigen::Vector3d s3 = s2.normalized() * s0_len;
     const Eigen::Vector3d delta = s3 - s2;
-
-    const double d =
-        delta.transpose()
-        * sigma_inv
-        * delta;
-
-    if (d >= quantile) {
+    const double d = delta.transpose() * sigma_inv * delta;
+    if (d >= quantile) { // Most reflections are skipped by this condition.
       continue;
     }
 
-    const Eigen::Matrix3d R =
-        compute_change_of_basis_operation2(s0, s2);
-
-    const Eigen::Matrix3d S =
-        R * sigma_ * R.transpose();
-
-    const Eigen::Vector3d mu =
-        R * s2;
-
-    const Eigen::Vector3d zaxis =
-        Eigen::Vector3d::UnitZ();
-
-    //assert(std::abs(mu.normalized().dot(zaxis) - 1.0)< tiny);
-
-    //const Eigen::Matrix2d S11 = S.block<2, 2>(0, 0);
+    const Eigen::Matrix3d R = compute_change_of_basis_operation2(s0, s2);
+    const Eigen::Matrix3d S = R * sigma_ * R.transpose();
+    const Eigen::Vector3d mu = R * s2;
     const Eigen::Vector2d S12 = S.block<2, 1>(0, 2);
     const double S22 = S(2,2);
     const Eigen::Vector2d mu1 = mu.head<2>();
     const double mu2 = mu[2];
     const double epsilon = s0_len - mu2;
-
-    //assert(S22 > 0.0);
-
-    //const double S22_inv = 1.0 / S22;
-
     const Eigen::Vector2d mubar = mu1 + (S12 * epsilon / S22);
-
     const Eigen::Vector3d v(mubar[0], mubar[1], s0_len);
 
     const Eigen::Vector3d s1 = R.transpose()* (v.normalized() * s0_len);
     auto impact = detector.get_ray_intersection(s1);
     if (!impact.has_value()) continue;
-    /*auto impact =
-        detector.try_get_ray_intersection(s1);
-
-    if (!impact) {
-      continue;
-    }*/
 
     Prediction p;
     p.h = h;
@@ -369,23 +338,17 @@ std::vector<Prediction> SSXPredictor::predict(
     p.s2 = s2;
     intersection result = impact.value();
     p.panel = result.panel_id;;
-
-    //const auto& xymm = impact->second;
-
     p.xyzcal_mm = Eigen::Vector3d(result.xymm[0], result.xymm[1], 0.0);
     std::array<double, 2> xycoords_px =
       detector.panels()[p.panel].mm_to_px(result.xymm[0], result.xymm[1]);
     p.xyzcal_px = Eigen::Vector3d(xycoords_px[0], xycoords_px[1], 0.0);
 
-    BoundingBoxExtents extent; 
-    // do bbox calc here too, as we have all we need.
+    // Do bbox calc here, as we have all we need
+    BoundingBoxExtents extent;
     const Eigen::Vector2d S21 = {S(2,0), S(2,1)};
     Eigen::Matrix2d S12_S21 = S12 * S21.transpose();
     Eigen::Matrix2d S11 = S.block<2, 2>(0, 0);
-    //  multiply_transpose(&S12[0], &S21[0], 2, 1, 2, &S12_S21[0]);
-    //  mat2<double> Sbar = S11 - S12_S21 * S22_inv;
     Eigen::Matrix2d Sbar = S11 - S12_S21 / S22;
-
     double delta1 = std::sqrt(D * Sbar(0,0));
     double delta2 = std::sqrt(D * Sbar(1,1));
 
@@ -405,24 +368,16 @@ std::vector<Prediction> SSXPredictor::predict(
     // The xy coordinates on the detector
     const Panel& det_panel = detector.panels()[p.panel];
     auto xy1_mm = det_panel.get_ray_intersection_unbounded(sp1);
-    if (!xy1_mm){
-      continue;
-    }
+    if (!xy1_mm) continue;
     std::array<double, 2> xy1 = det_panel.mm_to_px((*xy1_mm)[0], (*xy1_mm)[1]);
     auto xy2_mm = det_panel.get_ray_intersection_unbounded(sp2);
-    if (!xy2_mm){
-      continue;
-    }
+    if (!xy2_mm) continue;
     std::array<double, 2> xy2 = det_panel.mm_to_px((*xy2_mm)[0], (*xy2_mm)[1]);
     auto xy3_mm = det_panel.get_ray_intersection_unbounded(sp3);
-    if (!xy3_mm){
-      continue;
-    }
+    if (!xy3_mm) continue;
     std::array<double, 2> xy3 = det_panel.mm_to_px((*xy3_mm)[0], (*xy3_mm)[1]);
     auto xy4_mm = det_panel.get_ray_intersection_unbounded(sp4);
-    if (!xy4_mm){
-      continue;
-    }
+    if (!xy4_mm) continue;
     std::array<double, 2> xy4 = det_panel.mm_to_px((*xy4_mm)[0],(*xy4_mm)[1]);
 
     // Get the min and max x and y coords
@@ -439,20 +394,21 @@ std::vector<Prediction> SSXPredictor::predict(
     extent.z_max = 1;
     p.bbox_extent = extent;
     
-    // also calculate partiality
-    // Could filter on partiality > 0.25 at start before lots of calcs?
+    // Calculate partiality
+    // Note: could filter on partiality > 0.25 at start before lots of calcs?
     double e2 = std::pow(epsilon, 2);
     double S00 = std::pow(mosaicity_min, 2);
     p.partiality = exp(-0.5 * e2 / S22) * sqrt(S00 / S22);
+    // will need to divide partiality_variance by n_obs to finalize.
     p.partiality_variance = e2 * exp(e2 / S22) / S00;
-    // will need to divide partiality_variance by n_obs
+    
     predictions.push_back(std::move(p));
   }
+  // finalise partiality variance by dividing by nobs
   int n_obs = predictions.size();
   for (auto& p : predictions){
     p.partiality_variance /= n_obs;
   }
-  // need to divide by nobs for partiality_variance
 
   return predictions;
 }
