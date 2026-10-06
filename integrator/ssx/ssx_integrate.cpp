@@ -9,6 +9,7 @@
 #include "reflection_likelihood.hpp"
 #include "predictor/index_generators.hpp"
 #include "predictor/predict.hpp"
+#include "integrator/extent.hpp"
 
 using Matrix3d = Eigen::Matrix3d;
 using Vector2d = Eigen::Vector2d;
@@ -22,6 +23,8 @@ Vector3d ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
                        const Vector3d &s0,
                        const Panel &panel,
                        const Matrix3d &A) {
+    // This code should prepare for integration, by refining a mosaicity model and then predicting
+    // the reflections including bboxes, so that it is ready to integrate.
     double max_separation = 2.0;
     // perform max separation filter
     std::vector<std::size_t> keep;
@@ -117,11 +120,43 @@ Vector3d ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
     std::vector<Eigen::Vector3i> pred_miller_indices = idxgen.to_array();
     SSXPredictor predictor(sigma);
     std::vector<Prediction> predictions = predictor.predict(
-        pred_miller_indices, s0, A, detector
+        pred_miller_indices, s0, A, detector, m.min
     );
     std::cout << "Predictions size " << predictions.size() << std::endl;
 
+    BoundingBoxExtents e = predictions[0].bbox_extent;
 
+    std::cout << e.x_min << " " << e.x_max << " " << e.y_min << " " << e.y_max << std::endl;
+    std::cout << predictions[0].partiality << std::endl;
+    std::cout << predictions[10].partiality << std::endl;
+    std::cout << predictions[20].partiality << std::endl;
+    std::cout << predictions[30].partiality << std::endl;
+    std::cout << predictions[40].partiality << std::endl;
+    std::vector<BoundingBoxExtents> computed_bounding_boxes;
+    // now use sigma_d to estimate foreground/background?
+
+
+    // loop through bboxes    
+
+    /*
+    shoebox_probability=FULL_PARTIALITY
+    FULL_PARTIALITY = math.erf(3 / math.sqrt(2))
+    profile = experiment.crystal.mosaicity
+    // predictions have s1 and s2
+
+    // compute bbox extent, then iterate through, determining either fg or bg - if 
+    // fg, sum, if bg, add to hist as before.
+
+    profile.parameterisation.compute_bbox(
+        experiments, reflection_table, shoebox_probability
+    )
+    profile.parameterisation.compute_mask(
+        experiments, reflection_table, shoebox_probability
+    )
+        
+    then do summed intensity, background, corrections, partiality
+    profile.parameterisation.compute_partiality(experiments, reflection_table)
+    */
 
     return m_vals;
 

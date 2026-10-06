@@ -16,6 +16,7 @@
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <iostream>
 
 #include "ffs_logger.hpp"
 #include "predictor/index_generators.hpp"
@@ -27,6 +28,7 @@ using json = nlohmann::json;
 
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
+using Eigen::Vector2d;
 
 predicted_data_rotation predict_single_image(
   const int image_index,
@@ -292,7 +294,9 @@ std::vector<Prediction> SSXPredictor::predict(
     const std::vector<Eigen::Vector3i>& miller_indices,
     const Eigen::Vector3d& s0,
     const Eigen::Matrix3d& A,
-    const Detector& detector) const {
+    const Detector& detector,
+    const double mosaicity_min,
+    const int bbox_border) const {
 
   const double quantile = 14.1563;//chisq_quantile(3, probability_);
 
@@ -301,6 +305,8 @@ std::vector<Prediction> SSXPredictor::predict(
 
   const Eigen::Matrix3d sigma_inv = sigma_.inverse();
   double s0_len = s0.norm();
+
+  const double D = 11.8292;//chisq_quantile(2, probability_);
 
   for (const auto& h : miller_indices) {
 
@@ -370,8 +376,83 @@ std::vector<Prediction> SSXPredictor::predict(
     std::array<double, 2> xycoords_px =
       detector.panels()[p.panel].mm_to_px(result.xymm[0], result.xymm[1]);
     p.xyzcal_px = Eigen::Vector3d(xycoords_px[0], xycoords_px[1], 0.0);
+
+    BoundingBoxExtents extent; 
+    // do bbox calc here too, as we have all we need.
+    const Eigen::Vector2d S21 = {S(2,0), S(2,1)};
+    Eigen::Matrix2d S12_S21 = S12 * S21.transpose();
+    Eigen::Matrix2d S11 = S.block<2, 2>(0, 0);
+    //  multiply_transpose(&S12[0], &S21[0], 2, 1, 2, &S12_S21[0]);
+    //  mat2<double> Sbar = S11 - S12_S21 * S22_inv;
+    Eigen::Matrix2d Sbar = S11 - S12_S21 / S22;
+
+    double delta1 = std::sqrt(D * Sbar(0,0));
+    double delta2 = std::sqrt(D * Sbar(1,1));
+
+    // The corner points in conditional space
+    Vector2d p1 = mubar + Vector2d(-delta1, -delta2);
+    Vector2d p2 = mubar + Vector2d(-delta1, +delta2);
+    Vector2d p3 = mubar + Vector2d(+delta1, -delta2);
+    Vector2d p4 = mubar + Vector2d(+delta1, +delta2);
+
+    // The corner points in lab space
+    Matrix3d RT = R.transpose();
+    Vector3d sp1 = RT * Vector3d(p1[0], p1[1], s0_len);
+    Vector3d sp2 = RT * Vector3d(p2[0], p2[1], s0_len);
+    Vector3d sp3 = RT * Vector3d(p3[0], p3[1], s0_len);
+    Vector3d sp4 = RT * Vector3d(p4[0], p4[1], s0_len);
+
+    // The xy coordinates on the detector
+    const Panel& det_panel = detector.panels()[p.panel];
+    auto xy1_mm = det_panel.get_ray_intersection_unbounded(sp1);
+    if (!xy1_mm){
+      continue;
+    }
+    std::array<double, 2> xy1 = det_panel.mm_to_px((*xy1_mm)[0], (*xy1_mm)[1]);
+    auto xy2_mm = det_panel.get_ray_intersection_unbounded(sp2);
+    if (!xy2_mm){
+      continue;
+    }
+    std::array<double, 2> xy2 = det_panel.mm_to_px((*xy2_mm)[0], (*xy2_mm)[1]);
+    auto xy3_mm = det_panel.get_ray_intersection_unbounded(sp3);
+    if (!xy3_mm){
+      continue;
+    }
+    std::array<double, 2> xy3 = det_panel.mm_to_px((*xy3_mm)[0], (*xy3_mm)[1]);
+    auto xy4_mm = det_panel.get_ray_intersection_unbounded(sp4);
+    if (!xy4_mm){
+      continue;
+    }
+    std::array<double, 2> xy4 = det_panel.mm_to_px((*xy4_mm)[0],(*xy4_mm)[1]);
+
+    // Get the min and max x and y coords
+    double xmin = std::min(std::min(xy1[0], xy2[0]), std::min(xy3[0], xy4[0]));
+    double ymin = std::min(std::min(xy1[1], xy2[1]), std::min(xy3[1], xy4[1]));
+    double xmax = std::max(std::max(xy1[0], xy2[0]), std::max(xy3[0], xy4[0]));
+    double ymax = std::max(std::max(xy1[1], xy2[1]), std::max(xy3[1], xy4[1]));
+    // Create bounding box
+    extent.x_min = ((int)std::floor(xmin)) - bbox_border;
+    extent.y_min = ((int)std::floor(ymin)) - bbox_border;
+    extent.x_max = ((int)std::ceil(xmax)) + bbox_border;
+    extent.y_max = ((int)std::ceil(ymax)) + bbox_border;
+    extent.z_min = 0;
+    extent.z_max = 1;
+    p.bbox_extent = extent;
+    
+    // also calculate partiality
+    // Could filter on partiality > 0.25 at start before lots of calcs?
+    double e2 = std::pow(epsilon, 2);
+    double S00 = std::pow(mosaicity_min, 2);
+    p.partiality = exp(-0.5 * e2 / S22) * sqrt(S00 / S22);
+    p.partiality_variance = e2 * exp(e2 / S22) / S00;
+    // will need to divide partiality_variance by n_obs
     predictions.push_back(std::move(p));
   }
+  int n_obs = predictions.size();
+  for (auto& p : predictions){
+    p.partiality_variance /= n_obs;
+  }
+  // need to divide by nobs for partiality_variance
 
   return predictions;
 }

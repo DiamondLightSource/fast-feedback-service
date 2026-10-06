@@ -187,6 +187,7 @@ TEST(BaselineIntegrator, ssx_integrate_function) {
     EXPECT_NEAR(m(0) * 1e6, 80.1153, 1e-3);
     EXPECT_NEAR(m(1) * 1e6, 629.709, 1e-3);
     EXPECT_NEAR(m(2) * 1e6, 724.904, 1e-3);
+    EXPECT_NEAR(m(2) * 1e6, 0, 1e-3);
     /* expected result (dials)
         Eigen Values:
     | 5.25e-07        0        0|

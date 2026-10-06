@@ -19,6 +19,8 @@
 #include <tuple>
 #include <vector>
 
+#include "integrator/extent.hpp"
+
 inline constexpr size_t predicted_flag = (1 << 0);
 
 struct predicted_data_rotation {
@@ -102,8 +104,13 @@ struct Prediction {
 
   std::size_t panel;
 
+  BoundingBoxExtents bbox_extent;
+  double partiality;
+  double partiality_variance;
+
   bool entering = false;
   int experiment_id = 0;
+
 };
 
 class SSXPredictor {
@@ -115,7 +122,9 @@ public:
     const std::vector<Eigen::Vector3i>& miller_indices,
     const Eigen::Vector3d& s0,
     const Eigen::Matrix3d& A,
-    const Detector& detector) const;
+    const Detector& detector,
+    const double mosaicity_min,
+    const int bbox_border=4) const;
 
 private:
   Eigen::Matrix3d sigma_;
