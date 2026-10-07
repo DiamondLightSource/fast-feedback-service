@@ -8,11 +8,11 @@
 
 #pragma once
 
-#include <Eigen/Dense>
 #include <Eigen/Core>
-#include <cassert>
+#include <Eigen/Dense>
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <gemmi/symmetry.hpp>
@@ -25,123 +25,119 @@ using Eigen::MatrixXd;
 using Eigen::Vector3d;
 
 class MillerIndexRange {
-public:
-  using Index = Eigen::Vector3i;
-
-  class Iterator {
   public:
-    using iterator_category = std::input_iterator_tag;
-    using pointer = const Index*;
-    using reference = const Index&;
+    using Index = Eigen::Vector3i;
 
-    Iterator(Index begin, Index end, bool is_end = false)
-        : begin_(begin),
-          end_(end),
-          current_(begin),
-          at_end_(is_end)
-    {
-      if (!is_end) {
-        for (int i = 0; i < 3; ++i) {
-          if (begin_[i] >= end_[i]) {
+    class Iterator {
+      public:
+        using iterator_category = std::input_iterator_tag;
+        using pointer = const Index *;
+        using reference = const Index &;
+
+        Iterator(Index begin, Index end, bool is_end = false)
+            : begin_(begin), end_(end), current_(begin), at_end_(is_end) {
+            if (!is_end) {
+                for (int i = 0; i < 3; ++i) {
+                    if (begin_[i] >= end_[i]) {
+                        at_end_ = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        reference operator*() const {
+            return current_;
+        }
+
+        pointer operator->() const {
+            return &current_;
+        }
+
+        Iterator &operator++() {
+            for (int i = 2; i >= 0; --i) {
+                ++current_[i];
+
+                if (current_[i] < end_[i]) {
+                    return *this;
+                }
+
+                current_[i] = begin_[i];
+            }
+
             at_end_ = true;
-            break;
-          }
-        }
-      }
-    }
-
-    reference operator*() const {
-      return current_;
-    }
-
-    pointer operator->() const {
-      return &current_;
-    }
-
-    Iterator& operator++() {
-      for (int i = 2; i >= 0; --i) {
-        ++current_[i];
-
-        if (current_[i] < end_[i]) {
-          return *this;
+            return *this;
         }
 
-        current_[i] = begin_[i];
-      }
+        bool operator==(const Iterator &other) const {
+            if (at_end_ && other.at_end_) {
+                return true;
+            }
 
-      at_end_ = true;
-      return *this;
+            return at_end_ == other.at_end_ && current_ == other.current_;
+        }
+
+        bool operator!=(const Iterator &other) const {
+            return !(*this == other);
+        }
+
+      private:
+        Index begin_;
+        Index end_;
+        Index current_;
+        bool at_end_;
+    };
+
+    MillerIndexRange(Index begin, Index end)
+        : begin_(std::move(begin)), end_(std::move(end)) {}
+
+    Iterator begin() const {
+        return Iterator(begin_, end_);
     }
 
-    bool operator==(const Iterator& other) const {
-    if (at_end_ && other.at_end_) {
-      return true;
-    }
-
-    return at_end_ == other.at_end_
-        && current_ == other.current_;
-    }
-
-    bool operator!=(const Iterator& other) const {
-      return !(*this == other);
+    Iterator end() const {
+        return Iterator(begin_, end_, true);
     }
 
   private:
     Index begin_;
     Index end_;
-    Index current_;
-    bool at_end_;
-  };
-
-  MillerIndexRange(Index begin, Index end)
-      : begin_(std::move(begin)),
-        end_(std::move(end)) {}
-
-  Iterator begin() const {
-    return Iterator(begin_, end_);
-  }
-
-  Iterator end() const {
-    return Iterator(begin_, end_, true);
-  }
-
-private:
-  Index begin_;
-  Index end_;
 };
 
 /*
 A simple index generator for scan-static cell (also suitable for SSX data).
 */
 class IndexGenerator {
-  public: IndexGenerator(
-    const gemmi::UnitCell &cell,
-    gemmi::GroupOps &crystal_symmetry_operations,
-                        const double dmin)
-      : cell(cell), crystal_symmetry_operations(crystal_symmetry_operations), dmin(dmin) {
+  public:
+    IndexGenerator(const gemmi::UnitCell &cell,
+                   gemmi::GroupOps &crystal_symmetry_operations,
+                   const double dmin)
+        : cell(cell),
+          crystal_symmetry_operations(crystal_symmetry_operations),
+          dmin(dmin) {
         auto max_indices = cell.get_hkl_limits(dmin);
         reference_h_max = {max_indices[0], max_indices[1], max_indices[2]};
-      }
-
-
-  std::vector<Eigen::Vector3i> to_array(){
-    std::vector<Eigen::Vector3i> array_result;
-    const auto extents = (2 * reference_h_max.array() + 1);
-    const std::size_t max_size = static_cast<std::size_t>(extents.prod());
-    array_result.reserve(max_size / 4);
-    for (const auto& h : MillerIndexRange(-reference_h_max, reference_h_max + Eigen::Vector3i::Ones())){
-      if (h.isZero()) {
-        continue;
-      }
-      std::array<int,3> result{h[0], h[1], h[2]};
-      if (cell.calculate_d(result) >= dmin){
-        if (!crystal_symmetry_operations.is_systematically_absent(result)) {
-          array_result.push_back(h);
-        }
-      }
     }
-    return array_result;
-  }
+
+    std::vector<Eigen::Vector3i> to_array() {
+        std::vector<Eigen::Vector3i> array_result;
+        const auto extents = (2 * reference_h_max.array() + 1);
+        const std::size_t max_size = static_cast<std::size_t>(extents.prod());
+        array_result.reserve(max_size / 4);
+        for (const auto &h : MillerIndexRange(
+               -reference_h_max, reference_h_max + Eigen::Vector3i::Ones())) {
+            if (h.isZero()) {
+                continue;
+            }
+            std::array<int, 3> result{h[0], h[1], h[2]};
+            if (cell.calculate_d(result) >= dmin) {
+                if (!crystal_symmetry_operations.is_systematically_absent(result)) {
+                    array_result.push_back(h);
+                }
+            }
+        }
+        return array_result;
+    }
 
   private:
     const gemmi::UnitCell cell;
@@ -149,7 +145,6 @@ class IndexGenerator {
     double dmin;
     Eigen::Vector3i reference_h_max;
 };
-
 
 /**
  * A class to generate miller indices for rotational experiments using the Reeke algorithm.

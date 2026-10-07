@@ -1,15 +1,15 @@
+#include "ssx_integrate.hpp"
+
 #include <cmath>
 #include <math/math_utils.cuh>
 #include <vector>
 
 #include "fisher_scoring_max_likelihood.hpp"
+#include "integrator/extent.hpp"
 #include "integrator/sigma_estimation.hpp"
 #include "max_likelihood_target.hpp"
-#include "reflection_likelihood.hpp"
 #include "predictor/index_generators.hpp"
-
-#include "integrator/extent.hpp"
-#include "ssx_integrate.hpp"
+#include "reflection_likelihood.hpp"
 
 using Matrix3d = Eigen::Matrix3d;
 using Vector2d = Eigen::Vector2d;
@@ -18,15 +18,16 @@ using Vector2d = Eigen::Vector2d;
 The input vectors are typically short (<100 values),
 as they are the data for successfully indexed spots.
 */
-Simple6MosaicityParameterisation refine_mosaicity(const std::vector<Vector3d> &xyzcal_px,
-                       const std::vector<Vector3d> &xyzobs_px,
-                       const std::vector<Vector3d> &covariances,
-                       const std::vector<double> &intensities,
-                       const std::vector<Eigen::Vector3i> &miller_indices,
-                       const std::vector<Vector2d> &mobs,
-                       const Vector3d &s0,
-                       const Panel &panel,
-                       const Matrix3d &A) {
+Simple6MosaicityParameterisation refine_mosaicity(
+  const std::vector<Vector3d> &xyzcal_px,
+  const std::vector<Vector3d> &xyzobs_px,
+  const std::vector<Vector3d> &covariances,
+  const std::vector<double> &intensities,
+  const std::vector<Eigen::Vector3i> &miller_indices,
+  const std::vector<Vector2d> &mobs,
+  const Vector3d &s0,
+  const Panel &panel,
+  const Matrix3d &A) {
     double max_separation = 2.0;
     // perform max separation filter
     std::vector<std::size_t> keep;
@@ -99,12 +100,10 @@ Simple6MosaicityParameterisation refine_mosaicity(const std::vector<Vector3d> &x
     return model;
 }
 
-std::vector<Prediction> predict_ssx(
-    const Simple6MosaicityParameterisation& model,
-    const Vector3d &s0,
-    const Panel &panel,
-    const Matrix3d &A){
-
+std::vector<Prediction> predict_ssx(const Simple6MosaicityParameterisation &model,
+                                    const Vector3d &s0,
+                                    const Panel &panel,
+                                    const Matrix3d &A) {
     gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
     gemmi::GroupOps crystal_symmetry_operations = space_group.operations();
 
@@ -124,25 +123,28 @@ std::vector<Prediction> predict_ssx(
 
     std::vector<Eigen::Vector3i> pred_miller_indices = idxgen.to_array();
     SSXPredictor predictor(model.sigma());
-    std::vector<Prediction> predictions = predictor.predict(
-        pred_miller_indices, s0, A, detector, mosaicity.min
-    );
+    std::vector<Prediction> predictions =
+      predictor.predict(pred_miller_indices, s0, A, detector, mosaicity.min);
     return predictions;
 }
 
-
 void ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
-                       const std::vector<Vector3d> &xyzobs_px,
-                       const std::vector<Vector3d> &covariances,
-                       const std::vector<double> &intensities,
-                       const std::vector<Eigen::Vector3i> &miller_indices,
-                       const std::vector<Vector2d> &mobs,
-                       const Vector3d &s0,
-                       const Panel &panel,
-                       const Matrix3d &A){
-    Simple6MosaicityParameterisation model = refine_mosaicity(
-        xyzcal_px, xyzobs_px, covariances, intensities,
-        miller_indices, mobs, s0, panel, A
-    );
+                   const std::vector<Vector3d> &xyzobs_px,
+                   const std::vector<Vector3d> &covariances,
+                   const std::vector<double> &intensities,
+                   const std::vector<Eigen::Vector3i> &miller_indices,
+                   const std::vector<Vector2d> &mobs,
+                   const Vector3d &s0,
+                   const Panel &panel,
+                   const Matrix3d &A) {
+    Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
+                                                              xyzobs_px,
+                                                              covariances,
+                                                              intensities,
+                                                              miller_indices,
+                                                              mobs,
+                                                              s0,
+                                                              panel,
+                                                              A);
     std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);
 }

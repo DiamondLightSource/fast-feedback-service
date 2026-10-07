@@ -175,21 +175,19 @@ TEST(SSXIntegrator, ssx_refine_mosaicity) {
                                      {2214.822603879991, 2095.0326031574145, 0.5},
                                      {1200.8093508947643, 2138.240046372163, 0.5}});
 
-    Simple6MosaicityParameterisation model = refine_mosaicity(
-      xyzcal_px,
-      xyzobs_px,
-      covariances,
-      intensities,
-      miller_indices,
-      mobs,
-      s0,
-      panel,
-      A
-    );
+    Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
+                                                              xyzobs_px,
+                                                              covariances,
+                                                              intensities,
+                                                              miller_indices,
+                                                              mobs,
+                                                              s0,
+                                                              panel,
+                                                              A);
     auto mosaicity = model.mosaicity();
-    EXPECT_NEAR(mosaicity.min * 1e6, 80.1153, 1e-3); // Verified calculations
-    EXPECT_NEAR(mosaicity.mid * 1e6, 629.709, 1e-3); // Verified calculations
-    EXPECT_NEAR(mosaicity.max * 1e6, 724.904, 1e-3); // Verified calculations
+    EXPECT_NEAR(mosaicity.min * 1e6, 80.1153, 1e-3);  // Verified calculations
+    EXPECT_NEAR(mosaicity.mid * 1e6, 629.709, 1e-3);  // Verified calculations
+    EXPECT_NEAR(mosaicity.max * 1e6, 724.904, 1e-3);  // Verified calculations
 
     /* expected result (dials)
     Eigen Values:
@@ -247,10 +245,8 @@ TEST(SSXIntegrator, ssx_predict) {
     Vector3d s0 = beam.get_s0();
     Matrix3d A = crystal.get_A_matrix();
 
-    Eigen::Matrix<double, 6, 1> params {1e-4, 2e-4, 3e-4, 1e-5, 2e-5, 3e-5};
+    Eigen::Matrix<double, 6, 1> params{1e-4, 2e-4, 3e-4, 1e-5, 2e-5, 3e-5};
     Simple6MosaicityParameterisation model(params);
-    std::vector<Prediction> predictions = predict_ssx(
-      model, s0, panel, A
-    );
-    EXPECT_EQ(predictions.size(), 239); // Verified calculations.
+    std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);
+    EXPECT_EQ(predictions.size(), 239);  // Verified calculations.
 }
