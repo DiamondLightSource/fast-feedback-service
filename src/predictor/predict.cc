@@ -16,7 +16,6 @@
 #include <mutex>
 #include <optional>
 #include <stdexcept>
-#include <iostream>
 
 #include "ffs_logger.hpp"
 #include "predictor/index_generators.hpp"
