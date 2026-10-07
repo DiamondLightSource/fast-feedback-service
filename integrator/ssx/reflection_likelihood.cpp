@@ -40,18 +40,6 @@ DerivativeMatrices rotate_mat3_double(const Eigen::Matrix3d &R,
     return result;
 }
 
-Eigen::Matrix3d compute_change_of_basis_operation(const Eigen::Vector3d &s0,
-                                                  const Eigen::Vector3d &s2) {
-    // add check that s0 and s2 are not nearly parallel?
-    const Eigen::Vector3d e1 = s2.cross(s0).normalized();
-    const Eigen::Vector3d e2 = s2.cross(e1).normalized();
-    const Eigen::Vector3d e3 = s2.normalized();
-
-    Eigen::Matrix3d R;
-    R << e1.x(), e1.y(), e1.z(), e2.x(), e2.y(), e2.z(), e3.x(), e3.y(), e3.z();
-    return R;
-}
-
 namespace {
 
 Eigen::Matrix3d compute_S(const Simple6MosaicityParameterisation &model,

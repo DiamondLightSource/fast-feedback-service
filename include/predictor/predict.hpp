@@ -113,6 +113,9 @@ struct Prediction {
 
 };
 
+Eigen::Matrix3d compute_change_of_basis_operation(const Eigen::Vector3d &s0,
+                                                  const Eigen::Vector3d &s2);
+
 class SSXPredictor {
 public:
   SSXPredictor(const Eigen::Matrix3d& sigma)

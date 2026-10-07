@@ -4,6 +4,7 @@
 #include <array>
 
 #include "mosaicity_parameterisation.hpp"
+#include "predictor/predict.hpp" // For compute_change_of_basis_op
 
 using Vector2d = Eigen::Vector2d;
 using Vector3d = Eigen::Vector3d;
@@ -24,7 +25,6 @@ Vector2d compute_dmbar(const Matrix3d &S, const Matrix3d &dS, double epsilon);
 DerivativeMatrices rotate_Matrix3d_double(const Matrix3d &R,
                                           const DerivativeMatrices &A);
 
-Matrix3d compute_change_of_basis_operation(const Vector3d &s0, const Vector3d &s2);
 
 class ConditionalDistribution {
   public:

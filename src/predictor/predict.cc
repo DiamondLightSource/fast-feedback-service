@@ -277,7 +277,7 @@ std::tuple<bool, scan_varying_data> extract_scan_varying_data(json elist_json_ob
 }
 
 
-Eigen::Matrix3d compute_change_of_basis_operation2(const Eigen::Vector3d &s0,
+Eigen::Matrix3d compute_change_of_basis_operation(const Eigen::Vector3d &s0,
                                                   const Eigen::Vector3d &s2) {
     // add check that s0 and s2 are not nearly parallel?
     const Eigen::Vector3d e1 = s2.cross(s0).normalized();
@@ -317,7 +317,7 @@ std::vector<Prediction> SSXPredictor::predict(
       continue;
     }
 
-    const Eigen::Matrix3d R = compute_change_of_basis_operation2(s0, s2);
+    const Eigen::Matrix3d R = compute_change_of_basis_operation(s0, s2);
     const Eigen::Matrix3d S = R * sigma_ * R.transpose();
     const Eigen::Vector3d mu = R * s2;
     const Eigen::Vector2d S12 = S.block<2, 1>(0, 2);

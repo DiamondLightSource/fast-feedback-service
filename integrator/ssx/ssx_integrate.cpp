@@ -137,30 +137,6 @@ std::vector<Prediction> predict_ssx(
     return predictions;
 }
 
-// now use sigma_d to estimate foreground/background?
-
-
-// loop through bboxes    
-
-/*
-shoebox_probability=FULL_PARTIALITY
-FULL_PARTIALITY = math.erf(3 / math.sqrt(2))
-profile = experiment.crystal.mosaicity
-// predictions have s1 and s2
-
-// compute bbox extent, then iterate through, determining either fg or bg - if 
-// fg, sum, if bg, add to hist as before.
-
-profile.parameterisation.compute_bbox(
-    experiments, reflection_table, shoebox_probability
-)
-profile.parameterisation.compute_mask(
-    experiments, reflection_table, shoebox_probability
-)
-    
-then do summed intensity, background, corrections, partiality
-profile.parameterisation.compute_partiality(experiments, reflection_table)
-*/
 
 void ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
                        const std::vector<Vector3d> &xyzobs_px,

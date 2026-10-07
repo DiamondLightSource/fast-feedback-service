@@ -8,7 +8,7 @@
 using Eigen::Matrix3d;
 using Vector6d = Eigen::Matrix<double, 6, 1>;
 
-TEST(BaselineIntegrator, mosaicity_parameterisation) {
+TEST(SSXIntegrator, mosaicity_parameterisation) {
     // Test that parameters update properly
     Vector6d p1 = {1e-3, 2e-3, 3e-3, 4e-3, 5e-3, 6e-3};
     Simple6MosaicityParameterisation m_param(p1);

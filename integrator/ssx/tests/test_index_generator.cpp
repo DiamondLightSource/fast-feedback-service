@@ -10,7 +10,7 @@
 
 using Eigen::Vector3i;
 
-TEST(BaselineIntegrator, ssx_index_generator) {
+TEST(SSXIntegrator, ssx_index_generator) {
 
     gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P 21 3");
     gemmi::GroupOps crystal_symmetry_operations = space_group.operations();
