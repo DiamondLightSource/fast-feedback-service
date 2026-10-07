@@ -230,8 +230,8 @@ std::tuple<double, double, int> Reflection3D::variances_in_kabsch_space(
 std::tuple<int, int> filter_reflections(std::vector<Reflection3D> &reflections,
                                         const uint min_spot_size,
                                         const float max_peak_centroid_separation) {
-    int n_filtered_by_spot_size;
-    int n_filtered_by_separation;
+    int n_filtered_by_spot_size = 0;
+    int n_filtered_by_separation = 0;
     int n_current = reflections.size();
     if (min_spot_size > 0) {
         reflections.erase(std::remove_if(reflections.begin(),
