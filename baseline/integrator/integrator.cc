@@ -714,11 +714,7 @@ int main(int argc, char **argv) {
             logger.info("Monochromatic static prediction");
         }
 
-        double wavelength = beam.get_wavelength();
-        double dmin_min = 0.5 * wavelength;
-        // FIXME: Need a better dmin_default from .expt file (like in DIALS)
-        double dmin_default = dmin_min;
-        double param_dmin = dmin_default;
+        double param_dmin = panel.get_max_resolution_at_corners(s0);
         int buffer_size = 0;
         output_data =
           predict_rotation(expt, sv_data, param_dmin, buffer_size, nthreads);
