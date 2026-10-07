@@ -27,8 +27,6 @@ Simple6MosaicityParameterisation refine_mosaicity(const std::vector<Vector3d> &x
                        const Vector3d &s0,
                        const Panel &panel,
                        const Matrix3d &A) {
-    // This code should prepare for integration, by refining a mosaicity model and then predicting
-    // the reflections including bboxes, so that it is ready to integrate.
     double max_separation = 2.0;
     // perform max separation filter
     std::vector<std::size_t> keep;
@@ -107,7 +105,6 @@ std::vector<Prediction> predict_ssx(
     const Panel &panel,
     const Matrix3d &A){
 
-    // now predict
     gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
     gemmi::GroupOps crystal_symmetry_operations = space_group.operations();
 
@@ -116,10 +113,7 @@ std::vector<Prediction> predict_ssx(
     panels.push_back(panel);
     const Detector detector(panels);
 
-    // For now return the mosaicity values for testing
     auto mosaicity = model.mosaicity();
-    //Vector3d m_vals = {m.min, m.mid, m.max};
-
     Crystal crystal(A, space_group);
     const gemmi::UnitCell cell = crystal.get_unit_cell();
 
@@ -129,8 +123,7 @@ std::vector<Prediction> predict_ssx(
     IndexGenerator idxgen(cell, crystal_symmetry_operations, dmin);
 
     std::vector<Eigen::Vector3i> pred_miller_indices = idxgen.to_array();
-    Matrix3d sigma = model.sigma();
-    SSXPredictor predictor(sigma);
+    SSXPredictor predictor(model.sigma());
     std::vector<Prediction> predictions = predictor.predict(
         pred_miller_indices, s0, A, detector, mosaicity.min
     );
