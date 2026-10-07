@@ -930,7 +930,7 @@ int main(int argc, char **argv) {
                     // Store the connected components slice in the map
                     (*rotation_slices)[offset_image_num] =
                       std::move(connected_components_2d);
-                } else if (save_to_h5 | output_for_index) {
+                } else if (save_to_h5 || output_for_index) {
                     std::vector<Reflection3D> reflections =
                       connected_components_2d->find_2d_components(
                         min_spot_size, max_peak_centroid_separation);
