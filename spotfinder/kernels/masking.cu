@@ -17,6 +17,7 @@
  *       assumption that the detector is perpendicular to the beam.
  */
 
+#include "cuda_common.hpp"
 #include "device_common.cuh"
 #include "masking.cuh"
 
@@ -182,5 +183,8 @@ void call_apply_resolution_mask(dim3 blocks,
       params.detector.pixel_size_y,
       params.dmin,
       params.dmax);
+    // This wrapper does not synchronise, so without this an invalid launch
+    // would be reported against the caller's own synchronisation.
+    CUDA_CHECK(cudaGetLastError());
 }
 #pragma endregion Launch wrapper
