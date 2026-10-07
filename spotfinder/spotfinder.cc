@@ -832,13 +832,21 @@ int main(int argc, char **argv) {
                 // anticipate that we will want to eventually offload
                 // the decompression
                 switch (reader.get_raw_chunk_compression()) {
-                case Reader::ChunkCompression::BITSHUFFLE_LZ4:
-                    bshuf_decompress_lz4(buffer.data() + 12,
-                                         host_image.get(),
-                                         width * height,
-                                         sizeof(pixel_t),
-                                         0);
+                case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
+                    const int64_t consumed = bshuf_decompress_lz4(buffer.data() + 12,
+                                                                  host_image.get(),
+                                                                  width * height,
+                                                                  sizeof(pixel_t),
+                                                                  0);
+                    if (consumed < 0) {
+                        throw std::runtime_error(
+                          fmt::format("bitshuffle/LZ4 decompression of image {} "
+                                      "failed with code {}",
+                                      offset_image_num,
+                                      consumed));
+                    }
                     break;
+                }
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
                     decompress_byte_offset<pixel_t>(
                       buffer,
