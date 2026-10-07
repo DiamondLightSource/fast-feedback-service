@@ -78,19 +78,17 @@ auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
             }
         }
         start.record();
-        cudaMemcpy2DAsync(dev_mask.get(),
-                          device_mask_pitch,
-                          reader.get_mask()->data(),
-                          width,
-                          width,
-                          height,
-                          cudaMemcpyHostToDevice);
-        cuda_throw_error();
+        CUDA_CHECK(cudaMemcpy2D(dev_mask.get(),
+                                device_mask_pitch,
+                                reader.get_mask()->data(),
+                                width,
+                                width,
+                                height,
+                                cudaMemcpyHostToDevice));
     } else {
         valid_pixels = width * height;
         start.record();
-        cudaMemset(dev_mask.get(), 1, device_mask_pitch * height);
-        cuda_throw_error();
+        CUDA_CHECK(cudaMemset(dev_mask.get(), 1, device_mask_pitch * height));
     }
     end.record();
     end.synchronize();
@@ -661,13 +659,13 @@ int main(int argc, char **argv) {
         if (do_writeout) {
             // Copy the mask back from the GPU
             auto calculated_mask = std::vector<uint8_t>(width * height, 0);
-            cudaMemcpy2D(calculated_mask.data(),
-                         width,
-                         mask.get(),
-                         mask.pitch_bytes(),
-                         width,
-                         height,
-                         cudaMemcpyDeviceToHost);
+            CUDA_CHECK(cudaMemcpy2D(calculated_mask.data(),
+                                    width,
+                                    mask.get(),
+                                    mask.pitch_bytes(),
+                                    width,
+                                    height,
+                                    cudaMemcpyDeviceToHost));
 
             auto image_mask =
               std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
