@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG CUDA_VERSION=13.3.1
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
@@ -31,17 +32,25 @@ ENV CMAKE_GENERATOR=Ninja
 # and the compiled binaries take it from this.
 ARG FFS_VERSION=0.0.0.dev0
 
+# ccache comes from the build environment and cmake picks it up on its own. The
+# default compiler check compares the compiler's mtime, which a rebuilt image
+# changes, so compare contents instead or every run is a miss.
+ENV CCACHE_DIR=/ccache
+ENV CCACHE_COMPILERCHECK=content
+
 # Build and install in one step. pip configures and builds through cmake, then
 # installs the result. pip is the runtime environment's own, so the extension
 # modules are built for its interpreter; cmake, ninja and the compilers resolve
 # to the build environment, which has them where the runtime one does not.
-RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="${FFS_VERSION}" \
+RUN --mount=type=cache,target=/ccache \
+    SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="${FFS_VERSION}" \
     CMAKE_ARGS="-DCUDA_ARCH=all-supported \
                 -DHDF5_ROOT=/opt/ffs \
                 -DCMAKE_INSTALL_RPATH=/opt/ffs/lib \
                 -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
                 -DUSE_REDUCED_PRECISION=OFF" \
-    /opt/ffs/bin/pip3 install --no-build-isolation --root-user-action=ignore /opt/ffs_src
+    /opt/ffs/bin/pip3 install --no-build-isolation --root-user-action=ignore /opt/ffs_src \
+    && ccache --show-stats
 
 # The extension modules arrive with the wheel rather than with cmake, so
 # prove they import before the runtime stage copies the prefix

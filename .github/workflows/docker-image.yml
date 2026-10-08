@@ -71,6 +71,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Persist the ccache dir across runs. actions/cache moves it in and out
+      # of the GHA cache, and the dance copies it into the buildkit mount,
+      # which is not otherwise exported. Only the compiler cache is carried:
+      # caching the build-stage layers too was measured to cost more than it
+      # saved, because exporting them every run outweighed the hits.
+      - name: Restore ccache
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}
+          key: ccache-${{ steps.prep.outputs.platform-pair }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ steps.prep.outputs.platform-pair }}-
+
+      - name: Inject ccache into buildx
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          cache-map: |
+            { "${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}": "/ccache" }
+
       # Both images are built in this one job, rather than on a matrix
       # axis, so they can shared a compiled image
       - name: Build service image
