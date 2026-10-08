@@ -24,7 +24,10 @@ MODULE_ROOT=/dls_sw/apps/Modules/modulefiles/fast-feedback-service
 MODULE_NAME=
 PREFIX=
 BUILD_ENV=/tmp/ffs-build-env
-CUDA_MODULE=cuda/13.3.1
+# The container base image limits CUDA version updates, so it is the source.
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CUDA_MODULE=cuda/$(sed -n 's/^ARG CUDA_VERSION=//p' "$SRC/Dockerfile")
+[[ "$CUDA_MODULE" != "cuda/" ]] || { echo "Could not read ARG CUDA_VERSION from $SRC/Dockerfile" >&2; exit 1; }
 BUILD_DIR=build_module
 RECREATE=false
 INCREMENTAL=false
@@ -95,7 +98,6 @@ done
 # Derive the paths the version implies
 : "${PREFIX:=$INSTALL_ROOT/$VERSION}"
 : "${MODULE_NAME:=$VERSION}"
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Validate arguments
 [[ -f "$SRC/CMakeLists.txt" ]] || { print_error "Not a source tree: $SRC"; exit 1; }

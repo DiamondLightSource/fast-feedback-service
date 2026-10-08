@@ -21,9 +21,10 @@
 
 set -euo pipefail
 
-# What both deployments build against, and so what to suggest when the CUDA in
-# this shell cannot compile. Keep in step with module/deploy.sh.
-CUDA_MODULE=${CUDA_MODULE:-cuda/13.3.1}
+# The container base image limits CUDA version updates, so it is the source.
+_cuda_version=$(sed -n 's/^ARG CUDA_VERSION=//p' "$(dirname "$0")/Dockerfile")
+[[ -n "$_cuda_version" ]] || { echo "Could not read ARG CUDA_VERSION from the Dockerfile" >&2; exit 1; }
+CUDA_MODULE=${CUDA_MODULE:-cuda/$_cuda_version}
 
 CLEAN=false
 INSTALL=false
