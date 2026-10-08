@@ -32,6 +32,16 @@ option(USE_REDUCED_PRECISION "Use reduced (single) precision for CUDA calculatio
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
+# Use ccache when it is installed. Set before the dependencies are fetched so
+# their compiles are cached too.
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    set(CMAKE_CUDA_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
+endif()
+
 include_directories(include)
 
 find_package(Python COMPONENTS Interpreter Development.Module NumPy REQUIRED)
