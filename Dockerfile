@@ -1,4 +1,4 @@
-ARG CUDA_VERSION=13.0.2
+ARG CUDA_VERSION=13.3.1
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
 
