@@ -708,6 +708,9 @@ int main(int argc, char **argv) {
     std::unique_ptr<std::map<int, std::vector<float>>> reflection_centers_2d = nullptr;
     std::mutex
       reflection_centers_2d_mutex;  // Mutex to protect the reflection centers 2d map
+    std::unique_ptr<std::map<int, std::vector<int>>> reflection_bbox_2d = nullptr;
+    std::mutex
+      reflection_bbox_2d_mutex;  // Mutex to protect the reflection bbox 2d map
 
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
@@ -720,6 +723,8 @@ int main(int argc, char **argv) {
             // A map we will use to save results as we go.
             reflection_centers_2d =
               std::make_unique<std::map<int, std::vector<float>>>();
+            reflection_bbox_2d =
+              std::make_unique<std::map<int, std::vector<int>>>();
         }
     }
 
@@ -929,8 +934,20 @@ int main(int argc, char **argv) {
                         centers_of_mass.push_back(z);
                     }
                     if (save_to_h5) {
+                        std::vector<int> bboxes_xyz;
+                        bboxes_xyz.reserve(reflections.size()*6);
+                        for (const auto &r : reflections) {
+                            bboxes_xyz.push_back(r.get_x_min());
+                            bboxes_xyz.push_back(r.get_x_max());
+                            bboxes_xyz.push_back(r.get_y_min());
+                            bboxes_xyz.push_back(r.get_y_max());
+                            bboxes_xyz.push_back(r.get_z_min());
+                            bboxes_xyz.push_back(r.get_z_max());
+                        }
                         std::lock_guard<std::mutex> lock(reflection_centers_2d_mutex);
                         (*reflection_centers_2d)[offset_image_num] = centers_of_mass;
+                        std::lock_guard<std::mutex> lock2(reflection_bbox_2d_mutex);
+                        (*reflection_bbox_2d)[offset_image_num] = bboxes_xyz;
                     }
                 }
 
@@ -1265,6 +1282,7 @@ int main(int argc, char **argv) {
         try {
             std::vector<double> flat_coms;
             std::vector<int> ids;
+            std::vector<int> bboxes;
             std::vector<int> centers_map_keys;
             for (const auto &pair : *reflection_centers_2d) {
                 centers_map_keys.push_back(pair.first);
@@ -1280,6 +1298,10 @@ int main(int argc, char **argv) {
                 for (int i = 0; i < n_refls; ++i) {
                     ids.push_back(id);
                 }
+                std::vector<int> bboxes_this = (*reflection_bbox_2d)[imageno];
+                for (auto bbox : bboxes_this) {
+                    bboxes.push_back(bbox);
+                }
                 id += 1;
             }
 
@@ -1293,6 +1315,9 @@ int main(int argc, char **argv) {
             table.add_column("xyzobs.px.value", flat_coms.size() / 3, 3, flat_coms);
             // Map each reflection to the generated experiment ID
             table.add_column("id", ids.size(), 1, ids);
+            std::vector<std::size_t> panel_ids(ids.size(), 0); // We are assuming single panel detector
+            table.add_column("panel", panel_ids.size(), 1, panel_ids);
+            table.add_column("bbox", panel_ids.size(), 6, bboxes);
 
             // Write the table to an HDF5 file
             table.write("results_ffs.h5", "dials/processing/group_0");
