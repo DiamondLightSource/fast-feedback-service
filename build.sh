@@ -23,7 +23,7 @@ set -euo pipefail
 
 # What both deployments build against, and so what to suggest when the CUDA in
 # this shell cannot compile. Keep in step with module/deploy.sh.
-CUDA_MODULE=${CUDA_MODULE:-cuda/13.0.2}
+CUDA_MODULE=${CUDA_MODULE:-cuda/13.3.1}
 
 CLEAN=false
 INSTALL=false
