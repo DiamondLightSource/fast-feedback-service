@@ -58,8 +58,18 @@ if [[ ! -f dx2/CMakeLists.txt ]]; then
     git submodule update --init --recursive
 fi
 
-command -v nvcc >/dev/null || fail "No nvcc on PATH. Load a CUDA module, e.g. module load $CUDA_MODULE"
-status "CUDA: $(nvcc --version | sed -n 's/.*release \([0-9.]*\).*/\1/p')"
+command -v nvcc >/dev/null || fail "No nvcc on PATH. Load a CUDA module: module load $CUDA_MODULE"
+
+cuda_found=$(nvcc --version | sed -n 's/.*release \([0-9.]*\).*/\1/p')
+cuda_wanted=${CUDA_MODULE#*/}
+status "CUDA $cuda_found from $(command -v nvcc)"
+if [[ "$cuda_found" != "${cuda_wanted%.*}" ]]; then
+    warn "Both deployments build against $CUDA_MODULE, so this does not match them."
+    warn "Binaries built here also need this same CUDA on the library path to run."
+    warn "To match: module load $CUDA_MODULE"
+else
+    status "Matches what the deployments build against ($CUDA_MODULE)"
+fi
 
 # Deliberately not loading a CUDA module here. Building against one this shell
 # does not have would produce binaries that cannot find their own runtime
