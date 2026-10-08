@@ -8,6 +8,8 @@ dependencies:
   - ccache
   - cmake=4.1.1
   - compilers
+  - gcc=15.*
+  - gxx=15.*
   - dials-data=2.4.134
   - eigen=3.4.0
   - fmt=11.2.0
