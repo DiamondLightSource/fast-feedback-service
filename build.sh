@@ -59,6 +59,14 @@ if [[ ! -f dx2/CMakeLists.txt ]]; then
     git submodule update --init --recursive
 fi
 
+dx2_at=$(git -C dx2 rev-parse --short HEAD 2>/dev/null)
+dx2_want=$(git rev-parse --short "HEAD:dx2" 2>/dev/null)
+if [[ -n "$dx2_at" && -n "$dx2_want" && "$dx2_at" != "$dx2_want" ]]; then
+    warn "dx2 is at $dx2_at but this branch records $dx2_want."
+    warn "Compile errors against dx2 usually mean this. To match:"
+    warn "    git submodule update --init --recursive"
+fi
+
 command -v nvcc >/dev/null || fail "No nvcc on PATH. Load a CUDA module: module load $CUDA_MODULE"
 
 cuda_found=$(nvcc --version | sed -n 's/.*release \([0-9.]*\).*/\1/p')
