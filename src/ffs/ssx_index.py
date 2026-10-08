@@ -406,6 +406,12 @@ def run(args=None):
         expts["crystal"] = output_aggregator.output_crystals_list
         for i, id_ in enumerate(output_aggregator.output_crystals_id_nos):
             expts["experiment"][id_]["crystal"] = i
+        expts_to_remove = []
+        for i, expt in enumerate(expts["experiment"]):
+            if not "crystal" in expt:
+                expts_to_remove.append(i)
+        for i in expts_to_remove[::-1]:
+            del expts["experiment"][i]
         with open("indexed.expt", "w") as f:
             json.dump(expts, f, indent=2)
 
