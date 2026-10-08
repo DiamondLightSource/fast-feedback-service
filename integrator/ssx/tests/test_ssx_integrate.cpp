@@ -26,7 +26,7 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using json = nlohmann::json;
 
-TEST(BaselineIntegrator, target_calculations) {
+TEST(SSXIntegrator, target_calculations) {
     Vector3d a(-49.87873210808719, -15.20510152622829, -56.55306758976276);
     Vector3d b(53.86563471994483, 22.38534427742018, -53.177943634990626);
     Vector3d c(26.968649257725442, -73.12672631215553, -2.196321822105007);
@@ -70,7 +70,7 @@ TEST(BaselineIntegrator, target_calculations) {
     EXPECT_NEAR(ll2, 6680.304116342, 1e-3);
 }
 
-TEST(BaselineIntegrator, ssx_integrate_function) {
+TEST(SSXIntegrator, ssx_refine_mosaicity) {
     // Define some test data to compare to an equivalent dials.ssx_integrate job
     Panel panel(
       260, {1625.53, 1801.84}, {0.075, 0.075}, {3108, 3262}, "x", "-y", 0.75, 13.2916);
@@ -175,20 +175,22 @@ TEST(BaselineIntegrator, ssx_integrate_function) {
                                      {2214.822603879991, 2095.0326031574145, 0.5},
                                      {1200.8093508947643, 2138.240046372163, 0.5}});
 
-    auto m = ssx_integrate(xyzcal_px,
-                           xyzobs_px,
-                           covariances,
-                           intensities,
-                           miller_indices,
-                           mobs,
-                           s0,
-                           panel,
-                           A);
-    EXPECT_NEAR(m(0) * 1e6, 80.1153, 1e-3);
-    EXPECT_NEAR(m(1) * 1e6, 629.709, 1e-3);
-    EXPECT_NEAR(m(2) * 1e6, 724.904, 1e-3);
+    Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
+                                                              xyzobs_px,
+                                                              covariances,
+                                                              intensities,
+                                                              miller_indices,
+                                                              mobs,
+                                                              s0,
+                                                              panel,
+                                                              A);
+    auto mosaicity = model.mosaicity();
+    EXPECT_NEAR(mosaicity.min * 1e6, 80.1153, 1e-3);  // Verified calculations
+    EXPECT_NEAR(mosaicity.mid * 1e6, 629.709, 1e-3);  // Verified calculations
+    EXPECT_NEAR(mosaicity.max * 1e6, 724.904, 1e-3);  // Verified calculations
+
     /* expected result (dials)
-        Eigen Values:
+    Eigen Values:
     | 5.25e-07        0        0|
     |        0 3.97e-07        0|
     |        0        0 6.42e-09|
@@ -205,23 +207,23 @@ TEST(BaselineIntegrator, ssx_integrate_function) {
     |    0.135    0.991  -0.0218|
     | -0.00452   0.0227        1|
 
-    +-------------+--------------+--------------------+
- |   Iteration |   likelihood | RMSD (pixel) X,Y   |
- |-------------+--------------+--------------------|
- |           0 |      29408.7 | 0.737, 0.671       |
- |           1 |      30229.7 | 0.715, 0.672       |
- |           2 |      31078.7 | 0.644, 0.666       |
- |           3 |      31662.8 | 0.535, 0.684       |
- |           4 |      31861.5 | 0.558, 0.674       |
- |           5 |      31937.4 | 0.557, 0.673       |
- |           6 |      31956   | 0.559, 0.677       |
- |           7 |      31962.5 | 0.558, 0.672       |
- |           8 |      31967   | 0.556, 0.676       |
- |           9 |      31967.2 | 0.557, 0.675       |
- |          10 |      31967.2 | 0.557, 0.676       |
- |          11 |      31967.2 | 0.557, 0.676       |
- |          12 |      31967.2 | 0.557, 0.676       |
- +-------------+--------------+--------------------+*/
+        +-------------+--------------+--------------------+
+    |   Iteration |   likelihood | RMSD (pixel) X,Y   |
+    |-------------+--------------+--------------------|
+    |           0 |      29408.7 | 0.737, 0.671       |
+    |           1 |      30229.7 | 0.715, 0.672       |
+    |           2 |      31078.7 | 0.644, 0.666       |
+    |           3 |      31662.8 | 0.535, 0.684       |
+    |           4 |      31861.5 | 0.558, 0.674       |
+    |           5 |      31937.4 | 0.557, 0.673       |
+    |           6 |      31956   | 0.559, 0.677       |
+    |           7 |      31962.5 | 0.558, 0.672       |
+    |           8 |      31967   | 0.556, 0.676       |
+    |           9 |      31967.2 | 0.557, 0.675       |
+    |          10 |      31967.2 | 0.557, 0.676       |
+    |          11 |      31967.2 | 0.557, 0.676       |
+    |          12 |      31967.2 | 0.557, 0.676       |
+    +-------------+--------------+--------------------+*/
 
     /**
     Invariant crystal mosaicity:
@@ -229,4 +231,22 @@ TEST(BaselineIntegrator, ssx_integrate_function) {
     M2 : 629.709 muA^-1
     M3 : 724.904 muA^-1
     */
+}
+
+TEST(SSXIntegrator, ssx_predict) {
+    Panel panel(
+      260, {1625.53, 1801.84}, {0.075, 0.075}, {3108, 3262}, "x", "-y", 0.75, 13.2916);
+    Vector3d a(-49.87873210808719, -15.20510152622829, -56.55306758976276);
+    Vector3d b(53.86563471994483, 22.38534427742018, -53.177943634990626);
+    Vector3d c(26.968649257725442, -73.12672631215553, -2.196321822105007);
+    gemmi::SpaceGroup sg(1);
+    Crystal crystal(a, b, c, sg);
+    MonochromaticBeam beam(0.6199);
+    Vector3d s0 = beam.get_s0();
+    Matrix3d A = crystal.get_A_matrix();
+
+    Eigen::Matrix<double, 6, 1> params{1e-4, 2e-4, 3e-4, 1e-5, 2e-5, 3e-5};
+    Simple6MosaicityParameterisation model(params);
+    std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);
+    EXPECT_EQ(predictions.size(), 239);  // Verified calculations.
 }
