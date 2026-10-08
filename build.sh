@@ -1,278 +1,106 @@
 #!/usr/bin/env bash
-# filepath: build.sh
+# Build the project for development.
+#
+# pip owns the build. It configures cmake, compiles, and installs the python
+# package into the active environment, which is what makes `import ffs` work.
+# Once that has happened a plain `ninja -C build` is enough for a C++ change,
+# and that is what this script does on every subsequent run.
+#
+#   ./build.sh              compile; install first if the environment needs it
+#   ./build.sh --install    force the install, refreshing the environment
+#
+# A compile updates the build directory only. If you changed C++ that goes into
+# `ffs.index` or `ffs.integrate`, use --install, because site-packages is the
+# only place python can read an extension module from.
+#   ./build.sh --clean      discard the build directory and start over
+#   ./build.sh -j N         limit parallelism
+#
+# The programs are run straight out of the build directory, as
+# ./build/bin/spotfinder, and are always what the last compile produced. The
+# copies pip puts in the environment are for the deployments.
 
 set -euo pipefail
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# What both deployments build against, and so what to suggest when the CUDA in
+# this shell cannot compile. Keep in step with module/deploy.sh.
+CUDA_MODULE=${CUDA_MODULE:-cuda/13.0.2}
 
-# Default values
-PRODUCTION=false
-PIXEL_32BIT=false
 CLEAN=false
-JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+INSTALL=false
+JOBS=""
 
-# Function to print colored output
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+status()  { echo -e "${BLUE}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+warn()    { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+fail()    { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Function to show usage
-show_help() {
-    cat << EOF
-Usage: $0 [OPTIONS]
-
-Build script for Fast Feedback Service to manage development and production builds.
-
-OPTIONS:
-    -p, --production       Build for production (single build directory)
-    -3, --32bit            Use 32-bit pixel data (only with --production)
-    -c, --clean            Clean build directories before building
-    -j, --jobs N           Number of parallel jobs (default: $(nproc 2>/dev/null || echo 4))
-    -h, --help             Show this help message
-
-DEVELOPMENT BUILD (default):
-    Creates both 'build' (16-bit) and 'build_32bit' (32-bit) directories for 16/32-bit pixel data.
-    Runs cmake and builds both configurations for testing.
-
-PRODUCTION BUILD:
-    Creates only 'build' directory with specified configuration.
-    Removes 'build_32bit' if it exists.
-    Use --32bit flag to build with 32-bit pixel data support.
-
-EXAMPLES:
-    $0                              # Development build (both 16-bit and 32-bit)
-    $0 --production                 # Production build with 16-bit pixels
-    $0 --production --32bit         # Production build with 32-bit pixels
-    $0 --clean                      # Clean and rebuild development builds
-    $0 --production --clean --32bit # Clean production build with 32-bit
-
-EOF
-}
-
-# Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -p|--production)
-            PRODUCTION=true
-            shift
-            ;;
-        -3|--32bit)
-            PIXEL_32BIT=true
-            shift
-            ;;
-        -c|--clean)
-            CLEAN=true
-            shift
-            ;;
-        -j|--jobs)
-            JOBS="$2"
-            shift 2
-            ;;
-        -h|--help)
-            show_help
-            exit 0
-            ;;
-        *)
-            print_error "Unknown option: $1"
-            show_help
-            exit 1
-            ;;
+        -i|--install) INSTALL=true; shift ;;
+        -c|--clean)   CLEAN=true; shift ;;
+        -j|--jobs)    JOBS="$2"; shift 2 ;;
+        --cuda)       CUDA_MODULE="$2"; shift 2 ;;
+        -h|--help)    sed -n '2,17p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *)            fail "Unknown option: $1" ;;
     esac
 done
 
-# Validate arguments
-if [[ "$PIXEL_32BIT" == "true" && "$PRODUCTION" == "false" ]]; then
-    print_error "--32bit flag can only be used with --production"
-    exit 1
+cd "$(dirname "$0")"
+
+[[ -f CMakeLists.txt ]] || fail "Run this from the repository, not elsewhere"
+[[ -n "${CONDA_PREFIX:-}" ]] || fail "No environment is active. Activate one first, e.g. mamba activate ENV/"
+
+status "Environment: $CONDA_PREFIX"
+
+if [[ ! -f dx2/CMakeLists.txt ]]; then
+    status "Initialising git submodules"
+    git submodule update --init --recursive
 fi
 
-# Detect build system preference
-BUILD_SYSTEM="Unix Makefiles"
-BUILD_CMD="make"
-if command -v ninja >/dev/null 2>&1; then
-    BUILD_SYSTEM="Ninja"
-    BUILD_CMD="ninja"
-    print_status "Using Ninja build system"
+command -v nvcc >/dev/null || fail "No nvcc on PATH. Load a CUDA module, e.g. module load $CUDA_MODULE"
+status "CUDA: $(nvcc --version | sed -n 's/.*release \([0-9.]*\).*/\1/p')"
+
+# Deliberately not loading a CUDA module here. Building against one this shell
+# does not have would produce binaries that cannot find their own runtime
+# library, so the shell stays authoritative and this only checks and reports.
+# nvcc also refuses a host compiler newer than it supports, which is the usual
+# way this goes wrong after a fresh environment.
+check_nvcc_works() {
+    local probe="${TMPDIR:-/tmp}/ffs-cuda-probe-$$"
+    printf '__global__ void k(){}\nint main(){return 0;}\n' > "$probe.cu"
+    if ! nvcc -o "$probe.out" "$probe.cu" > "$probe.log" 2>&1; then
+        warn "nvcc cannot compile with the compiler in this environment:"
+        sed 's/^/    /' "$probe.log" | head -3
+        rm -f "$probe.cu" "$probe.out" "$probe.log"
+        fail "Load a CUDA that supports it, e.g. module load $CUDA_MODULE, then retry"
+    fi
+    rm -f "$probe.cu" "$probe.out" "$probe.log"
+}
+
+if [[ "$CLEAN" == "true" ]]; then
+    status "Removing the build directory"
+    rm -rf build
+fi
+
+# The build directory is pip's: it configures cmake there. Without it, or
+# without the package installed here, there is nothing for ninja to build.
+if [[ ! -f build/CMakeCache.txt ]] \
+   || ! python -c "import ffs, pathlib, sys; sys.exit(0 if pathlib.Path(ffs.__file__).resolve().parent == pathlib.Path('src/ffs').resolve() else 1)" 2>/dev/null; then
+    INSTALL=true
+fi
+
+[[ -n "$JOBS" ]] && export CMAKE_BUILD_PARALLEL_LEVEL="$JOBS"
+
+if [[ "$INSTALL" == "true" ]]; then
+    check_nvcc_works
+    status "Installing (configures, compiles and installs into the environment)"
+    # Dependencies are resolved here, unlike the deployments: environment.yml
+    # carries what the C++ build needs, not the package's python requirements.
+    python -m pip install --no-build-isolation -e .
 else
-    print_status "Using Make build system"
+    status "Compiling"
+    ninja -C build ${JOBS:+-j "$JOBS"}
 fi
 
-# Function to initialize git submodules
-init_submodules() {
-    print_status "Checking git submodules..."
-    if [[ -f .gitmodules ]]; then
-        if [[ ! -f dx2/CMakeLists.txt ]]; then
-            print_status "Initializing git submodules..."
-            git submodule update --init --recursive
-        else
-            print_status "Git submodules already initialized"
-        fi
-    fi
-}
-
-# Function to configure and build a directory
-build_directory() {
-    local build_dir="$1"
-    local cmake_args="$2"
-    local description="$3"
-    
-    print_status "Building $description in $build_dir..."
-    
-    # Clean if requested
-    if [[ "$CLEAN" == "true" && -d "$build_dir" ]]; then
-        print_status "Cleaning $build_dir..."
-        rm -rf "$build_dir"
-    fi
-    
-    # Create build directory
-    mkdir -p "$build_dir"
-    
-    # Configure with cmake
-    print_status "Configuring $description..."
-    (
-        cd "$build_dir"
-        cmake .. -G "$BUILD_SYSTEM" $cmake_args -DCMAKE_INSTALL_PREFIX="${CONDA_PREFIX}"
-    )
-    
-    # Build
-    print_status "Compiling $description..."
-    (
-        cd "$build_dir"
-        if [[ "$BUILD_CMD" == "ninja" ]]; then
-            ninja
-        else
-            make -j"$JOBS"
-        fi
-    )
-
-    # Install
-    print_status "Installing $description..."
-    (
-        cd "$build_dir"
-        if [[ "$BUILD_CMD" == "ninja" ]]; then
-            ninja "install"
-        else
-            make "install" -j"$JOBS"
-        fi
-    )
-    
-    print_success "Successfully built $description"
-}
-
-# Report whether the active environment will import what was just built.
-# src/ffs is the only directory an editable install puts on the ffs
-# package __path__, so an environment resolving ffs anywhere else is
-# reading a different, possibly stale copy.
-check_active_environment() {
-    local resolved root
-    root="$(pwd -P)"
-
-    if ! resolved="$(python -c 'import ffs, pathlib; print(pathlib.Path(ffs.__file__).resolve().parent)' 2>/dev/null)"; then
-        print_warning "The active environment cannot import ffs, so it will not see"
-        print_warning "the modules just built. Install the package into it once:"
-        print_warning "    pip install -e ."
-        return 0
-    fi
-
-    if [[ "$resolved" != "$root/src/ffs" ]]; then
-        print_warning "The active environment imports ffs from"
-        print_warning "    $resolved"
-        print_warning "not from this worktree, so it will not see the modules just"
-        print_warning "built. Install this worktree into it:"
-        print_warning "    pip install -e ."
-        print_warning "A copy left in a site-packages by an older build is not managed"
-        print_warning "by pip and has to be removed by hand."
-        return 0
-    fi
-
-    print_success "The active environment imports ffs from this worktree"
-}
-
-# Main build logic
-main() {
-    print_status "Fast Feedback Service Build Script"
-    print_status "=================================="
-    
-    # Check if we're in the right directory
-    if [[ ! -f CMakeLists.txt ]]; then
-        print_error "CMakeLists.txt not found. Please run this script from the project root."
-        exit 1
-    fi
-
-    # Require an active conda/mamba environment so installs go to the right prefix
-    if [[ -z "${CONDA_PREFIX:-}" ]]; then
-        print_error "No conda/mamba environment is active. Activate your environment first."
-        exit 1
-    fi
-    print_status "Installing into conda environment: ${CONDA_PREFIX}"
-    
-    # Initialize submodules
-    init_submodules
-    
-    if [[ "$PRODUCTION" == "true" ]]; then
-        print_status "Production build mode"
-        
-        # Remove build_32bit if it exists
-        if [[ -d build_32bit ]]; then
-            print_status "Removing build_32bit directory for production build"
-            rm -rf build_32bit
-        fi
-        
-        # Build production version
-        if [[ "$PIXEL_32BIT" == "true" ]]; then
-            build_directory "build" "-DPIXEL_DATA_32BIT=ON -DUSE_REDUCED_PRECISION=OFF -DCMAKE_BUILD_TYPE=Release" "production (32-bit, double precision)"
-        else
-            build_directory "build" "-DUSE_REDUCED_PRECISION=OFF -DCMAKE_BUILD_TYPE=Release" "production (16-bit, double precision)"
-        fi
-    else
-        print_status "Development build mode"
-        
-        # Build both 16-bit and 32-bit versions
-        build_directory "build" "-DUSE_REDUCED_PRECISION=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (16-bit, double precision)"
-        build_directory "build_32bit" "-DPIXEL_DATA_32BIT=ON -DUSE_REDUCED_PRECISION=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo" "development (32-bit, double precision)"
-    fi
-    
-    print_success "Build completed successfully!"
-    
-    # Show build artifacts
-    print_status "Build artifacts:"
-    # 16-bit build artifacts
-    if [[ -d build/bin ]]; then
-        print_status "16-bit binaries (build/bin/):"
-        [[ -f build/bin/spotfinder ]] && echo -e "  - ${GREEN}spotfinder${NC}"
-        [[ -f build/bin/baseline_indexer ]] && echo -e "  - ${GREEN}baseline_indexer${NC}"
-        [[ -f build/bin/baseline_integrator ]] && echo -e "  - ${GREEN}baseline_integrator${NC}"
-        [[ -f build/bin/integrator ]] && echo -e "  - ${GREEN}integrator${NC}"
-    fi
-    
-    # 32-bit build artifacts
-    if [[ -d build_32bit/bin ]]; then
-        print_status "32-bit binaries (build_32bit/bin/):"
-        [[ -f build_32bit/bin/spotfinder ]] && echo -e "  - ${GREEN}spotfinder${NC}"
-        [[ -f build_32bit/bin/baseline_indexer ]] && echo -e "  - ${GREEN}baseline_indexer${NC}"
-        [[ -f build_32bit/bin/baseline_integrator ]] && echo -e "  - ${GREEN}baseline_integrator${NC}"
-        [[ -f build_32bit/bin/integrator ]] && echo -e "  - ${GREEN}integrator${NC}"
-    fi
-
-    check_active_environment
-}
-
-# Run main function
-main "$@"
+success "Build complete"
