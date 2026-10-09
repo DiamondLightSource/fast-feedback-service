@@ -6,6 +6,7 @@ Usage: ./build/bin/ssx_index -r results_ffs.h5 -e imported.expt -c 79 79 38 90 9
 # ruff: noqa: C901
 
 import argparse
+from dataclasses import dataclass
 import json
 import sys
 import time
@@ -19,6 +20,12 @@ from pydantic import BaseModel, NonNegativeInt
 import ffs.index
 
 
+@dataclass(slots=True)
+class InputArrays:
+    id_value: int
+    xyz: np.ndarray
+
+
 class IndexedLatticeResult(BaseModel):
     unit_cell: tuple[float, float, float, float, float, float]
     A_matrix: tuple[float, float, float, float, float, float, float, float, float]
@@ -30,6 +37,7 @@ class IndexedLatticeResult(BaseModel):
     s1: list[float] | None = None
     delpsi: list[float] | None = None
     rmsds: list[float] | None = None
+    selection_for_input: list[bool] | None = None
 
 
 class IndexingResult(BaseModel):
@@ -152,6 +160,7 @@ class GPUIndexer:
                         s1=ssx_index_result.s1,
                         delpsi=ssx_index_result.delpsi,
                         rmsds=ssx_index_result.rmsds,
+                        selection_for_input=ssx_index_result.selection_for_input,
                     )
                 ],
                 n_unindexed=n_unindexed,
@@ -192,7 +201,7 @@ class OutputAggregator:
             for i in self.output_experiment_ids
         ]
 
-    def add_result(self, lattice, i):
+    def add_result(self, lattice: IndexedLatticeResult, data_arrays: InputArrays):
         A = np.reshape(np.array(lattice.A_matrix, dtype="float64"), (3, 3))
         A_inv = np.linalg.inv(A)
         self.output_crystals_list.append(
@@ -204,7 +213,7 @@ class OutputAggregator:
                 "space_group_hall_symbol": "P 1",
             }
         )
-        self.output_crystals_id_nos.append(i)
+        self.output_crystals_id_nos.append(data_arrays.id_value)
         midx = np.array(lattice.miller_indices, dtype=int).reshape(-1, 3)
         xyzobs = np.array(lattice.xyzobs_px).reshape(-1, 3)
         xyzcal = np.array(lattice.xyzcal_px).reshape(-1, 3)
@@ -221,9 +230,20 @@ class OutputAggregator:
         self.delpsical_output.append(np.array(delpsi))
         self.s1_output.append(s1_reshape)
         self.ids_output.append(np.full(n, self.output_id, dtype=np.int32))
-        self.image_nos_output.append(np.full(n, i, dtype=np.int32))
-        self.new_id_to_old_id[self.output_id] = i
+        self.image_nos_output.append(np.full(n, data_arrays.id_value, dtype=np.int32))
+        self.new_id_to_old_id[self.output_id] = data_arrays.id_value
         self.output_id += 1
+        self.output_experiment_ids = None
+        self.output_experiment_identifiers = None
+
+    def set_output_identifiers(self):
+        self.output_experiment_ids = sorted(
+            list(set(np.uint(i) for i in self.new_id_to_old_id.keys()))
+        )
+        self.output_experiment_identifiers = [
+            self.identifiers_map[self.new_id_to_old_id[i]] for i in self.output_experiment_ids
+        ]
+
 
     def write_table(self, filename):
         with h5py.File(Path.cwd() / filename, "w") as output_refl:
@@ -339,8 +359,7 @@ def run(args=None):
         return
 
     output_aggregator = OutputAggregator(identifiers_map)
-    tables = []
-    id_values = []
+    input_data_arrays: List[InputArrays] = []
 
     ## Note this assumes ids are in ascending order, which is the
     ## expected form of the output from spotfinding.
@@ -349,8 +368,12 @@ def run(args=None):
     for id_, start, end in zip(unique_ids, start_indices, end_indices):
         xyzs_this = xyzs[start:end]
         if xyzs_this.any():
-            tables.append(xyzs_this)
-            id_values.append(id_)
+            input_data_arrays.append(
+                InputArrays(
+                    id_value=id_,
+                    xyz=xyzs_this
+                )
+            )
 
     ## Initialise the GPU indexer.
     try:
@@ -373,33 +396,32 @@ def run(args=None):
 
     # Quantities to log for log output
     n_indexed_images = 0
-    n_total = len(tables)
+    n_total = len(input_data_arrays)
     n_considered = 0
 
     t1 = time.time()
 
-    for t, i in zip(tables, id_values):
-        data = t.flatten()
-        if t.shape[0] < min_spots:
+    for data_arrays in input_data_arrays:
+        if data_arrays.xyz.shape[0] < min_spots:
             continue
         n_considered += 1
-        data = t.flatten()
-        result = indexer.index(data)
+        xyz_data = data_arrays.xyz.flatten()
+        result = indexer.index(xyz_data)
         if result.lattices:
             n_indexed_images += 1
             lattice = result.lattices[0]
             # now save stuff for output
-            output_aggregator.add_result(lattice, i)
+            output_aggregator.add_result(lattice, data_arrays)
             # print number of spots indexed and rmsds
             rmsdx, rmsdy, rmsd_psi = lattice.rmsds
             cell_str = ", ".join(f"{i:.3f}" for i in lattice.unit_cell)
             print(
-                f"Indexed {(lattice.n_indexed)}/{int(data.size / 3)} spots on image {i + 1}:\n"
+                f"Indexed {(lattice.n_indexed)}/{int(xyz_data.size / 3)} spots on image {data_arrays.id_value + 1}:\n"
                 + f"  cell: {cell_str}\n"
                 + f"  RMSDs: (x(px), y(px), psi(rad)): {rmsdx:.3f}, {rmsdy:.3f}, {rmsd_psi:.5f}"
             )
         else:
-            print(f"No indexing solution for image {i + 1}")
+            print(f"No indexing solution for image {data_arrays.id_value + 1}")
 
     t2 = time.time()
     print(
