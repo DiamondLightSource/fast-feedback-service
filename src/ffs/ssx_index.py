@@ -188,7 +188,8 @@ class OutputAggregator:
             list(set(np.uint(i) for i in self.new_id_to_old_id.keys()))
         )
         self.output_experiment_identifiers = [
-            self.identifiers_map[self.new_id_to_old_id[i]] for i in self.output_experiment_ids
+            self.identifiers_map[self.new_id_to_old_id[i]]
+            for i in self.output_experiment_ids
         ]
 
     def add_result(self, lattice, i):
@@ -242,7 +243,9 @@ class OutputAggregator:
             group.attrs["experiment_ids"] = self.output_experiment_ids
             group.attrs["identifiers"] = self.output_experiment_identifiers
             group["panel"] = np.zeros_like(ids_array, dtype=np.uint)
-            group["flags"] = np.array(np.full(ids_array.size, 45, dtype=np.uint)) #strong && predicted && indexed && used_in_refinement
+            group["flags"] = np.array(
+                np.full(ids_array.size, 45, dtype=np.uint)
+            )  # strong && predicted && indexed && used_in_refinement
             ## extra potential data to output to enable further processing:
             ## rlp, xyzobs.mm.value
 
