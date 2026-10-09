@@ -408,7 +408,7 @@ def run(args=None):
             expts["experiment"][id_]["crystal"] = i
         expts_to_remove = []
         for i, expt in enumerate(expts["experiment"]):
-            if not "crystal" in expt:
+            if "crystal" not in expt:
                 expts_to_remove.append(i)
         for i in expts_to_remove[::-1]:
             del expts["experiment"][i]
