@@ -26,6 +26,6 @@ nanobind_add_module(integrate
 
 target_link_libraries(integrate PRIVATE ssx_integrator)
 
-ffs_python_module(integrate)
+install(TARGETS integrate LIBRARY DESTINATION ${FFS_INSTALL_PYTHONDIR} COMPONENT ffs)
 
 add_subdirectory(tests)

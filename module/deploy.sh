@@ -24,7 +24,10 @@ MODULE_ROOT=/dls_sw/apps/Modules/modulefiles/fast-feedback-service
 MODULE_NAME=
 PREFIX=
 BUILD_ENV=/tmp/ffs-build-env
-CUDA_MODULE=cuda/13.0.2
+# The container base image limits CUDA version updates, so it is the source.
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CUDA_MODULE=cuda/$(sed -n 's/^ARG CUDA_VERSION=//p' "$SRC/Dockerfile")
+[[ "$CUDA_MODULE" != "cuda/" ]] || { echo "Could not read ARG CUDA_VERSION from $SRC/Dockerfile" >&2; exit 1; }
 BUILD_DIR=build_module
 RECREATE=false
 INCREMENTAL=false
@@ -95,7 +98,6 @@ done
 # Derive the paths the version implies
 : "${PREFIX:=$INSTALL_ROOT/$VERSION}"
 : "${MODULE_NAME:=$VERSION}"
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Validate arguments
 [[ -f "$SRC/CMakeLists.txt" ]] || { print_error "Not a source tree: $SRC"; exit 1; }
@@ -150,9 +152,9 @@ fi
 # Configure and build
 module load "$CUDA_MODULE"
 
-# Name cmake path so active environment does not matter
-cmake="$BUILD_ENV/bin/cmake"
-[[ -x "$cmake" ]] || { print_error "No cmake in $BUILD_ENV"; exit 1; }
+for tool in cmake ninja patchelf; do
+    [[ -x "$BUILD_ENV/bin/$tool" ]] || { print_error "No $tool in $BUILD_ENV"; exit 1; }
+done
 
 if [[ "$INCREMENTAL" == "true" ]]; then
     print_warning "Reusing the existing build directory"
@@ -160,33 +162,27 @@ else
     rm -rf "${SRC:?}/${BUILD_DIR:?}"
 fi
 
-# nvcc defaults its host compiler to the g++ on PATH, and nothing
-# activates the build environment, so it is named alongside the others
-print_status "Configuring"
-"$cmake" -S "$SRC" -B "$SRC/$BUILD_DIR" -G Ninja \
-    -DCMAKE_PREFIX_PATH="$BUILD_ENV" \
-    -DCMAKE_C_COMPILER="$BUILD_ENV/bin/cc" \
-    -DCMAKE_CXX_COMPILER="$BUILD_ENV/bin/c++" \
-    -DCMAKE_CUDA_HOST_COMPILER="$BUILD_ENV/bin/c++" \
-    -DCMAKE_MAKE_PROGRAM="$BUILD_ENV/bin/ninja" \
-    -DPython3_ROOT_DIR="$BUILD_ENV" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-    -DHDF5_ROOT="$PREFIX" \
-    -DPython_ROOT_DIR="$PREFIX" \
-    -DCUDA_ARCH=all-supported \
-    -DCMAKE_INSTALL_RPATH="$PREFIX/lib;$PREFIX/lib64" \
-    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
-    -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF \
-    -DUSE_REDUCED_PRECISION=OFF
-
-print_status "Building"
-build_args=()
-[[ -n "$JOBS" ]] && build_args+=(-j "$JOBS")
-"$cmake" --build "$SRC/$BUILD_DIR" "${build_args[@]}"
-
-print_status "Installing binaries"
-"$cmake" --install "$SRC/$BUILD_DIR"
+# pip drives the build, so what cmake needs is passed through CMAKE_ARGS. nvcc
+# defaults its host compiler to the g++ on PATH and nothing activates the build
+# environment, so the compilers are named explicitly. The pip is the prefix's
+# own, so the extension modules are built for the interpreter that will import
+# them, while cmake, ninja and the compilers come from the build environment.
+print_status "Building and installing"
+[[ -n "$JOBS" ]] && export CMAKE_BUILD_PARALLEL_LEVEL="$JOBS"
+PATH="$BUILD_ENV/bin:$PATH" \
+CMAKE_ARGS="-DCMAKE_PREFIX_PATH=$BUILD_ENV \
+            -DCMAKE_C_COMPILER=$BUILD_ENV/bin/cc \
+            -DCMAKE_CXX_COMPILER=$BUILD_ENV/bin/c++ \
+            -DCMAKE_CUDA_HOST_COMPILER=$BUILD_ENV/bin/c++ \
+            -DHDF5_ROOT=$PREFIX \
+            -DPython_ROOT_DIR=$PREFIX \
+            -DCUDA_ARCH=all-supported \
+            -DCMAKE_INSTALL_RPATH=$PREFIX/lib;$PREFIX/lib64 \
+            -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
+            -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF \
+            -DUSE_REDUCED_PRECISION=OFF" \
+    "$PREFIX/bin/pip" install --no-build-isolation --no-deps \
+        -C build-dir="$SRC/$BUILD_DIR" "$SRC"
 
 # Drop the build environment from the RPATHs; conda's gcc specs file adds it
 rpath="$PREFIX/lib:$PREFIX/lib64"
@@ -200,33 +196,25 @@ patch_rpaths() {
     done
 }
 
+# pip installs rather than cmake, so there is no install manifest to walk.
+# The set is named explicitly: everything else in the prefix belongs to conda
+# and its RPATHs are not ours to rewrite.
 print_status "Rewriting RPATHs"
-# cmake writes the manifest without a trailing newline
-while read -r installed || [[ -n "$installed" ]]; do
-    # The manifest also lists files outside the prefix
-    [[ "$installed" == "$PREFIX"/* ]] || continue
-    patch_rpaths "$installed"
-done < "$SRC/$BUILD_DIR/install_manifest.txt"
-
-# Install the Python package, not editable, at the version cmake resolved
-ffs_version="$(cat "$SRC/$BUILD_DIR/FFS_VERSION")"
-print_status "Installing the Python package ($ffs_version)"
-SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="$ffs_version" \
-    "$PREFIX/bin/pip" install --no-deps "$SRC"
-
-# The extension modules come from the wheel rather than from cmake, so
-# they are absent from the install manifest and need the same treatment
-site_ffs="$("$PREFIX/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')/ffs"
+platlib="$("$PREFIX/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')"
 shopt -s nullglob
-extensions=("$site_ffs"/*.so)
+installed=("$PREFIX"/bin/spotfinder "$PREFIX"/bin/spotfinder32 \
+           "$PREFIX"/bin/baseline_indexer "$PREFIX"/bin/integrator \
+           "$platlib"/ffs/*.so "$platlib"/ffbidx/*.so "$platlib"/lib64/*.so*)
 shopt -u nullglob
-if [[ ${#extensions[@]} -eq 0 ]]; then
-    print_error "The installed package carries no extension modules."
-    print_error "The wheel collects them from $SRC/src/ffs, which the build populates."
+if [[ ${#installed[@]} -lt 4 ]]; then
+    print_error "The install produced fewer artifacts than expected in $PREFIX."
+    print_error "Found: ${installed[*]:-nothing}"
     exit 1
 fi
-print_status "Rewriting RPATHs in the extension modules"
-patch_rpaths "${extensions[@]}"
+patch_rpaths "${installed[@]}"
+
+ffs_version="$("$PREFIX/bin/python" -c 'import ffs; print(ffs.__version__)')"
+print_status "Installed version $ffs_version"
 
 # Verify the install
 print_status "Verifying the install"

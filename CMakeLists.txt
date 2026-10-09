@@ -31,11 +31,32 @@ option(USE_REDUCED_PRECISION "Use reduced (single) precision for CUDA calculatio
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
-include(FFSPythonModule)
+
+# Use ccache when it is installed. Set before the dependencies are fetched so
+# their compiles are cached too.
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    set(CMAKE_CUDA_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
+endif()
 
 include_directories(include)
 
 find_package(Python COMPONENTS Interpreter Development.Module NumPy REQUIRED)
+include(PythonSitePackages)
+
+# Where things install to. pip supplies these, pointing into the wheel it is
+# assembling; a plain cmake build falls back to the prefix's own layout so that
+# `cmake --install` still does something sensible.
+if(SKBUILD)
+    set(FFS_INSTALL_BINDIR ${SKBUILD_SCRIPTS_DIR})
+    set(FFS_INSTALL_PYTHONDIR ${SKBUILD_PLATLIB_DIR}/ffs)
+else()
+    set(FFS_INSTALL_BINDIR bin)
+    set(FFS_INSTALL_PYTHONDIR ${FFS_PYTHON_SITEARCH}/ffs)
+endif()
 
 # Dependency fetching
 # Find packages that are in conda environment
@@ -68,8 +89,15 @@ set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
 set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
 set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
 
-# ffbidx uses this to find site-packages
-set(PYTHON_MODULE_PATH ${Python_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+# ffbidx installs its own python module here, and the module's runtime path
+# expects its library one directory tree up. Under a wheel build that is the
+# site-packages being assembled; a plain cmake build gets the prefix-relative
+# path instead, so the destination stays inside whatever prefix it is given.
+if(SKBUILD)
+    set(PYTHON_MODULE_PATH ${SKBUILD_PLATLIB_DIR} CACHE PATH "ffbidx python site-packages path" FORCE)
+else()
+    set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+endif()
 
 FetchContent_Declare(
   ffbidx
@@ -102,7 +130,16 @@ set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
 
 if(EXISTS ${dx2_SOURCE_DIR}/CMakeLists.txt)
+    # dx2 declares its library without a type, so it follows
+    # BUILD_SHARED_LIBS. Build it static: it is then absorbed into the
+    # binaries and the extension modules, which leaves the wheel carrying no
+    # shared library of its own and nothing to resolve at runtime. Restored
+    # afterwards so the setting does not reach the fetched dependencies.
+    set(_ffs_build_shared_libs ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF)
     add_subdirectory(${dx2_SOURCE_DIR})
+    set(BUILD_SHARED_LIBS ${_ffs_build_shared_libs})
+    unset(_ffs_build_shared_libs)
     message(STATUS "Found dx2: ${dx2_SOURCE_DIR}")
 else()
     message(FATAL_ERROR "dx2 submodule not found. Please run 'git submodule update --init --recursive'.")
@@ -115,8 +152,6 @@ project(version CXX)
 configure_file(version.cc.in version.cc @ONLY)
 add_library(version STATIC version.cc)
 
-# Drop the resolved version somewhere the container build can read it
-file(WRITE "${CMAKE_BINARY_DIR}/FFS_VERSION" "${FFS_VERSION_FULL}")
 
 # Create an interface library for compile definitions
 add_library(compile_options INTERFACE)
