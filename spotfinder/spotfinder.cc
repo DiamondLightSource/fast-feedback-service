@@ -1293,7 +1293,8 @@ int main(int argc, char **argv) {
             table.add_column("xyzobs.px.value", flat_coms.size() / 3, 3, flat_coms);
             // Map each reflection to the generated experiment ID
             table.add_column("id", ids.size(), 1, ids);
-            std::vector<std::size_t> panel_ids(ids.size(), 0); // We are assuming single panel detector
+            std::vector<std::size_t> panel_ids(
+              ids.size(), 0);  // We are assuming single panel detector
             table.add_column("panel", panel_ids.size(), 1, panel_ids);
 
             // Write the table to an HDF5 file
