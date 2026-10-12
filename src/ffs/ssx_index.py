@@ -180,6 +180,17 @@ class OutputAggregator:
         self.output_crystals_list = []
         self.output_crystals_id_nos = []
         self.identifiers_map = identifiers_map
+        self.output_experiment_ids = None
+        self.output_experiment_identifiers = None
+
+    def set_output_identifiers(self):
+        self.output_experiment_ids = sorted(
+            list(set(np.uint(i) for i in self.new_id_to_old_id.keys()))
+        )
+        self.output_experiment_identifiers = [
+            self.identifiers_map[self.new_id_to_old_id[i]]
+            for i in self.output_experiment_ids
+        ]
 
     def add_result(self, lattice, i):
         A = np.reshape(np.array(lattice.A_matrix, dtype="float64"), (3, 3))
@@ -227,17 +238,16 @@ class OutputAggregator:
             group["miller_index"] = np.concatenate(
                 self.miller_indices_output, dtype=np.int32
             )
-            sorted_ids = sorted(
-                list(set(np.uint(i) for i in self.new_id_to_old_id.keys()))
-            )
-            group.attrs["experiment_ids"] = sorted_ids
-            identifiers = [
-                self.identifiers_map[self.new_id_to_old_id[i]] for i in sorted_ids
-            ]
-            group.attrs["identifiers"] = identifiers
+            if not self.output_experiment_identifiers:
+                self.set_output_identifiers()
+            group.attrs["experiment_ids"] = self.output_experiment_ids
+            group.attrs["identifiers"] = self.output_experiment_identifiers
             group["panel"] = np.zeros_like(ids_array, dtype=np.uint)
+            group["flags"] = np.array(
+                np.full(ids_array.size, 45, dtype=np.uint)
+            )  # strong && predicted && indexed && used_in_refinement
             ## extra potential data to output to enable further processing:
-            ## rlp, flags, xyzobs.mm.value
+            ## rlp, xyzobs.mm.value
 
 
 def run(args=None):
@@ -412,6 +422,11 @@ def run(args=None):
                 expts_to_remove.append(i)
         for i in expts_to_remove[::-1]:
             del expts["experiment"][i]
+        # now set the identifiers correctly - we need to match things up as the imported experimentlist
+        # from dials and spotfinding from ffs will not have matching identifiers.
+        output_aggregator.set_output_identifiers()
+        for i, identifier in enumerate(output_aggregator.output_experiment_identifiers):
+            expts["experiment"][i]["identifier"] = identifier
         with open("indexed.expt", "w") as f:
             json.dump(expts, f, indent=2)
 
