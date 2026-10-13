@@ -54,6 +54,11 @@ cd "$(dirname "$0")"
 
 status "Environment: $CONDA_PREFIX"
 
+if [[ "$CLEAN" == "true" ]]; then
+    status "Removing the build directory"
+    rm -rf build
+fi
+
 if [[ ! -f dx2/CMakeLists.txt ]]; then
     status "Initialising git submodules"
     git submodule update --init --recursive
@@ -108,11 +113,6 @@ check_nvcc_works() {
     fi
     rm -f "$probe.cu" "$probe.out" "$probe.log"
 }
-
-if [[ "$CLEAN" == "true" ]]; then
-    status "Removing the build directory"
-    rm -rf build
-fi
 
 # The build directory is pip's: it configures cmake there. Without it, or
 # without the package installed here, there is nothing for ninja to build.
