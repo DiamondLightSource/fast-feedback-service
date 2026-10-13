@@ -59,8 +59,8 @@ if [[ ! -f dx2/CMakeLists.txt ]]; then
     git submodule update --init --recursive
 fi
 
-dx2_at=$(git -C dx2 rev-parse --short HEAD 2>/dev/null)
-dx2_want=$(git rev-parse --short "HEAD:dx2" 2>/dev/null)
+dx2_at=$(git -C dx2 rev-parse --short HEAD) || dx2_at=""
+dx2_want=$(git rev-parse --short "HEAD:dx2") || dx2_want=""
 if [[ -n "$dx2_at" && -n "$dx2_want" && "$dx2_at" != "$dx2_want" ]]; then
     warn "dx2 is at $dx2_at but this branch records $dx2_want."
     warn "Compile errors against dx2 usually mean this. To match:"
@@ -82,12 +82,14 @@ fi
 
 # cmake pins the cuda compiler in its cache and keeps it across reconfigures,
 # so a build directory stays on whichever cuda configured it.
-cached_nvcc=$(sed -n 's/^CMAKE_CUDA_COMPILER:FILEPATH=//p' build/CMakeCache.txt 2>/dev/null)
-if [[ -n "$cached_nvcc" && "$cached_nvcc" != "$(command -v nvcc)" ]]; then
-    warn "The build directory is configured against a different CUDA:"
-    warn "    configured with  $cached_nvcc"
-    warn "    loaded now       $(command -v nvcc)"
-    fail "Reconfiguring will not change it. Run ./build.sh --clean"
+if [[ -f build/CMakeCache.txt ]]; then
+    cached_nvcc=$(sed -n 's/^CMAKE_CUDA_COMPILER:FILEPATH=//p' build/CMakeCache.txt)
+    if [[ -n "$cached_nvcc" && "$cached_nvcc" != "$(command -v nvcc)" ]]; then
+        warn "The build directory is configured against a different CUDA:"
+        warn "    configured with  $cached_nvcc"
+        warn "    loaded now       $(command -v nvcc)"
+        fail "Reconfiguring will not change it. Run ./build.sh --clean"
+    fi
 fi
 
 # Deliberately not loading a CUDA module here. Building against one this shell
