@@ -36,7 +36,7 @@ class IndexedLatticeResult(BaseModel):
     xyzcal_px: list[float] | None = None
     s1: list[float] | None = None
     delpsi: list[float] | None = None
-    rmsds: list[float] | None = None
+    rmsds: tuple[list[float], list[float], list[float]]
     selection_for_input: list[bool] | None = None
 
 
@@ -150,7 +150,7 @@ class GPUIndexer:
             indexing_result = IndexingResult(
                 lattices=[
                     IndexedLatticeResult(
-                        unit_cell=list(ssx_index_result.cell_parameters),
+                        unit_cell=tuple(ssx_index_result.cell_parameters),
                         space_group="P1",
                         n_indexed=n_indexed,
                         A_matrix=ssx_index_result.A_matrix.flatten(),
