@@ -348,7 +348,7 @@ def run(args=None):
         return
 
     output_aggregator = OutputAggregator(identifiers_map)
-    input_data_arrays: List[InputArrays] = []
+    input_data_arrays: list[InputArrays] = []
 
     ## Note this assumes ids are in ascending order, which is the
     ## expected form of the output from spotfinding.
