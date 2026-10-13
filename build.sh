@@ -80,6 +80,16 @@ else
     status "Matches what the deployments build against ($CUDA_MODULE)"
 fi
 
+# cmake pins the cuda compiler in its cache and keeps it across reconfigures,
+# so a build directory stays on whichever cuda configured it.
+cached_nvcc=$(sed -n 's/^CMAKE_CUDA_COMPILER:FILEPATH=//p' build/CMakeCache.txt 2>/dev/null)
+if [[ -n "$cached_nvcc" && "$cached_nvcc" != "$(command -v nvcc)" ]]; then
+    warn "The build directory is configured against a different CUDA:"
+    warn "    configured with  $cached_nvcc"
+    warn "    loaded now       $(command -v nvcc)"
+    fail "Reconfiguring will not change it. Run ./build.sh --clean"
+fi
+
 # Deliberately not loading a CUDA module here. Building against one this shell
 # does not have would produce binaries that cannot find their own runtime
 # library, so the shell stays authoritative and this only checks and reports.
