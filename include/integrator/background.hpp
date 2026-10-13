@@ -4,11 +4,11 @@
  *        integrator and the GPU integrator.
  *
  * The constant (Tukey/IQR) background model is implemented once, as a
- * device-safe function over a uniform integer-histogram view
- * (::ConstHistogramView). The same code compiles for the host (baseline) and
- * for CUDA device code (GPU reduction kernel), so both paths produce identical
- * results. Background pixel values are integer counts, so a histogram with one
- * bin per integer value makes the quartile/IQR logic exact.
+ * device-safe function over a sparse histogram view (::BackgroundHistogramView).
+ * The same code compiles for the host (baseline) and for CUDA device code (GPU
+ * reduction kernel), so both paths produce identical results. Background pixel
+ * values are integer counts, so one entry per distinct value makes the
+ * quartile/IQR logic exact for any value.
  *
  * This assumes a photon-counting detector, where raw pixel values are
  * non-negative integer photon counts. The integer histogram and the dropping
@@ -59,27 +59,34 @@ enum class BackgroundModel : uint8_t { Constant, Glm };
  * histogram (small array plus a sparse map for large/outlier values) that
  * counts every pixel, including negative sentinels, with no overflow rejection.
  * This is the true-to-dials reference. SharedCore delegates to the same
- * tukey_constant_background() the GPU runs, over a bounded NUM_BG_BINS
- * histogram, so the baseline can be compared directly against the shared core.
+ * tukey_constant_background() the GPU runs, over the same sparse histogram, so
+ * the baseline can be compared directly against the shared core.
  */
 enum class ConstantBackgroundImpl : uint8_t { DialsIndependent, SharedCore };
 
-// Number of integer-valued bins in each per-reflection background histogram.
-// Single source of truth, shared by the GPU device histogram stride and the
-// host baseline adapter, so both paths bin identical pixel values and produce
-// identical estimates. bins cover pixel values [0, NUM_BG_BINS); values at or
-// above NUM_BG_BINS land in the per-reflection overflow tail. Chosen above the
-// realistic constant-background inlier range; device-memory cost is
-// num_reflections * NUM_BG_BINS * 4 bytes. If a reflection puts more than
-// kBackgroundMaxOverflowFraction of its background pixels in the overflow, the
-// range is too small to characterise that background and the estimate is
-// rejected (see tukey_constant_background), which the callers surface as an
-// error rather than silently degrading.
-constexpr int NUM_BG_BINS = 256;
+// Number of open-addressed slots in each per-reflection sparse background
+// histogram. This bounds the number of DISTINCT pixel values a reflection may
+// hold, not the values themselves, so any 32-bit pixel value is representable
+// exactly and there is no high tail. Measured
+// occupancy is a median of 2-3 distinct values with a worst case of 39, so 64
+// leaves substantial headroom; device-memory cost is
+// num_reflections * NUM_BG_SLOTS * 8 bytes. A reflection that exceeds this
+// spills, and a spilled reflection is rejected (see
+// tukey_constant_background).
+constexpr int NUM_BG_SLOTS = 64;
 
-// Fraction of a reflection's background pixels allowed in the high-tail
-// overflow before the constant background estimate is rejected as untrustworthy.
-constexpr double kBackgroundMaxOverflowFraction = 0.25;
+static_assert((NUM_BG_SLOTS & (NUM_BG_SLOTS - 1)) == 0,
+              "NUM_BG_SLOTS must be a power of two so the probe index can be "
+              "masked rather than reduced modulo");
+
+/// @brief log2(NUM_BG_SLOTS), the shift a hashed value is reduced by.
+FFS_HD constexpr int background_slot_bits() {
+    int bits = 0;
+    for (int n = NUM_BG_SLOTS; n > 1; n >>= 1) {
+        ++bits;
+    }
+    return bits;
+}
 
 // Parameters for the robust-Poisson GLM constant background, matching the DIALS
 // defaults (dials.algorithms.background.glm: tuning_constant 1.345,
@@ -93,19 +100,47 @@ constexpr int kGlmMaxIter = 100;
 constexpr uint32_t kGlmMinPixels = 10;
 
 /**
- * @brief Read-only view of a per-reflection background histogram.
+ * @brief Read-only view of a per-reflection sparse background histogram.
  *
- * bins[v] holds the number of background pixels with integer value v, for
- * v in [0, num_bins). overflow_count holds the number of pixels with value
- * >= num_bins (the high tail). For a constant background, num_bins is chosen
- * above the realistic inlier range, so the overflow only ever contains high
- * outliers, which Tukey rejects; this keeps the bounded histogram exact.
+ * entries holds one packed (value, count) pair per distinct pixel value,
+ * sorted ascending by value; entries with a zero count are not present.
+ * spill_count holds the number of pixels dropped because the slot table that
+ * produced these entries was full, which makes the histogram incomplete by an
+ * unknown amount and so fails the reflection.
+ *
+ * Ascending order is a precondition: both models locate quartiles by a
+ * cumulative scan and rely on it.
  */
-struct ConstHistogramView {
-    const uint32_t *bins = nullptr;
-    int num_bins = 0;
-    uint32_t overflow_count = 0;
+struct BackgroundHistogramView {
+    const unsigned long long *entries = nullptr;
+    int num_entries = 0;
+    uint32_t spill_count = 0;
 };
+
+/**
+ * @brief Pack a (value, count) pair into one 64-bit histogram entry.
+ *
+ * The value occupies the high word and the count the low word, so a count can
+ * be incremented with a single 64-bit add without disturbing the value. That
+ * holds because a count is bounded by the number of background pixels in one
+ * reflection (tens of thousands) and so can never carry into the high word.
+ * A stored entry always has a count of at least 1, which makes the all-zero
+ * word an unambiguous empty marker.
+ */
+FFS_HD inline unsigned long long background_entry_pack(uint32_t value, uint32_t count) {
+    return (static_cast<unsigned long long>(value) << 32)
+           | static_cast<unsigned long long>(count);
+}
+
+/// @brief Pixel value of a packed histogram entry.
+FFS_HD inline uint32_t background_entry_value(unsigned long long entry) {
+    return static_cast<uint32_t>(entry >> 32);
+}
+
+/// @brief Pixel count of a packed histogram entry.
+FFS_HD inline uint32_t background_entry_count(unsigned long long entry) {
+    return static_cast<uint32_t>(entry & 0xFFFFFFFFull);
+}
 
 /**
  * @brief Result of a constant background estimate.
@@ -121,41 +156,40 @@ struct BackgroundResult {
 };
 
 /**
- * @brief Tukey (IQR-based) outlier-rejecting constant background.
+ * @brief Tukey (IQR-based) outlier-rejecting constant background over a sparse
+ *        histogram.
  *
  * Single-source implementation shared by host and device. Computes the
  * quartiles of the histogram, rejects values outside
  * [q1 - 1.5*IQR, q3 + 1.5*IQR], and returns the mean and weighted sum of the
  * surviving inliers. Failure is reported via BackgroundResult::valid.
  *
- * The high tail (overflow_count) is counted towards the quartile positions but
- * never contributes inliers, since for a sensible num_bins it lies above the
- * upper rejection bound.
+ * Entries carry their own values, so there is no representable range and no
+ * high tail: any pixel value is held exactly. What a slot table can exhaust
+ * instead is the number of distinct values, and a full table (spill_count > 0)
+ * has lost pixels of unknown magnitude, so the estimate is rejected rather
+ * than computed from a truncated histogram.
  */
 FFS_HD inline BackgroundResult tukey_constant_background(
-  const ConstHistogramView &hist) {
+  const BackgroundHistogramView &hist) {
     constexpr double iqr_multiplier = 1.5;
 
     // Defaults to valid=false; set true only once a mean has been computed from
     // real inliers at the end.
     BackgroundResult result;
 
-    // Total pixel count across the histogram and the high-tail overflow.
-    uint64_t N = hist.overflow_count;
-    for (int v = 0; v < hist.num_bins; ++v) {
-        N += hist.bins[v];
+    // Total pixel count across the histogram.
+    uint64_t N = 0;
+    for (int i = 0; i < hist.num_entries; ++i) {
+        N += background_entry_count(hist.entries[i]);
     }
     if (N == 0) {
         return result;  // no background pixels, so no estimate (valid stays false)
     }
 
-    // Too much of the background in the high-tail overflow means the histogram
-    // range (num_bins) is too small to characterise this reflection. The
-    // quartile and inlier estimate would silently diverge from a full-range
-    // computation, so reject it (valid stays false) and let the caller report
-    // the insufficient range.
-    if (static_cast<double>(hist.overflow_count)
-        > kBackgroundMaxOverflowFraction * static_cast<double>(N)) {
+    // Pixels were dropped by a full slot table, so the histogram is incomplete
+    // by an unknown amount and the quartiles cannot be trusted.
+    if (hist.spill_count > 0) {
         return result;
     }
 
@@ -164,15 +198,12 @@ FFS_HD inline BackgroundResult tukey_constant_background(
     const uint64_t p50 = (N + 1) / 2;
     const uint64_t p75 = (3 * N + 1) / 4;
 
-    // Ascending scan over bins to locate q1, median, q3. If a quartile
-    // falls in the overflow tail, num_bins is too small for this
-    // reflection; clamp it to num_bins (a lower bound). A clamped q1
-    // alone leaves the estimate usable, whereas a clamped q3 pushes the
-    // upper fence to num_bins, which the bound check below rejects.
+    // Ascending scan over the entries to locate q1, median, q3.
     uint64_t cumulative = 0;
     long q1 = -1, median = -1, q3 = -1;
-    for (int v = 0; v < hist.num_bins; ++v) {
-        cumulative += hist.bins[v];
+    for (int i = 0; i < hist.num_entries; ++i) {
+        const long v = static_cast<long>(background_entry_value(hist.entries[i]));
+        cumulative += background_entry_count(hist.entries[i]);
         if (q1 < 0 && cumulative >= p25) q1 = v;
         if (median < 0 && cumulative >= p50) median = v;
         if (q3 < 0 && cumulative >= p75) {
@@ -180,30 +211,25 @@ FFS_HD inline BackgroundResult tukey_constant_background(
             break;
         }
     }
-    if (q1 < 0) q1 = hist.num_bins;
-    if (q3 < 0) q3 = hist.num_bins;
+    // The cumulative count reaches N, and p75 <= N, so both quartiles are
+    // always found for a non-empty histogram.
+    if (q1 < 0 || q3 < 0) {
+        return result;
+    }
 
     const double iqr = static_cast<double>(q3 - q1);
     const double lower_bound = q1 - iqr_multiplier * iqr;
     const double upper_bound = q3 + iqr_multiplier * iqr;
 
-    // The upper fence reaching past the bins into the overflow tail
-    // means the range is too small to separate the inliers from the
-    // high tail, so reject the estimate (valid stays false).
-    if (upper_bound >= static_cast<double>(hist.num_bins)) {
-        return result;
-    }
-
-    // Accumulate inliers. The fence check above guarantees
-    // upper_bound < num_bins, so overflow values (>= num_bins)
-    // always sit above the upper bound and are rejected
+    // Accumulate inliers.
     uint64_t included_count = 0;
     double weighted_sum = 0.0;
-    for (int v = 0; v < hist.num_bins; ++v) {
+    for (int i = 0; i < hist.num_entries; ++i) {
+        const double v = static_cast<double>(background_entry_value(hist.entries[i]));
         if (v < lower_bound || v > upper_bound) continue;
-        const uint64_t count = hist.bins[v];
+        const uint64_t count = background_entry_count(hist.entries[i]);
         included_count += count;
-        weighted_sum += static_cast<double>(v) * static_cast<double>(count);
+        weighted_sum += v * static_cast<double>(count);
     }
 
     if (included_count == 0) {
@@ -236,8 +262,8 @@ FFS_HD inline double glm_poisson_pdf(double mean, double value) {
  * The DIALS routine uses boost::math::gamma_q(floor(value+1), mean). For an
  * integer first argument that regularised upper incomplete gamma equals the
  * finite Poisson sum e^-mean * sum_{k=0..value} mean^k / k!, which avoids a
- * special-function dependency on the device. mean stays below NUM_BG_BINS for
- * accepted reflections, so the sum is short.
+ * special-function dependency on the device. mean tracks the background level,
+ * which is small for a photon-counting detector, so the sum is short.
  *
  * Source: scitbx::glmtbx::poisson::cdf in scitbx/glmtbx/family.h.
  */
@@ -316,69 +342,59 @@ FFS_HD inline GlmExpectation glm_expectation(double mu, double svar, double c) {
 }
 
 /**
- * @brief Robust-Poisson GLM constant background (DIALS "glm constant3d").
+ * @brief Robust-Poisson GLM constant background over a sparse histogram.
  *
  * Single-source implementation shared by host and device. Fits a constant
  * Poisson mean with a log link by iteratively reweighted least squares with
  * Huber weighting, reproducing dials::algorithms::RobustPoissonMean over the
  * same per-reflection histogram. The model treats every pixel the same, so the
- * fit only needs the count of pixels at each value, which makes the histogram
- * an exact representation. High-tail overflow pixels always sit far above the
- * upper Huber bound, so their psi clips to +c regardless of their exact value,
- * which is why the overflow count alone suffices.
+ * fit only needs the count at each value, which makes the histogram an exact
+ * representation.
  *
- * Iterating bins times their count and folding the overflow tail in at the
- * saturated Huber value are exact restatements of the DIALS per-pixel loop. The
- * sole numerical divergence is the Hessian: DIALS sums H += b per pixel while
- * this uses N * b directly, equal in exact arithmetic but differing in
- * floating-point rounding, so parity with DIALS holds to 1e-6 rather than
- * bit-for-bit (see the IRLS loop below).
+ * Every pixel value is recorded exactly, so the fit is exact whatever the
+ * background level. A full slot table (spill_count > 0) is rejected for the
+ * same reason as in tukey_constant_background().
+ *
+ * The sole numerical divergence from DIALS is the Hessian: DIALS sums H += b
+ * per pixel while this uses N * b directly, equal in exact arithmetic but
+ * differing in floating-point rounding, so parity holds to 1e-6 rather than
+ * bit-for-bit.
  *
  * Paper symbols (constant model, per-pixel term xᵢ = 1): coefficient β, linear
  * predictor η = β, mean μ = exp(η) (log link), link derivative μ′ = dμ/dη,
  * dispersion φ = 1 and variance function v_μ = μ, so √(φ*v_μ) = √μ. The IRLS
- * loop below forms the robust score U [Eq 2] and the Fisher information I [Eq 9]
- * and applies the update β ← β + I⁻¹U [Eq 5].
- *
- * Failure (too few pixels, range too small, non-convergence, or a degenerate
- * parameter) is reported via BackgroundResult::valid. weighted_sum is mean * N,
- * since the GLM models every background pixel at the fitted mean.
+ * loop forms the robust score U [Eq 2] and the Fisher information I [Eq 9] and
+ * applies the update β <- β + I⁻¹U [Eq 5].
  *
  * Source: dials::algorithms::RobustPoissonMean in
- * dials/algorithms/background/glm/robust_poisson_mean.h (the constant-model
- * specialisation of scitbx::glmtbx::robust_glm in scitbx/glmtbx/robust_glm.h).
+ * dials/algorithms/background/glm/robust_poisson_mean.h.
  */
-FFS_HD inline BackgroundResult glm_constant_background(const ConstHistogramView &hist) {
+FFS_HD inline BackgroundResult glm_constant_background(
+  const BackgroundHistogramView &hist) {
     BackgroundResult result;
 
-    // Total pixel count across the histogram and the high-tail overflow.
-    uint64_t N = hist.overflow_count;
-    for (int v = 0; v < hist.num_bins; ++v) {
-        N += hist.bins[v];
+    // Total pixel count across the histogram.
+    uint64_t N = 0;
+    for (int i = 0; i < hist.num_entries; ++i) {
+        N += background_entry_count(hist.entries[i]);
     }
     // DIALS requires at least min_pixels background pixels to attempt a fit.
     if (N < kGlmMinPixels) {
         return result;
     }
-
-    // Too much of the background in the high-tail overflow means the histogram
-    // range is too small to characterise this reflection (see
-    // tukey_constant_background); reject rather than fit a truncated histogram.
-    if (static_cast<double>(hist.overflow_count)
-        > kBackgroundMaxOverflowFraction * static_cast<double>(N)) {
+    if (hist.spill_count > 0) {
         return result;
     }
 
     // Median seed, matching DIALS detail::median (the element at sorted
-    // position N/2). The overflow tail counts towards the position but, for an
-    // accepted reflection, the median itself lies within the binned range.
+    // position N/2).
     const uint64_t mid = N / 2;  // 0-based target index
     uint64_t cumulative = 0;
     long median = -1;
-    for (int v = 0; v < hist.num_bins; ++v) {
-        cumulative += hist.bins[v];
+    for (int i = 0; i < hist.num_entries; ++i) {
+        cumulative += background_entry_count(hist.entries[i]);
         if (cumulative >= mid + 1) {
-            median = v;
+            median = static_cast<long>(background_entry_value(hist.entries[i]));
             break;
         }
     }
@@ -410,23 +426,16 @@ FFS_HD inline BackgroundResult glm_constant_background(const ConstHistogramView 
         // subtraction recovers the paper's per-term form
         // Σ (ψ_c(rᵢ)*μ′/√(φ*v_μ) - a(β)), where the consistency correction
         // a(β) = E[ψ_c]*μ′/√(φ*v_μ) [Eq 4] (μ′ and √(φ*v_μ) are constant across
-        // observations). Each bin
-        // contributes its count times the per-value term; the overflow pixels
-        // are extreme high outliers whose ψ_c clips to +c, so they contribute
-        // the same term regardless of their exact (unrecorded) value.
+        // observations). Each entry contributes its count times the per-value
+        // term.
         double U = 0.0;
-        for (int v = 0; v < hist.num_bins; ++v) {
-            const uint32_t count = hist.bins[v];
-            if (count == 0) {
-                continue;
-            }
-            const double res = (static_cast<double>(v) - mu) / svar;  // rᵢ
+        for (int i = 0; i < hist.num_entries; ++i) {
+            const double v =
+              static_cast<double>(background_entry_value(hist.entries[i]));
+            const uint32_t count = background_entry_count(hist.entries[i]);
+            const double res = (v - mu) / svar;  // rᵢ
             const double q = (glm_huber(res, c) - epsi.epsi1) * dmu / svar;
             U += static_cast<double>(count) * q;
-        }
-        if (hist.overflow_count > 0) {
-            const double q = (c - epsi.epsi1) * dmu / svar;
-            U += static_cast<double>(hist.overflow_count) * q;
         }
 
         // Fisher information I = XᵀBX [Eq 9], a scalar N*b for the constant
@@ -536,8 +545,9 @@ class BackgroundAggregator {
 /**
  * @brief Estimate a constant background level from an aggregated histogram.
  *
- * Flattens the aggregator into the shared ConstHistogramView and dispatches to
- * the selected single-source model: tukey_constant_background (Constant) or
+ * Flattens the aggregator into the shared BackgroundHistogramView and
+ * dispatches to the selected single-source model: tukey_constant_background
+ * (Constant) or
  * glm_constant_background (Glm), so the baseline runs the same math as the GPU.
  *
  * @param data Aggregated background pixel histogram for one reflection.
@@ -547,7 +557,7 @@ class BackgroundAggregator {
  * @param model Background model the shared core applies (Constant = Tukey;
  *        Glm = robust-Poisson GLM).
  * @return BackgroundResult with mean and weighted_sum; valid is false when the
- *         estimate is rejected (no inliers, too few pixels, too much overflow,
+ *         estimate is rejected (no inliers, too few pixels, a full slot table,
  *         or non-convergence), in which case the caller marks the reflection
  *         unintegrated. Mirrors the BackgroundResult::valid channel the GPU
  *         reduction uses.
