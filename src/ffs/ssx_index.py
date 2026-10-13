@@ -233,16 +233,6 @@ class OutputAggregator:
         self.image_nos_output.append(np.full(n, data_arrays.id_value, dtype=np.int32))
         self.new_id_to_old_id[self.output_id] = data_arrays.id_value
         self.output_id += 1
-        self.output_experiment_ids = None
-        self.output_experiment_identifiers = None
-
-    def set_output_identifiers(self):
-        self.output_experiment_ids = sorted(
-            list(set(np.uint(i) for i in self.new_id_to_old_id.keys()))
-        )
-        self.output_experiment_identifiers = [
-            self.identifiers_map[self.new_id_to_old_id[i]] for i in self.output_experiment_ids
-        ]
 
 
     def write_table(self, filename):
