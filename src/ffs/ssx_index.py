@@ -6,10 +6,10 @@ Usage: ./build/bin/ssx_index -r results_ffs.h5 -e imported.expt -c 79 79 38 90 9
 # ruff: noqa: C901
 
 import argparse
-from dataclasses import dataclass
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import gemmi
@@ -234,7 +234,6 @@ class OutputAggregator:
         self.new_id_to_old_id[self.output_id] = data_arrays.id_value
         self.output_id += 1
 
-
     def write_table(self, filename):
         with h5py.File(Path.cwd() / filename, "w") as output_refl:
             group = output_refl.create_group("dials/processing/group_0")
@@ -358,12 +357,7 @@ def run(args=None):
     for id_, start, end in zip(unique_ids, start_indices, end_indices):
         xyzs_this = xyzs[start:end]
         if xyzs_this.any():
-            input_data_arrays.append(
-                InputArrays(
-                    id_value=id_,
-                    xyz=xyzs_this
-                )
-            )
+            input_data_arrays.append(InputArrays(id_value=id_, xyz=xyzs_this))
 
     ## Initialise the GPU indexer.
     try:

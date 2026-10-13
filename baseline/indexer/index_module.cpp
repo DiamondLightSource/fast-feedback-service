@@ -44,7 +44,7 @@ struct IndexingResult {
     std::vector<double> s1;
     std::vector<double> delpsi;
     std::vector<double> rmsds;
-    std::vector<bool> selection_for_input; // Can use on the input data,
+    std::vector<bool> selection_for_input;  // Can use on the input data,
     // to select data for successfully indexed reflections.
     // Selection_for_input is of length n_input_refls
 };
@@ -167,10 +167,10 @@ IndexingResult index_from_ssx_cells(const std::vector<double> &crystal_vectors,
     }
 
     // determine the boolean selection for the input data.
-    std::vector<bool> boolean_selection(xyzobs_px_data.size() / 3 ,false);
-    for (std::size_t i=0;i<selection.size();i++){
-        if (sel_for_indexed[i]){ // i.e. if indexed, and meets the delta_r filter
-          boolean_selection[selection[i]] = true;
+    std::vector<bool> boolean_selection(xyzobs_px_data.size() / 3, false);
+    for (std::size_t i = 0; i < selection.size(); i++) {
+        if (sel_for_indexed[i]) {  // i.e. if indexed, and meets the delta_r filter
+            boolean_selection[selection[i]] = true;
         }
     }
 
@@ -208,7 +208,8 @@ IndexingResult index_from_ssx_cells(const std::vector<double> &crystal_vectors,
                           std::move(xyzcal_px_vec),
                           std::move(s1_vec),
                           std::move(delpsi_vec),
-                          rmsds, std::move(boolean_selection));
+                          rmsds,
+                          std::move(boolean_selection));
 }
 
 NB_MODULE(index, m) {
@@ -232,7 +233,8 @@ NB_MODULE(index, m) {
       .def_prop_ro("s1", [](const IndexingResult &r) { return r.s1; })
       .def_prop_ro("delpsi", [](const IndexingResult &r) { return r.delpsi; })
       .def_prop_ro("rmsds", [](const IndexingResult &r) { return r.rmsds; })
-      .def_prop_ro("selection_for_input", [](const IndexingResult &r) { return r.selection_for_input; });
+      .def_prop_ro("selection_for_input",
+                   [](const IndexingResult &r) { return r.selection_for_input; });
     m.def("make_panel", &make_panel, "Create a configured Panel object");
     m.def("calculate_mu_for_material_at_wavelength",
           &calculate_mu_for_material_at_wavelength,
