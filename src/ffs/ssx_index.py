@@ -24,6 +24,10 @@ import ffs.index
 class InputArrays:
     id_value: int
     xyz: np.ndarray
+    intensity: np.ndarray
+    covariance: np.ndarray
+    bbox: np.ndarray
+    mobs: np.ndarray
 
 
 class IndexedLatticeResult(BaseModel):
@@ -191,6 +195,10 @@ class OutputAggregator:
         self.identifiers_map = identifiers_map
         self.output_experiment_ids = None
         self.output_experiment_identifiers = None
+        self.intensities = []
+        self.covariances = []
+        self.bboxes = []
+        self.mobs = []
 
     def set_output_identifiers(self):
         self.output_experiment_ids = sorted(
@@ -227,6 +235,10 @@ class OutputAggregator:
         self.miller_indices_output.append(midx)
         self.xyzobs_output.append(xyzobs)
         self.xyzcal_px_output.append(xyzcal)
+        self.intensities.append(data_arrays.intensity[lattice.selection_for_input])
+        self.covariances.append(data_arrays.covariance[lattice.selection_for_input])
+        self.bboxes.append(data_arrays.bbox[lattice.selection_for_input])
+        self.mobs.append(data_arrays.mobs[lattice.selection_for_input])
         self.delpsical_output.append(np.array(delpsi))
         self.s1_output.append(s1_reshape)
         self.ids_output.append(np.full(n, self.output_id, dtype=np.int32))
@@ -257,6 +269,10 @@ class OutputAggregator:
             )  # strong && predicted && indexed && used_in_refinement
             ## extra potential data to output to enable further processing:
             ## rlp, xyzobs.mm.value
+            group["intensity.sum.value"] = np.concatenate(self.intensities)
+            group["bbox"] = np.concatenate(self.bboxes)
+            group["spot_covariance_2d_packed"] = np.concatenate(self.covariances)
+            group["spot_mobs_2d"] = np.concatenate(self.mobs)
 
 
 def run(args=None):
@@ -323,6 +339,16 @@ def run(args=None):
             experiment_ids = processing_group.attrs["experiment_ids"]
             identifiers = processing_group.attrs["identifiers"]
             identifiers_map = dict(zip(experiment_ids, identifiers))
+            '''intensities = None
+            covariances = None
+            bboxes = None'''
+            #if "intensity.sum.value" in processing_group:
+            intensities = processing_group["intensity.sum.value"][:]
+            #if "spot_covariance_2d_packed" in processing_group:
+            covariances = processing_group["spot_covariance_2d_packed"][:]
+            #if "bbox" in processing_group:
+            bboxes = processing_group["bbox"][:]
+            spot_mobs = processing_group["spot_mobs_2d"][:]
     except Exception as e:
         print(
             f"Unable to interpret the reflection file - please check input.\n Error: {e}"
@@ -357,7 +383,13 @@ def run(args=None):
     for id_, start, end in zip(unique_ids, start_indices, end_indices):
         xyzs_this = xyzs[start:end]
         if xyzs_this.any():
-            input_data_arrays.append(InputArrays(id_value=id_, xyz=xyzs_this))
+            input_data_arrays.append(
+                InputArrays(
+                    id_value=id_, xyz=xyzs_this,
+                    intensity=intensities[start:end],
+                    covariance=covariances[start:end],
+                    bbox=bboxes[start:end],
+                    mobs=spot_mobs[start:end]))
 
     ## Initialise the GPU indexer.
     try:

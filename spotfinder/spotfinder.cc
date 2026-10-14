@@ -725,6 +725,8 @@ int main(int argc, char **argv) {
     std::unique_ptr<std::map<int, std::vector<double>>> reflection_covariances_2d = nullptr;
     std::mutex
       reflection_covariances_2d_mutex;  // Mutex to protect the reflection covariances map
+    std::unique_ptr<std::map<int, std::vector<double>>> mobs_mapptr = nullptr;
+    std::mutex mobs_mutex;  // Mutex to protect the reflection intensities map
 
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
@@ -742,6 +744,8 @@ int main(int argc, char **argv) {
             reflection_intensities_mapptr =
               std::make_unique<std::map<int, std::vector<int>>>();
             reflection_covariances_2d =
+              std::make_unique<std::map<int, std::vector<double>>>();
+            mobs_mapptr =
               std::make_unique<std::map<int, std::vector<double>>>();
         }
     }
@@ -936,6 +940,7 @@ int main(int argc, char **argv) {
                 std::vector<float> centers_of_mass;
                 std::vector<int> spot_intensities;
                 std::vector<double> spot_covariances;
+                std::vector<double> mobs;
                 // If this is a rotation dataset, store the connected component slice
                 if (oscillation_width) {
                     // Lock the mutex to protect the map
@@ -958,10 +963,12 @@ int main(int argc, char **argv) {
                         // live integration.
                         auto [xmm, ymm] = panel.px_to_mm(x, y);
                         Vector3d s1 = panel.get_lab_coord(xmm, ymm);
-                        auto [varx, vary, varxy] = r.covariance_2D(s1, s0, panel);
+                        auto [xbar_0, xbar_1, varx, vary, varxy] = r.mobs_and_covariance_2D(s1, s0, panel);
                         spot_covariances.push_back(varx);
                         spot_covariances.push_back(vary);
                         spot_covariances.push_back(varxy);
+                        mobs.push_back(xbar_0);
+                        mobs.push_back(xbar_1);
                     }
                     if (save_to_h5) {
                         std::vector<int> bboxes_xyz;
@@ -982,6 +989,8 @@ int main(int argc, char **argv) {
                         (*reflection_intensities_mapptr)[offset_image_num] = spot_intensities;
                         std::lock_guard<std::mutex> lock4(reflection_covariances_2d_mutex);
                         (*reflection_covariances_2d)[offset_image_num] = spot_covariances;
+                        std::lock_guard<std::mutex> lock5(mobs_mutex);
+                        (*mobs_mapptr)[offset_image_num] = mobs;
                     }
                 }
 
@@ -1315,6 +1324,7 @@ int main(int argc, char **argv) {
             std::vector<int> bboxes;
             std::vector<int> spot_intensities;
             std::vector<double> flat_covariances;
+            std::vector<double> flat_mobs;
             std::vector<int> centers_map_keys;
             for (const auto &pair : *reflection_centers_2d) {
                 centers_map_keys.push_back(pair.first);
@@ -1329,6 +1339,10 @@ int main(int argc, char **argv) {
                 }
                 for (int i = 0; i < n_refls; ++i) {
                     ids.push_back(id);
+                }
+                std::vector<double> mobs_this = (*mobs_mapptr)[imageno];
+                for (auto m : mobs_this) {
+                    flat_mobs.push_back(m);
                 }
                 std::vector<int> spot_intensities_this = (*reflection_intensities_mapptr)[imageno];
                 for (auto intensity : spot_intensities_this) {
@@ -1361,6 +1375,7 @@ int main(int argc, char **argv) {
             table.add_column("bbox", panel_ids.size(), 6, bboxes);
             table.add_column("intensity.sum.value", spot_intensities.size(), 1, spot_intensities);
             table.add_column("spot_covariance_2d_packed", flat_covariances.size() / 3, 3, flat_covariances);
+            table.add_column("spot_mobs_2d", flat_mobs.size() / 2, 2, flat_mobs);
 
             // Write the table to an HDF5 file
             table.write("results_ffs.h5", "dials/processing/group_0");
