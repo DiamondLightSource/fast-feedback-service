@@ -727,383 +727,375 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Spawn the reader threads
-    std::vector<std::jthread> threads;
-    for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
-        threads.emplace_back([&, thread_id]() {
-            auto stop_token = global_stop.get_token();
-            CudaStream stream;
+    auto worker = [&](int thread_id) {
+        auto stop_token = global_stop.get_token();
+        CudaStream stream;
 
-            auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
-            auto host_results = make_cuda_pinned_malloc<uint8_t>(width * height);
-            auto device_image = PitchedMalloc<pixel_t>(width, height);
-            auto device_results =
-              PitchedMalloc<uint8_t>(make_cuda_malloc<uint8_t[]>(mask.pitch * height),
-                                     width,
-                                     height,
-                                     mask.pitch);
+        auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
+        auto host_results = make_cuda_pinned_malloc<uint8_t>(width * height);
+        auto device_image = PitchedMalloc<pixel_t>(width, height);
+        auto device_results = PitchedMalloc<uint8_t>(
+          make_cuda_malloc<uint8_t[]>(mask.pitch * height), width, height, mask.pitch);
 
-            // Buffer for reading compressed chunk data in
-            auto raw_chunk_buffer =
-              std::vector<uint8_t>(width * height * sizeof(pixel_t));
+        // Buffer for reading compressed chunk data in
+        auto raw_chunk_buffer = std::vector<uint8_t>(width * height * sizeof(pixel_t));
 
-            // Let all threads do setup tasks before reading starts
-            cpu_sync.arrive_and_wait();
-            CudaEvent start, copy, post, postcopy, end;
+        // Let all threads do setup tasks before reading starts
+        cpu_sync.arrive_and_wait();
+        CudaEvent start, copy, post, postcopy, end;
 
-            // Get the time the lastimage was received to avoid waiting for too long
-            auto last_image_received = std::chrono::high_resolution_clock::now();
+        // Get the time the lastimage was received to avoid waiting for too long
+        auto last_image_received = std::chrono::high_resolution_clock::now();
 
-            while (!stop_token.stop_requested()) {
-                auto image_num = next_image.fetch_add(1);
-                if (image_num >= num_images) {
-                    break;
-                }
-                auto offset_image_num = image_num + parser.get<uint32_t>("start-index");
-                {
-                    // TODO:
-                    //  - Counting time like this does not work efficiently
-                    //    because it might not be the "next" image that
-                    //    gets the lock.
+        while (!stop_token.stop_requested()) {
+            auto image_num = next_image.fetch_add(1);
+            if (image_num >= num_images) {
+                break;
+            }
+            auto offset_image_num = image_num + parser.get<uint32_t>("start-index");
+            {
+                // TODO:
+                //  - Counting time like this does not work efficiently
+                //    because it might not be the "next" image that
+                //    gets the lock.
 
-                    // Lock so we don't duplicate wait count, and also
-                    // because we don't know if the HDF5 function is threadsafe
-                    std::scoped_lock lock(reader_mutex);
-                    auto swmr_wait_start_time =
-                      std::chrono::high_resolution_clock::now();
+                // Lock so we don't duplicate wait count, and also
+                // because we don't know if the HDF5 function is threadsafe
+                std::scoped_lock lock(reader_mutex);
+                auto swmr_wait_start_time = std::chrono::high_resolution_clock::now();
 
-                    // Check that our image is available and wait if not
-                    while (!reader.is_image_available(offset_image_num)
-                           && !stop_token.stop_requested()) {
-                        auto current_time = std::chrono::high_resolution_clock::now();
-                        auto elapsed_wait_time =
-                          std::chrono::duration_cast<std::chrono::duration<double>>(
-                            current_time - last_image_received)
-                            .count();
+                // Check that our image is available and wait if not
+                while (!reader.is_image_available(offset_image_num)
+                       && !stop_token.stop_requested()) {
+                    auto current_time = std::chrono::high_resolution_clock::now();
+                    auto elapsed_wait_time =
+                      std::chrono::duration_cast<std::chrono::duration<double>>(
+                        current_time - last_image_received)
+                        .count();
 
-                        if (elapsed_wait_time > wait_timeout) {
-                            logger.warn("Timeout waiting for image {}",
-                                        offset_image_num);
-                            global_stop.request_stop();
-                            break;
-                        }
-
-                        // Sleep for a bit to avoid busy-waiting
-                        std::this_thread::sleep_for(100ms);
-                    }
-
-                    if (stop_token.stop_requested()) {
+                    if (elapsed_wait_time > wait_timeout) {
+                        logger.warn("Timeout waiting for image {}", offset_image_num);
+                        global_stop.request_stop();
                         break;
                     }
 
-                    // If the image is available, update the last image received time
-                    last_image_received = std::chrono::high_resolution_clock::now();
-
-                    time_waiting_for_images +=
-                      std::chrono::duration_cast<std::chrono::duration<double>>(
-                        std::chrono::high_resolution_clock::now()
-                        - swmr_wait_start_time)
-                        .count();
+                    // Sleep for a bit to avoid busy-waiting
+                    std::this_thread::sleep_for(100ms);
                 }
-                // Sized buffer for the actual data read from file
-                std::span<uint8_t> buffer;
-                // Fetch the image data from the reader.. loop in case we need to wait
-                while (true) {
-                    {
-                        std::scoped_lock lock(reader_mutex);
-                        buffer =
-                          reader.get_raw_chunk(offset_image_num, raw_chunk_buffer);
-                    }
-                    // /dev/shm we might not have an atomic write
-                    if (buffer.size() == 0) {
-                        logger.warn(
-                          "\033[1mRace Condition?!?? Got buffer size 0 for image "
-                          "{}. Sleeping.\033[0m",
-                          image_num);
-                        std::this_thread::sleep_for(100ms);
-                        continue;
-                    }
+
+                if (stop_token.stop_requested()) {
                     break;
                 }
+
+                // If the image is available, update the last image received time
+                last_image_received = std::chrono::high_resolution_clock::now();
+
+                time_waiting_for_images +=
+                  std::chrono::duration_cast<std::chrono::duration<double>>(
+                    std::chrono::high_resolution_clock::now() - swmr_wait_start_time)
+                    .count();
+            }
+            // Sized buffer for the actual data read from file
+            std::span<uint8_t> buffer;
+            // Fetch the image data from the reader.. loop in case we need to wait
+            while (true) {
+                {
+                    std::scoped_lock lock(reader_mutex);
+                    buffer = reader.get_raw_chunk(offset_image_num, raw_chunk_buffer);
+                }
+                // /dev/shm we might not have an atomic write
+                if (buffer.size() == 0) {
+                    logger.warn(
+                      "\033[1mRace Condition?!?? Got buffer size 0 for image "
+                      "{}. Sleeping.\033[0m",
+                      image_num);
+                    std::this_thread::sleep_for(100ms);
+                    continue;
+                }
+                break;
+            }
 
 #pragma region Decompression
-                // Decompress this data, outside of the mutex.
-                // We do this here rather than in the reader, because we
-                // anticipate that we will want to eventually offload
-                // the decompression
-                switch (reader.get_raw_chunk_compression()) {
-                case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
-                    const int64_t consumed = bshuf_decompress_lz4(buffer.data() + 12,
-                                                                  host_image.get(),
-                                                                  width * height,
-                                                                  sizeof(pixel_t),
-                                                                  0);
-                    if (consumed < 0) {
-                        throw std::runtime_error(
-                          fmt::format("bitshuffle/LZ4 decompression of image {} "
-                                      "failed with code {}",
-                                      offset_image_num,
-                                      consumed));
-                    }
-                    break;
+            // Decompress this data, outside of the mutex.
+            // We do this here rather than in the reader, because we
+            // anticipate that we will want to eventually offload
+            // the decompression
+            switch (reader.get_raw_chunk_compression()) {
+            case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
+                const int64_t consumed = bshuf_decompress_lz4(buffer.data() + 12,
+                                                              host_image.get(),
+                                                              width * height,
+                                                              sizeof(pixel_t),
+                                                              0);
+                if (consumed < 0) {
+                    throw std::runtime_error(
+                      fmt::format("bitshuffle/LZ4 decompression of image {} "
+                                  "failed with code {}",
+                                  offset_image_num,
+                                  consumed));
                 }
-                case Reader::ChunkCompression::BYTE_OFFSET_32:
-                    decompress_byte_offset<pixel_t>(
-                      buffer,
-                      {host_image.get(),
-                       static_cast<std::span<pixel_t>::size_type>(width * height)});
-                    break;
-                }
+                break;
+            }
+            case Reader::ChunkCompression::BYTE_OFFSET_32:
+                decompress_byte_offset<pixel_t>(
+                  buffer,
+                  {host_image.get(),
+                   static_cast<std::span<pixel_t>::size_type>(width * height)});
+                break;
+            }
 
-                start.record(stream);
-                // Copy the image to GPU
-                CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
-                                             device_image.pitch_bytes(),
-                                             host_image.get(),
-                                             width * sizeof(pixel_t),
-                                             width * sizeof(pixel_t),
-                                             height,
-                                             cudaMemcpyHostToDevice,
-                                             stream));
-                copy.record(stream);
+            start.record(stream);
+            // Copy the image to GPU
+            CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
+                                         device_image.pitch_bytes(),
+                                         host_image.get(),
+                                         width * sizeof(pixel_t),
+                                         width * sizeof(pixel_t),
+                                         height,
+                                         cudaMemcpyHostToDevice,
+                                         stream));
+            copy.record(stream);
 #pragma endregion Decompression
 
 #pragma region Spotfinding
-                // When done, launch the spotfind kernel
-                switch (dispersion_algorithm.algorithm) {
-                case DispersionAlgorithm::Algorithm::DISPERSION:
-                    call_do_spotfinding_dispersion(blocks_dims,
-                                                   gpu_thread_block_size,
-                                                   stream,
-                                                   device_image,
-                                                   mask,
-                                                   width,
-                                                   height,
-                                                   trusted_px_max,
-                                                   &device_results);
-                    break;
-                case DispersionAlgorithm::Algorithm::DISPERSION_EXTENDED:
-                    call_do_spotfinding_extended(blocks_dims,
-                                                 gpu_thread_block_size,
-                                                 stream,
-                                                 device_image,
-                                                 mask,
-                                                 width,
-                                                 height,
-                                                 trusted_px_max,
-                                                 &device_results,
-                                                 do_writeout);
-                    break;
-                }
-                post.record(stream);
-
-                // Copy the results buffer back to the CPU
-                CUDA_CHECK(cudaMemcpy2DAsync(host_results.get(),
-                                             width * sizeof(uint8_t),
-                                             device_results.get(),
-                                             device_results.pitch_bytes(),
-                                             width * sizeof(uint8_t),
+            // When done, launch the spotfind kernel
+            switch (dispersion_algorithm.algorithm) {
+            case DispersionAlgorithm::Algorithm::DISPERSION:
+                call_do_spotfinding_dispersion(blocks_dims,
+                                               gpu_thread_block_size,
+                                               stream,
+                                               device_image,
+                                               mask,
+                                               width,
+                                               height,
+                                               trusted_px_max,
+                                               &device_results);
+                break;
+            case DispersionAlgorithm::Algorithm::DISPERSION_EXTENDED:
+                call_do_spotfinding_extended(blocks_dims,
+                                             gpu_thread_block_size,
+                                             stream,
+                                             device_image,
+                                             mask,
+                                             width,
                                              height,
-                                             cudaMemcpyDeviceToHost,
-                                             stream));
-                postcopy.record(stream);
-                // Now, wait for stream to finish
-                CUDA_CHECK(cudaStreamSynchronize(stream));
+                                             trusted_px_max,
+                                             &device_results,
+                                             do_writeout);
+                break;
+            }
+            post.record(stream);
+
+            // Copy the results buffer back to the CPU
+            CUDA_CHECK(cudaMemcpy2DAsync(host_results.get(),
+                                         width * sizeof(uint8_t),
+                                         device_results.get(),
+                                         device_results.pitch_bytes(),
+                                         width * sizeof(uint8_t),
+                                         height,
+                                         cudaMemcpyDeviceToHost,
+                                         stream));
+            postcopy.record(stream);
+            // Now, wait for stream to finish
+            CUDA_CHECK(cudaStreamSynchronize(stream));
 #pragma endregion Spotfinding
 
 #pragma region Connected Components
-                std::unique_ptr<ConnectedComponents> connected_components_2d =
-                  std::make_unique<ConnectedComponents>(
-                    host_results.get(), host_image.get(), width, height, min_spot_size);
+            std::unique_ptr<ConnectedComponents> connected_components_2d =
+              std::make_unique<ConnectedComponents>(
+                host_results.get(), host_image.get(), width, height, min_spot_size);
 
-                auto boxes = connected_components_2d->get_boxes();
-                size_t num_strong_pixels =
-                  connected_components_2d->get_num_strong_pixels();
-                size_t num_strong_pixels_filtered =
-                  connected_components_2d->get_num_strong_pixels_filtered();
+            auto boxes = connected_components_2d->get_boxes();
+            size_t num_strong_pixels = connected_components_2d->get_num_strong_pixels();
+            size_t num_strong_pixels_filtered =
+              connected_components_2d->get_num_strong_pixels_filtered();
 
-                std::vector<float> centers_of_mass;
-                // If this is a rotation dataset, store the connected component slice
-                if (oscillation_width) {
-                    // Lock the mutex to protect the map
-                    std::lock_guard<std::mutex> lock(rotation_slices_mutex);
-                    // Store the connected components slice in the map
-                    (*rotation_slices)[offset_image_num] =
-                      std::move(connected_components_2d);
-                } else if (save_to_h5 || output_for_index) {
-                    std::vector<Reflection3D> reflections =
-                      connected_components_2d->find_2d_components(
-                        min_spot_size, max_peak_centroid_separation);
-                    for (const auto &r : reflections) {
-                        auto [x, y, z] = r.center_of_mass();
-                        centers_of_mass.push_back(x);
-                        centers_of_mass.push_back(y);
-                        centers_of_mass.push_back(z);
-                    }
-                    if (save_to_h5) {
-                        std::lock_guard<std::mutex> lock(reflection_centers_2d_mutex);
-                        (*reflection_centers_2d)[offset_image_num] = centers_of_mass;
+            std::vector<float> centers_of_mass;
+            // If this is a rotation dataset, store the connected component slice
+            if (oscillation_width) {
+                // Lock the mutex to protect the map
+                std::lock_guard<std::mutex> lock(rotation_slices_mutex);
+                // Store the connected components slice in the map
+                (*rotation_slices)[offset_image_num] =
+                  std::move(connected_components_2d);
+            } else if (save_to_h5 || output_for_index) {
+                std::vector<Reflection3D> reflections =
+                  connected_components_2d->find_2d_components(
+                    min_spot_size, max_peak_centroid_separation);
+                for (const auto &r : reflections) {
+                    auto [x, y, z] = r.center_of_mass();
+                    centers_of_mass.push_back(x);
+                    centers_of_mass.push_back(y);
+                    centers_of_mass.push_back(z);
+                }
+                if (save_to_h5) {
+                    std::lock_guard<std::mutex> lock(reflection_centers_2d_mutex);
+                    (*reflection_centers_2d)[offset_image_num] = centers_of_mass;
+                }
+            }
+
+            end.record(stream);
+            // Now, wait for stream to finish
+            CUDA_CHECK(cudaStreamSynchronize(stream));
+
+            if (do_writeout) {
+                // Build an image buffer
+                auto buffer =
+                  std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
+                constexpr std::array<uint8_t, 3> color_pixel{255, 0, 0};
+
+                for (int y = 0, k = 0; y < height; ++y) {
+                    for (int x = 0; x < width; ++x, ++k) {
+                        uint8_t graysc_value = std::max(
+                          0.0f, 255.99f - static_cast<float>(host_image[k]) * 10);
+                        buffer[k] = {graysc_value, graysc_value, graysc_value};
                     }
                 }
+                // Go over each shoebox and write a square
+                // for (auto box : boxes) {
+                for (int i = 0; i < boxes.size(); ++i) {
+                    auto &box = boxes[i];
+                    constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
 
-                end.record(stream);
-                // Now, wait for stream to finish
-                CUDA_CHECK(cudaStreamSynchronize(stream));
-
-                if (do_writeout) {
-                    // Build an image buffer
-                    auto buffer =
-                      std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
-                    constexpr std::array<uint8_t, 3> color_pixel{255, 0, 0};
-
-                    for (int y = 0, k = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x, ++k) {
-                            uint8_t graysc_value = std::max(
-                              0.0f, 255.99f - static_cast<float>(host_image[k]) * 10);
-                            buffer[k] = {graysc_value, graysc_value, graysc_value};
+                    // edgeMin/edgeMax define how thick the border is
+                    constexpr int edgeMin = 5, edgeMax = 7;
+                    for (int edge = edgeMin; edge <= edgeMax; ++edge) {
+                        for (int x = box.l - edge; x <= box.r + edge; ++x) {
+                            buffer[width * (box.t - edge) + x] = color_shoebox;
+                            buffer[width * (box.b + edge) + x] = color_shoebox;
                         }
-                    }
-                    // Go over each shoebox and write a square
-                    // for (auto box : boxes) {
-                    for (int i = 0; i < boxes.size(); ++i) {
-                        auto &box = boxes[i];
-                        constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
-
-                        // edgeMin/edgeMax define how thick the border is
-                        constexpr int edgeMin = 5, edgeMax = 7;
-                        for (int edge = edgeMin; edge <= edgeMax; ++edge) {
-                            for (int x = box.l - edge; x <= box.r + edge; ++x) {
-                                buffer[width * (box.t - edge) + x] = color_shoebox;
-                                buffer[width * (box.b + edge) + x] = color_shoebox;
-                            }
-                            for (int y = box.t - edge; y <= box.b + edge; ++y) {
-                                buffer[width * y + box.l - edge] = color_shoebox;
-                                buffer[width * y + box.r + edge] = color_shoebox;
-                            }
-                        }
-                    }
-                    // Go over everything again, so that strong spots are visible over the boxes
-                    for (int y = 0, k = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x, ++k) {
-                            if (host_results[k]) {
-                                buffer[k] = color_pixel;
-                            }
-                        }
-                    }
-                    lodepng::encode(fmt::format("image_{:05d}.png", image_num),
-                                    reinterpret_cast<uint8_t *>(buffer.data()),
-                                    width,
-                                    height,
-                                    LCT_RGB);
-                    // Also write a list of pixels out here
-                    auto out =
-                      fmt::output_file(fmt::format("pixels_{:05d}.txt", image_num));
-                    for (int y = 0, k = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x, ++k) {
-                            if (host_results[k]) {
-                                out.print("{:4d}, {:4d}\n", x, y);
-                            }
+                        for (int y = box.t - edge; y <= box.b + edge; ++y) {
+                            buffer[width * y + box.l - edge] = color_shoebox;
+                            buffer[width * y + box.r + edge] = color_shoebox;
                         }
                     }
                 }
-
-                // Check if pipeHandler was initialized
-                if (pipeHandler != nullptr) {
-                    // Create a JSON object to store the data
-                    json json_data = {{"num_strong_pixels", num_strong_pixels},
-                                      {"file", file},
-                                      {"file-number", image_num},
-                                      {"n_spots_total", boxes.size()}};
-                    if (output_for_index) {
-                        json_data["spot_centers"] = centers_of_mass;
+                // Go over everything again, so that strong spots are visible over the boxes
+                for (int y = 0, k = 0; y < height; ++y) {
+                    for (int x = 0; x < width; ++x, ++k) {
+                        if (host_results[k]) {
+                            buffer[k] = color_pixel;
+                        }
                     }
-                    // Send the JSON data through the pipe
-                    pipeHandler->sendData(json_data);
                 }
+                lodepng::encode(fmt::format("image_{:05d}.png", image_num),
+                                reinterpret_cast<uint8_t *>(buffer.data()),
+                                width,
+                                height,
+                                LCT_RGB);
+                // Also write a list of pixels out here
+                auto out =
+                  fmt::output_file(fmt::format("pixels_{:05d}.txt", image_num));
+                for (int y = 0, k = 0; y < height; ++y) {
+                    for (int x = 0; x < width; ++x, ++k) {
+                        if (host_results[k]) {
+                            out.print("{:4d}, {:4d}\n", x, y);
+                        }
+                    }
+                }
+            }
+
+            // Check if pipeHandler was initialized
+            if (pipeHandler != nullptr) {
+                // Create a JSON object to store the data
+                json json_data = {{"num_strong_pixels", num_strong_pixels},
+                                  {"file", file},
+                                  {"file-number", image_num},
+                                  {"n_spots_total", boxes.size()}};
+                if (output_for_index) {
+                    json_data["spot_centers"] = centers_of_mass;
+                }
+                // Send the JSON data through the pipe
+                pipeHandler->sendData(json_data);
+            }
 #pragma endregion Connected Components
 
 #pragma region Validation
-                if (do_validate) {
-                    // Count the number of pixels
-                    size_t num_strong_pixels = 0;
-                    for (int y = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x) {
-                            if (host_results[x + width * y]) {
-                                ++num_strong_pixels;
-                            }
+            if (do_validate) {
+                // Count the number of pixels
+                size_t num_strong_pixels = 0;
+                for (int y = 0; y < height; ++y) {
+                    for (int x = 0; x < width; ++x) {
+                        if (host_results[x + width * y]) {
+                            ++num_strong_pixels;
                         }
                     }
-                    auto spotfinder = StandaloneSpotfinder(width, height);
-                    // Read the image into a vector
-                    auto converted_image = std::vector<double>{
-                      host_image.get(), host_image.get() + width * height};
-                    auto dials_strong = spotfinder.standard_dispersion(
-                      converted_image,
-                      reader.get_mask().value_or(std::span<uint8_t>{}));
-                    size_t mismatch_x = 0, mismatch_y = 0;
-                    bool validation_matches = compare_results(dials_strong.data(),
-                                                              width,
-                                                              host_results.get(),
-                                                              width,
-                                                              width,
-                                                              height,
-                                                              &mismatch_x,
-                                                              &mismatch_y);
-                    if (validation_matches) {
-                        logger.info(
-                          "Thread {:2d}, Image {:4d}: Compared: \033[32mMatch {} "
-                          "px\033[0m",
-                          thread_id,
-                          image_num,
-                          num_strong_pixels);
-                    } else {
-                        logger.error(
-                          "Thread {:2d}, Image {:4d}: Compared: "
-                          "\033[1;31mMismatch ({} px from kernel)\033[0m",
-                          thread_id,
-                          image_num,
-                          num_strong_pixels);
-                    }
-
-                } else {
-                    if (num_cpu_threads == 1) {
-                        logger.info(
-                          "Thread {:2d} finished image {:4d}\n"
-                          "       Copy: {:5.1f} ms\n"
-                          "     Kernel: {:5.1f} ms\n"
-                          "  Post Copy: {:5.1f} ms\n"
-                          "       Post: {:5.1f} ms\n"
-                          "             ════════\n"
-                          "     Total:  {:5.1f} ms ({:.1f} GBps)\n"
-                          "    {} strong pixels\n"
-                          "    {} filtered reflections ({} pixels)",
-                          thread_id,
-                          image_num,
-                          copy.elapsed_time(start),
-                          post.elapsed_time(start),
-                          postcopy.elapsed_time(post),
-                          end.elapsed_time(postcopy),
-                          end.elapsed_time(start),
-                          GBps<pixel_t>(end.elapsed_time(start), width * height),
-                          bold(num_strong_pixels),
-                          bold(boxes.size()),
-                          bold(num_strong_pixels_filtered));
-                    } else {
-                        logger.info(
-                          "Thread {:2d} finished image {:4d} with {:5d} strong pixels, "
-                          "{:4d} filtered reflections ({} pixels)",
-                          thread_id,
-                          image_num,
-                          num_strong_pixels,
-                          boxes.size(),
-                          num_strong_pixels_filtered);
-                    }
                 }
-#pragma endregion Validation
-                // auto image_num = next_image.fetch_add(1);
-                completed_images += 1;
+                auto spotfinder = StandaloneSpotfinder(width, height);
+                // Read the image into a vector
+                auto converted_image = std::vector<double>{
+                  host_image.get(), host_image.get() + width * height};
+                auto dials_strong = spotfinder.standard_dispersion(
+                  converted_image, reader.get_mask().value_or(std::span<uint8_t>{}));
+                size_t mismatch_x = 0, mismatch_y = 0;
+                bool validation_matches = compare_results(dials_strong.data(),
+                                                          width,
+                                                          host_results.get(),
+                                                          width,
+                                                          width,
+                                                          height,
+                                                          &mismatch_x,
+                                                          &mismatch_y);
+                if (validation_matches) {
+                    logger.info(
+                      "Thread {:2d}, Image {:4d}: Compared: \033[32mMatch {} "
+                      "px\033[0m",
+                      thread_id,
+                      image_num,
+                      num_strong_pixels);
+                } else {
+                    logger.error(
+                      "Thread {:2d}, Image {:4d}: Compared: "
+                      "\033[1;31mMismatch ({} px from kernel)\033[0m",
+                      thread_id,
+                      image_num,
+                      num_strong_pixels);
+                }
+
+            } else {
+                if (num_cpu_threads == 1) {
+                    logger.info(
+                      "Thread {:2d} finished image {:4d}\n"
+                      "       Copy: {:5.1f} ms\n"
+                      "     Kernel: {:5.1f} ms\n"
+                      "  Post Copy: {:5.1f} ms\n"
+                      "       Post: {:5.1f} ms\n"
+                      "             ════════\n"
+                      "     Total:  {:5.1f} ms ({:.1f} GBps)\n"
+                      "    {} strong pixels\n"
+                      "    {} filtered reflections ({} pixels)",
+                      thread_id,
+                      image_num,
+                      copy.elapsed_time(start),
+                      post.elapsed_time(start),
+                      postcopy.elapsed_time(post),
+                      end.elapsed_time(postcopy),
+                      end.elapsed_time(start),
+                      GBps<pixel_t>(end.elapsed_time(start), width * height),
+                      bold(num_strong_pixels),
+                      bold(boxes.size()),
+                      bold(num_strong_pixels_filtered));
+                } else {
+                    logger.info(
+                      "Thread {:2d} finished image {:4d} with {:5d} strong pixels, "
+                      "{:4d} filtered reflections ({} pixels)",
+                      thread_id,
+                      image_num,
+                      num_strong_pixels,
+                      boxes.size(),
+                      num_strong_pixels_filtered);
+                }
             }
-        });
+#pragma endregion Validation
+            // auto image_num = next_image.fetch_add(1);
+            completed_images += 1;
+        }
+    };
+
+    // Spawn the reader threads
+    std::vector<std::jthread> threads;
+    for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
+        threads.emplace_back(worker, thread_id);
     }
     // For now, just wait on all threads to finish
     for (auto &thread : threads) {
