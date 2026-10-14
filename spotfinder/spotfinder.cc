@@ -953,18 +953,17 @@ int main(int argc, char **argv) {
                         centers_of_mass.push_back(y);
                         centers_of_mass.push_back(z);
                         spot_intensities.push_back(r.total_intensity());
-                    }
-                    if (save_to_h5) {
-                        // Note; spot covariances just if saving to h5 for now, but will
-                        // need to pass through live indexing if want live integration
-                        // (i.e. this code will need moving into previous block) -
-                        // but passing through json may not be right approach.
+                        // Note; spot covariances are needed for ssx integration
+                        // and will need to pass through live indexing if want
+                        // live integration.
                         auto [xmm, ymm] = panel.px_to_mm(x, y);
                         Vector3d s1 = panel.get_lab_coord(xmm, ymm);
                         auto [varx, vary, varxy] = r.covariance_2D(s1, s0, panel);
                         spot_covariances.push_back(varx);
                         spot_covariances.push_back(vary);
                         spot_covariances.push_back(varxy);
+                    }
+                    if (save_to_h5) {
                         std::vector<int> bboxes_xyz;
                         bboxes_xyz.reserve(reflections.size()*6);
                         for (const auto &r : reflections) {
@@ -981,7 +980,7 @@ int main(int argc, char **argv) {
                         (*reflection_bbox_2d)[offset_image_num] = bboxes_xyz;
                         std::lock_guard<std::mutex> lock3(reflection_intensities_mutex);
                         (*reflection_intensities_mapptr)[offset_image_num] = spot_intensities;
-                        std::lock_guard<std::mutex> lock2(reflection_covariances_2d_mutex);
+                        std::lock_guard<std::mutex> lock4(reflection_covariances_2d_mutex);
                         (*reflection_covariances_2d)[offset_image_num] = spot_covariances;
                     }
                 }
