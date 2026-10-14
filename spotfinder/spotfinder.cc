@@ -702,6 +702,7 @@ int main(int argc, char **argv) {
     auto next_image = std::atomic<int>(0);
     auto completed_images = std::atomic<int>(0);
     auto skipped_images = std::atomic<int>(0);
+    auto validation_mismatches = std::atomic<int>(0);
     auto fatal_error = std::atomic<bool>(false);
 
     auto cpu_sync = std::barrier{num_cpu_threads};
@@ -1086,6 +1087,7 @@ int main(int argc, char **argv) {
                               thread_id,
                               image_num,
                               num_strong_pixels);
+                            validation_mismatches += 1;
                         }
 
                     } else {
@@ -1399,10 +1401,16 @@ int main(int argc, char **argv) {
     if (fatal_error) {
         logger.error(
           "Stopped early, after {} of {} images", int(completed_images), num_images);
-    } else if (skipped_images > 0) {
+    }
+    if (skipped_images > 0) {
         logger.warn("Skipped {} of {} images", int(skipped_images), num_images);
     }
+    if (validation_mismatches > 0) {
+        logger.error("Validation mismatched on {} of {} images",
+                     int(validation_mismatches),
+                     int(completed_images));
+    }
     logger.flush();
-    return (fatal_error || skipped_images > 0) ? 1 : 0;
+    return (fatal_error || skipped_images > 0 || validation_mismatches > 0) ? 1 : 0;
 }
 #pragma endregion Application Entry
