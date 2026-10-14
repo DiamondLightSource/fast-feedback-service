@@ -237,6 +237,10 @@ class Reflection3D {
                                                               const Scan &scan,
                                                               const double phi) const;
 
+    std::tuple<double, double, double> covariance_2D(const Vector3d &s1,
+                                                     const Vector3d &s0,
+                                                     const Panel &panel) const
+
     // Getters for bounding box
     inline uint32_t get_x_min() const {
         return x_min_;

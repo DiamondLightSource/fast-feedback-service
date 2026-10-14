@@ -179,6 +179,39 @@ bool Reflection3D::is_signal_preferred(const Signal &candidate,
     return candidate.x < current.x;
 }
 
+std::tuple<double, double, double> Reflection3D::covariance_2D(
+  const Vector3d &s1,
+  const Vector3d &s0,
+  const Panel &panel) const {
+    Vector3d e1 = s1.cross(s0);
+    e1.normalize();
+    Vector3d e2 = s1.cross(e1);
+    e2.normalize();
+    double mags1 = std::sqrt(s1.dot(s1));
+    double varx = 0;
+    double vary = 0;
+    double varxy = 0;
+    double total_intensity = 0;
+
+    for (const auto &signal : signals_) {
+        double x = static_cast<double>(signal.x) + 0.5;
+        double y = static_cast<double>(signal.y) + 0.5;
+        auto [xmm, ymm] = panel.px_to_mm(x, y);
+        Vector3d s1p = panel.get_lab_coord(xmm, ymm);
+        Vector3d delta_s1 = s1p - s1;
+        double eps1 = e1.dot(delta_s1) / mags1;
+        double eps2 = e2.dot(delta_s1) / mags1;
+        varx += signal.intensity * eps1 * eps1;
+        vary += signal.intensity * eps2 * eps2;
+        varxy += signal.intensity * eps1 * eps2; // Covariance term, needed for SSX
+        total_intensity += signal.intensity;
+    }
+    varx = varx / total_intensity;
+    vary = vary / total_intensity;
+    varxy = varxy / total_intensity;
+    return std::make_tuple(varx, vary, varxy);
+}
+
 std::tuple<double, double, int> Reflection3D::variances_in_kabsch_space(
   const Vector3d &s1,
   const Vector3d &s0,
