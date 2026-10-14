@@ -372,7 +372,7 @@ std::vector<Reflection3D> ConnectedComponents::find_3d_components(
      */
     logger.debug("Adding inter-slice connectivity");
     // Loop through all slices except the last one
-    for (size_t i = 0; i < slices.size() - 1; ++i) {
+    for (size_t i = 0; i + 1 < slices.size(); ++i) {
         const auto &current_vertex_map =
           local_to_global_vertex_maps[i];  // Current slice
         const auto &next_vertex_map = local_to_global_vertex_maps[i + 1];  // Next slice
