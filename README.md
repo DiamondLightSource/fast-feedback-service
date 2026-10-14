@@ -7,90 +7,70 @@ The service, a python script in [`src/`], watches a queue for requests to proces
 In order to create a development environment and compile the service, you need to have the following:
 
 ### Dependencies
-- [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
-- [Boost](https://www.boost.org/)
-- benchmark
-- gtest
-- cmake
-- hdf5
-- hdf5-external-filter-plugins
-- gemmi
-- pytest
-- dials-data
+Everything the build needs is in [`environment.yml`], which is the
+authoritative list: compilers, cmake, ninja, the HDF5 and Boost stack, and
+the `scikit-build-core` backend that pip builds through.
 
-You can create a conda/mamba environment using the provided `environment.yml` file:
 ```bash
 mamba env create -f environment.yml -p ./ENV
 ```
 
+The [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) is the
+exception, since it comes from a module rather than from conda. Which
+version is covered under [Building the project](#building-the-project).
+
 ### Building the project
 
-#### Using the build script (recommended)
-This repository includes a convenient build script that handles submodule initialization, build configuration, and compilation. The build script supports both 16/32-bit pixel data formats and provides both development and production build modes.
-
-**Quick start:**
 ```bash
-mamba activate ENV/         # Activate your environment
-cd fast-feedback-service/   # Go to the root of the repository
-./build.sh                  # Build both 16-bit and 32-bit versions for development
+module load cuda/13.3.1     # what the deployments build against; see below
+mamba activate ENV/
+./build.sh
 ```
 
-**Build script options:**
-```bash
-./build.sh [OPTIONS]
+The first run configures, compiles, and installs the python package into
+the active environment, which takes a couple of minutes. Every run after
+that is just a compile, and costs nothing when nothing has changed.
 
-OPTIONS:
-    -p, --production       Build for production (single build directory)
-    -3, --32bit            Use 32-bit pixel data (only with --production)
-    -c, --clean            Clean build directories before building
-    -j, --jobs N           Number of parallel jobs (default: auto-detected)
-    -h, --help             Show help message
+Programs are run straight out of the build directory and are always what
+the last compile produced:
+
+```bash
+./build/bin/spotfinder image.h5
 ```
 
-**Build modes:**
+`build.sh` is a convenience wrapper. Underneath it there are two commands:
 
-*Development Build (default):*
-- Creates both `build/` (16-bit) and `build_32bit/` (32-bit) directories for 16/32-bit pixel data
-- Uses `RelWithDebInfo` configuration for debugging with optimizations
-- Builds both configurations for comprehensive testing
-
-*Production Build:*
-- Creates only `build/` directory with specified configuration
-- Uses `Release` configuration for maximum performance
-- Removes `build_32bit/` if it exists to avoid confusion
-
-**Examples:**
 ```bash
-./build.sh                              # Development build (both 16-bit and 32-bit)
-./build.sh --production                 # Production build with 16-bit
-./build.sh --production --32bit         # Production build with 32-bit
-./build.sh --clean                      # Clean and rebuild development builds
-./build.sh --production --clean --32bit # Clean production build with 32-bit
+pip install --no-build-isolation -e .   # configure, compile, install
+ninja -C build                          # compile
 ```
 
-The build script automatically:
-- Initializes git submodules if needed
-- Detects and uses Ninja build system if available (faster than Make)
-- Creates the `spotfinder` executable in `build/bin/` (and `build_32bit/bin/` for development builds)
+pip is what drives the build. It runs cmake, which compiles everything,
+and then installs the python package and the compiled programs into the
+environment. After that a plain `ninja -C build` is enough for a C++
+change, which is what `build.sh` does on later runs.
 
-#### Manual building
-If you prefer to build manually or need more control over the build process:
+One thing a compile does not cover: `import ffs.index` and
+`import ffs.integrate` read from the environment's site-packages, not from
+the build directory, because that is the only place python looks for a
+submodule of an installed package. If you change the C++ behind either
+extension module, use `./build.sh --install` to refresh them.
 
-**Initialising submodules:**
+**Options:**
+
 ```bash
-git submodule update --init --recursive
+./build.sh              compile; install first if the environment needs it
+./build.sh --install    force the install, refreshing the environment
+./build.sh --clean      discard the build directory and start over
+./build.sh -j N         limit parallelism
+./build.sh --cuda MOD   suggest a different CUDA module
 ```
 
-**Compiling the CUDA code:**
-```bash
-mamba activate ENV/         # Activate your environment
-cd fast-feedback-service/   # Go to the root of the repository
-mkdir build                 # Create a build directory
-cd build                    # Go to the build directory
-cmake ..                    # Run cmake to generate the makefile
-make                        # Compile the code
-```
-This will create the executable `spotfinder` in the [`build/bin/`] directory.
+The CUDA version is read from `ARG CUDA_VERSION` in the [`Dockerfile`],
+because the container base image is what limits which version can be
+used. `build.sh` reports the CUDA it found and warns when it differs from
+that one, since binaries built against one CUDA need the same one on the
+library path to run.
 
 #### Choosing a GPU architecture
 CUDA code is compiled for specific compute capabilities, and a binary
@@ -98,11 +78,15 @@ will not load on a GPU it was not compiled for. The `CUDA_ARCH` cmake
 option controls this:
 
 ```bash
-cmake ..                            # native: auto detect the GPU in this machine (default)
-cmake .. -DCUDA_ARCH=86             # a specific compute capability
-cmake .. -DCUDA_ARCH="80;90"        # several
-cmake .. -DCUDA_ARCH=all-supported  # everything the container image ships
+./build.sh                                                 # native: the GPU in this machine (default)
+CMAKE_ARGS=-DCUDA_ARCH=86 ./build.sh --install             # a specific compute capability
+CMAKE_ARGS="-DCUDA_ARCH=80;90" ./build.sh --install        # several
+CMAKE_ARGS=-DCUDA_ARCH=all-supported ./build.sh --install  # everything the container ships
 ```
+
+The architecture is fixed when cmake configures, so changing it needs
+`--install`, which reconfigures. `CMAKE_ARGS` is how any cmake option
+reaches the build now that pip drives it.
 
 The default, `native`, reads the compute capability from `nvidia-smi`
 and builds a single cubin for it, which is the fastest option for local
@@ -126,33 +110,12 @@ card.
 [nvcc-gpu-compilation]: https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#gpu-compilation
 [blackwell-compat]: https://docs.nvidia.com/cuda/blackwell-compatibility-guide/
 
-### Installing the python module (for indexing)
-The python package in `src/ffs` carries compiled extension modules,
-`ffs.index` and `ffs.integrate`, which the C++ build produces. Build
-first and install second: the build places each module in `src/ffs`,
-which is the only directory python will look in for an `ffs` submodule,
-and pip collects the same files into a wheel. Installing without building
-gives a package whose extensions are simply absent, and the failure shows
-up later as an `ImportError`.
-
-For development, install the package into the environment once, as
-editable, and every later build is picked up without reinstalling:
-
-```bash
-./build.sh
-pip install -e .
-```
-
-```bash
-./build.sh
-pip install .
-```
-
 ## Usage
 ### Environment Variables
 The service uses the following environment variables:
 - `SPOTFINDER`: The path to the compiled spotfinder executable.
-  - If not set, the service will look for the executable in the `build/bin/` or `_build/bin` directories.
+  - If not set, it is looked up on `PATH`, where an install puts it. Point
+    this at `build/bin/spotfinder` to use a development build instead.
 - `LOG_LEVEL`: The level of logging to use provided by `spdlog`. Not setting this will default to `info`.
   - Other levels are: `trace`, `debug`, `info`, `warn`, `error`, `critical`, `off`.
 
@@ -171,8 +134,8 @@ zocalo.service -s GPUPerImageAnalysis
 
 ## Running the program tests
 To run the tests, you need to have pytest and dials-data available in your environment and be on a machine with an NVIDIA GPU and the CUDA toolkit installed.
-(These tests assume you have built the spotfinder in a folder called `build`. For the 32bit data tests, it is assumed that there is also
-a build folder called `build_32bit` which was built with the `PIXEL_DATA_32BIT` cmake flag.)
+(These tests assume you have built in a folder called `build`. The 32-bit
+data tests use `build/bin/spotfinder32`, which the same build produces.)
 Run:
 ```bash
 python -m pytest tests/ -v --regression
@@ -195,6 +158,8 @@ python -m pytest tests/ -v --regression
 [`src/`]: src/
 [`spotfinder/`]: spotfinder/
 [`build/bin/`]: build/bin/
+[`Dockerfile`]: Dockerfile
+[`environment.yml`]: environment.yml
 [`baseline/spotfinder`]: baseline/spotfinder
 [`h5read/`]: h5read/
 [`include/`]: include/

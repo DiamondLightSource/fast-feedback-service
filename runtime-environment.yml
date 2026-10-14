@@ -11,6 +11,10 @@ dependencies:
   - h5py
   - python=3.13.7
   - pip
+  # pip drives the cmake build with --no-build-isolation, so the backend has to
+  # be importable here rather than fetched into a throwaway environment
+  - scikit-build-core=1.1.1
+  - setuptools_scm=10.3.4
   - zocalo
   - workflows
   - pydantic
