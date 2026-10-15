@@ -868,7 +868,7 @@ int main(int argc, char **argv) {
                             break;
                         }
 
-                        std::this_thread::sleep_for(100ms);
+                        //std::this_thread::sleep_for(0.1);
                     }
 
                     if (stop_token.stop_requested()) {
@@ -894,7 +894,7 @@ int main(int argc, char **argv) {
                     if (buffer.size() == 0) {
                         logger.warn("Got buffer size 0 for image {}. Sleeping.",
                                     image_num);
-                        std::this_thread::sleep_for(100ms);
+                        //std::this_thread::sleep_for(0.1);
                         continue;
                     }
                     break;
