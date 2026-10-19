@@ -19,7 +19,13 @@
  *    sum is recovered as intensity.sum.value + n_foreground * background.mean
  *    (no background model needed here).
  *
- * Both match the baseline by row index.
+ *  - ForegroundSumSaturation{Dials,Ellipsoid} drive the same kernel over an
+ *    image saturated to the pixel ceiling, and check the foreground sum
+ *    against the ceiling times the kernel's own foreground count. The sum is
+ *    bounded by that product, so the test fails if the accumulator is
+ *    narrower than the pixel type requires. It needs no baseline reference.
+ *
+ * The first two families match the baseline by row index.
  *
  * Inputs (in FFS_INTEGRATE_TEST_DATA, fallback /scratch/ffs_integrate_test_data):
  *   - integrated_1_10.refl         -> s1, xyzcal.mm, bbox, miller_index
@@ -49,6 +55,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <tuple>
@@ -232,6 +239,9 @@ class KabschTransformTest : public ::testing::Test {
     void RunPixelCountComparison(FGAlgorithm algo);
     // Real-image comparison of the foreground intensity SUM.
     void RunIntensitySumComparison(FGAlgorithm algo);
+    // Saturated-image check that the accumulator holds the largest sum the
+    // pixel type can produce.
+    void RunForegroundSumSaturation(FGAlgorithm algo);
 };
 
 void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
@@ -856,4 +866,179 @@ TEST_F(KabschTransformTest, IntensitySumDials) {
 
 TEST_F(KabschTransformTest, IntensitySumEllipsoid) {
     RunIntensitySumComparison(FGAlgorithm::Ellipsoid);
+}
+
+void KabschTransformTest::RunForegroundSumSaturation(FGAlgorithm algo) {
+#pragma region Load inputs
+    // Only the geometry and predictions are needed; the expected sum comes
+    // from the kernel's own foreground count, not from a reference table.
+    auto refl_file = data_dir / "integrated_1_10.refl";
+    auto expt_file = data_dir / "indexed_1_10.expt";
+    ASSERT_TRUE(fs::exists(refl_file)) << "Missing input file: " << refl_file;
+    ASSERT_TRUE(fs::exists(expt_file)) << "Missing input file: " << expt_file;
+
+    KabschInputs in = loadKabschInputs(data_dir);
+    size_t num_reflections = in.num_reflections;
+    uint32_t width = in.width;
+    uint32_t height = in.height;
+#pragma endregion Load inputs
+
+#pragma region Allocate buffers
+    // Every pixel at the ceiling of the pixel type: an all-ones byte fill is
+    // the maximum at either compiled width.
+    auto d_image = PitchedMalloc<pixel_t>(width, height);
+    cudaMemset2D(
+      d_image.get(), d_image.pitch_bytes(), 0xFF, width * sizeof(pixel_t), height);
+    cuda_throw_error();
+
+    DeviceBuffer<scalar_t> d_d_matrix(9);
+    DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
+    DeviceBuffer<scalar_t> d_phi_values(num_reflections);
+    DeviceBuffer<BoundingBoxExtents> d_bboxes(num_reflections);
+    d_d_matrix.assign(in.d_matrix_scalar.data());
+    d_s1_vectors.assign(in.s1_vecs.data());
+    d_phi_values.assign(in.phi_vals.data());
+    d_bboxes.assign(in.bboxes.data());
+
+    // The foreground sum and count are the outputs under test. The remaining
+    // accumulators are written unconditionally by the kernel and need valid
+    // device memory, but a saturated image gives their contents no meaning.
+    DeviceBuffer<accumulator_t> d_fg_sum(num_reflections);
+    DeviceBuffer<uint32_t> d_fg_count(num_reflections);
+    DeviceBuffer<unsigned long long> d_bg_slots(num_reflections * NUM_BG_SLOTS);
+    DeviceBuffer<uint32_t> d_bg_spill(num_reflections);
+    DeviceBuffer<unsigned long long> d_intensity_times_x(num_reflections);
+    DeviceBuffer<unsigned long long> d_intensity_times_y(num_reflections);
+    DeviceBuffer<unsigned long long> d_intensity_times_z(num_reflections);
+    cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
+    cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(d_bg_slots.data(),
+               0,
+               num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long));
+    cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t));
+    cudaMemset(
+      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
+    cudaMemset(
+      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long));
+    cudaMemset(
+      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long));
+
+    // All-valid mask: a masked foreground pixel would clear success and skip
+    // the accumulation, leaving nothing to measure.
+    DeviceBuffer<uint8_t> d_mask(static_cast<size_t>(width) * height);
+    cudaMemset(d_mask.data(), 1, static_cast<size_t>(width) * height * sizeof(uint8_t));
+    DeviceBuffer<uint8_t> d_success(num_reflections);
+    cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t));
+    cuda_throw_error();
+#pragma endregion Allocate buffers
+
+#pragma region Dispatch
+    // One kernel call per image, over the reflections whose bbox covers it.
+    // Sums accumulate across images through the atomics in the kernel.
+    DeviceBuffer<size_t> d_reflection_indices(num_reflections);
+    std::vector<size_t> refl_indices_this_image;
+    refl_indices_this_image.reserve(num_reflections);
+
+    for (int image_num = in.image_range_start; image_num <= in.image_range_end;
+         ++image_num) {
+        refl_indices_this_image.clear();
+        // Largest (w+1)*(h+1) corner grid on this image, sizing the kernel's
+        // dynamic shared-memory corner tile (as the integrator does).
+        uint32_t max_corner_tile = 0;
+        for (size_t i = 0; i < num_reflections; ++i) {
+            if (in.bboxes[i].z_min <= image_num && image_num < in.bboxes[i].z_max) {
+                refl_indices_this_image.push_back(i);
+                const uint32_t corner_grid =
+                  static_cast<uint32_t>(in.bboxes[i].x_max - in.bboxes[i].x_min + 1)
+                  * static_cast<uint32_t>(in.bboxes[i].y_max - in.bboxes[i].y_min + 1);
+                max_corner_tile = std::max(max_corner_tile, corner_grid);
+            }
+        }
+        if (refl_indices_this_image.empty()) continue;
+
+        cudaMemcpy(d_reflection_indices.data(),
+                   refl_indices_this_image.data(),
+                   refl_indices_this_image.size() * sizeof(size_t),
+                   cudaMemcpyHostToDevice);
+        cuda_throw_error();
+
+        compute_kabsch_transform(d_image.get(),
+                                 d_image.pitch_bytes(),
+                                 width,
+                                 height,
+                                 image_num,
+                                 d_d_matrix.data(),
+                                 in.wavelength,
+                                 in.det_params,
+                                 in.osc_start,
+                                 in.osc_width,
+                                 in.image_range_start,
+                                 in.s0_vec,
+                                 in.rot_axis_vec,
+                                 d_s1_vectors.data(),
+                                 d_phi_values.data(),
+                                 d_bboxes.data(),
+                                 d_reflection_indices.data(),
+                                 refl_indices_this_image.size(),
+                                 d_mask.data(),
+                                 max_corner_tile,
+                                 in.delta_b,
+                                 in.delta_m,
+                                 algo,
+                                 d_fg_sum.data(),
+                                 d_fg_count.data(),
+                                 d_bg_slots.data(),
+                                 d_bg_spill.data(),
+                                 d_intensity_times_x.data(),
+                                 d_intensity_times_y.data(),
+                                 d_intensity_times_z.data(),
+                                 d_success.data(),
+                                 nullptr);
+    }
+    cudaDeviceSynchronize();
+    cuda_throw_error();
+#pragma endregion Dispatch
+
+#pragma region Assertions
+    std::vector<accumulator_t> h_fg_sum(num_reflections);
+    std::vector<uint32_t> h_fg_count(num_reflections);
+    std::vector<uint8_t> h_success(num_reflections);
+    d_fg_sum.extract(h_fg_sum.data());
+    d_fg_count.extract(h_fg_count.data());
+    d_success.extract(h_success.data());
+
+    // Every foreground pixel carries the ceiling value, so the sum is the
+    // ceiling times the count. Computed in 64 bits, which is wider than any
+    // accumulator, so the expectation is independent of the type under test.
+    const unsigned long long ceiling =
+      static_cast<unsigned long long>(std::numeric_limits<pixel_t>::max());
+    size_t checked = 0;
+    for (size_t i = 0; i < num_reflections; ++i) {
+        // A cleared success flag means the foreground left the image, and no
+        // sum was accumulated for it.
+        if (!h_success[i] || h_fg_count[i] == 0) continue;
+        ++checked;
+        const unsigned long long expected = ceiling * h_fg_count[i];
+        ASSERT_EQ(static_cast<unsigned long long>(h_fg_sum[i]), expected)
+          << "Reflection " << i << " summed " << h_fg_count[i] << " pixels of "
+          << ceiling << " to " << static_cast<unsigned long long>(h_fg_sum[i])
+          << " rather than " << expected
+          << "; the accumulator is too narrow for the pixel type ("
+          << sizeof(accumulator_t) * 8 << "-bit accumulator, " << sizeof(pixel_t) * 8
+          << "-bit pixels)";
+    }
+
+    // Without a reflection to measure the test would pass vacuously.
+    ASSERT_GT(checked, 0u)
+      << "No reflection kept a foreground on the saturated image, so the "
+         "accumulator width was never tested";
+#pragma endregion Assertions
+}
+
+TEST_F(KabschTransformTest, ForegroundSumSaturationDials) {
+    RunForegroundSumSaturation(FGAlgorithm::Dials);
+}
+
+TEST_F(KabschTransformTest, ForegroundSumSaturationEllipsoid) {
+    RunForegroundSumSaturation(FGAlgorithm::Ellipsoid);
 }
