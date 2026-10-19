@@ -68,8 +68,6 @@ size_t h5read_get_number_of_images(h5read_handle *obj);
 size_t h5read_get_image_slow(h5read_handle *obj);
 /// Get the number of image pixels in the fast dimension
 size_t h5read_get_image_fast(h5read_handle *obj);
-/// [Deprecated: Use _min/_max variants instead] Get the trusted range for this dataset
-void h5read_get_trusted_range(h5read_handle *obj, image_t_type *min, image_t_type *max);
 // Get the trusted range minimum for this dataset
 int64_t h5read_get_trusted_range_min(h5read_handle *obj);
 // Get the trusted range maximum for this dataset

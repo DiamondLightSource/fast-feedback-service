@@ -44,7 +44,8 @@ struct _h5read_handle {
     uint8_t *mask;         ///< Shared image mask
     uint8_t *module_mask;  ///< Shared module mask
     size_t mask_size;      ///< Total size(in pixels) of mask
-    image_t_type trusted_range_min,
+    // Wide enough for both 16- and 32-bit pixel data
+    int64_t trusted_range_min,
       trusted_range_max;  ///< Trusted range of this dataset
     float wavelength;     ///< Wavelength of the X-ray beam
 
@@ -555,20 +556,6 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     return result;
 }
 
-void h5read_get_trusted_range(h5read_handle *obj,
-                              image_t_type *min,
-                              image_t_type *max) {
-    // this is only safe if dtype == image_t_type. The user should
-    // use h5read_get_trusted_range_min/_max instead.
-    assert(obj->dtype == H5READ_DTYPE_UINT16);
-    if (min != NULL) {
-        *min = obj->trusted_range_min;
-    }
-    if (max != NULL) {
-        *max = obj->trusted_range_max;
-    }
-}
-
 int64_t h5read_get_trusted_range_min(h5read_handle *obj) {
     return obj->trusted_range_min;
 }
@@ -707,9 +694,12 @@ void read_mask(h5read_handle *obj) {
     H5Dclose(mask_dataset);
 }
 
-/// Read a single float value out of an HDF5 dataset
+/// Read a single integer value out of an HDF5 dataset
 ///
 /// If the dataset is present, but cannot be read, terminates the program.
+///
+/// Reads into a type wide enough for both 16- and 32-bit pixel data, letting
+/// HDF5 convert from whatever type the file holds.
 ///
 /// @param      origin          The root file or group to read the path from
 /// @param      path            The path from the origin to open
@@ -717,15 +707,13 @@ void read_mask(h5read_handle *obj) {
 /// successful.
 ///
 /// @return The HDF error code (negative) if opening the dataset failed, or 0
-herr_t _read_single_value_image_t_type(hid_t origin,
-                                       const char *dataset_path,
-                                       image_t_type *destination) {
+herr_t _read_single_value_int64(hid_t origin,
+                                const char *dataset_path,
+                                int64_t *destination) {
     hid_t dataset = H5Dopen(origin, dataset_path, H5P_DEFAULT);
     if (dataset < 0) {
         return dataset;
     }
-    hid_t datatype = H5Dget_type(dataset);
-    size_t datatype_size = H5Tget_size(datatype);
     hid_t dataspace = H5Dget_space(dataset);
     size_t num_elements = H5Sget_simple_extent_npoints(dataspace);
 
@@ -739,25 +727,8 @@ herr_t _read_single_value_image_t_type(hid_t origin,
                 dataset_path);
         exit(1);
     }
-    if (datatype_size < sizeof(image_t_type)) {
-        char name[256] = "\0";
-        H5Iget_name(origin, name, 256);
-
-        fprintf(stderr,
-                "Error: While reading %s%s: Value of size %zu is smaller than data "
-                "type\n",
-                name,
-                dataset_path,
-                datatype_size);
-        exit(1);
-    }
-#ifdef PIXEL_DATA_32BIT
-    if (H5Dread(dataset, H5T_NATIVE_UINT32, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
+    if (H5Dread(dataset, H5T_NATIVE_INT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
         < 0) {
-#else
-    if (H5Dread(dataset, H5T_NATIVE_UINT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, destination)
-        < 0) {
-#endif
         char name[256] = "\0";
         H5Iget_name(origin, name, 256);
         fprintf(stderr,
@@ -827,26 +798,47 @@ herr_t _read_single_value_float(hid_t origin, const char *path, float *destinati
     return 0;
 }
 
+/// Largest value a dtype can hold, as a trusted maximum
+///
+/// Floating point and unrecognised types have no integer bound to offer, so
+/// they trust everything.
+static int64_t _dtype_max(h5read_dtype dtype) {
+    switch (dtype) {
+    case H5READ_DTYPE_UINT8:
+        return UINT8_MAX;
+    case H5READ_DTYPE_INT8:
+        return INT8_MAX;
+    case H5READ_DTYPE_UINT16:
+        return UINT16_MAX;
+    case H5READ_DTYPE_INT16:
+        return INT16_MAX;
+    case H5READ_DTYPE_UINT32:
+        return UINT32_MAX;
+    case H5READ_DTYPE_INT32:
+        return INT32_MAX;
+    default:
+        return INT64_MAX;
+    }
+}
+
 void read_trusted_range(h5read_handle *obj) {
+    // Absent a saturation value in the file, everything the data's own type
+    // can express is trusted.
     obj->trusted_range_min = 0;
-#ifdef PIXEL_DATA_32BIT
-    obj->trusted_range_max = UINT32_MAX;
-#else
-    obj->trusted_range_max = UINT16_MAX;
-#endif
+    obj->trusted_range_max = _dtype_max(obj->dtype);
 
     // Try to read saturation value, but don't fail if it doesn't exist
-    if (_read_single_value_image_t_type(obj->master_file,
-                                        "/entry/instrument/detector/saturation_value",
-                                        &obj->trusted_range_max)
+    if (_read_single_value_int64(obj->master_file,
+                                 "/entry/instrument/detector/saturation_value",
+                                 &obj->trusted_range_max)
         < 0) {
         fprintf(stderr, "Warning: No saturation_value found, using maximum value\n");
     }
 
     // Try to read underload value, but don't fail if it doesn't exist
-    if (_read_single_value_image_t_type(obj->master_file,
-                                        "/entry/instrument/detector/underload_value",
-                                        &obj->trusted_range_min)
+    if (_read_single_value_int64(obj->master_file,
+                                 "/entry/instrument/detector/underload_value",
+                                 &obj->trusted_range_min)
         < 0) {
         fprintf(stderr, "Warning: No underload_value found, using 0\n");
     }
