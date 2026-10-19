@@ -127,6 +127,7 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv);
 #include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -213,8 +214,26 @@ class H5Read : public Reader {
     /// Create a reader by parsing command arguments
     H5Read(int argc, char **argv) noexcept;
 
+    /// Throw unless the file's pixel width is the one this build reads
+    ///
+    /// The whole-image entry points hand out buffers of image_type, so a file
+    /// of a different element width is read against the wrong stride. The
+    /// reader library is compiled once, at a single width, and so cannot make
+    /// this comparison itself; this header is compiled by the consumer and
+    /// can. The raw-chunk path is exempt, since the caller owns the buffer
+    /// and the decompression.
+    void require_matching_element_size() const {
+        if (get_element_size() != sizeof(image_type)) {
+            throw std::runtime_error(
+              "Image data is " + std::to_string(get_element_size() * 8)
+              + "-bit, but this build reads " + std::to_string(sizeof(image_type) * 8)
+              + "-bit pixels");
+        }
+    }
+
     /// Read image data into an existing buffer
     void get_image_into(size_t index, image_t_type *data) {
+        require_matching_element_size();
         h5read_get_image_into(_handle.get(), index, data);
     }
     /// Read image data into an existing buffer
@@ -222,6 +241,7 @@ class H5Read : public Reader {
 #ifndef NDEBUG
         assert(data.size() >= get_image_slow() * get_image_fast());
 #endif
+        require_matching_element_size();
         h5read_get_image_into(_handle.get(), index, data.data());
     }
 
@@ -248,6 +268,7 @@ class H5Read : public Reader {
     }
 
     Image get_image(size_t index) {
+        require_matching_element_size();
         return Image(_handle, index);
     }
 

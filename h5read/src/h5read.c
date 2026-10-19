@@ -60,35 +60,6 @@ struct _h5read_handle {
 static h5read_dtype _detect_hdf5_dtype(hid_t datatype);
 #endif
 
-/// Validate that the HDF5 datatype size matches the expected pixel data size.
-///
-/// Note that this is only used when trying to extract image data directly,
-/// when using h5read. This is because getting "raw chunks" is assumed to
-/// be done for efficiency/external-handling reasons, so it is up to the
-/// library user to check.
-///
-/// @param datatype The HDF5 datatype to validate
-static void _validate_data_type_size(hid_t datatype) {
-    size_t datasize = H5Tget_size(datatype);
-#ifdef PIXEL_DATA_32BIT
-    if (datasize != 4) {
-        fprintf(stderr,
-                "Error: Expected 32-bit data but got %zu bytes. Use "
-                "-DPIXEL_DATA_32BIT=OFF for 16-bit data.\n",
-                datasize);
-        exit(1);
-    }
-#else
-    if (datasize != 2) {
-        fprintf(stderr,
-                "Error: Expected 16-bit data but got %zu bytes. Use "
-                "-DPIXEL_DATA_32BIT=ON for 32-bit data.\n",
-                datasize);
-        exit(1);
-    }
-#endif
-}
-
 /// Match dtypes for debugging.
 ///
 /// @param dtype The dtype to name
@@ -520,10 +491,6 @@ void h5read_get_image_into(h5read_handle *obj, size_t index, image_t_type *data)
 
     hid_t space = H5Dget_space(current->dataset);
     hid_t datatype = H5Dget_type(current->dataset);
-
-    // When reading through get_image_into, we assume the API is still
-    // fixed-size and so we want to ensure this data matches.
-    _validate_data_type_size(datatype);
 
     hsize_t block[3] = {1, obj->slow, obj->fast};
     hsize_t offset[3] = {index + current->offset, 0, 0};
