@@ -43,7 +43,11 @@ jobs:
           # linux/amd64 becomes linux-amd64, for a filesystem-safe artifact name.
           platform="${{ matrix.platform }}"
           echo "platform-pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
-          echo "version-describe=$(git describe --tags --long --first-parent)" >> "$GITHUB_OUTPUT"
+          # The image build has no git history, so resolve the version here and
+          # pass it in. setuptools_scm is the same resolver the package uses, so
+          # the image and a local install agree.
+          python3 -m pip install --quiet --disable-pip-version-check setuptools-scm
+          echo "version=$(python3 -m setuptools_scm)" >> "$GITHUB_OUTPUT"
           # Push the per-arch image with no tag; it is addressable only by
           # its digest. This keeps intermediate arch builds out of the tag
           # list - the manifest job assembles the real tag from digests.
@@ -67,6 +71,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Persist the ccache dir across runs. actions/cache moves it in and out
+      # of the GHA cache, and the dance copies it into the buildkit mount,
+      # which is not otherwise exported. Only the compiler cache is carried:
+      # caching the build-stage layers too was measured to cost more than it
+      # saved, because exporting them every run outweighed the hits.
+      - name: Restore ccache
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}
+          key: ccache-${{ steps.prep.outputs.platform-pair }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ steps.prep.outputs.platform-pair }}-
+
+      - name: Inject ccache into buildx
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          cache-map: |
+            { "${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}": "/ccache" }
+
       # Both images are built in this one job, rather than on a matrix
       # axis, so they can shared a compiled image
       - name: Build service image
@@ -77,7 +102,7 @@ jobs:
           target: service
           platforms: ${{ matrix.platform }}
           build-args: |
-            FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
+            FFS_VERSION=${{ steps.prep.outputs.version }}
           outputs: ${{ steps.prep.outputs.build-output-service }}
 
       - name: Build batch image
@@ -88,7 +113,7 @@ jobs:
           target: batch
           platforms: ${{ matrix.platform }}
           build-args: |
-            FFS_VERSION_DESCRIBE=${{ steps.prep.outputs.version-describe }}
+            FFS_VERSION=${{ steps.prep.outputs.version }}
           outputs: ${{ steps.prep.outputs.build-output-batch }}
 
       - name: Export digests
