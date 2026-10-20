@@ -42,6 +42,7 @@
 #include "h5read.h"
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
+#include "integrator/background_layout.hpp"
 #include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
 #include "integrator/lp_correction.hpp"
@@ -272,6 +273,14 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
             "glm (robust-Poisson GLM constant background).")
           .default_value<std::string>("constant");
 
+        add_argument("--background.memory_fraction")
+          .help(
+            "Share of free GPU memory the background slot tables may use, in (0, 1]. "
+            "A smaller share caps the tables of the largest reflections sooner.")
+          .metavar("F")
+          .default_value(kBackgroundTableMemoryFraction)
+          .scan<'g', double>();
+
         add_argument("--min_zeta")
           .help(
             "Reflections close to the rotation axis, with a zeta below this threshold "
@@ -362,6 +371,16 @@ int main(int argc, char **argv) {
     BackgroundModel background_model =
       parse_background_model(parser.get<std::string>("background"));
     logger.info("Background model: {}", parser.get<std::string>("background"));
+
+    // Checked with the other options, so a bad value fails before sigma
+    // estimation and bbox computation. NaN fails both comparisons.
+    const double background_memory_fraction =
+      parser.get<double>("background.memory_fraction");
+    if (!(background_memory_fraction > 0.0 && background_memory_fraction <= 1.0)) {
+        logger.error("--background.memory_fraction must be in (0, 1], got {}",
+                     background_memory_fraction);
+        return 1;
+    }
 
 #pragma endregion Data preparation
 
