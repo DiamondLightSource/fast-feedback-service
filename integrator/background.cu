@@ -20,17 +20,25 @@
 
 namespace {
 constexpr int BACKGROUND_REDUCE_THREADS = 128;
-}
+constexpr int WARP_SIZE = 32;
+constexpr unsigned FULL_WARP_MASK = 0xffffffffu;
+}  // namespace
 
 /**
- * @brief One thread per reflection: evaluate the background model over that
- *        reflection's slot table.
+ * @brief One warp per reflection: compact that reflection's slot table, then
+ *        evaluate the background model over it on lane 0.
  *
  * The slot table is compacted and sorted IN PLACE: occupied slots move to the
  * front of the reflection's range and are ordered ascending by value, which is
- * the precondition BackgroundHistogramView carries. The table is consumed once,
- * so rewriting it costs nothing and avoids per-thread scratch, keeping register
+ * the precondition BackgroundHistogramView carries. The table is consumed once, so
+ * rewriting it costs nothing and avoids per-thread scratch, keeping register
  * and local-memory use independent of the table size.
+ *
+ * Tables are sized to the bbox volume, so they run to thousands of slots and
+ * are almost all empty. The compaction reads every slot, and a warp reads 32
+ * consecutive slots in one coalesced 256-byte pass where a lone thread would
+ * issue 32 separate loads. The sort and the model touch only the occupied
+ * entries, a median of 2-3, so they stay serial on lane 0.
  */
 __global__ void background_reduce_kernel(BackgroundModel model,
                                          unsigned long long *d_background_slots,
@@ -41,21 +49,34 @@ __global__ void background_reduce_kernel(BackgroundModel model,
                                          double *d_background_sum_value,
                                          uint32_t *d_background_count,
                                          uint8_t *d_background_success) {
-    const size_t r = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    const size_t r =
+      (static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x) / WARP_SIZE;
+    const unsigned lane = threadIdx.x % WARP_SIZE;
+    // r is warp-uniform, so a whole warp leaves together and the ballots below
+    // always see a full warp.
     if (r >= num_reflections) return;
 
     const BackgroundSlotRange range = d_background_ranges[r];
     unsigned long long *slots = d_background_slots + range.offset;
 
-    // Compact. The write index never runs ahead of the read index, so no
-    // unread slot is overwritten.
-    int num_entries = 0;
-    for (uint32_t i = 0; i < range.capacity; ++i) {
-        const unsigned long long entry = slots[i];
+    // Compact, 32 slots per pass. The ballot marks the occupied lanes, and each
+    // occupied lane writes to the running count plus the occupied lanes below
+    // it. A write lands at or before the slot its lane read, and a pass reads
+    // every slot before any lane writes, so no unread slot is overwritten.
+    uint32_t compacted = 0;
+    for (uint32_t base = 0; base < range.capacity; base += WARP_SIZE) {
+        const uint32_t i = base + lane;
+        const unsigned long long entry = (i < range.capacity) ? slots[i] : 0ull;
+        const unsigned occupied = __ballot_sync(FULL_WARP_MASK, entry != 0ull);
         if (entry != 0ull) {
-            slots[num_entries++] = entry;
+            slots[compacted + __popc(occupied & ((1u << lane) - 1u))] = entry;
         }
+        compacted += __popc(occupied);
     }
+    // Makes the other lanes' compacted writes visible to lane 0.
+    __syncwarp();
+    if (lane != 0) return;
+    const int num_entries = static_cast<int>(compacted);
 
     // Insertion sort ascending by value. Occupancy is a median of 2-3 entries
     // and a measured worst case in the tens, so this beats anything with a
@@ -111,8 +132,10 @@ void compute_background(BackgroundModel model,
                         cudaStream_t stream) {
     if (num_reflections == 0) return;
 
+    // One warp per reflection.
+    const size_t threads = num_reflections * WARP_SIZE;
     const unsigned int blocks = static_cast<unsigned int>(
-      (num_reflections + BACKGROUND_REDUCE_THREADS - 1) / BACKGROUND_REDUCE_THREADS);
+      (threads + BACKGROUND_REDUCE_THREADS - 1) / BACKGROUND_REDUCE_THREADS);
 
     background_reduce_kernel<<<blocks, BACKGROUND_REDUCE_THREADS, 0, stream>>>(
       model,
