@@ -782,13 +782,63 @@ int main(int argc, char **argv) {
     // keyed on the value, plus a spill counter for pixels dropped by a full
     // table. The Kabsch kernel fills these; compute_background() reduces them
     // into an estimate after the image loop.
-    DeviceBuffer<unsigned long long> d_background_slots(num_reflections * NUM_BG_SLOTS);
+    //
+    // Each table is sized to its bbox volume clipped to the image.
+    std::vector<uint64_t> background_volumes(num_reflections, 0);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        if (dont_integrate[i]) continue;
+        const auto &bbox = computed_bboxes[i];
+        const int64_t w =
+          std::min<int64_t>(bbox.x_max, width) - std::max<int64_t>(bbox.x_min, 0);
+        const int64_t h =
+          std::min<int64_t>(bbox.y_max, height) - std::max<int64_t>(bbox.y_min, 0);
+        const int64_t d = bbox.z_max - bbox.z_min;
+        if (w > 0 && h > 0 && d > 0) {
+            background_volumes[i] = static_cast<uint64_t>(w * h * d);
+        }
+    }
+
+    // Free memory is measured before the reader threads allocate their image
+    // buffers, so the budget is a fraction of it rather than all of it.
+    size_t free_bytes = 0;
+    size_t total_bytes = 0;
+    CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
+    const size_t background_budget =
+      static_cast<size_t>(background_memory_fraction * static_cast<double>(free_bytes));
+    const uint32_t background_cap =
+      choose_background_slot_cap(background_volumes, background_budget);
+    const BackgroundSlotLayout background_layout =
+      background_slot_layout(background_volumes, background_cap);
+
+    DeviceBuffer<unsigned long long> d_background_slots(background_layout.total_slots);
+    DeviceBuffer<BackgroundSlotRange> d_background_ranges(num_reflections);
+    d_background_ranges.assign(background_layout.ranges.data());
     DeviceBuffer<uint32_t> d_background_spill(num_reflections);
-    logger.info("Background slot tables: {} reflections x {} slots = {:.1f} MiB",
-                num_reflections,
-                NUM_BG_SLOTS,
-                (num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long))
-                  / (1024.0 * 1024.0));
+
+    // The uncapped total against the budget says whether the cap bound at all,
+    // and the capped count is how many reflections can still spill.
+    {
+        constexpr double kMiB = 1024.0 * 1024.0;
+        const size_t slot_bytes = sizeof(unsigned long long);
+        const double used_mib = background_layout.total_slots * slot_bytes / kMiB;
+        const double budget_mib = background_budget / kMiB;
+        logger.info(
+          "Background slot tables: {:.1f} MiB for {} reflections (budget {:.1f} MiB, "
+          "uncapped {:.1f} MiB), cap {} slots, {} reflection(s) capped",
+          used_mib,
+          num_reflections,
+          budget_mib,
+          background_total_slots(background_volumes, UINT32_MAX) * slot_bytes / kMiB,
+          background_cap,
+          background_layout.num_capped);
+        if (used_mib > budget_mib) {
+            logger.warn(
+              "Background slot tables at the floor of {} slots overrun the budget "
+              "by {:.1f} MiB; raise --background.memory_fraction",
+              BG_SLOT_CAP_FLOOR,
+              used_mib - budget_mib);
+        }
+    }
     // Reduced background estimates (written by compute_background()).
     DeviceBuffer<double> d_background_mean(num_reflections);
     DeviceBuffer<double> d_background_sum_value(num_reflections);
@@ -815,7 +865,7 @@ int main(int argc, char **argv) {
     // at least 1.
     cudaMemset(d_background_slots.data(),
                0,
-               num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long));
+               background_layout.total_slots * sizeof(unsigned long long));
     cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t));
     cudaMemset(
       d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
@@ -997,6 +1047,7 @@ int main(int argc, char **argv) {
                                          d_foreground_sum.data(),
                                          d_foreground_count.data(),
                                          d_background_slots.data(),
+                                         d_background_ranges.data(),
                                          d_background_spill.data(),
                                          d_intensity_times_x.data(),
                                          d_intensity_times_y.data(),
@@ -1047,6 +1098,7 @@ int main(int argc, char **argv) {
     logger.info("Reducing background histograms for {} reflections", num_reflections);
     compute_background(background_model,
                        d_background_slots.data(),
+                       d_background_ranges.data(),
                        d_background_spill.data(),
                        num_reflections,
                        d_background_mean.data(),
@@ -1092,9 +1144,9 @@ int main(int argc, char **argv) {
     // A slot table holds any pixel value, so it has no range to run out of;
     // what it can exhaust is the number of DISTINCT values per reflection. A
     // reflection that spills has lost pixels of unknown value, so the reduction
-    // already failed it. Report the count rather than aborting: the rest of the
-    // run is unaffected, and the number is what says whether NUM_BG_SLOTS needs
-    // raising.
+    // already failed it. Only a reflection whose bbox exceeds the cap can spill.
+    // Report the count rather than aborting: the rest of the run is unaffected,
+    // and the number is what says whether the budget needs raising.
     {
         size_t spilling = 0;
         for (size_t i = 0; i < num_reflections; ++i) {
@@ -1104,12 +1156,12 @@ int main(int argc, char **argv) {
         }
         if (spilling > 0) {
             logger.warn(
-              "{} of {} reflection(s) held more than NUM_BG_SLOTS={} distinct "
-              "background values and were not integrated; raise NUM_BG_SLOTS if "
-              "this is a significant fraction",
+              "{} of {} reflection(s) held more distinct background values than "
+              "the cap of {} slots and were not integrated; raise "
+              "--background.memory_fraction if this is a significant fraction",
               spilling,
               num_reflections,
-              NUM_BG_SLOTS);
+              background_cap);
         }
     }
 
@@ -1185,7 +1237,7 @@ int main(int argc, char **argv) {
     if (background_failures > 0) {
         logger.warn(
           "Background estimate rejected for {} of {} reflections with "
-          "foreground pixels; NUM_BG_SLOTS may be too small for their background",
+          "foreground pixels; any that spilled their slot table are counted above",
           background_failures,
           num_reflections);
     }

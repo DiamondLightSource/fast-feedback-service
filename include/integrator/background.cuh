@@ -16,6 +16,7 @@
 #include <cstdint>
 
 #include "integrator/background.hpp"
+#include "integrator/background_layout.hpp"
 
 // The accumulation helpers below are device code: they use atomics and the
 // cache-control load intrinsic. The header is also included from host-only
@@ -26,8 +27,8 @@
 /**
  * @brief Insert one background pixel value into a reflection's slot table.
  *
- * Open addressing with linear probing over NUM_BG_SLOTS slots. A slot is one
- * 64-bit word packing (value, count); an all-zero word is empty, since a
+ * Open addressing with linear probing over the table's capacity slots. A slot
+ * is one 64-bit word packing (value, count); an all-zero word is empty, since a
  * stored entry always has a count of at least 1. The home slot comes from
  * Fibonacci hashing (see kSlotHashMultiplier).
  *
@@ -37,34 +38,38 @@
  * probe read out of the per-SM L1, which is not coherent between SMs, so a
  * claimed slot does not read as empty and waste a compare-and-swap.
  *
- * @param slots This reflection's NUM_BG_SLOTS slots.
+ * @param slots This reflection's table, capacity slots long.
+ * @param capacity Slots in the table, any size. 0 is no table, so every pixel
+ *        spills.
  * @param value Background pixel value to record.
  * @return false when every slot is occupied by other values, so the pixel was
  *         dropped and the caller must count it as spill.
  */
 __device__ inline bool background_slot_insert(unsigned long long *slots,
+                                              uint32_t capacity,
                                               uint32_t value) {
     // 2^64/φ rounded odd, giving Fibonacci hashing (Knuth, TAOCP vol. 3, 6.4).
-    // Taking the high bits of the product is floor(NUM_BG_SLOTS*frac(value/φ)),
-    // a step of 0.618 of a turn around the table per unit of value, so
-    // consecutive values spread rather than cluster. A mask steps one
-    // slot instead, aliasing values NUM_BG_SLOTS apart onto the same
-    // home slot.
+    // The high 32 bits of the product are frac(value/φ) in fixed point, a step
+    // of 0.618 of a turn around the table per unit of value, so consecutive
+    // values spread rather than cluster at any capacity.
     //
-    // Collisions are resolved by probing, not prevented, and placement
-    // does not reach the result: the reduction sorts by value. A run of
-    // consecutive values stays collision-free to about half the table,
-    // against a measured occupancy of 3 values and a worst case of 18.
-    // The cost is locality, since a mask would keep low values on one
-    // cache line.
+    // Collisions are resolved by probing, not prevented, and placement does
+    // not reach the result: the reduction sorts by value. Measured occupancy
+    // is a median of 2-3 distinct values with a worst case of 39, well inside
+    // most tables, so probe runs stay short. The cost is locality, since
+    // consecutive values land on different cache lines.
     constexpr unsigned long long kSlotHashMultiplier = 0x9E3779B97F4A7C15ull;
+    const uint32_t hash = static_cast<uint32_t>(
+      (static_cast<unsigned long long>(value) * kSlotHashMultiplier) >> 32);
 
-    // Home slot. The shift leaves exactly background_slot_bits(), so no mask.
-    uint32_t idx = static_cast<uint32_t>(
-      (static_cast<unsigned long long>(value) * kSlotHashMultiplier)
-      >> (64 - background_slot_bits()));
+    // Home slot floor(capacity * hash / 2^32), the multiply-shift range
+    // reduction of Lemire (2019), "Fast Random Integer Generation in an
+    // Interval", ACM TOMACS 29(1), DOI 10.1145/3230636. One mul.hi.u32 and no
+    // division, so capacity need not be a power of two. hash < 2^32 keeps the
+    // result below capacity.
+    uint32_t idx = __umulhi(hash, capacity);
 
-    for (int probe = 0; probe < NUM_BG_SLOTS; ++probe) {
+    for (uint32_t probe = 0; probe < capacity; ++probe) {
         unsigned long long cur = __ldcg(&slots[idx]);
         if (cur == 0ull) {
             const unsigned long long old =
@@ -81,9 +86,11 @@ __device__ inline bool background_slot_insert(unsigned long long *slots,
             atomicAdd(&slots[idx], 1ull);
             return true;
         }
-        // A step of one over a power-of-two table visits every slot, so the
-        // loop bound is reached only once the table is full.
-        idx = (idx + 1) & (NUM_BG_SLOTS - 1);
+        // A step of one that wraps at capacity visits every slot, so the loop
+        // bound is reached only once the table is full.
+        if (++idx == capacity) {
+            idx = 0;
+        }
     }
     return false;
 }
@@ -93,13 +100,18 @@ __device__ inline bool background_slot_insert(unsigned long long *slots,
  *
  * A pixel that finds no free slot is counted as spill; the reduction fails any
  * reflection with spill, since the lost values are of unknown magnitude.
+ *
+ * @param slots The reflection's table, at its BackgroundSlotRange offset.
+ * @param capacity Slots in that table.
+ * @param spill The reflection's spill counter.
+ * @param value Background pixel value to record.
  */
-__device__ inline void background_accumulate(unsigned long long *d_background_slots,
-                                             uint32_t *d_background_spill,
-                                             size_t refl_idx,
+__device__ inline void background_accumulate(unsigned long long *slots,
+                                             uint32_t capacity,
+                                             uint32_t *spill,
                                              uint32_t value) {
-    if (!background_slot_insert(&d_background_slots[refl_idx * NUM_BG_SLOTS], value)) {
-        atomicAdd(&d_background_spill[refl_idx], 1u);
+    if (!background_slot_insert(slots, capacity, value)) {
+        atomicAdd(spill, 1u);
     }
 }
 
@@ -112,7 +124,8 @@ __device__ inline void background_accumulate(unsigned long long *d_background_sl
  * it must not be read again afterwards.
  *
  * @param model Background model to apply (Constant = Tukey; Glm = robust-Poisson GLM)
- * @param d_background_slots Device slot tables, num_reflections * NUM_BG_SLOTS entries
+ * @param d_background_slots Device slot tables, laid out by d_background_ranges
+ * @param d_background_ranges Device per-reflection table offset and capacity
  * @param d_background_spill Device per-reflection count of pixels dropped by a full table
  * @param num_reflections Number of reflections
  * @param d_background_mean Output: per-reflection background level (per pixel)
@@ -123,6 +136,7 @@ __device__ inline void background_accumulate(unsigned long long *d_background_sl
  */
 void compute_background(BackgroundModel model,
                         unsigned long long *d_background_slots,
+                        const BackgroundSlotRange *d_background_ranges,
                         const uint32_t *d_background_spill,
                         size_t num_reflections,
                         double *d_background_mean,

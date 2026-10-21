@@ -64,30 +64,6 @@ enum class BackgroundModel : uint8_t { Constant, Glm };
  */
 enum class ConstantBackgroundImpl : uint8_t { DialsIndependent, SharedCore };
 
-// Number of open-addressed slots in each per-reflection sparse background
-// histogram. This bounds the number of DISTINCT pixel values a reflection may
-// hold, not the values themselves, so any 32-bit pixel value is representable
-// exactly and there is no high tail. Measured
-// occupancy is a median of 2-3 distinct values with a worst case of 39, so 64
-// leaves substantial headroom; device-memory cost is
-// num_reflections * NUM_BG_SLOTS * 8 bytes. A reflection that exceeds this
-// spills, and a spilled reflection is rejected (see
-// tukey_constant_background).
-constexpr int NUM_BG_SLOTS = 64;
-
-static_assert((NUM_BG_SLOTS & (NUM_BG_SLOTS - 1)) == 0,
-              "NUM_BG_SLOTS must be a power of two so the probe index can be "
-              "masked rather than reduced modulo");
-
-/// @brief log2(NUM_BG_SLOTS), the shift a hashed value is reduced by.
-FFS_HD constexpr int background_slot_bits() {
-    int bits = 0;
-    for (int n = NUM_BG_SLOTS; n > 1; n >>= 1) {
-        ++bits;
-    }
-    return bits;
-}
-
 // Parameters for the robust-Poisson GLM constant background, matching the DIALS
 // defaults (dials.algorithms.background.glm: tuning_constant 1.345,
 // max_iter 100, tolerance 1e-3, min_pixels 10). Held here as the single source

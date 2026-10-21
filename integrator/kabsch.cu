@@ -446,7 +446,8 @@ __device__ __forceinline__ bool pixel_is_foreground(
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M)
  * @param d_foreground_sum Output: accumulated foreground intensities per reflection
  * @param d_foreground_count Output: foreground pixel counts per reflection
- * @param d_background_slots Output: per-reflection slot tables, num_reflections*NUM_BG_SLOTS entries
+ * @param d_background_slots Output: per-reflection slot tables, laid out by d_background_ranges
+ * @param d_background_ranges Per-reflection slot table offset and capacity
  * @param d_background_spill Output: per-reflection count of pixels dropped by a full slot table
  * @param d_intensity_times_x Output: intensity·(2gx+1) per reflection (centre-of-mass)
  * @param d_intensity_times_y Output: intensity·(2gy+1) per reflection (centre-of-mass)
@@ -481,6 +482,7 @@ __global__ void kabsch_transform(pixel_t *d_image,
                                  accumulator_t *d_foreground_sum,
                                  uint32_t *d_foreground_count,
                                  unsigned long long *d_background_slots,
+                                 const BackgroundSlotRange *d_background_ranges,
                                  uint32_t *d_background_spill,
                                  unsigned long long *d_intensity_times_x,
                                  unsigned long long *d_intensity_times_y,
@@ -495,6 +497,10 @@ __global__ void kabsch_transform(pixel_t *d_image,
     const Vector3D s1_c = d_s1_vectors[refl_idx];
     const scalar_t phi_c = d_phi_values[refl_idx];
     const BoundingBoxExtents bbox = d_bboxes[refl_idx];
+    // This reflection's slot table. The range is block-uniform, so it is
+    // loaded once here rather than once per background pixel.
+    const BackgroundSlotRange bg_range = d_background_ranges[refl_idx];
+    unsigned long long *const bg_slots = d_background_slots + bg_range.offset;
 
     // The shoebox's z-range is half-open: [z_min, z_max). The current
     // image_num must be within that range.
@@ -610,9 +616,9 @@ __global__ void kabsch_transform(pixel_t *d_image,
             if (pixel_in_image && mask_flag != 0) {
                 const int value = static_cast<int>(raw_value);
                 if (value >= 0) {
-                    background_accumulate(d_background_slots,
-                                          d_background_spill,
-                                          refl_idx,
+                    background_accumulate(bg_slots,
+                                          bg_range.capacity,
+                                          &d_background_spill[refl_idx],
                                           static_cast<uint32_t>(value));
                 }
             }
@@ -707,6 +713,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                               accumulator_t *d_foreground_sum,
                               uint32_t *d_foreground_count,
                               unsigned long long *d_background_slots,
+                              const BackgroundSlotRange *d_background_ranges,
                               uint32_t *d_background_spill,
                               unsigned long long *d_intensity_times_x,
                               unsigned long long *d_intensity_times_y,
@@ -823,6 +830,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                                                       d_foreground_sum,
                                                       d_foreground_count,
                                                       d_background_slots,
+                                                      d_background_ranges,
                                                       d_background_spill,
                                                       d_intensity_times_x,
                                                       d_intensity_times_y,

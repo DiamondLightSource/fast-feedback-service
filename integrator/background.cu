@@ -28,12 +28,13 @@ constexpr int BACKGROUND_REDUCE_THREADS = 128;
  *
  * The slot table is compacted and sorted IN PLACE: occupied slots move to the
  * front of the reflection's range and are ordered ascending by value, which is
- * the precondition BackgroundHistogramView carries. The table is consumed once, so
- * rewriting it costs nothing and avoids per-thread scratch, keeping register
- * and local-memory use independent of NUM_BG_SLOTS.
+ * the precondition BackgroundHistogramView carries. The table is consumed once,
+ * so rewriting it costs nothing and avoids per-thread scratch, keeping register
+ * and local-memory use independent of the table size.
  */
 __global__ void background_reduce_kernel(BackgroundModel model,
                                          unsigned long long *d_background_slots,
+                                         const BackgroundSlotRange *d_background_ranges,
                                          const uint32_t *d_background_spill,
                                          size_t num_reflections,
                                          double *d_background_mean,
@@ -43,12 +44,13 @@ __global__ void background_reduce_kernel(BackgroundModel model,
     const size_t r = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (r >= num_reflections) return;
 
-    unsigned long long *slots = d_background_slots + r * NUM_BG_SLOTS;
+    const BackgroundSlotRange range = d_background_ranges[r];
+    unsigned long long *slots = d_background_slots + range.offset;
 
     // Compact. The write index never runs ahead of the read index, so no
     // unread slot is overwritten.
     int num_entries = 0;
-    for (int i = 0; i < NUM_BG_SLOTS; ++i) {
+    for (uint32_t i = 0; i < range.capacity; ++i) {
         const unsigned long long entry = slots[i];
         if (entry != 0ull) {
             slots[num_entries++] = entry;
@@ -99,6 +101,7 @@ __global__ void background_reduce_kernel(BackgroundModel model,
 
 void compute_background(BackgroundModel model,
                         unsigned long long *d_background_slots,
+                        const BackgroundSlotRange *d_background_ranges,
                         const uint32_t *d_background_spill,
                         size_t num_reflections,
                         double *d_background_mean,
@@ -114,6 +117,7 @@ void compute_background(BackgroundModel model,
     background_reduce_kernel<<<blocks, BACKGROUND_REDUCE_THREADS, 0, stream>>>(
       model,
       d_background_slots,
+      d_background_ranges,
       d_background_spill,
       num_reflections,
       d_background_mean,
