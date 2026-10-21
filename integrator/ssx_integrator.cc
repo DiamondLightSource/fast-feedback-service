@@ -43,6 +43,9 @@
 //#include "predictor/predict.hpp"
 #include "thread_count.hpp"
 #include "version.hpp"
+#include "integrator/ssx/ssx_integrate.hpp"
+#include "mosaicity_parameterisation.hpp"
+#include "predictor/predict.hpp"
 
 using Eigen::Vector3d;
 
@@ -166,24 +169,186 @@ int main(int argc, char **argv) {
     s1_vectors = *s1_vectors_opt;
     num_reflections = s1_vectors.extent(0);
 
-    mdspan_type<int> bbox_array;
+    auto &beam = beam_ops::require_monochromatic(expt.beam());
+    Eigen::Vector3d s0 = beam.get_s0();
+    const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
+    const Crystal &crystal = expt.crystal();
+    Eigen::Matrix3d A = crystal.get_A_matrix();
+
+    // get set of unique ids, select out, loop over in parallel to refine and predict?
+
+    // want a map of experiment identifier to image number
+    std::unordered_map<std::string, int> identifier_to_image_number;
+    auto scans = elist_json_obj["scan"];
+    for (auto expt: elist_json_obj["experiment"]){
+        std::string identifier = expt["identifier"];
+        int scan_id = expt["scan"];
+        int image_no = scans[scan_id]["image_range"][0];
+        identifier_to_image_number[identifier] = image_no;
+    }
+
+
+    std::vector<ReflectionTable> split_tables;
+    std::vector<int> ids;
+    auto id_col = reflections.column<int>("id");
+    if (!id_col){
+        logger.error("Column 'id' not found in reflection data.");
+        return 1;
+    }
+    ids = *id_col;
+    for (auto i:reflections.get_experiment_ids()){
+        std::vector<size_t> sel;
+        for (int j=0;j<reflections.size();j++){
+            if (ids[j] == i){
+                sel.push_back(j);
+            }
+        }
+        split_tables.push_back(reflections.select(sel));
+    }
+
+    std::vector<std::jthread> threads;
+    for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
+        threads.emplace_back([&, thread_id]() {
+            // get the data from the table
+            ReflectionTable& table = split_tables
+
+            // refine predict
+            /*Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
+                                                              xyzobs_px,
+                                                              covariances,
+                                                              intensities,
+                                                              miller_indices,
+                                                              mobs,
+                                                              s0,
+                                                              panel,
+                                                              A);
+            std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);*/
+
+            // then save output predictions into a joint area to iterate over in integration.
+        });
+    }
+
+    // Wait for all threads to finish
+    for (auto &thread : threads) {
+        thread.join();
+    }
+
+    std::unordered_map<int, size_t> reflections_in_image;
+    for (auto t : split_tables){
+        std::vector<std::string> identifiers = t.get_identifiers();
+        if (identifiers.size() != 1){
+            logger.error("Reflection table selection went wrong.");
+            return 1;
+        }
+        // now look up in experiment list to get image offset
+        int image_no = identifier_to_image_number[identifier];
+        reflections_in_image[image_no] = t.size();
+    }
+
+    /*std::vector<double> xyzcal_px;
+    std::vector<double> xyzobs_px;
+    std::vector<double> covariances;
+    std::vector<int> miller_indices;
+    std::vector<double> intensities;
+    std::vector<double> mobs;
+    auto xyzcal_px_opt = reflections.column<double>("xyzcal.px");
+    if (!xyzcal_px_opt) {
+        logger.error("Column 'xyzcal.px' not found in reflection data.");
+        return 1;
+    }
+    xyzcal_px = std::vector<double>(
+        xyzcal_px_opt.value().data_handle(),
+        xyzcal_px_opt.value().data_handle() + xyzcal_px_opt.value().size());
+    auto xyzobs_px_opt = reflections.column<double>("xyzobs.px.value");
+    if (!xyzobs_px_opt) {
+        logger.error("Column 'xyzobs.px.value' not found in reflection data.");
+        return 1;
+    }
+    xyzobs_px = std::vector<double>(
+        xyzobs_px_opt.value().data_handle(),
+        xyzobs_px_opt.value().data_handle() + xyzobs_px_opt.value().size());
+    auto hkl_vectors_opt = reflections.column<int>("miller_index");
+    if (!hkl_vectors_opt) {
+        logger.error("Column 'miller_index' not found in reflection data.");
+        return 1;
+    }
+    miller_indices = std::vector<int>(
+        hkl_vectors_opt.value().data_handle(),
+        hkl_vectors_opt.value().data_handle() + hkl_vectors_opt.value().size());
+    auto covariances_opt = reflections.column<double>("spot_covariance_2d_packed");
+    if (!covariances_opt) {
+        logger.error("Column 'covariances' not found in reflection data.");
+        return 1;
+    }
+    covariances = std::vector<double>(
+        covariances_opt.value().data_handle(),
+        covariances_opt.value().data_handle() + covariances_opt.value().size());
+    auto intensities_opt = reflections.column<double>("intensity.sum.value");
+    if (!intensities_opt) {
+        logger.error("Column 'intensity.sum.value' not found in reflection data.");
+        return 1;
+    }
+    intensities = std::vector<double>(
+        intensities_opt.value().data_handle(),
+        intensities_opt.value().data_handle() + intensities_opt.value().size());
+    auto mobs_opt = reflections.column<double>("spot_mobs_2d");
+    if (!mobs_opt) {
+        logger.error("Column 'spot_mobs_2d' not found in reflection data.");
+        return 1;
+    }
+    mobs = std::vector<double>(
+        mobs_opt.value().data_handle(),
+        mobs_opt.value().data_handle() + mobs_opt.value().size());
+
+    std::vector<Vector3d> xyzcal_vec;
+    std::vector<Vector3d> xyzobs_vec;
+    std::vector<Vector3d> covars_vec;
+    std::vector<Vector3d> mobs_vec;
+    for (std::size_t i=0;i<xyzcal_px.size() / 3;i++){
+        xyzcal_vec.push_back({xyzcal_px[i], xyzcal_px[i+1], xyzcal_px[i+2]});
+    }
+    */
+    
+
+
+    /*const std::vector<Vector3d> &xyzcal_px,
+                   const std::vector<Vector3d> &xyzobs_px,
+                   const std::vector<Vector3d> &covariances,
+                   const std::vector<double> &intensities,
+                   const std::vector<Eigen::Vector3i> &miller_indices,
+                   const std::vector<Vector2d> &mobs,
+                   const Vector3d &s0,
+                   const Panel &panel,
+                   const Matrix3d &A) {*/
+    /*Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
+                                                              xyzobs_px,
+                                                              covariances,
+                                                              intensities,
+                                                              miller_indices,
+                                                              mobs,
+                                                              s0,
+                                                              panel,
+                                                              A);
+    std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);*?
+
+    /*mdspan_type<int> bbox_array;
     auto bbox_opt = reflections.column<int>("bbox");
     if (!bbox_opt) {
         logger.error("Column 'bbox' not found in reflection data.");
         return 1;
     }
-    bbox_array = *bbox_opt;
+    bbox_array = *bbox_opt;*/
 
     std::vector<BoundingBoxExtents> bboxes;
-    for (std::size_t i=0;i<bbox_array.extent(0);i++){
-        BoundingBoxExtents bbox;
+    for (std::size_t i=0;i<predictions.size();i++){
+        /*BoundingBoxExtents bbox;
         bbox.x_min = bbox_array(i,0);
         bbox.x_max = bbox_array(i,1);
         bbox.y_min = bbox_array(i,2);
         bbox.y_max = bbox_array(i,3);
         bbox.z_min = bbox_array(i,4);
-        bbox.z_max = bbox_array(i,5);
-        bboxes.push_back(bbox);
+        bbox.z_max = bbox_array(i,5);*/
+        bboxes.push_back(predictions[i].bbox_extent);
     }
 
     logger.info("Mapping reflections by image number (z layer)");
