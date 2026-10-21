@@ -36,7 +36,7 @@ class IndexedLatticeResult(BaseModel):
     xyzcal_px: list[float] | None = None
     s1: list[float] | None = None
     delpsi: list[float] | None = None
-    rmsds: tuple[list[float], list[float], list[float]]
+    rmsds: tuple[float, float, float]
     selection_for_input: list[bool] | None = None
 
 
