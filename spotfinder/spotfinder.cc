@@ -18,6 +18,7 @@
 #include <dx2/reflection.hpp>
 #include <dx2/scan.hpp>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <ranges>
 #include <stop_token>
@@ -481,7 +482,12 @@ int main(int argc, char **argv) {
 
     uint32_t height = reader.image_shape()[0];
     uint32_t width = reader.image_shape()[1];
-    auto trusted_px_max = reader.get_trusted_range()[1];
+    // The reader reports the range in a type wide enough for both 16- and
+    // 32-bit data, while the kernels take the maximum as a pixel_t. A file
+    // declaring more than this build can hold caps at pixel_t's maximum
+    // rather than wrapping.
+    const pixel_t trusted_px_max = static_cast<pixel_t>(std::min<int64_t>(
+      reader.get_trusted_range()[1], std::numeric_limits<pixel_t>::max()));
 
     detector_geometry detector;
 

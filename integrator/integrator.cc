@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <cstdlib>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/experiment.hpp>
@@ -666,7 +667,9 @@ int main(int argc, char **argv) {
     // The raw-chunk path decompresses at the compile-time pixel_t width, so a
     // file of a different element width unshuffles against the wrong stride and
     // decodes to scrambled bits. h5read's own type check covers only the
-    // whole-image path.
+    // whole-image path. The exit code is the data's width in bits, which lets a
+    // caller relaunch the variant built for it rather than treat the mismatch
+    // as a failed integration.
     const size_t bytes_per_pixel = reader.get_element_size();
     if (bytes_per_pixel != sizeof(pixel_t)) {
         logger.error(
@@ -674,7 +677,7 @@ int main(int argc, char **argv) {
           "{}-bit pixels.",
           bytes_per_pixel * 8,
           sizeof(pixel_t) * 8);
-        return 1;
+        std::exit(static_cast<int>(bytes_per_pixel * 8));
     }
 
     uint32_t num_images_in_file = reader.get_number_of_images();
