@@ -43,6 +43,7 @@
 #include "h5read.h"
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
+#include "integrator/background_pool.hpp"
 #include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
 #include "integrator/lp_correction.hpp"
@@ -273,6 +274,15 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
             "glm (robust-Poisson GLM constant background).")
           .default_value<std::string>("constant");
 
+        add_argument("--background.pool_entries_per_reflection")
+          .help(
+            "Size of the shared background pool, in entries per reflection on "
+            "average. Each entry holds one distinct background value of one "
+            "reflection; reflections share the pool, so a single one may use many.")
+          .metavar("N")
+          .default_value(kBackgroundPoolEntriesPerReflection)
+          .scan<'u', uint32_t>();
+
         add_argument("--min_zeta")
           .help(
             "Reflections close to the rotation axis, with a zeta below this threshold "
@@ -363,6 +373,15 @@ int main(int argc, char **argv) {
     BackgroundModel background_model =
       parse_background_model(parser.get<std::string>("background"));
     logger.info("Background model: {}", parser.get<std::string>("background"));
+
+    // Checked with the other options, so a bad value fails before sigma
+    // estimation and bbox computation.
+    const uint32_t background_pool_entries_per_reflection =
+      parser.get<uint32_t>("background.pool_entries_per_reflection");
+    if (background_pool_entries_per_reflection == 0) {
+        logger.error("--background.pool_entries_per_reflection must be at least 1");
+        return 1;
+    }
 
 #pragma endregion Data preparation
 
@@ -762,16 +781,35 @@ int main(int argc, char **argv) {
     // These persist across all images and accumulate atomically
     DeviceBuffer<accumulator_t> d_foreground_sum(num_reflections);
     DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
-    // Per-reflection background slot table: one entry per distinct pixel value,
-    // keyed on the value, plus a spill counter for pixels dropped by a full
-    // table. The Kabsch kernel fills these; compute_background() reduces them
-    // into an estimate after the image loop.
-    DeviceBuffer<unsigned long long> d_background_slots(num_reflections * NUM_BG_SLOTS);
+    // Shared background pool: one entry per distinct (reflection, value) pair,
+    // plus a per-reflection spill counter for pixels that arrive once the pool
+    // is full. The Kabsch kernel fills these; compute_background() reduces them
+    // into estimates after the image loop.
+    //
+    // Entries are indexed in 32 bits, on the device and in the sort, which
+    // bounds the pool.
+    const uint64_t background_pool_capacity =
+      static_cast<uint64_t>(num_reflections) * background_pool_entries_per_reflection;
+    if (background_pool_capacity > static_cast<uint64_t>(UINT32_MAX)) {
+        logger.error(
+          "Background pool of {} entries exceeds the 32-bit index limit of {} "
+          "(--background.pool_entries_per_reflection times the reflection count)",
+          background_pool_capacity,
+          UINT32_MAX);
+        return 1;
+    }
+    DeviceBuffer<unsigned long long> d_background_pool_keys(background_pool_capacity);
+    DeviceBuffer<uint32_t> d_background_pool_counts(background_pool_capacity);
+    BackgroundPool background_pool;
+    background_pool.keys = d_background_pool_keys.data();
+    background_pool.counts = d_background_pool_counts.data();
+    background_pool.capacity = static_cast<uint32_t>(background_pool_capacity);
     DeviceBuffer<uint32_t> d_background_spill(num_reflections);
-    logger.info("Background slot tables: {} reflections x {} slots = {:.1f} MiB",
-                num_reflections,
-                NUM_BG_SLOTS,
-                (num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long))
+    logger.info("Background pool: {} entries ({} per reflection), {:.1f} MiB",
+                background_pool_capacity,
+                background_pool_entries_per_reflection,
+                background_pool_capacity
+                  * (sizeof(unsigned long long) + sizeof(uint32_t))
                   / (1024.0 * 1024.0));
     // Reduced background estimates (written by compute_background()).
     DeviceBuffer<double> d_background_mean(num_reflections);
@@ -795,11 +833,12 @@ int main(int argc, char **argv) {
 
     cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t));
-    // An all-zero slot is empty, because a stored entry always has a count of
-    // at least 1.
-    cudaMemset(d_background_slots.data(),
-               0,
-               num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long));
+    // An all-ones byte fill makes every key BG_POOL_EMPTY_KEY.
+    cudaMemset(d_background_pool_keys.data(),
+               0xFF,
+               background_pool_capacity * sizeof(unsigned long long));
+    cudaMemset(
+      d_background_pool_counts.data(), 0, background_pool_capacity * sizeof(uint32_t));
     cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t));
     cudaMemset(
       d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
@@ -980,7 +1019,7 @@ int main(int argc, char **argv) {
                                          fg_algorithm,
                                          d_foreground_sum.data(),
                                          d_foreground_count.data(),
-                                         d_background_slots.data(),
+                                         background_pool,
                                          d_background_spill.data(),
                                          d_intensity_times_x.data(),
                                          d_intensity_times_y.data(),
@@ -1029,15 +1068,21 @@ int main(int argc, char **argv) {
     // Reduce each reflection's background histogram into an estimate on the
     // device (Tukey/IQR constant model), then copy the small results back.
     logger.info("Reducing background histograms for {} reflections", num_reflections);
-    compute_background(background_model,
-                       d_background_slots.data(),
-                       d_background_spill.data(),
-                       num_reflections,
-                       d_background_mean.data(),
-                       d_background_sum_value.data(),
-                       d_background_count.data(),
-                       d_background_success.data(),
-                       0);
+    const uint32_t background_pool_occupied =
+      compute_background(background_model,
+                         background_pool,
+                         d_background_spill.data(),
+                         num_reflections,
+                         d_background_mean.data(),
+                         d_background_sum_value.data(),
+                         d_background_count.data(),
+                         d_background_success.data(),
+                         0);
+    // How full the pool got is the margin before it would start to spill.
+    logger.info("Background pool: {} of {} entries used ({:.1f}%)",
+                background_pool_occupied,
+                background_pool_capacity,
+                100.0 * background_pool_occupied / background_pool_capacity);
     cudaDeviceSynchronize();
     cuda_throw_error();
 #pragma endregion Background Reduction
@@ -1073,12 +1118,12 @@ int main(int argc, char **argv) {
     d_intensity_times_z.extract(h_intensity_times_z.data());
     d_success.extract(h_success.data());
 
-    // A slot table holds any pixel value, so it has no range to run out of;
-    // what it can exhaust is the number of DISTINCT values per reflection. A
-    // reflection that spills has lost pixels of unknown value, so the reduction
-    // already failed it. Report the count rather than aborting: the rest of the
-    // run is unaffected, and the number is what says whether NUM_BG_SLOTS needs
-    // raising.
+    // The pool holds any pixel value, so it has no range to run out of; what it
+    // can exhaust is the number of distinct (reflection, value) pairs across the
+    // sweep. A reflection that spills has lost pixels of unknown value, so the
+    // reduction already failed it. Report the count rather than aborting: the
+    // rest of the run is unaffected, and the number is what says whether the
+    // pool needs enlarging.
     {
         size_t spilling = 0;
         for (size_t i = 0; i < num_reflections; ++i) {
@@ -1088,12 +1133,12 @@ int main(int argc, char **argv) {
         }
         if (spilling > 0) {
             logger.warn(
-              "{} of {} reflection(s) held more than NUM_BG_SLOTS={} distinct "
-              "background values and were not integrated; raise NUM_BG_SLOTS if "
-              "this is a significant fraction",
+              "The background pool filled and {} of {} reflection(s) lost pixels "
+              "and were not integrated; raise "
+              "--background.pool_entries_per_reflection above {}",
               spilling,
               num_reflections,
-              NUM_BG_SLOTS);
+              background_pool_entries_per_reflection);
         }
     }
 
@@ -1104,7 +1149,12 @@ int main(int argc, char **argv) {
     std::vector<double> backgrounds(num_reflections);  // b̄  (background mean per pixel)
     std::vector<double> background_sigmas(num_reflections);  // σ(b̄)
     size_t valid_reflections = 0;
-    size_t background_failures = 0;  // fg present but Tukey estimate rejected
+    size_t background_failures = 0;  // fg present but background estimate rejected
+    // 1 for a reflection written to the output: it was not skipped, the kernel
+    // kept its success flag, and it has foreground pixels and a valid
+    // background estimate. The count, the statistics and the output all read
+    // this.
+    std::vector<uint8_t> success_final(num_reflections, 0);
 
     for (size_t i = 0; i < num_reflections; ++i) {
         uint32_t fg_count = h_foreground_count[i];
@@ -1122,9 +1172,8 @@ int main(int argc, char **argv) {
 
         double fg_sum = h_foreground_sum[i];
 
-        // Tally rejected estimates (no inlier pixels, or the IQR fence ran past
-        // the histogram range) purely for error reporting and logging; the
-        // reflection is marked unintegrated below regardless.
+        // Tally rejected estimates (no inlier pixels, too few pixels for the
+        // GLM, or pixels lost to a full pool) for the warning below.
         if (!h_background_success[i]) {
             ++background_failures;
         }
@@ -1159,7 +1208,12 @@ int main(int argc, char **argv) {
         sigmas[i] = (variance > 0.0) ? std::sqrt(variance) : 0.0;
         backgrounds[i] = bg_mean;
         background_sigmas[i] = (bg_variance > 0.0) ? std::sqrt(bg_variance) : 0.0;
-        valid_reflections++;
+
+        const bool ok = h_success[i] && h_background_success[i] && !dont_integrate[i];
+        success_final[i] = ok ? 1 : 0;
+        if (ok) {
+            valid_reflections++;
+        }
     }
 
     logger.info("Summation integration complete: {} valid reflections out of {}",
@@ -1169,7 +1223,7 @@ int main(int argc, char **argv) {
     if (background_failures > 0) {
         logger.warn(
           "Background estimate rejected for {} of {} reflections with "
-          "foreground pixels; NUM_BG_SLOTS may be too small for their background",
+          "foreground pixels; any that lost pixels to a full pool are counted above",
           background_failures,
           num_reflections);
     }
@@ -1184,7 +1238,7 @@ int main(int argc, char **argv) {
         size_t n_positive_isigma = 0;
         double sum_i_over_sigma = 0.0;
         for (size_t i = 0; i < num_reflections; ++i) {
-            if (variances[i] >= 0) {
+            if (success_final[i]) {
                 sum_intensity += intensities[i];
                 sum_sigma += sigmas[i];
                 sum_bg += backgrounds[i];
@@ -1230,7 +1284,6 @@ int main(int argc, char **argv) {
     double pf = beam.get_polarization_fraction();
     LPCorrection lpcalculator(s0, pn, pf, rotation_axis);
 
-    std::vector<uint8_t> success_final(num_reflections);
     for (size_t i = 0; i < num_reflections; ++i) {
         nfg_out[i] = static_cast<int>(h_foreground_count[i]);
         nbg_out[i] = static_cast<int>(h_background_count[i]);
@@ -1241,12 +1294,6 @@ int main(int argc, char **argv) {
         // device reduction.
         bg_sum_out[i] = h_background_success[i] ? h_background_sum_value[i] : 0.0;
         bg_mean_out[i] = h_background_success[i] ? h_background_mean[i] : 0.0;
-
-        // Success: kernel-flagged AND fg_count > 0 AND a valid background
-        // estimate AND not dont_integrated.
-        bool ok = h_success[i] && (h_foreground_count[i] > 0) && h_background_success[i]
-                  && !dont_integrate[i];
-        success_final[i] = ok ? 1 : 0;
 
         // Centre-of-mass: kernel accumulated intensity·(2k+1), so divide by 2·I.
         double fg_sum_d = static_cast<double>(h_foreground_sum[i]);
