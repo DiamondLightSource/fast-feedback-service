@@ -786,15 +786,16 @@ int main(int argc, char **argv) {
     // is full. The Kabsch kernel fills these; compute_background() reduces them
     // into estimates after the image loop.
     //
-    // CUB's radix sort counts items in an int, which bounds the pool.
+    // Entries are indexed in 32 bits, on the device and in the sort, which
+    // bounds the pool.
     const uint64_t background_pool_capacity =
       static_cast<uint64_t>(num_reflections) * background_pool_entries_per_reflection;
-    if (background_pool_capacity > static_cast<uint64_t>(INT32_MAX)) {
+    if (background_pool_capacity > static_cast<uint64_t>(UINT32_MAX)) {
         logger.error(
-          "Background pool of {} entries exceeds the sort limit of {} "
+          "Background pool of {} entries exceeds the 32-bit index limit of {} "
           "(--background.pool_entries_per_reflection times the reflection count)",
           background_pool_capacity,
-          INT32_MAX);
+          UINT32_MAX);
         return 1;
     }
     DeviceBuffer<unsigned long long> d_background_pool_keys(background_pool_capacity);

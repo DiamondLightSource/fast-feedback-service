@@ -133,9 +133,12 @@ uint32_t compute_background(BackgroundModel model,
         ++end_bit;
     }
 
+    // A 32-bit count keeps CUB on 32-bit offsets, the same width the pool
+    // indexes its entries with.
+    const uint32_t n = pool.capacity;
+
     // Sorting into separate output arrays leaves the input key array free to
     // hold the repacked entries afterwards.
-    const int n = static_cast<int>(pool.capacity);
     DeviceBuffer<unsigned long long> d_sorted_keys(pool.capacity);
     DeviceBuffer<uint32_t> d_sorted_counts(pool.capacity);
     size_t temp_bytes = 0;
