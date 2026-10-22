@@ -1,13 +1,15 @@
 /**
  * @file background.cuh
- * @brief GPU per-reflection background reduction.
+ * @brief GPU background accumulation into the shared pool, and its reduction.
  *
- * After the Kabsch kernel has accumulated a per-reflection background
- * histogram on the device, this reduces each reflection's histogram into a
- * background estimate (mean, inlier weighted sum, pixel count, success) using
- * the selected BackgroundModel. The reduction runs entirely on the device and
- * reuses the single-source model code in integrator/background.hpp, so it
- * produces the same result as the baseline CPU path.
+ * The Kabsch kernel records every background pixel into the shared pool
+ * (integrator/background_pool.hpp) through background_accumulate(). After the
+ * image loop, compute_background() reduces each reflection's histogram in the
+ * pool into a background estimate (mean, inlier weighted sum, pixel count,
+ * success) using the selected BackgroundModel. The reduction runs entirely on
+ * the device and reuses the single-source model code in
+ * integrator/background.hpp, so it produces the same result as the baseline
+ * CPU path.
  */
 
 #pragma once
@@ -16,7 +18,7 @@
 #include <cstdint>
 
 #include "integrator/background.hpp"
-#include "integrator/background_layout.hpp"
+#include "integrator/background_pool.hpp"
 
 // The accumulation helpers below are device code: they use atomics and the
 // cache-control load intrinsic. The header is also included from host-only
@@ -25,70 +27,55 @@
 #if defined(__CUDACC__)
 
 /**
- * @brief Insert one background pixel value into a reflection's slot table.
+ * @brief Insert one background pixel value into the shared pool.
  *
- * Open addressing with linear probing over the table's capacity slots. A slot
- * is one 64-bit word packing (value, count); an all-zero word is empty, since a
- * stored entry always has a count of at least 1. The home slot comes from
- * Fibonacci hashing (see kSlotHashMultiplier).
+ * Open addressing with linear probing over the whole pool, keyed on
+ * (reflection, value). An entry's key is immutable once claimed, so a stale
+ * read can report an entry as empty but never as holding the wrong key. The
+ * atomicCAS re-checks that case at L2, and is therefore what enforces one
+ * entry per key. __ldcg keeps the probe read out of the per-SM L1, which is
+ * not coherent between SMs, so a claimed entry does not read as empty and
+ * waste a compare-and-swap.
  *
- * A slot's key is immutable once claimed, so a stale read can report a slot as
- * empty but never as holding the wrong key. The atomicCAS re-checks that case
- * at L2, and is therefore what enforces one entry per value. __ldcg keeps the
- * probe read out of the per-SM L1, which is not coherent between SMs, so a
- * claimed slot does not read as empty and waste a compare-and-swap.
- *
- * @param slots This reflection's table, capacity slots long.
- * @param capacity Slots in the table, any size. 0 is no table, so every pixel
- *        spills.
- * @param value Background pixel value to record.
- * @return false when every slot is occupied by other values, so the pixel was
+ * @param pool The shared pool.
+ * @param reflection Index of the reflection the pixel belongs to.
+ * @param value Background pixel value to record, at most INT32_MAX.
+ * @return false when every entry is occupied by other keys, so the pixel was
  *         dropped and the caller must count it as spill.
  */
-__device__ inline bool background_slot_insert(unsigned long long *slots,
-                                              uint32_t capacity,
+__device__ inline bool background_pool_insert(const BackgroundPool &pool,
+                                              uint32_t reflection,
                                               uint32_t value) {
+    const unsigned long long key = background_pool_key(reflection, value);
+
     // 2^64/φ rounded odd, giving Fibonacci hashing (Knuth, TAOCP vol. 3, 6.4).
-    // The high 32 bits of the product are frac(value/φ) in fixed point, a step
-    // of 0.618 of a turn around the table per unit of value, so consecutive
-    // values spread rather than cluster at any capacity.
-    //
-    // Collisions are resolved by probing, not prevented, and placement does
-    // not reach the result: the reduction sorts by value. Measured occupancy
-    // is a median of 2-3 distinct values with a worst case of 39, well inside
-    // most tables, so probe runs stay short. The cost is locality, since
-    // consecutive values land on different cache lines.
-    constexpr unsigned long long kSlotHashMultiplier = 0x9E3779B97F4A7C15ull;
-    const uint32_t hash = static_cast<uint32_t>(
-      (static_cast<unsigned long long>(value) * kSlotHashMultiplier) >> 32);
+    // The high 32 bits of the product step 0.618 of a turn per unit of value,
+    // so one reflection's consecutive values spread rather than cluster. The
+    // reflection index, in the high word of the key, adds index times the
+    // constant's low word, which is odd, so the same value in different
+    // reflections hashes to different homes.
+    constexpr unsigned long long kPoolHashMultiplier = 0x9E3779B97F4A7C15ull;
+    const uint32_t hash = static_cast<uint32_t>((key * kPoolHashMultiplier) >> 32);
 
-    // Home slot floor(capacity * hash / 2^32), the multiply-shift range
-    // reduction of Lemire (2019), "Fast Random Integer Generation in an
-    // Interval", ACM TOMACS 29(1), DOI 10.1145/3230636. One mul.hi.u32 and no
-    // division, so capacity need not be a power of two. hash < 2^32 keeps the
-    // result below capacity.
-    uint32_t idx = __umulhi(hash, capacity);
+    // Home entry floor(capacity * hash / 2^32), the multiply-shift range reduction
+    uint32_t idx = __umulhi(hash, pool.capacity);
 
-    for (uint32_t probe = 0; probe < capacity; ++probe) {
-        unsigned long long cur = __ldcg(&slots[idx]);
-        if (cur == 0ull) {
-            const unsigned long long old =
-              atomicCAS(&slots[idx], 0ull, background_entry_pack(value, 1));
-            if (old == 0ull) {
-                return true;  // claimed the slot, count starts at 1
-            }
-            cur = old;  // lost the race; old holds whichever value won
+    for (uint32_t probe = 0; probe < pool.capacity; ++probe) {
+        unsigned long long cur = __ldcg(&pool.keys[idx]);
+        if (cur == BG_POOL_EMPTY_KEY) {
+            cur = atomicCAS(&pool.keys[idx], BG_POOL_EMPTY_KEY, key);
+            // On success cur is still empty, the entry is now this key's, and
+            // the count below is its first pixel. Otherwise cur holds whichever
+            // key won the race.
+            if (cur == BG_POOL_EMPTY_KEY) cur = key;
         }
-        // The stored key, not the hash, settles identity.
-        if (background_entry_value(cur) == value) {
-            // The count is bounded by this reflection's background pixel count,
-            // so a 64-bit add of one cannot carry into the value.
-            atomicAdd(&slots[idx], 1ull);
+        if (cur == key) {
+            atomicAdd(&pool.counts[idx], 1u);
             return true;
         }
-        // A step of one that wraps at capacity visits every slot, so the loop
-        // bound is reached only once the table is full.
-        if (++idx == capacity) {
+        // A step of one that wraps at capacity visits every entry, so the loop
+        // bound is reached only once the pool is full.
+        if (++idx == pool.capacity) {
             idx = 0;
         }
     }
@@ -98,19 +85,19 @@ __device__ inline bool background_slot_insert(unsigned long long *slots,
 /**
  * @brief Record one background pixel value for a reflection.
  *
- * A pixel that finds no free slot is counted as spill; the reduction fails any
- * reflection with spill, since the lost values are of unknown magnitude.
+ * A pixel that finds no free entry is counted as spill; the reduction fails
+ * any reflection with spill, since the lost values are of unknown magnitude.
  *
- * @param slots The reflection's table, at its BackgroundSlotRange offset.
- * @param capacity Slots in that table.
+ * @param pool The shared pool.
+ * @param reflection Index of the reflection the pixel belongs to.
  * @param spill The reflection's spill counter.
  * @param value Background pixel value to record.
  */
-__device__ inline void background_accumulate(unsigned long long *slots,
-                                             uint32_t capacity,
+__device__ inline void background_accumulate(const BackgroundPool &pool,
+                                             uint32_t reflection,
                                              uint32_t *spill,
                                              uint32_t value) {
-    if (!background_slot_insert(slots, capacity, value)) {
+    if (!background_pool_insert(pool, reflection, value)) {
         atomicAdd(spill, 1u);
     }
 }
@@ -118,29 +105,30 @@ __device__ inline void background_accumulate(unsigned long long *slots,
 #endif  // __CUDACC__
 
 /**
- * @brief Reduce per-reflection background slot tables into background estimates.
+ * @brief Reduce the background pool into per-reflection background estimates.
  *
- * One thread handles one reflection. The slot table is rewritten in place (compacted and sorted), so
- * it must not be read again afterwards.
+ * Sorts the pool by key, which groups each reflection's entries and orders
+ * them by value, then evaluates the model over each reflection's run with one
+ * thread per reflection. The pool is consumed: its key array is reused to hold
+ * the repacked entries, so it must not be read again afterwards.
  *
  * @param model Background model to apply (Constant = Tukey; Glm = robust-Poisson GLM)
- * @param d_background_slots Device slot tables, laid out by d_background_ranges
- * @param d_background_ranges Device per-reflection table offset and capacity
- * @param d_background_spill Device per-reflection count of pixels dropped by a full table
+ * @param pool Device pool filled by the Kabsch kernel
+ * @param d_background_spill Device per-reflection count of pixels dropped by a full pool
  * @param num_reflections Number of reflections
  * @param d_background_mean Output: per-reflection background level (per pixel)
  * @param d_background_sum_value Output: per-reflection inlier weighted sum (background.sum.value)
  * @param d_background_count Output: per-reflection total background pixel count
  * @param d_background_success Output: per-reflection success flag (1 = estimate valid)
  * @param stream CUDA stream for async execution
+ * @return Number of occupied pool entries. Synchronises the stream.
  */
-void compute_background(BackgroundModel model,
-                        unsigned long long *d_background_slots,
-                        const BackgroundSlotRange *d_background_ranges,
-                        const uint32_t *d_background_spill,
-                        size_t num_reflections,
-                        double *d_background_mean,
-                        double *d_background_sum_value,
-                        uint32_t *d_background_count,
-                        uint8_t *d_background_success,
-                        cudaStream_t stream);
+uint32_t compute_background(BackgroundModel model,
+                            BackgroundPool pool,
+                            const uint32_t *d_background_spill,
+                            size_t num_reflections,
+                            double *d_background_mean,
+                            double *d_background_sum_value,
+                            uint32_t *d_background_count,
+                            uint8_t *d_background_success,
+                            cudaStream_t stream);

@@ -123,9 +123,9 @@ BackgroundResult compute_background_constant_3d_dials(
 
 // Shared-core adapter. Builds one packed (value, count) entry per distinct
 // pixel value and dispatches to the single-source models, so the baseline runs
-// the math the GPU's slot-table reduction runs.
+// the math the GPU's pool reduction runs.
 //
-// Unlike the device, the host has no fixed slot table: the entry list is
+// Unlike the device, the host has no fixed-size pool: the entry list is
 // allocated to fit, so it is always complete and spill_count is always zero.
 // That asymmetry is deliberate, and it means the host never reproduces a
 // device spill rejection.

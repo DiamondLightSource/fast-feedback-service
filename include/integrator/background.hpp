@@ -80,9 +80,9 @@ constexpr uint32_t kGlmMinPixels = 10;
  *
  * entries holds one packed (value, count) pair per distinct pixel value,
  * sorted ascending by value; entries with a zero count are not present.
- * spill_count holds the number of pixels dropped because the slot table that
- * produced these entries was full, which makes the histogram incomplete by an
- * unknown amount and so fails the reflection.
+ * spill_count holds the number of pixels dropped because the background pool
+ * that produced these entries was full, which makes the histogram incomplete by
+ * an unknown amount and so fails the reflection.
  *
  * Ascending order is a precondition: both models locate quartiles by a
  * cumulative scan and rely on it.
@@ -141,10 +141,11 @@ struct BackgroundResult {
  * surviving inliers. Failure is reported via BackgroundResult::valid.
  *
  * Entries carry their own values, so there is no representable range and no
- * high tail: any pixel value is held exactly. What a slot table can exhaust
- * instead is the number of distinct values, and a full table (spill_count > 0)
- * has lost pixels of unknown magnitude, so the estimate is rejected rather
- * than computed from a truncated histogram.
+ * high tail: any pixel value is held exactly. What the background pool can
+ * exhaust instead is its entries for distinct values, and a reflection that
+ * lost pixels to a full pool (spill_count > 0) has lost them at unknown
+ * magnitude, so the estimate is rejected rather than computed from a truncated
+ * histogram.
  */
 FFS_HD inline BackgroundResult tukey_constant_background(
   const BackgroundHistogramView &hist) {
@@ -163,7 +164,7 @@ FFS_HD inline BackgroundResult tukey_constant_background(
         return result;  // no background pixels, so no estimate (valid stays false)
     }
 
-    // Pixels were dropped by a full slot table, so the histogram is incomplete
+    // Pixels were dropped by a full background pool, so the histogram is incomplete
     // by an unknown amount and the quartiles cannot be trusted.
     if (hist.spill_count > 0) {
         return result;
@@ -328,7 +329,7 @@ FFS_HD inline GlmExpectation glm_expectation(double mu, double svar, double c) {
  * representation.
  *
  * Every pixel value is recorded exactly, so the fit is exact whatever the
- * background level. A full slot table (spill_count > 0) is rejected for the
+ * background level. A reflection that spilled (spill_count > 0) is rejected for the
  * same reason as in tukey_constant_background().
  *
  * The sole numerical divergence from DIALS is the Hessian: DIALS sums H += b
@@ -533,7 +534,7 @@ class BackgroundAggregator {
  * @param model Background model the shared core applies (Constant = Tukey;
  *        Glm = robust-Poisson GLM).
  * @return BackgroundResult with mean and weighted_sum; valid is false when the
- *         estimate is rejected (no inliers, too few pixels, a full slot table,
+ *         estimate is rejected (no inliers, too few pixels, a full pool,
  *         or non-convergence), in which case the caller marks the reflection
  *         unintegrated. Mirrors the BackgroundResult::valid channel the GPU
  *         reduction uses.

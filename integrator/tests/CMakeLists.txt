@@ -18,20 +18,16 @@ target_link_libraries(test_background PRIVATE
     GTest::gtest_main
 )
 
-add_executable(test_background_layout test_background_layout.cc)
-target_include_directories(test_background_layout PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(test_background_layout PRIVATE
-    GTest::gtest_main
-)
-
-add_executable(test_background_slots test_background_slots.cu)
-target_include_directories(test_background_slots PRIVATE
+add_executable(test_background_pool test_background_pool.cu ../background.cu)
+target_include_directories(test_background_pool PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
-target_link_libraries(test_background_slots PRIVATE
+target_link_libraries(test_background_pool PRIVATE
     ffs_common
+    dx2
     GTest::gtest_main
+    Eigen3::Eigen
     spdlog::spdlog
     CUDA::cudart
     lodepng
@@ -68,8 +64,7 @@ add_test_kabsch_variant(test_kabsch32 PIXEL_DATA_32BIT)
 
 gtest_discover_tests(test_extent PROPERTIES LABELS "integrator-tests")
 gtest_discover_tests(test_background PROPERTIES LABELS "integrator-tests")
-gtest_discover_tests(test_background_layout PROPERTIES LABELS "integrator-tests")
-gtest_discover_tests(test_background_slots PROPERTIES LABELS "integrator-tests")
+gtest_discover_tests(test_background_pool PROPERTIES LABELS "integrator-tests")
 gtest_discover_tests(test_kabsch PROPERTIES LABELS "integrator-tests")
 gtest_discover_tests(test_kabsch32
     TEST_FILTER "*ForegroundSumSaturation*"

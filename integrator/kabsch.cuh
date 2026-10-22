@@ -28,7 +28,7 @@
 #include "h5read.h"
 #include "integrator.cuh"
 #include "integrator/background.hpp"
-#include "integrator/background_layout.hpp"
+#include "integrator/background_pool.hpp"
 #include "integrator/extent.hpp"
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
@@ -78,9 +78,8 @@ constexpr uint32_t KABSCH_THREADS = 128;
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M), radians
  * @param d_foreground_sum Device array to accumulate foreground intensities per reflection
  * @param d_foreground_count Device array to count foreground pixels per reflection
- * @param d_background_slots Device per-reflection slot tables, laid out by d_background_ranges
- * @param d_background_ranges Device per-reflection slot table offset and capacity
- * @param d_background_spill Device per-reflection count of pixels dropped by a full slot table
+ * @param background_pool Shared device background pool, keyed on (reflection, value)
+ * @param d_background_spill Device per-reflection count of pixels dropped by a full background pool
  * @param d_intensity_times_x Device array accumulating intensity·(2gx+1) per reflection (centre-of-mass)
  * @param d_intensity_times_y Device array accumulating intensity·(2gy+1) per reflection (centre-of-mass)
  * @param d_intensity_times_z Device array accumulating intensity·(2z+1) per reflection (centre-of-mass)
@@ -112,8 +111,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                               FGAlgorithm algorithm,
                               accumulator_t *d_foreground_sum,
                               uint32_t *d_foreground_count,
-                              unsigned long long *d_background_slots,
-                              const BackgroundSlotRange *d_background_ranges,
+                              BackgroundPool background_pool,
                               uint32_t *d_background_spill,
                               unsigned long long *d_intensity_times_x,
                               unsigned long long *d_intensity_times_y,

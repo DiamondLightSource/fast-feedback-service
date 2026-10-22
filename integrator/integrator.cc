@@ -43,7 +43,7 @@
 #include "h5read.h"
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
-#include "integrator/background_layout.hpp"
+#include "integrator/background_pool.hpp"
 #include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
 #include "integrator/lp_correction.hpp"
@@ -274,13 +274,14 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
             "glm (robust-Poisson GLM constant background).")
           .default_value<std::string>("constant");
 
-        add_argument("--background.memory_fraction")
+        add_argument("--background.pool_entries_per_reflection")
           .help(
-            "Share of free GPU memory the background slot tables may use, in (0, 1]. "
-            "A smaller share caps the tables of the largest reflections sooner.")
-          .metavar("F")
-          .default_value(kBackgroundTableMemoryFraction)
-          .scan<'g', double>();
+            "Size of the shared background pool, in entries per reflection on "
+            "average. Each entry holds one distinct background value of one "
+            "reflection; reflections share the pool, so a single one may use many.")
+          .metavar("N")
+          .default_value(kBackgroundPoolEntriesPerReflection)
+          .scan<'u', uint32_t>();
 
         add_argument("--min_zeta")
           .help(
@@ -374,12 +375,11 @@ int main(int argc, char **argv) {
     logger.info("Background model: {}", parser.get<std::string>("background"));
 
     // Checked with the other options, so a bad value fails before sigma
-    // estimation and bbox computation. NaN fails both comparisons.
-    const double background_memory_fraction =
-      parser.get<double>("background.memory_fraction");
-    if (!(background_memory_fraction > 0.0 && background_memory_fraction <= 1.0)) {
-        logger.error("--background.memory_fraction must be in (0, 1], got {}",
-                     background_memory_fraction);
+    // estimation and bbox computation.
+    const uint32_t background_pool_entries_per_reflection =
+      parser.get<uint32_t>("background.pool_entries_per_reflection");
+    if (background_pool_entries_per_reflection == 0) {
+        logger.error("--background.pool_entries_per_reflection must be at least 1");
         return 1;
     }
 
@@ -781,67 +781,35 @@ int main(int argc, char **argv) {
     // These persist across all images and accumulate atomically
     DeviceBuffer<accumulator_t> d_foreground_sum(num_reflections);
     DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
-    // Per-reflection background slot table: one entry per distinct pixel value,
-    // keyed on the value, plus a spill counter for pixels dropped by a full
-    // table. The Kabsch kernel fills these; compute_background() reduces them
-    // into an estimate after the image loop.
+    // Shared background pool: one entry per distinct (reflection, value) pair,
+    // plus a per-reflection spill counter for pixels that arrive once the pool
+    // is full. The Kabsch kernel fills these; compute_background() reduces them
+    // into estimates after the image loop.
     //
-    // Each table is sized to its bbox volume clipped to the image.
-    std::vector<uint64_t> background_volumes(num_reflections, 0);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        if (dont_integrate[i]) continue;
-        const auto &bbox = computed_bboxes[i];
-        const int64_t w =
-          std::min<int64_t>(bbox.x_max, width) - std::max<int64_t>(bbox.x_min, 0);
-        const int64_t h =
-          std::min<int64_t>(bbox.y_max, height) - std::max<int64_t>(bbox.y_min, 0);
-        const int64_t d = bbox.z_max - bbox.z_min;
-        if (w > 0 && h > 0 && d > 0) {
-            background_volumes[i] = static_cast<uint64_t>(w * h * d);
-        }
+    // CUB's radix sort counts items in an int, which bounds the pool.
+    const uint64_t background_pool_capacity =
+      static_cast<uint64_t>(num_reflections) * background_pool_entries_per_reflection;
+    if (background_pool_capacity > static_cast<uint64_t>(INT32_MAX)) {
+        logger.error(
+          "Background pool of {} entries exceeds the sort limit of {} "
+          "(--background.pool_entries_per_reflection times the reflection count)",
+          background_pool_capacity,
+          INT32_MAX);
+        return 1;
     }
-
-    // Free memory is measured before the reader threads allocate their image
-    // buffers, so the budget is a fraction of it rather than all of it.
-    size_t free_bytes = 0;
-    size_t total_bytes = 0;
-    CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
-    const size_t background_budget =
-      static_cast<size_t>(background_memory_fraction * static_cast<double>(free_bytes));
-    const uint32_t background_cap =
-      choose_background_slot_cap(background_volumes, background_budget);
-    const BackgroundSlotLayout background_layout =
-      background_slot_layout(background_volumes, background_cap);
-
-    DeviceBuffer<unsigned long long> d_background_slots(background_layout.total_slots);
-    DeviceBuffer<BackgroundSlotRange> d_background_ranges(num_reflections);
-    d_background_ranges.assign(background_layout.ranges.data());
+    DeviceBuffer<unsigned long long> d_background_pool_keys(background_pool_capacity);
+    DeviceBuffer<uint32_t> d_background_pool_counts(background_pool_capacity);
+    BackgroundPool background_pool;
+    background_pool.keys = d_background_pool_keys.data();
+    background_pool.counts = d_background_pool_counts.data();
+    background_pool.capacity = static_cast<uint32_t>(background_pool_capacity);
     DeviceBuffer<uint32_t> d_background_spill(num_reflections);
-
-    // The uncapped total against the budget says whether the cap bound at all,
-    // and the capped count is how many reflections can still spill.
-    {
-        constexpr double kMiB = 1024.0 * 1024.0;
-        const size_t slot_bytes = sizeof(unsigned long long);
-        const double used_mib = background_layout.total_slots * slot_bytes / kMiB;
-        const double budget_mib = background_budget / kMiB;
-        logger.info(
-          "Background slot tables: {:.1f} MiB for {} reflections (budget {:.1f} MiB, "
-          "uncapped {:.1f} MiB), cap {} slots, {} reflection(s) capped",
-          used_mib,
-          num_reflections,
-          budget_mib,
-          background_total_slots(background_volumes, UINT32_MAX) * slot_bytes / kMiB,
-          background_cap,
-          background_layout.num_capped);
-        if (used_mib > budget_mib) {
-            logger.warn(
-              "Background slot tables at the floor of {} slots overrun the budget "
-              "by {:.1f} MiB; raise --background.memory_fraction",
-              BG_SLOT_CAP_FLOOR,
-              used_mib - budget_mib);
-        }
-    }
+    logger.info("Background pool: {} entries ({} per reflection), {:.1f} MiB",
+                background_pool_capacity,
+                background_pool_entries_per_reflection,
+                background_pool_capacity
+                  * (sizeof(unsigned long long) + sizeof(uint32_t))
+                  / (1024.0 * 1024.0));
     // Reduced background estimates (written by compute_background()).
     DeviceBuffer<double> d_background_mean(num_reflections);
     DeviceBuffer<double> d_background_sum_value(num_reflections);
@@ -864,11 +832,12 @@ int main(int argc, char **argv) {
 
     cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t));
     cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t));
-    // An all-zero slot is empty, because a stored entry always has a count of
-    // at least 1.
-    cudaMemset(d_background_slots.data(),
-               0,
-               background_layout.total_slots * sizeof(unsigned long long));
+    // An all-ones byte fill makes every key BG_POOL_EMPTY_KEY.
+    cudaMemset(d_background_pool_keys.data(),
+               0xFF,
+               background_pool_capacity * sizeof(unsigned long long));
+    cudaMemset(
+      d_background_pool_counts.data(), 0, background_pool_capacity * sizeof(uint32_t));
     cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t));
     cudaMemset(
       d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
@@ -1049,8 +1018,7 @@ int main(int argc, char **argv) {
                                          fg_algorithm,
                                          d_foreground_sum.data(),
                                          d_foreground_count.data(),
-                                         d_background_slots.data(),
-                                         d_background_ranges.data(),
+                                         background_pool,
                                          d_background_spill.data(),
                                          d_intensity_times_x.data(),
                                          d_intensity_times_y.data(),
@@ -1099,16 +1067,21 @@ int main(int argc, char **argv) {
     // Reduce each reflection's background histogram into an estimate on the
     // device (Tukey/IQR constant model), then copy the small results back.
     logger.info("Reducing background histograms for {} reflections", num_reflections);
-    compute_background(background_model,
-                       d_background_slots.data(),
-                       d_background_ranges.data(),
-                       d_background_spill.data(),
-                       num_reflections,
-                       d_background_mean.data(),
-                       d_background_sum_value.data(),
-                       d_background_count.data(),
-                       d_background_success.data(),
-                       0);
+    const uint32_t background_pool_occupied =
+      compute_background(background_model,
+                         background_pool,
+                         d_background_spill.data(),
+                         num_reflections,
+                         d_background_mean.data(),
+                         d_background_sum_value.data(),
+                         d_background_count.data(),
+                         d_background_success.data(),
+                         0);
+    // How full the pool got is the margin before it would start to spill.
+    logger.info("Background pool: {} of {} entries used ({:.1f}%)",
+                background_pool_occupied,
+                background_pool_capacity,
+                100.0 * background_pool_occupied / background_pool_capacity);
     cudaDeviceSynchronize();
     cuda_throw_error();
 #pragma endregion Background Reduction
@@ -1144,12 +1117,12 @@ int main(int argc, char **argv) {
     d_intensity_times_z.extract(h_intensity_times_z.data());
     d_success.extract(h_success.data());
 
-    // A slot table holds any pixel value, so it has no range to run out of;
-    // what it can exhaust is the number of DISTINCT values per reflection. A
-    // reflection that spills has lost pixels of unknown value, so the reduction
-    // already failed it. Only a reflection whose bbox exceeds the cap can spill.
-    // Report the count rather than aborting: the rest of the run is unaffected,
-    // and the number is what says whether the budget needs raising.
+    // The pool holds any pixel value, so it has no range to run out of; what it
+    // can exhaust is the number of distinct (reflection, value) pairs across the
+    // sweep. A reflection that spills has lost pixels of unknown value, so the
+    // reduction already failed it. Report the count rather than aborting: the
+    // rest of the run is unaffected, and the number is what says whether the
+    // pool needs enlarging.
     {
         size_t spilling = 0;
         for (size_t i = 0; i < num_reflections; ++i) {
@@ -1159,12 +1132,12 @@ int main(int argc, char **argv) {
         }
         if (spilling > 0) {
             logger.warn(
-              "{} of {} reflection(s) held more distinct background values than "
-              "the cap of {} slots and were not integrated; raise "
-              "--background.memory_fraction if this is a significant fraction",
+              "The background pool filled and {} of {} reflection(s) lost pixels "
+              "and were not integrated; raise "
+              "--background.pool_entries_per_reflection above {}",
               spilling,
               num_reflections,
-              background_cap);
+              background_pool_entries_per_reflection);
         }
     }
 
@@ -1240,7 +1213,7 @@ int main(int argc, char **argv) {
     if (background_failures > 0) {
         logger.warn(
           "Background estimate rejected for {} of {} reflections with "
-          "foreground pixels; any that spilled their slot table are counted above",
+          "foreground pixels; any that lost pixels to a full pool are counted above",
           background_failures,
           num_reflections);
     }
