@@ -1148,7 +1148,12 @@ int main(int argc, char **argv) {
     std::vector<double> backgrounds(num_reflections);  // b̄  (background mean per pixel)
     std::vector<double> background_sigmas(num_reflections);  // σ(b̄)
     size_t valid_reflections = 0;
-    size_t background_failures = 0;  // fg present but Tukey estimate rejected
+    size_t background_failures = 0;  // fg present but background estimate rejected
+    // 1 for a reflection written to the output: it was not skipped, the kernel
+    // kept its success flag, and it has foreground pixels and a valid
+    // background estimate. The count, the statistics and the output all read
+    // this.
+    std::vector<uint8_t> success_final(num_reflections, 0);
 
     for (size_t i = 0; i < num_reflections; ++i) {
         uint32_t fg_count = h_foreground_count[i];
@@ -1166,9 +1171,8 @@ int main(int argc, char **argv) {
 
         double fg_sum = h_foreground_sum[i];
 
-        // Tally rejected estimates (no inlier pixels, or the IQR fence ran past
-        // the histogram range) purely for error reporting and logging; the
-        // reflection is marked unintegrated below regardless.
+        // Tally rejected estimates (no inlier pixels, too few pixels for the
+        // GLM, or pixels lost to a full pool) for the warning below.
         if (!h_background_success[i]) {
             ++background_failures;
         }
@@ -1203,7 +1207,12 @@ int main(int argc, char **argv) {
         sigmas[i] = (variance > 0.0) ? std::sqrt(variance) : 0.0;
         backgrounds[i] = bg_mean;
         background_sigmas[i] = (bg_variance > 0.0) ? std::sqrt(bg_variance) : 0.0;
-        valid_reflections++;
+
+        const bool ok = h_success[i] && h_background_success[i] && !dont_integrate[i];
+        success_final[i] = ok ? 1 : 0;
+        if (ok) {
+            valid_reflections++;
+        }
     }
 
     logger.info("Summation integration complete: {} valid reflections out of {}",
@@ -1228,7 +1237,7 @@ int main(int argc, char **argv) {
         size_t n_positive_isigma = 0;
         double sum_i_over_sigma = 0.0;
         for (size_t i = 0; i < num_reflections; ++i) {
-            if (variances[i] >= 0) {
+            if (success_final[i]) {
                 sum_intensity += intensities[i];
                 sum_sigma += sigmas[i];
                 sum_bg += backgrounds[i];
@@ -1274,7 +1283,6 @@ int main(int argc, char **argv) {
     double pf = beam.get_polarization_fraction();
     LPCorrection lpcalculator(s0, pn, pf, rotation_axis);
 
-    std::vector<uint8_t> success_final(num_reflections);
     for (size_t i = 0; i < num_reflections; ++i) {
         nfg_out[i] = static_cast<int>(h_foreground_count[i]);
         nbg_out[i] = static_cast<int>(h_background_count[i]);
@@ -1285,12 +1293,6 @@ int main(int argc, char **argv) {
         // device reduction.
         bg_sum_out[i] = h_background_success[i] ? h_background_sum_value[i] : 0.0;
         bg_mean_out[i] = h_background_success[i] ? h_background_mean[i] : 0.0;
-
-        // Success: kernel-flagged AND fg_count > 0 AND a valid background
-        // estimate AND not dont_integrated.
-        bool ok = h_success[i] && (h_foreground_count[i] > 0) && h_background_success[i]
-                  && !dont_integrate[i];
-        success_final[i] = ok ? 1 : 0;
 
         // Centre-of-mass: kernel accumulated intensity·(2k+1), so divide by 2·I.
         double fg_sum_d = static_cast<double>(h_foreground_sum[i]);
