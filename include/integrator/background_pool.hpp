@@ -4,18 +4,14 @@
  *
  * Each background pixel is recorded as one entry per distinct (reflection,
  * value) pair, in a single open-addressed hash table shared by every
- * reflection. A reflection needs as many entries as it has distinct background
- * values, which is small and heavy-tailed: a median of 3 on a low-background
- * sweep and 12 on a high-background one, with single reflections reaching a
- * few hundred. Sharing one pool sized to the average lets those few borrow the
- * space the many leave unused, so no reflection has a cap of its own.
+ * reflection. A reflection needs one entry per distinct background value, and
+ * sharing one pool sized to the average lets reflections with many values use
+ * the space others leave unused, so no reflection has a cap of its own.
  *
- * The pool is sized to a fixed number of entries per reflection rather than to
- * free device memory, so its cost is known before any image is read. It fills
- * only when the whole sweep needs more distinct values than that average
- * allows, and every pixel that finds no free entry from then on is counted as
- * spill against its reflection. The integrator logs how full the pool got so
- * the margin is visible on every run.
+ * The pool is sized to a fixed number of entries per reflection, so its cost is
+ * known before any image is read. A pixel that finds no free entry within the
+ * probe cap is counted as spill against its reflection, and the integrator logs
+ * how full the pool got.
  *
  * A key packs the reflection index into the high 32 bits and the pixel value
  * into the low 32, so sorting the keys groups each reflection's entries
@@ -35,6 +31,10 @@
 // a margin of about 5x. The integrator exposes it as
 // --background.pool_entries_per_reflection.
 constexpr uint32_t kBackgroundPoolEntriesPerReflection = 64;
+
+// Most entries an insert inspects before counting its pixel as spill, so a full
+// pool fails fast instead of scanning every entry.
+constexpr uint32_t kBackgroundPoolMaxProbes = 128;
 
 // Key of an empty entry. Pixel values above INT32_MAX are dropped before they
 // reach the pool, so the low word of a real key is never all ones and no real

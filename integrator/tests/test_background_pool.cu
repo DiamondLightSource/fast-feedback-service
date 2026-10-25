@@ -197,10 +197,9 @@ TEST(BackgroundPool, KeepsTheSameValueInDifferentReflectionsApart) {
     }
 }
 
-// A pool with one entry per distinct pair holds every pair, filling the last
-// entry, with nothing spilled.
+// A pool no larger than the probe cap fills to its last entry without spilling.
 TEST(BackgroundPool, HoldsAsManyDistinctPairsAsItHasEntries) {
-    for (uint32_t capacity : {1u, 37u, 1000u}) {
+    for (uint32_t capacity : {1u, 37u, kBackgroundPoolMaxProbes}) {
         DevicePool dp(capacity, 3);
         std::vector<Pixel> pixels;
         for (uint32_t i = 0; i < capacity; ++i) pixels.push_back({i % 3, 1000 + 7 * i});
@@ -225,6 +224,30 @@ TEST(BackgroundPool, SpillsExactlyThePairsBeyondItsCapacity) {
     const std::vector<uint32_t> spill = dp.spill();
     EXPECT_EQ(spill[0] + spill[1], 25u) << "spill must count the excess";
     EXPECT_EQ(dp.contents().size(), 37u) << "the pool must fill before it spills";
+}
+
+// An overfull pool larger than the cap spills at least the excess and still
+// counts every stored pair exactly.
+TEST(BackgroundPool, GivesUpAfterTheProbeCapWhenOverfull) {
+    const uint32_t capacity = 20 * kBackgroundPoolMaxProbes;
+    const uint32_t pairs = capacity + 500;
+    DevicePool dp(capacity, 4);
+    std::vector<Pixel> pixels;
+    for (uint32_t i = 0; i < pairs; ++i) {
+        for (int c = 0; c < 3; ++c) pixels.push_back({i % 4, 1000 + 7 * i});
+    }
+    dp.insert(pixels);
+
+    uint32_t spilled = 0, stored = 0;
+    for (uint32_t s : dp.spill()) spilled += s;
+    const auto contents = dp.contents();
+    for (const auto &[pair, count] : contents) {
+        stored += count;
+        EXPECT_EQ(count, 3u) << "each stored pair saw all three of its pixels";
+    }
+    EXPECT_EQ(stored + spilled, pixels.size()) << "every pixel is stored or spilled";
+    EXPECT_GE(spilled, 3u * 500) << "at least the excess pairs spill";
+    EXPECT_LE(contents.size(), capacity) << "no more pairs than entries";
 }
 
 // Repeated values share one entry, so a small pool holds many pixels when the

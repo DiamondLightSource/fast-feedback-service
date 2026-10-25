@@ -40,8 +40,8 @@
  * @param pool The shared pool.
  * @param reflection Index of the reflection the pixel belongs to.
  * @param value Background pixel value to record, at most INT32_MAX.
- * @return false when every entry is occupied by other keys, so the pixel was
- *         dropped and the caller must count it as spill.
+ * @return false when no free entry was found within kBackgroundPoolMaxProbes,
+ *         so the caller must count the pixel as spill.
  */
 __device__ inline bool background_pool_insert(const BackgroundPool &pool,
                                               uint32_t reflection,
@@ -60,7 +60,9 @@ __device__ inline bool background_pool_insert(const BackgroundPool &pool,
     // Home entry floor(capacity * hash / 2^32), the multiply-shift range reduction
     uint32_t idx = __umulhi(hash, pool.capacity);
 
-    for (uint32_t probe = 0; probe < pool.capacity; ++probe) {
+    // Keys never move, so a key stored within the cap is found within it again.
+    const uint32_t max_probes = min(pool.capacity, kBackgroundPoolMaxProbes);
+    for (uint32_t probe = 0; probe < max_probes; ++probe) {
         unsigned long long cur = __ldcg(&pool.keys[idx]);
         if (cur == BG_POOL_EMPTY_KEY) {
             cur = atomicCAS(&pool.keys[idx], BG_POOL_EMPTY_KEY, key);
@@ -73,8 +75,8 @@ __device__ inline bool background_pool_insert(const BackgroundPool &pool,
             atomicAdd(&pool.counts[idx], 1u);
             return true;
         }
-        // A step of one that wraps at capacity visits every entry, so the loop
-        // bound is reached only once the pool is full.
+        // A step of one that wraps at capacity, so a pool no larger than the
+        // cap is searched in full.
         if (++idx == pool.capacity) {
             idx = 0;
         }

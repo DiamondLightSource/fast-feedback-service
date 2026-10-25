@@ -1133,8 +1133,7 @@ int main(int argc, char **argv) {
         }
         if (spilling > 0) {
             logger.warn(
-              "The background pool filled and {} of {} reflection(s) lost pixels "
-              "and were not integrated; raise "
+              "{} of {} reflection(s) lost background pixels to a full pool; set "
               "--background.pool_entries_per_reflection above {}",
               spilling,
               num_reflections,
