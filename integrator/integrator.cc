@@ -798,6 +798,33 @@ int main(int argc, char **argv) {
           UINT32_MAX);
         return 1;
     }
+
+    // Two copies of the pool must fit beside the image buffers, since the
+    // reduction sorts into a second one.
+    {
+        constexpr double kGiB = 1024.0 * 1024.0 * 1024.0;
+        constexpr size_t kOtherAllocationsMargin = size_t{256} << 20;
+        const size_t entry_bytes = sizeof(unsigned long long) + sizeof(uint32_t);
+        const size_t pool_bytes = 2 * background_pool_capacity * entry_bytes;
+        const size_t image_bytes =
+          static_cast<size_t>(num_cpu_threads) * width * height * sizeof(pixel_t);
+        size_t free_bytes = 0;
+        size_t total_bytes = 0;
+        CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
+        const size_t other_bytes = image_bytes + kOtherAllocationsMargin;
+        if (pool_bytes + other_bytes > free_bytes) {
+            const size_t room = free_bytes > other_bytes ? free_bytes - other_bytes : 0;
+            const size_t fits =
+              room / (2 * entry_bytes * std::max<size_t>(num_reflections, 1));
+            logger.error(
+              "The background pool needs {:.1f} GiB but {:.1f} GiB is free; set "
+              "--background.pool_entries_per_reflection to {} or lower",
+              pool_bytes / kGiB,
+              room / kGiB,
+              fits);
+            return 1;
+        }
+    }
     DeviceBuffer<unsigned long long> d_background_pool_keys(background_pool_capacity);
     DeviceBuffer<uint32_t> d_background_pool_counts(background_pool_capacity);
     BackgroundPool background_pool;

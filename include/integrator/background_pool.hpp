@@ -26,11 +26,8 @@
 
 #include "integrator/background.hpp"
 
-// Default pool size, in entries per reflection on average. A high-background
-// 3600-image sweep measured 12.7 distinct values per reflection, so 64 leaves
-// a margin of about 5x. The integrator exposes it as
-// --background.pool_entries_per_reflection.
-constexpr uint32_t kBackgroundPoolEntriesPerReflection = 64;
+// Default pool size, in entries per reflection on average.
+constexpr uint32_t kBackgroundPoolEntriesPerReflection = 128;
 
 // Most entries an insert inspects before counting its pixel as spill, so a full
 // pool fails fast instead of scanning every entry.
