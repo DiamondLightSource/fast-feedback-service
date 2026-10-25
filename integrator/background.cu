@@ -51,9 +51,9 @@ __device__ uint32_t lower_bound_key(const unsigned long long *keys,
  * @brief One thread per reflection: evaluate the background model over that
  *        reflection's run of the sorted pool.
  *
- * The run is repacked into (value, count) entries in the pool's own key
- * array, which the sort has finished reading, so BackgroundHistogramView sees
- * the same layout the baseline builds. The runs do not overlap, so each thread
+ * The run is repacked into (value, count) entries in the key buffer the sort
+ * did not finish in, so BackgroundHistogramView sees the same layout the
+ * baseline builds. The runs do not overlap, so each thread
  * writes only its own range.
  */
 __global__ void background_reduce_kernel(BackgroundModel model,
@@ -137,36 +137,23 @@ uint32_t compute_background(BackgroundModel model,
     // indexes its entries with.
     const uint32_t n = pool.capacity;
 
-    // Sorting into separate output arrays leaves the input key array free to
-    // hold the repacked entries afterwards.
-    DeviceBuffer<unsigned long long> d_sorted_keys(pool.capacity);
-    DeviceBuffer<uint32_t> d_sorted_counts(pool.capacity);
+    // DoubleBuffer keeps the peak at two copies of the pool; the other form
+    // allocates a third. The key buffer the sort did not finish in holds the
+    // repacked entries.
+    DeviceBuffer<unsigned long long> d_spare_keys(pool.capacity);
+    DeviceBuffer<uint32_t> d_spare_counts(pool.capacity);
+    cub::DoubleBuffer<unsigned long long> keys(pool.keys, d_spare_keys.data());
+    cub::DoubleBuffer<uint32_t> counts(pool.counts, d_spare_counts.data());
     size_t temp_bytes = 0;
-    cudaError_t err = cub::DeviceRadixSort::SortPairs(nullptr,
-                                                      temp_bytes,
-                                                      pool.keys,
-                                                      d_sorted_keys.data(),
-                                                      pool.counts,
-                                                      d_sorted_counts.data(),
-                                                      n,
-                                                      0,
-                                                      end_bit,
-                                                      stream);
+    cudaError_t err = cub::DeviceRadixSort::SortPairs(
+      nullptr, temp_bytes, keys, counts, n, 0, end_bit, stream);
     if (err != cudaSuccess) {
         throw std::runtime_error(fmt::format("Background pool sort sizing failed: {}",
                                              cudaGetErrorString(err)));
     }
     DeviceBuffer<uint8_t> d_temp(temp_bytes);
-    err = cub::DeviceRadixSort::SortPairs(d_temp.data(),
-                                          temp_bytes,
-                                          pool.keys,
-                                          d_sorted_keys.data(),
-                                          pool.counts,
-                                          d_sorted_counts.data(),
-                                          n,
-                                          0,
-                                          end_bit,
-                                          stream);
+    err = cub::DeviceRadixSort::SortPairs(
+      d_temp.data(), temp_bytes, keys, counts, n, 0, end_bit, stream);
     if (err != cudaSuccess) {
         throw std::runtime_error(
           fmt::format("Background pool sort failed: {}", cudaGetErrorString(err)));
@@ -177,9 +164,9 @@ uint32_t compute_background(BackgroundModel model,
       (num_reflections + BACKGROUND_REDUCE_THREADS - 1) / BACKGROUND_REDUCE_THREADS);
     background_reduce_kernel<<<blocks, BACKGROUND_REDUCE_THREADS, 0, stream>>>(
       model,
-      d_sorted_keys.data(),
-      d_sorted_counts.data(),
-      pool.keys,
+      keys.Current(),
+      counts.Current(),
+      keys.Alternate(),
       pool.capacity,
       d_background_spill,
       num_reflections,

@@ -111,8 +111,7 @@ __device__ inline void background_accumulate(const BackgroundPool &pool,
  *
  * Sorts the pool by key, which groups each reflection's entries and orders
  * them by value, then evaluates the model over each reflection's run with one
- * thread per reflection. The pool is consumed: its key array is reused to hold
- * the repacked entries, so it must not be read again afterwards.
+ * thread per reflection. The pool is consumed and must not be read afterwards.
  *
  * @param model Background model to apply (Constant = Tukey; Glm = robust-Poisson GLM)
  * @param pool Device pool filled by the Kabsch kernel
