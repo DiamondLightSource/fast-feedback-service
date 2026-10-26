@@ -879,6 +879,20 @@ int main(int argc, char **argv) {
         success_init[i] = dont_integrate[i] ? 0 : 1;
     }
     d_success.assign(success_init.data());
+
+    // Every image's reflection indices in one device array, uploaded once, with
+    // each image's start offset. A per-image allocation would end in a cudaFree,
+    // which waits for the whole device and so serialises the reader threads.
+    std::unordered_map<int, size_t> image_index_offset;
+    std::vector<size_t> all_reflection_indices;
+    for (const auto &[image, refls] : reflections_by_image) {
+        image_index_offset[image] = all_reflection_indices.size();
+        all_reflection_indices.insert(
+          all_reflection_indices.end(), refls.begin(), refls.end());
+    }
+    DeviceBuffer<size_t> d_all_reflection_indices(all_reflection_indices.size());
+    d_all_reflection_indices.assign(all_reflection_indices.data());
+
     cuda_throw_error();
 #pragma endregion Prep GPU Data Buffers
 
@@ -890,6 +904,9 @@ int main(int argc, char **argv) {
         threads.emplace_back([&, thread_id]() {
             auto stop_token = global_stop.get_token();
             CudaStream stream;  // Per-thread CUDA stream
+            // Recorded after each image's host-to-device copy, which reads
+            // host_image until it completes.
+            CudaEvent copy_done;
 
             // Full image buffers for decompression (pinned memory for faster transfer)
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
@@ -969,7 +986,9 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                // Decompress the data into pinned host memory
+                // Decompress the data into pinned host memory, once the previous
+                // image's copy out of it has finished.
+                copy_done.synchronize();
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
                     // Returns the bytes consumed from the chunk, or a
@@ -1005,15 +1024,15 @@ int main(int argc, char **argv) {
                                   height,
                                   cudaMemcpyHostToDevice,
                                   stream);
+                copy_done.record(stream);
                 cuda_throw_error();
 
-                // Get reflection indices for this image and copy to device
-                const auto &refl_indices = reflections_by_image[image_num];
-                size_t num_refls_this_image = refl_indices.size();
-
-                // Allocate per-image device buffer for reflection indices
-                DeviceBuffer<size_t> d_reflection_indices(num_refls_this_image);
-                d_reflection_indices.assign(refl_indices.data());
+                // This image's reflections, within the indices uploaded before
+                // the loop.
+                const size_t num_refls_this_image =
+                  reflections_by_image.at(image_num).size();
+                const size_t *d_reflection_indices =
+                  d_all_reflection_indices.data() + image_index_offset.at(image_num);
 
                 // Launch Kabsch transform kernel for this image
                 // This computes Kabsch coordinates and atomically accumulates
@@ -1037,7 +1056,7 @@ int main(int argc, char **argv) {
                                          d_s1_vectors.data(),
                                          d_phi_values.data(),
                                          d_bboxes.data(),
-                                         d_reflection_indices.data(),
+                                         d_reflection_indices,
                                          num_refls_this_image,
                                          d_mask.data(),
                                          corner_tile_by_image.at(image_num),
