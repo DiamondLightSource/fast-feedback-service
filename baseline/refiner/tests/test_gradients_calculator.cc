@@ -20,34 +20,30 @@ using Eigen::Vector3d;
 using json = nlohmann::json;
 
 // Example models from c2sum test dataset
-json panel_data = {
-    {"name", "Panel"},
-    {"type", "SENSOR_PAD"},
-    {"fast_axis", {1.0, 0.0, 0.0}},
-    {"slow_axis", {0.0, -1.0, 0.0}},
-    {"origin", {-218.66704000000001, 209.22080000000003, -170.0}},
-    {"raw_image_offset", {0, 0}},
-    {"image_size", {2463, 2527}},
-    {"pixel_size", {0.17200000000000001, 0.17200000000000001}},
-    {"trusted_range", {0.0, 1224245.0}},
-    {"thickness", 0.32},
-    {"material", "Si"},
-    {"mu", 7.896517868233737},
-    {"identifier", ""},
-    {"gain", 1.0},
-    {"pedestal", 0.0},
-    {"px_mm_strategy", {
-        {"type", "ParallaxCorrectedPxMmStrategy"}
-    }}
-};
+json panel_data = {{"name", "Panel"},
+                   {"type", "SENSOR_PAD"},
+                   {"fast_axis", {1.0, 0.0, 0.0}},
+                   {"slow_axis", {0.0, -1.0, 0.0}},
+                   {"origin", {-218.66704000000001, 209.22080000000003, -170.0}},
+                   {"raw_image_offset", {0, 0}},
+                   {"image_size", {2463, 2527}},
+                   {"pixel_size", {0.17200000000000001, 0.17200000000000001}},
+                   {"trusted_range", {0.0, 1224245.0}},
+                   {"thickness", 0.32},
+                   {"material", "Si"},
+                   {"mu", 7.896517868233737},
+                   {"identifier", ""},
+                   {"gain", 1.0},
+                   {"pedestal", 0.0},
+                   {"px_mm_strategy", {{"type", "ParallaxCorrectedPxMmStrategy"}}}};
 
 TEST(BaselineIndexer, gradients_calculator_test) {
     MonochromaticBeam beam(1.23985);
     std::vector<Vector3d> axes;
-    axes.push_back({1.0,0.0,0.0});
+    axes.push_back({1.0, 0.0, 0.0});
     axes.push_back({0.914, 0.279, -0.297});
-    axes.push_back({1.0,0.0,0.0});
-    std::vector<double> angles = {102.6,37.9,0.0};
+    axes.push_back({1.0, 0.0, 0.0});
+    std::vector<double> angles = {102.6, 37.9, 0.0};
     std::vector<std::string> names = {"PHI", "KAPPA", "OMEGA"};
     std::size_t scan_axis = 2;
     Goniometer goniometer(axes, angles, names, scan_axis);

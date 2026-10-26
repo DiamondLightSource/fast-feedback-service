@@ -15,10 +15,10 @@ TEST(BaselineIndexer, beam_parameterisation) {
     // Example models from c2sum test dataset
     MonochromaticBeam beam(1.23985);
     std::vector<Vector3d> axes;
-    axes.push_back({1.0,0.0,0.0});
+    axes.push_back({1.0, 0.0, 0.0});
     axes.push_back({0.914, 0.279, -0.297});
-    axes.push_back({1.0,0.0,0.0});
-    std::vector<double> angles = {102.6,37.9,0.0};
+    axes.push_back({1.0, 0.0, 0.0});
+    std::vector<double> angles = {102.6, 37.9, 0.0};
     std::vector<std::string> names = {"PHI", "KAPPA", "OMEGA"};
     std::size_t scan_axis = 2;
     Goniometer goniometer(axes, angles, names, scan_axis);
