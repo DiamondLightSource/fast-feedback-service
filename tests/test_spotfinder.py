@@ -1,6 +1,7 @@
 """
 Tests for the fast-feedback spotfinder. Output values are compared to the equivalent
-processing from dials v3.25.0, which should be exactly the same as the GPU spotfinder.
+processing from dials v3.dev-1533-g00d80c9dc (dials/dials#3198, which breaks peak
+ties toward the centroid), which should be exactly the same as the GPU spotfinder.
 
 Equivalent dials command:
 dials.import $(dials.data get -q thaumatin_i03_rotation)/thau_2_1.nxs image_range=1,10
@@ -57,7 +58,7 @@ def test_dispersion(dials_data, tmp_path):
     n_filtered_min_size = None
     n_filtered_min_size_expected = 1468  # number removed by filtering.
     n_filtered_max_sep = None
-    n_filtered_max_sep_expected = 33  # number removed by filtering.
+    n_filtered_max_sep_expected = 31  # number removed by filtering.
     expected_strong_pixels = {
         0: 1399,
         1: 1372,
@@ -103,15 +104,15 @@ def test_dispersion(dials_data, tmp_path):
         mean = np.mean(data, axis=0)
         assert minimum.tolist() == pytest.approx([388.14, 208.50, 0.50], abs=5e-3)
         assert maximum.tolist() == pytest.approx([4071.50, 4297.79, 9.50], abs=5e-3)
-        assert mean.tolist() == pytest.approx([2074.33, 2117.60, 4.79], abs=5e-3)
+        assert mean.tolist() == pytest.approx([2074.41, 2117.33, 4.79], abs=5e-3)
         ## Test that the spot variance quantities are output.
         spot_extent = file["/dials/processing/group_0/spot_extent_z"]
         assert np.min(spot_extent) == 1.0
         assert np.max(spot_extent) == 10.0
         sigma_b_variance = file["/dials/processing/group_0/sigma_b_variance"]
         sigma_m_variance = file["/dials/processing/group_0/sigma_m_variance"]
-        assert np.mean(sigma_b_variance) == pytest.approx(4.105648e-8, rel=1e-4)
-        assert np.mean(sigma_m_variance) == pytest.approx(8.60468e-7, rel=1e-4)
+        assert np.mean(sigma_b_variance) == pytest.approx(4.10969e-8, rel=1e-4)
+        assert np.mean(sigma_m_variance) == pytest.approx(8.59877e-7, rel=1e-4)
 
 
 def test_dispersion_dmin(dials_data, tmp_path):
@@ -223,7 +224,7 @@ def test_dispersion_extended(dials_data, tmp_path):
     n_filtered_min_size = None
     n_filtered_min_size_expected = 526  # number removed by filtering.
     n_filtered_max_sep = None
-    n_filtered_max_sep_expected = 35  # number removed by filtering.
+    n_filtered_max_sep_expected = 32  # number removed by filtering.
     expected_strong_pixels = {
         0: 2753,
         1: 2650,
@@ -269,7 +270,7 @@ def test_dispersion_extended(dials_data, tmp_path):
         mean = np.mean(data, axis=0)
         assert minimum.tolist() == pytest.approx([388.26, 147.63, 0.50], abs=5e-3)
         assert maximum.tolist() == pytest.approx([4071.50, 4296.19, 9.50], abs=5e-3)
-        assert mean.tolist() == pytest.approx([2080.53, 2130.00, 4.80], abs=5e-3)
+        assert mean.tolist() == pytest.approx([2080.74, 2128.71, 4.80], abs=5e-3)
 
 
 def test_dispersion_extended_dmin(dials_data, tmp_path):
@@ -456,7 +457,7 @@ def test_dispersion_extended_32bit(dials_data, tmp_path):
     ## First check that the expected number of strong pixels per image have been found
     found_strong_pixels = {}
     n_spots_found = None
-    n_spots_expected = 4989
+    n_spots_expected = 5013
 
     expected_strong_pixels = {}
     root_dir = Path(os.getenv("FFS_ROOT_DIR"))
@@ -494,4 +495,4 @@ def test_dispersion_extended_32bit(dials_data, tmp_path):
         mean = np.mean(data, axis=0)
         assert minimum.tolist() == pytest.approx([46.67, 344.61, 0.50], abs=5e-3)
         assert maximum.tolist() == pytest.approx([2788.09, 3005.04, 0.50], abs=5e-3)
-        assert mean.tolist() == pytest.approx([1596.25, 1710.47, 0.50], abs=5e-3)
+        assert mean.tolist() == pytest.approx([1596.73, 1710.75, 0.50], abs=5e-3)
