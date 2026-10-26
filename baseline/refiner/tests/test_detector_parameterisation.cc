@@ -9,15 +9,32 @@
 #include "detector_parameterisation.cc"
 
 using Eigen::Matrix3d;
+using json = nlohmann::json;
+
+// Example models from c2sum test dataset
+json panel_data = {
+    {"name", "Panel"},
+    {"type", "SENSOR_PAD"},
+    {"fast_axis", {1.0, 0.0, 0.0}},
+    {"slow_axis", {0.0, -1.0, 0.0}},
+    {"origin", {-218.66704000000001, 209.22080000000003, -170.0}},
+    {"raw_image_offset", {0, 0}},
+    {"image_size", {2463, 2527}},
+    {"pixel_size", {0.17200000000000001, 0.17200000000000001}},
+    {"trusted_range", {0.0, 1224245.0}},
+    {"thickness", 0.32},
+    {"material", "Si"},
+    {"mu", 7.896517868233737},
+    {"identifier", ""},
+    {"gain", 1.0},
+    {"pedestal", 0.0},
+    {"px_mm_strategy", {
+        {"type", "ParallaxCorrectedPxMmStrategy"}
+    }}
+};
 
 TEST(BaselineIndexer, detector_parameterisation) {
-    std::string imported_expt =
-      "/dls/i03/data/2024/cm37235-2/processing/JBE/c2sum/imported.expt";
-    std::ifstream f(imported_expt);
-    json elist_json_obj = json::parse(f);
-    json detector_json = elist_json_obj["detector"][0];
-    Detector detector(detector_json);
-    Panel panel = detector.panels()[0];
+    Panel panel(panel_data);
     DetectorParameterisation detector_param(panel);
     // Check the initial params are as expected.
     std::vector<double> p = detector_param.get_params();
