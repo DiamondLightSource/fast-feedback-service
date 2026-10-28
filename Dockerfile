@@ -43,12 +43,14 @@ ENV CCACHE_COMPILERCHECK=content
 # modules are built for its interpreter; cmake, ninja and the compilers resolve
 # to the build environment, which has them where the runtime one does not.
 RUN --mount=type=cache,target=/ccache \
+    --mount=type=cache,target=/deps \
     SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="${FFS_VERSION}" \
     CMAKE_ARGS="-DCUDA_ARCH=all-supported \
                 -DHDF5_ROOT=/opt/ffs \
                 -DCMAKE_INSTALL_RPATH=/opt/ffs/lib \
                 -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
-                -DUSE_REDUCED_PRECISION=OFF" \
+                -DUSE_REDUCED_PRECISION=OFF \
+                -DFETCHCONTENT_BASE_DIR=/deps" \
     /opt/ffs/bin/pip3 install --no-build-isolation --root-user-action=ignore /opt/ffs_src \
     && ccache --show-stats
 
