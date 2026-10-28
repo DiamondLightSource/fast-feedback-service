@@ -85,12 +85,30 @@ jobs:
           restore-keys: |
             ccache-${{ steps.prep.outputs.platform-pair }}-
 
-      - name: Inject ccache into buildx
+      # Persist the fetched dependency sources the same way. These carry
+      # submodules of their own, so a cold run clones a tree of repositories
+      # before anything compiles and one unreachable host fails the configure
+      # step. The key covers the files that choose the dependencies and the
+      # toolchain, so a changed pin or base image starts from an empty
+      # directory rather than reusing trees built against the old one.
+      - name: Restore dependency sources
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/deps-${{ steps.prep.outputs.platform-pair }}
+          key: deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('CMakeLists.txt', 'Dockerfile') }}-${{ github.sha }}
+          restore-keys: |
+            deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('CMakeLists.txt', 'Dockerfile') }}-
+
+      - name: Inject ccache and dependency sources into buildx
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: reproducible-containers/buildkit-cache-dance@v3
         with:
           cache-map: |
-            { "${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}": "/ccache" }
+            {
+              "${{ runner.temp }}/ccache-${{ steps.prep.outputs.platform-pair }}": "/ccache",
+              "${{ runner.temp }}/deps-${{ steps.prep.outputs.platform-pair }}": "/deps"
+            }
 
       # Both images are built in this one job, rather than on a matrix
       # axis, so they can shared a compiled image
