@@ -77,6 +77,30 @@ inline void cuda_check(
 }
 
 /**
+ * @brief Throw if an allocation reported success but produced no pointer.
+ *
+ * A successful allocation guarantees a usable pointer, so this is a broken
+ * runtime contract rather than a CUDA failure and carries no code of its own.
+ *
+ * @param ptr The pointer the allocation was asked to fill.
+ * @param call_name The allocating call, for the message.
+ * @param location The site to attribute the failure to.
+ * @throws cuda_error If ptr is null.
+ */
+inline void cuda_check_allocated(
+  const void *ptr,
+  const char *call_name,
+  const std::source_location location = std::source_location::current()) {
+    if (ptr == nullptr) {
+        throw cuda_error(cudaErrorUnknown,
+                         fmt::format("{}:{}: {} reported success and a null pointer",
+                                     location.file_name(),
+                                     location.line(),
+                                     call_name));
+    }
+}
+
+/**
  * @brief Throw if the immediately preceding kernel launch failed to start.
  *
  * Reads and clears the last-error latch, which is the only channel a launch

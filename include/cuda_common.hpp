@@ -11,6 +11,7 @@
 #include <cinttypes>
 #include <filesystem>
 #include <fstream>
+#include <source_location>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -27,28 +28,25 @@
 // #endif
 
 template <typename T>
-auto make_cuda_malloc(size_t num_items = 1) {
+auto make_cuda_malloc(
+  size_t num_items = 1,
+  const std::source_location location = std::source_location::current()) {
     using Tb = typename std::remove_extent<T>::type;
     Tb *obj = nullptr;
-    auto err = cudaMalloc(&obj, sizeof(Tb) * num_items);
-    if (err != cudaSuccess || obj == nullptr) {
-        throw cuda_error(
-          err, fmt::format("Error in make_cuda_malloc: {}", cuda_error_string(err)));
-    }
+    cuda_check(cudaMalloc(&obj, sizeof(Tb) * num_items), location);
+    cuda_check_allocated(obj, "cudaMalloc", location);
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
 
 template <typename T>
-auto make_cuda_managed_malloc(size_t num_items) {
+auto make_cuda_managed_malloc(
+  size_t num_items,
+  const std::source_location location = std::source_location::current()) {
     using Tb = typename std::remove_extent<T>::type;
     Tb *obj = nullptr;
-    auto err = cudaMallocManaged(&obj, sizeof(Tb) * num_items);
-    if (err != cudaSuccess || obj == nullptr) {
-        throw cuda_error(
-          err,
-          fmt::format("Error in make_cuda_managed_malloc: {}", cuda_error_string(err)));
-    }
+    cuda_check(cudaMallocManaged(&obj, sizeof(Tb) * num_items), location);
+    cuda_check_allocated(obj, "cudaMallocManaged", location);
 
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
@@ -56,31 +54,28 @@ auto make_cuda_managed_malloc(size_t num_items) {
 
 /// Allocate memory using cudaMallocHost
 template <typename T>
-auto make_cuda_pinned_malloc(size_t num_items = 1) {
+auto make_cuda_pinned_malloc(
+  size_t num_items = 1,
+  const std::source_location location = std::source_location::current()) {
     using Tb = typename std::remove_extent<T>::type;
     Tb *obj = nullptr;
-    auto err = cudaMallocHost(&obj, sizeof(Tb) * num_items);
-    if (err != cudaSuccess || obj == nullptr) {
-        throw cuda_error(
-          err,
-          fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
-    }
+    cuda_check(cudaMallocHost(&obj, sizeof(Tb) * num_items), location);
+    cuda_check_allocated(obj, "cudaMallocHost", location);
     auto deleter = [](Tb *ptr) { cudaFreeHost(ptr); };
     return std::shared_ptr<T[]>{obj, deleter};
 }
 
 template <typename T>
-auto make_cuda_pitched_malloc(size_t width, size_t height) {
+auto make_cuda_pitched_malloc(
+  size_t width,
+  size_t height,
+  const std::source_location location = std::source_location::current()) {
     static_assert(!std::is_unbounded_array_v<T>,
                   "T automatically returns unbounded array pointer");
     size_t pitch = 0;
     T *obj = nullptr;
-    auto err = cudaMallocPitch(&obj, &pitch, width * sizeof(T), height);
-    if (err != cudaSuccess || obj == nullptr) {
-        throw cuda_error(
-          err,
-          fmt::format("Error in make_cuda_pitched_malloc: {}", cuda_error_string(err)));
-    }
+    cuda_check(cudaMallocPitch(&obj, &pitch, width * sizeof(T), height), location);
+    cuda_check_allocated(obj, "cudaMallocPitch", location);
 
     auto deleter = [](T *ptr) { cudaFree(ptr); };
 
@@ -101,8 +96,12 @@ struct PitchedMalloc {
     PitchedMalloc(std::shared_ptr<T[]> data, size_t width, size_t height, size_t pitch)
         : _data(data), width(width), height(height), pitch(pitch) {}
 
-    PitchedMalloc(size_t width, size_t height) : width(width), height(height) {
-        auto [alloc, alloc_pitch] = make_cuda_pitched_malloc<T>(width, height);
+    PitchedMalloc(size_t width,
+                  size_t height,
+                  const std::source_location location = std::source_location::current())
+        : width(width), height(height) {
+        auto [alloc, alloc_pitch] =
+          make_cuda_pitched_malloc<T>(width, height, location);
         _data = alloc;
         pitch = alloc_pitch;
     }
@@ -204,20 +203,20 @@ class DeviceBuffer {
    * the allocation details. Throws cuda_error if allocation fails.
    *
    * @param count Number of elements to allocate
+   * @param location The site to attribute a failure to.
    * @throws cuda_error If cudaMalloc fails
    */
-    DeviceBuffer(size_t count) : count_(count) {
+    DeviceBuffer(size_t count,
+                 const std::source_location location = std::source_location::current())
+        : count_(count) {
         // Attempt to allocate device memory
         auto err = cudaMalloc(&device_ptr_, count_ * sizeof(T));
         if (err != cudaSuccess) {
-            auto error_msg =
-              fmt::format("cudaMalloc failed for {} elements of size {}: {} ({})",
-                          count,
-                          sizeof(T),
-                          cudaGetErrorString(err),
-                          cudaGetErrorName(err));
-            logger.error(error_msg);
-            throw cuda_error(err, error_msg);
+            logger.error("cudaMalloc failed for {} elements of size {}: {}",
+                         count,
+                         sizeof(T),
+                         cuda_error_string(err));
+            cuda_check(err, location);
         }
         // Log successful allocation for debugging
         logger.debug("Allocated {} bytes of {} memory for {} elements",
@@ -273,20 +272,19 @@ class DeviceBuffer {
    * elements.
    *
    * @param host_data Pointer to host memory containing data to copy
+   * @param location The site to attribute a failure to.
    * @throws cuda_error If cudaMemcpy fails
    */
-    void assign(const T *host_data) {
+    void assign(const T *host_data,
+                const std::source_location location = std::source_location::current()) {
         // Perform synchronous host-to-device memory copy
         auto err = cudaMemcpy(
           device_ptr_, host_data, count_ * sizeof(T), cudaMemcpyHostToDevice);
         if (err != cudaSuccess) {
-            auto error_msg =
-              fmt::format("cudaMemcpy (host to device) failed for {} elements: {} ({})",
-                          count_,
-                          cudaGetErrorString(err),
-                          cudaGetErrorName(err));
-            logger.error(error_msg);
-            throw cuda_error(err, error_msg);
+            logger.error("cudaMemcpy (host to device) failed for {} elements: {}",
+                         count_,
+                         cuda_error_string(err));
+            cuda_check(err, location);
         }
         logger.debug("Copied {} bytes: {} {} {}",
                      count_ * sizeof(T),
@@ -303,20 +301,20 @@ class DeviceBuffer {
    * elements.
    *
    * @param host_data Pointer to host memory where data will be copied
+   * @param location The site to attribute a failure to.
    * @throws cuda_error If cudaMemcpy fails
    */
-    void extract(T *host_data) const {
+    void extract(
+      T *host_data,
+      const std::source_location location = std::source_location::current()) const {
         // Perform synchronous device-to-host memory copy
         auto err = cudaMemcpy(
           host_data, device_ptr_, count_ * sizeof(T), cudaMemcpyDeviceToHost);
         if (err != cudaSuccess) {
-            auto error_msg =
-              fmt::format("cudaMemcpy (device to host) failed for {} elements: {} ({})",
-                          count_,
-                          cudaGetErrorString(err),
-                          cudaGetErrorName(err));
-            logger.error(error_msg);
-            throw cuda_error(err, error_msg);
+            logger.error("cudaMemcpy (device to host) failed for {} elements: {}",
+                         count_,
+                         cuda_error_string(err));
+            cuda_check(err, location);
         }
         logger.debug("Copied {} bytes: {} {} {}",
                      count_ * sizeof(T),
