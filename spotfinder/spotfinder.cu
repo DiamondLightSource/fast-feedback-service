@@ -183,6 +183,9 @@ void call_do_spotfinding_dispersion(dim3 blocks,
       mask.get(),           // Mask data pointer
       result_strong->get()  // Output mask pointer
     );
+    // Catch a bad launch configuration here, where it names this kernel,
+    // rather than letting it surface from the next checked call.
+    CUDA_CHECK(cudaGetLastError());
 
     // Synchronize the CUDA stream to ensure the kernel is complete
     CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -258,6 +261,7 @@ void call_do_spotfinding_extended(dim3 blocks,
       mask.get(),              // Mask data pointer
       d_dispersion_mask.get()  // Output dispersion mask pointer
     );
+    CUDA_CHECK(cudaGetLastError());
 
     // Calculate the shared memory required for the erosion pass
     // This is before the stream synchronization to overlap the kernel execution
@@ -295,6 +299,7 @@ void call_do_spotfinding_extended(dim3 blocks,
                                                         d_erosion_mask.pitch,
                                                         mask.pitch,
                                                         KERNEL_RADIUS);
+    CUDA_CHECK(cudaGetLastError());
 
     // Calculate the shared memory required for the second pass
     // This is before the stream synchronization to overlap the kernel execution
@@ -328,6 +333,7 @@ void call_do_spotfinding_extended(dim3 blocks,
       result_strong->get(),  // Output result mask pointer
       d_erosion_mask.pitch   // Dispersion mask pitch
     );
+    CUDA_CHECK(cudaGetLastError());
 
     // Synchronize the CUDA stream to ensure the second pass is complete
     CUDA_CHECK(cudaStreamSynchronize(stream));
