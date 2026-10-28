@@ -127,7 +127,7 @@ class CudaStream {
 
   public:
     CudaStream() {
-        cudaStreamCreate(&_stream);
+        cuda_check(cudaStreamCreate(&_stream));
     }
     ~CudaStream() {
         cudaStreamDestroy(_stream);
@@ -412,18 +412,18 @@ void save_device_data_to_png(PixelType *device_ptr,
     // Allocate host vector to hold the copied data
     std::vector<PixelType> host_data(width * height);
 
-    // Copy data from device to host asynchronously
-    cudaMemcpy2DAsync(host_data.data(),
-                      width * sizeof(PixelType),  // Host pitch (bytes)
-                      device_ptr,
-                      device_pitch,               // Device pitch (bytes)
-                      width * sizeof(PixelType),  // Width (bytes)
-                      height,
-                      cudaMemcpyDeviceToHost,
-                      stream);
+    // Copy data from device to host asynchronously.
+    cuda_check(cudaMemcpy2DAsync(host_data.data(),
+                                 width * sizeof(PixelType),  // Host pitch (bytes)
+                                 device_ptr,
+                                 device_pitch,               // Device pitch (bytes)
+                                 width * sizeof(PixelType),  // Width (bytes)
+                                 height,
+                                 cudaMemcpyDeviceToHost,
+                                 stream));
 
     // Synchronize the stream to ensure the copy is complete
-    cudaStreamSynchronize(stream);
+    cuda_check(cudaStreamSynchronize(stream));
 
     // Apply the transformation function to each pixel
     for (auto &pixel : host_data) {
@@ -462,18 +462,18 @@ void save_device_data_to_txt(PixelType *device_ptr,
     // Allocate host vector to hold the copied data
     std::vector<PixelType> host_data(width * height);
 
-    // Copy data from device to host asynchronously
-    cudaMemcpy2DAsync(host_data.data(),
-                      width * sizeof(PixelType),  // Host pitch (bytes)
-                      device_ptr,
-                      device_pitch,               // Device pitch (bytes)
-                      width * sizeof(PixelType),  // Width (bytes)
-                      height,
-                      cudaMemcpyDeviceToHost,
-                      stream);
+    // Copy data from device to host asynchronously.
+    cuda_check(cudaMemcpy2DAsync(host_data.data(),
+                                 width * sizeof(PixelType),  // Host pitch (bytes)
+                                 device_ptr,
+                                 device_pitch,               // Device pitch (bytes)
+                                 width * sizeof(PixelType),  // Width (bytes)
+                                 height,
+                                 cudaMemcpyDeviceToHost,
+                                 stream));
 
     // Synchronize the stream to ensure the copy is complete
-    cudaStreamSynchronize(stream);
+    cuda_check(cudaStreamSynchronize(stream));
 
     // Open an output file for the coordinates
     auto out = fmt::output_file(fmt::format("{}.txt", output_filename));
