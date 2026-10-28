@@ -837,10 +837,5 @@ void compute_kabsch_transform(pixel_t *d_image,
         launch(std::integral_constant<FGAlgorithm, FGAlgorithm::Dials>{});
     }
 
-    // Check for kernel launch errors
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        throw std::runtime_error(
-          fmt::format("Kernel launch failed: {}", cudaGetErrorString(err)));
-    }
+    cuda_check_launch("kabsch_transform");
 }

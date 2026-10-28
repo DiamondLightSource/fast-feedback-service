@@ -793,27 +793,29 @@ int main(int argc, char **argv) {
     // host after the loop if fg_count == 0.
     DeviceBuffer<uint8_t> d_success(num_reflections);
 
-    cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t));
-    cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cuda_check(
+      cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
+    cuda_check(
+      cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t)));
     // An all-zero slot is empty, because a stored entry always has a count of
     // at least 1.
-    cudaMemset(d_background_slots.data(),
-               0,
-               num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long));
-    cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(
-      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(
-      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(
-      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long));
+    cuda_check(cudaMemset(d_background_slots.data(),
+                          0,
+                          num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long)));
+    cuda_check(
+      cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(cudaMemset(
+      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long)));
     // Pre-fill success with dont_integrate complement (1 = ok, 0 = skipped/failed).
     std::vector<uint8_t> success_init(num_reflections);
     for (size_t i = 0; i < num_reflections; ++i) {
         success_init[i] = dont_integrate[i] ? 0 : 1;
     }
     d_success.assign(success_init.data());
-    cuda_throw_error();
 #pragma endregion Prep GPU Data Buffers
 
 #pragma region Thread launch
@@ -931,15 +933,14 @@ int main(int argc, char **argv) {
                 }
 
                 // Copy image data to device memory
-                cudaMemcpy2DAsync(device_image.get(),
-                                  device_image.pitch_bytes(),
-                                  host_image.get(),
-                                  width * sizeof(pixel_t),
-                                  width * sizeof(pixel_t),
-                                  height,
-                                  cudaMemcpyHostToDevice,
-                                  stream);
-                cuda_throw_error();
+                cuda_check(cudaMemcpy2DAsync(device_image.get(),
+                                             device_image.pitch_bytes(),
+                                             host_image.get(),
+                                             width * sizeof(pixel_t),
+                                             width * sizeof(pixel_t),
+                                             height,
+                                             cudaMemcpyHostToDevice,
+                                             stream));
 
                 // Get reflection indices for this image and copy to device
                 const auto &refl_indices = reflections_by_image[image_num];
@@ -1023,8 +1024,7 @@ int main(int argc, char **argv) {
     // reduction reads the histograms those kernels filled.
     // Perhaps better to have each thread synchronize its stream before joining,
     // this is simper for now, but worth testing during profiling.
-    cudaDeviceSynchronize();
-    cuda_throw_error();
+    cuda_check(cudaDeviceSynchronize());
 
     // Reduce each reflection's background histogram into an estimate on the
     // device (Tukey/IQR constant model), then copy the small results back.
@@ -1038,8 +1038,7 @@ int main(int argc, char **argv) {
                        d_background_count.data(),
                        d_background_success.data(),
                        0);
-    cudaDeviceSynchronize();
-    cuda_throw_error();
+    cuda_check(cudaDeviceSynchronize());
 #pragma endregion Background Reduction
 
 #pragma region Summation Integration Finalization
