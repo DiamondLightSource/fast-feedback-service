@@ -42,15 +42,27 @@ ENV CCACHE_COMPILERCHECK=content
 # installs the result. pip is the runtime environment's own, so the extension
 # modules are built for its interpreter; cmake, ninja and the compilers resolve
 # to the build environment, which has them where the runtime one does not.
+#
+# Each cached source is passed to cmake as an override, since FetchContent
+# keeps its download record in the build tree and would re-clone it. git
+# must trust the sources, which belong to the CI runner's user, not root.
 RUN --mount=type=cache,target=/ccache \
     --mount=type=cache,target=/deps \
+    deps_args="" \
+    && for src in /deps/*-src; do \
+        [ -d "$src" ] || continue; \
+        name=$(basename "$src" -src | tr a-z A-Z); \
+        deps_args="$deps_args -DFETCHCONTENT_SOURCE_DIR_${name}=$src"; \
+    done \
+    && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*' \
     SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="${FFS_VERSION}" \
     CMAKE_ARGS="-DCUDA_ARCH=all-supported \
                 -DHDF5_ROOT=/opt/ffs \
                 -DCMAKE_INSTALL_RPATH=/opt/ffs/lib \
                 -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
                 -DUSE_REDUCED_PRECISION=OFF \
-                -DFETCHCONTENT_BASE_DIR=/deps" \
+                -DFETCHCONTENT_BASE_DIR=/deps \
+                ${deps_args}" \
     /opt/ffs/bin/pip3 install --no-build-isolation --root-user-action=ignore /opt/ffs_src \
     && ccache --show-stats
 
