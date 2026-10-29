@@ -65,9 +65,13 @@ find_package(spdlog REQUIRED)
 find_package(nlohmann_json 3.11.3 REQUIRED)
 find_package(Eigen3 3.4 REQUIRED)
 
-# Packages conda-forge cannot provide, pinned in one place
+# Dependencies taken from git, or from the environment when it has them
 include(Dependencies)
-FetchContent_MakeAvailable(nanobind argparse)
+FetchContent_MakeAvailable(nanobind argparse lodepng)
+
+# lodepng ships no cmake build of its own
+add_library(lodepng STATIC "${lodepng_SOURCE_DIR}/lodepng.cpp")
+target_include_directories(lodepng PUBLIC "${lodepng_SOURCE_DIR}")
 
 # Required for Python module build of ffbidx
 set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
@@ -86,8 +90,6 @@ endif()
 
 FetchContent_MakeAvailable(ffbidx)
 
-# Made available here so a found package's imported targets are visible to
-# the whole tree, not only the directory that looked for it
 FetchContent_MakeAvailable(GTest)
 
 # Discover GoogleTest cases at ctest time, not build time. The default
