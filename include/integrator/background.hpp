@@ -32,13 +32,7 @@
 #include <tuple>
 #include <unordered_map>
 
-// __host__ __device__ under nvcc, nothing under a plain C++ compiler, so this
-// header compiles in the baseline's CXX translation unit as well as in CUDA.
-#if defined(__CUDACC__)
-#define FFS_HD __host__ __device__
-#else
-#define FFS_HD
-#endif
+#include "ffs_hd.hpp"
 
 /**
  * @brief Selects which background model is used to estimate the per-reflection
