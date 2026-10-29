@@ -187,8 +187,8 @@ Matrix3d detect(const std::vector<Vector3i> &hkl, double threshold = 0.9) {
  */
 int correct(std::vector<int> &hkl,
             Crystal &crystal,
-            mdspan_type<double> const &rlp,
-            mdspan_type<double> const &xyzobs_mm,
+            mdspan_type<const double> const &rlp,
+            mdspan_type<const double> const &xyzobs_mm,
             double threshold = 0.9) {
     Vector3i null_miller = {0, 0, 0};
     int count;  // num indexed

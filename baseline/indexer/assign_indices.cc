@@ -34,8 +34,8 @@ struct assign_indices_results {
  * @returns A struct containing the assigned miller indices and the number of reciprocal lattice points successfully indexed.
  */
 assign_indices_results assign_indices_global(Matrix3d const &A,
-                                             mdspan_type<double> const &rlp,
-                                             mdspan_type<double> const &xyzobs_mm,
+                                             mdspan_type<const double> const &rlp,
+                                             mdspan_type<const double> const &xyzobs_mm,
                                              const double tolerance = 0.3) {
     // Consider only a single lattice.
     assign_indices_results results(rlp.extent(0));
@@ -56,7 +56,7 @@ assign_indices_results assign_indices_global(Matrix3d const &A,
     const Matrix3d A_inv = A.inverse();
     const double tolsq = tolerance * tolerance;
     for (int i = 0; i < rlp.extent(0); ++i) {
-        Eigen::Map<Vector3d> rlp_this(&rlp(i, 0));
+        Eigen::Map<const Vector3d> rlp_this(&rlp(i, 0));
         Vector3d hkl_f = A_inv * rlp_this;
         for (std::size_t j = 0; j < 3; j++) {
             results.miller_indices(i, j) = static_cast<int>(round(hkl_f[j]));

@@ -23,9 +23,9 @@ void refine_crystal(Crystal &crystal,
 
     // First assign miller indices to the data using the crystal model.
     auto rlp_ = obs.column<double>("rlp");
-    const mdspan_type<double> &rlp = rlp_.value();
+    const mdspan_type<const double> &rlp = rlp_.value();
     auto xyzobs_mm_ = obs.column<double>("xyzobs.mm.value");
-    const mdspan_type<double> &xyzobs_mm = xyzobs_mm_.value();
+    const mdspan_type<const double> &xyzobs_mm = xyzobs_mm_.value();
     assign_indices_results results =
       assign_indices_global(crystal.get_A_matrix(), rlp, xyzobs_mm);
     auto t2 = std::chrono::system_clock::now();
