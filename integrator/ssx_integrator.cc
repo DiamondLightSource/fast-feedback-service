@@ -46,6 +46,7 @@
 #include "ssx/ssx_integrate.hpp"
 #include "ssx/mosaicity_parameterisation.hpp"
 #include "predictor/predict.hpp"
+#include "predictor/threadpool.hpp"
 
 using Eigen::Vector3d;
 
@@ -213,90 +214,117 @@ int main(int argc, char **argv) {
     const std::vector<std::string>& identifiers = reflections.get_identifiers();
     const std::vector<uint64_t>& expt_ids = reflections.get_experiment_ids();
 
-    std::vector<std::jthread> threads;
-    for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
-        threads.emplace_back([&, thread_id]() {
-            // get the data from the table
+    std::unique_ptr<std::map<int, std::vector<Prediction>>> predictions_mapptr = std::make_unique<std::map<int, std::vector<Prediction>>>();
+    std::mutex predictions_mutex;  // Mutex to protect the reflection intensities map
 
-            std::vector<size_t> sel;
-            for (int j=0;j<reflections.size();j++){
-                if (ids(j,0) == thread_id){
-                    sel.push_back(j);
+    // FIXME make thread pool.
+    int nthreads = 28;
+    
+
+    auto max_it = std::max_element(
+        ids.data_handle(),
+        ids.data_handle() + ids.size()
+    );
+
+    int max_value = *max_it;
+    std::exception_ptr eptr = nullptr;
+    std::mutex eptr_mtx;
+    //std::vector<std::jthread> threads;
+    //for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
+    //    threads.emplace_back([&, thread_id]() {
+    {
+        ThreadPool pool(nthreads);
+
+        for (int index = 0; index < max_value; ++index) {
+            pool.enqueue([&, index] {
+            try {
+                // get the data from the table
+
+                std::vector<size_t> sel;
+                for (int j=0;j<reflections.size();j++){
+                    if (ids(j,0) == index){
+                        sel.push_back(j);
+                    }
                 }
-            }
-            ReflectionTable table = reflections.select(sel);
-            std::string identifier = identifiers[thread_id];
-            
+                ReflectionTable table = reflections.select(sel);
+                std::string identifier = identifiers[index];
+                
 
-            std::vector<std::string> identifiers = table.get_identifiers();
-            int image_no = identifier_to_image_number[identifier];
-            reflections_in_image[image_no] = table.size();
-            num_reflections += table.size();
-            Crystal this_crystal = identifier_to_crystal_model[identifier];
-            // make mdspans of data
-            auto xyzobs_px_ = table.column<double>("xyzobs.px.value");
-            if (!xyzobs_px_.has_value()) {
-                throw std::runtime_error(
-                "No xyzobs.px.value column found in input reflection table.");
-            }
-            mdspan_type<const double> xyzobs_px = xyzobs_px_.value();
-            
-            auto xyzcal_px_ = table.column<double>("xyzcal.px");
-            if (!xyzcal_px_.has_value()) {
-                throw std::runtime_error(
-                "No xyzcal.px column found in input reflection table.");
-            }
-            mdspan_type<const double> xyzcal_px = xyzcal_px_.value();
+                std::vector<std::string> identifiers = table.get_identifiers();
+                int image_no = identifier_to_image_number[identifier];
+                reflections_in_image[image_no] = table.size();
+                num_reflections += table.size();
+                Crystal this_crystal = identifier_to_crystal_model[identifier];
+                // make mdspans of data
+                auto xyzobs_px_ = table.column<double>("xyzobs.px.value");
+                if (!xyzobs_px_.has_value()) {
+                    throw std::runtime_error(
+                    "No xyzobs.px.value column found in input reflection table.");
+                }
+                mdspan_type<const double> xyzobs_px = xyzobs_px_.value();
+                
+                auto xyzcal_px_ = table.column<double>("xyzcal.px");
+                if (!xyzcal_px_.has_value()) {
+                    throw std::runtime_error(
+                    "No xyzcal.px column found in input reflection table.");
+                }
+                mdspan_type<const double> xyzcal_px = xyzcal_px_.value();
 
-            auto covariances_opt = table.column<double>("spot_covariance_2d_packed");
-            if (!covariances_opt) {
-                logger.error("Column 'spot_covariance_2d_packed' not found in reflection data.");
-                return;
-            }
-            mdspan_type<const double> covariances = covariances_opt.value();
+                auto covariances_opt = table.column<double>("spot_covariance_2d_packed");
+                if (!covariances_opt) {
+                    logger.error("Column 'spot_covariance_2d_packed' not found in reflection data.");
+                    return;
+                }
+                mdspan_type<const double> covariances = covariances_opt.value();
 
-            auto intensities_opt = table.column<int>("intensity.sum.value");
-            if (!intensities_opt) {
-                logger.error("Column 'intensity.sum.value' not found in reflection data.");
-                return;
-            }
-            mdspan_type<const int> strong_intensities = intensities_opt.value();
+                auto intensities_opt = table.column<int>("intensity.sum.value");
+                if (!intensities_opt) {
+                    logger.error("Column 'intensity.sum.value' not found in reflection data.");
+                    return;
+                }
+                mdspan_type<const int> strong_intensities = intensities_opt.value();
 
-            auto miller_indices_opt = table.column<int>("miller_index");
-            if (!miller_indices_opt) {
-                logger.error("Column 'miller_index' not found in reflection data.");
-                return;
-            }
-            mdspan_type<const int> miller_indices = miller_indices_opt.value();
+                auto miller_indices_opt = table.column<int>("miller_index");
+                if (!miller_indices_opt) {
+                    logger.error("Column 'miller_index' not found in reflection data.");
+                    return;
+                }
+                mdspan_type<const int> miller_indices = miller_indices_opt.value();
 
-            auto mobs_opt = table.column<double>("spot_mobs_2d");
-            if (!mobs_opt) {
-                logger.error("Column 'spot_mobs_2d' not found in reflection data.");
-                return;
-            }
-            mdspan_type<const double> mobs = mobs_opt.value();
+                auto mobs_opt = table.column<double>("spot_mobs_2d");
+                if (!mobs_opt) {
+                    logger.error("Column 'spot_mobs_2d' not found in reflection data.");
+                    return;
+                }
+                mdspan_type<const double> mobs = mobs_opt.value();
 
-            // refine predict
-            Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
-                                                              xyzobs_px,
-                                                              covariances,
-                                                              strong_intensities,
-                                                              miller_indices,
-                                                              mobs,
-                                                              s0,
-                                                              panel,
-                                                              this_crystal.get_A_matrix());
-            std::vector<Prediction> predictions = predict_ssx(model, s0, panel, this_crystal.get_A_matrix());
-            logger.info("Predicted {} reflections on image {}", predictions.size(), image_no);
-
-            // then save output predictions into a joint area to iterate over in integration.
-        });
+                // refine predict
+                Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
+                                                                xyzobs_px,
+                                                                covariances,
+                                                                strong_intensities,
+                                                                miller_indices,
+                                                                mobs,
+                                                                s0,
+                                                                panel,
+                                                                this_crystal.get_A_matrix());
+                std::vector<Prediction> predictions = predict_ssx(model, s0, panel, this_crystal.get_A_matrix());
+                logger.info("Predicted {} reflections on image {}", predictions.size(), image_no);
+                std::lock_guard<std::mutex> lock(predictions_mutex);
+                (*predictions_mapptr)[image_no] = std::move(predictions);
+                } catch (...) {
+                    std::lock_guard<std::mutex> lk(eptr_mtx);
+                    if (!eptr) eptr = std::current_exception();
+                }
+            });
+        }
     }
+    if (eptr) std::rethrow_exception(eptr);
 
     // Wait for all threads to finish
-    for (auto &thread : threads) {
-        thread.join();
-    }
+    //for (auto &thread : threads) {
+    //    thread.join();
+    //}
 
     /*for (auto &t : split_tables){
         std::vector<std::string> identifiers = t.get_identifiers();
@@ -440,9 +468,13 @@ int main(int argc, char **argv) {
             image_max = std::max(image_max, corner_grid);
         }
     }*/
+    std::size_t total_predictions = 0;
 
-    logger.info("{} reflections mapped across {} unique images",
-                num_reflections, reflections_in_image.size());
+    for (const auto& [key, predictions] : *predictions_mapptr) {
+        total_predictions += predictions.size();
+    }
+    logger.info("{} reflections predicted across {} unique images",
+                total_predictions, reflections_in_image.size());
     return 0;
 }
 #if 0
