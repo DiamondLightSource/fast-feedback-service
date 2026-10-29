@@ -99,13 +99,15 @@ else()
     set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
 endif()
 
-# Pinned to a commit rather than a branch. The indexer brings submodules of
-# its own, so a moving pin varies both the build inputs and the set of hosts a
-# configure has to reach.
+# Pinned to a commit rather than a branch. The indexer links the Eigen3::Eigen
+# already found in the conda environment, so its only submodule, Eigen on
+# gitlab.com, is never compiled and is skipped. That keeps every
+# configure-time fetch on GitHub.
 FetchContent_Declare(
   ffbidx
   GIT_REPOSITORY https://github.com/paulscherrerinstitute/fast-feedback-indexer.git
   GIT_TAG 6f6e3c78d847dce6fdebf0a93dcd4440af0737f4
+  GIT_SUBMODULES ""
 )
 FetchContent_MakeAvailable(ffbidx)
 
