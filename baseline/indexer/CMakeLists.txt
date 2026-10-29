@@ -14,10 +14,12 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
     FIND_PACKAGE_ARGS
 )
+# The C++ header lives on a branch with no releases, so it is pinned to a
+# commit on that branch.
 FetchContent_Declare(
     pocketfft
     GIT_REPOSITORY https://github.com/mreineck/pocketfft
-    GIT_TAG cpp
+    GIT_TAG 4d865cba24359b05b37da4e75aee24498c3b78e7
 )
 FetchContent_Declare(
     mdspan

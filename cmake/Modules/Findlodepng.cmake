@@ -1,10 +1,12 @@
 # Downloads lodepng and sets up targets
 
 include(FetchContent)
-# If we can't find dependencies already in the environment, fetch them
+# If we can't find dependencies already in the environment, fetch them.
+# lodepng publishes no releases, so it is pinned to a commit.
 FetchContent_Declare(
     lodepng
     GIT_REPOSITORY https://github.com/lvandeve/lodepng
+    GIT_TAG e584a8490db1b76b81bf298c11c09d3b55d9c270
 )
 
 FetchContent_MakeAvailable(lodepng)
