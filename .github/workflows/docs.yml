@@ -1,0 +1,57 @@
+name: Docs
+on: [push, pull_request]
+# Allow the deploy job to publish to GitHub Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    name: Build docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history and tags, so setuptools_scm can resolve the version
+          fetch-depth: 0
+      # Doxygen only parses the source, so no CUDA toolkit or the
+      # HDF5/Boost dependencies are needed here.
+      - name: Install Doxygen and Graphviz
+        run: sudo apt-get update && sudo apt-get install -y doxygen graphviz
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Python dependencies
+        run: pip install -r docs/requirements.txt
+      - name: Build HTML
+        run: sphinx-build -b html docs docs/_build/html
+      # On pull requests, attach the rendered HTML as a downloadable
+      # artifact so reviewers can preview the docs without building.
+      - name: Upload preview artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-html
+          path: docs/_build/html
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/_build/html
+  deploy:
+    name: Deploy to GitHub Pages
+    # Publish only from main; pull requests create a preview artifact instead.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5
