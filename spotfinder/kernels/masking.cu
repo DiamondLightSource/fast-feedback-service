@@ -185,6 +185,6 @@ void call_apply_resolution_mask(dim3 blocks,
       params.dmax);
     // This wrapper does not synchronise, so without this an invalid launch
     // would be reported against the caller's own synchronisation.
-    CUDA_CHECK(cudaGetLastError());
+    cuda_check_launch("apply_resolution_mask");
 }
 #pragma endregion Launch wrapper

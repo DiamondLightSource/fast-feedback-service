@@ -88,7 +88,7 @@ auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
             }
         }
         start.record();
-        CUDA_CHECK(cudaMemcpy2D(dev_mask.get(),
+        cuda_check(cudaMemcpy2D(dev_mask.get(),
                                 device_mask_pitch,
                                 reader.get_mask()->data(),
                                 width,
@@ -98,7 +98,7 @@ auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
     } else {
         valid_pixels = width * height;
         start.record();
-        CUDA_CHECK(cudaMemset(dev_mask.get(), 1, device_mask_pitch * height));
+        cuda_check(cudaMemset(dev_mask.get(), 1, device_mask_pitch * height));
     }
     end.record();
     end.synchronize();
@@ -143,7 +143,7 @@ void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
     call_apply_resolution_mask(
       numBlocks, threadsPerBlock, 0, stream, mask.get(), params);
 
-    CUDA_CHECK(cudaStreamSynchronize(stream));
+    cuda_check(cudaStreamSynchronize(stream));
 }
 
 void wait_for_ready_for_read(const std::string &path,
@@ -669,7 +669,7 @@ int main(int argc, char **argv) {
         if (do_writeout) {
             // Copy the mask back from the GPU
             auto calculated_mask = std::vector<uint8_t>(width * height, 0);
-            CUDA_CHECK(cudaMemcpy2D(calculated_mask.data(),
+            cuda_check(cudaMemcpy2D(calculated_mask.data(),
                                     width,
                                     mask.get(),
                                     mask.pitch_bytes(),
@@ -875,7 +875,7 @@ int main(int argc, char **argv) {
 
                     start.record(stream);
                     // Copy the image to GPU
-                    CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
+                    cuda_check(cudaMemcpy2DAsync(device_image.get(),
                                                  device_image.pitch_bytes(),
                                                  host_image.get(),
                                                  width * sizeof(pixel_t),
@@ -916,7 +916,7 @@ int main(int argc, char **argv) {
                     post.record(stream);
 
                     // Copy the results buffer back to the CPU
-                    CUDA_CHECK(cudaMemcpy2DAsync(host_results.get(),
+                    cuda_check(cudaMemcpy2DAsync(host_results.get(),
                                                  width * sizeof(uint8_t),
                                                  device_results.get(),
                                                  device_results.pitch_bytes(),
@@ -926,7 +926,7 @@ int main(int argc, char **argv) {
                                                  stream));
                     postcopy.record(stream);
                     // Now, wait for stream to finish
-                    CUDA_CHECK(cudaStreamSynchronize(stream));
+                    cuda_check(cudaStreamSynchronize(stream));
 #pragma endregion Spotfinding
 
 #pragma region Connected Components
@@ -971,7 +971,7 @@ int main(int argc, char **argv) {
 
                     end.record(stream);
                     // Now, wait for stream to finish
-                    CUDA_CHECK(cudaStreamSynchronize(stream));
+                    cuda_check(cudaStreamSynchronize(stream));
 
                     if (do_writeout) {
                         // Build an image buffer

@@ -121,9 +121,5 @@ void compute_background(BackgroundModel model,
       d_background_count,
       d_background_success);
 
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        throw std::runtime_error(fmt::format("Background reduction launch failed: {}",
-                                             cudaGetErrorString(err)));
-    }
+    cuda_check_launch("background_reduce_kernel");
 }
