@@ -64,15 +64,6 @@ FetchContent_Declare(
     GIT_TAG 4d865cba24359b05b37da4e75aee24498c3b78e7
 )
 
-# conda-forge has 0.6.0, but its package exports only std::mdspan and sets no
-# mdspan_SOURCE_DIR, both of which dx2 and the baseline tests rely on.
-FetchContent_Declare(
-    mdspan
-    GIT_REPOSITORY https://github.com/kokkos/mdspan
-    GIT_TAG mdspan-0.6.0
-    EXCLUDE_FROM_ALL
-)
-
 # Matches the environment's gtest, which is found first.
 FetchContent_Declare(
     GTest

@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 find_package (Threads REQUIRED)
 
 # Declared in cmake/Modules/Dependencies.cmake
-FetchContent_MakeAvailable(mdspan pocketfft)
+FetchContent_MakeAvailable(pocketfft)
 
 FetchContent_GetProperties(pocketfft)
 add_library(pocketfft INTERFACE)

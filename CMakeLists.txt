@@ -64,6 +64,7 @@ find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(nlohmann_json 3.11.3 REQUIRED)
 find_package(Eigen3 3.4 REQUIRED)
+find_package(mdspan 0.6 REQUIRED)
 
 # Dependencies taken from git, or from the environment when it has them
 include(Dependencies)

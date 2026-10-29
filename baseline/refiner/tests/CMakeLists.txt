@@ -4,7 +4,7 @@ find_package(HDF5 REQUIRED)
 add_executable(test_gradients_calculator test_gradients_calculator.cc)
 target_include_directories(test_gradients_calculator PRIVATE "${PROJECT_SOURCE_DIR}")
 target_include_directories(test_gradients_calculator PRIVATE "${PROJECT_SOURCE_DIR}/baseline/indexer")
-target_link_libraries(test_gradients_calculator mdspan
+target_link_libraries(test_gradients_calculator std::mdspan
     GTest::gtest_main Eigen3::Eigen nlohmann_json::nlohmann_json gemmi::gemmi_cpp fmt::fmt hdf5::hdf5 dx2)
 
 add_executable(test_detector_parameterisation test_detector_parameterisation.cc)
