@@ -92,6 +92,7 @@ jobs:
       # toolchain, so a changed pin or base image starts from an empty
       # directory rather than reusing trees built against the old one.
       - name: Restore dependency sources
+        id: deps-cache
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: actions/cache@v6
         with:
@@ -99,6 +100,20 @@ jobs:
           key: deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('CMakeLists.txt', 'Dockerfile') }}-${{ github.sha }}
           restore-keys: |
             deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('CMakeLists.txt', 'Dockerfile') }}-
+
+      # List each restored dependency with the commit it sits at. The key ends
+      # in the commit sha, so a normal run restores through the prefix and
+      # only the matched key says which run's tree came back.
+      - name: Report restored dependency sources
+        if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
+        run: |
+          deps="${{ runner.temp }}/deps-${{ steps.prep.outputs.platform-pair }}"
+          echo "Matched key: ${{ steps.deps-cache.outputs.cache-matched-key || 'none, cold start' }}"
+          for src in "$deps"/*-src; do
+            [ -d "$src" ] || continue
+            rev=$(git -c safe.directory='*' -C "$src" rev-parse --short HEAD 2>/dev/null || echo "?")
+            echo "$(basename "$src" -src) ${rev} $(du -sh "$src" | cut -f1)"
+          done
 
       - name: Inject ccache and dependency sources into buildx
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
