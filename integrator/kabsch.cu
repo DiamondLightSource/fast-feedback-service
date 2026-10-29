@@ -730,9 +730,10 @@ void compute_kabsch_transform(pixel_t *d_image,
     // Profile opt in on A100?
     static const uint32_t max_smem_per_block = [] {
         int device = 0;
-        cudaGetDevice(&device);
+        cuda_check(cudaGetDevice(&device));
         int bytes = 0;
-        cudaDeviceGetAttribute(&bytes, cudaDevAttrMaxSharedMemoryPerBlock, device);
+        cuda_check(
+          cudaDeviceGetAttribute(&bytes, cudaDevAttrMaxSharedMemoryPerBlock, device));
         return static_cast<uint32_t>(bytes);
     }();
     const uint32_t tile_capacity =
@@ -837,10 +838,5 @@ void compute_kabsch_transform(pixel_t *d_image,
         launch(std::integral_constant<FGAlgorithm, FGAlgorithm::Dials>{});
     }
 
-    // Check for kernel launch errors
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        throw std::runtime_error(
-          fmt::format("Kernel launch failed: {}", cudaGetErrorString(err)));
-    }
+    cuda_check_launch("kabsch_transform");
 }

@@ -72,8 +72,8 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
   float n_sig_b,
   float n_sig_s) {
     // Initialize variables for computing the local sum and count
-    uint sum = 0;
-    size_t sumsq = 0;
+    uint64_t sum = 0;
+    uint64_t sumsq = 0;
     uint8_t n = 0;
 
 #pragma unroll
@@ -92,7 +92,7 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
             int ly = local_y + i;
             uint8_t mask_pixel = mask(lx, ly);
             if (mask_pixel) {
-                pixel_t pixel = image(lx, ly);
+                const uint64_t pixel = image(lx, ly);
                 sum += pixel;
                 sumsq += pixel * pixel;
                 ++n;
@@ -433,7 +433,7 @@ __global__ void dispersion_extended_second_pass(
                        && this_pixel <= kernel_constants.max_valid_pixel_value;
 
     // Initialize variables for computing the local sum and count
-    uint sum = 0;
+    uint64_t sum = 0;
     uint8_t n = 0;
 
 #pragma unroll

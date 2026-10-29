@@ -204,9 +204,10 @@ platlib="$("$PREFIX/bin/python" -c 'import sysconfig; print(sysconfig.get_paths(
 shopt -s nullglob
 installed=("$PREFIX"/bin/spotfinder "$PREFIX"/bin/spotfinder32 \
            "$PREFIX"/bin/baseline_indexer "$PREFIX"/bin/integrator \
+           "$PREFIX"/bin/integrator32 \
            "$platlib"/ffs/*.so "$platlib"/ffbidx/*.so "$platlib"/lib64/*.so*)
 shopt -u nullglob
-if [[ ${#installed[@]} -lt 4 ]]; then
+if [[ ${#installed[@]} -lt 5 ]]; then
     print_error "The install produced fewer artifacts than expected in $PREFIX."
     print_error "Found: ${installed[*]:-nothing}"
     exit 1
@@ -234,7 +235,8 @@ check_elf() {
     fi
 }
 
-for binary in spotfinder spotfinder32 baseline_indexer integrator; do
+for binary in spotfinder spotfinder32 baseline_indexer integrator \
+              integrator32; do
     path="$PREFIX/bin/$binary"
     if [[ ! -x "$path" ]]; then
         print_error "$binary was not installed"

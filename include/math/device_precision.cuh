@@ -41,12 +41,18 @@ using scalar_t = double;
 #endif
 
 // Accumulator type for summation/reduction operations.
-// Integer accumulation is used because:
-// 1. atomicAdd on uint32_t is a single native hardware instruction (fastest atomic)
-// 2. Maximum possible sum is well within uint32_t range (~20M << 4.3G)
-// 3. Final reduction to double is performed on the host
 //
-// NOTE: If pixel_t can be negative (pedestal-subtracted data), change to int32_t.
+// A foreground sum is bounded by the pixel maximum times the shoebox
+// foreground count, so the accumulator width follows the pixel width: 16-bit
+// sums fit uint32_t and its single-instruction atomicAdd, 32-bit sums need 64
+// bits.
+//
+// NOTE: If pixel_t can be negative (pedestal-subtracted data), change to a
+// signed type of the same width.
 // NOTE: If pixel values are non-integer (e.g. gain-corrected floats), revert to:
 //     using accumulator_t = scalar_t;
+#ifdef PIXEL_DATA_32BIT
+using accumulator_t = unsigned long long;
+#else
 using accumulator_t = uint32_t;
+#endif

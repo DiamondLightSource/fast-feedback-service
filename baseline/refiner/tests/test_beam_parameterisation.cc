@@ -12,14 +12,16 @@
 using Eigen::Vector3d;
 
 TEST(BaselineIndexer, beam_parameterisation) {
-    std::string imported_expt =
-      "/dls/i03/data/2024/cm37235-2/processing/JBE/c2sum/imported.expt";
-    std::ifstream f(imported_expt);
-    json elist_json_obj = json::parse(f);
-    const json beam_json = elist_json_obj["beam"][0];
-    json goniometer_json = elist_json_obj["goniometer"][0];
-    MonochromaticBeam beam(beam_json);
-    Goniometer goniometer(goniometer_json);
+    // Example models from c2sum test dataset
+    MonochromaticBeam beam(1.23985);
+    std::vector<Vector3d> axes;
+    axes.push_back({1.0, 0.0, 0.0});
+    axes.push_back({0.914, 0.279, -0.297});
+    axes.push_back({1.0, 0.0, 0.0});
+    std::vector<double> angles = {102.6, 37.9, 0.0};
+    std::vector<std::string> names = {"PHI", "KAPPA", "OMEGA"};
+    std::size_t scan_axis = 2;
+    Goniometer goniometer(axes, angles, names, scan_axis);
     BeamParameterisation beam_param(beam, goniometer);
     // Check the initial params are as expected.
     std::vector<double> p = beam_param.get_params();

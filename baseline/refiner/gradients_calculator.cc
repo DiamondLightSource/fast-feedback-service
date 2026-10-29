@@ -71,7 +71,7 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(
     std::vector<double> uw_inv(n_ref);
     std::vector<double> vw_inv(n_ref);
     for (int i = 0; i < n_ref; i++) {
-        Eigen::Map<Vector3d> s1_i(&s1(i, 0));
+        Eigen::Map<const Vector3d> s1_i(&s1(i, 0));
         Vector3d pv_this = D[i] * s1_i;
         pv[i] = pv_this;
         double pvinv = 1.0 / pv_this[2];
@@ -127,7 +127,7 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(
                               static_cast<double>(hkl(k, 2))};
             Vector3d tmp = F * (ds_dp_j * (B * hkl_k));
             Vector3d dr = S * unit_rotate_around_origin(tmp, axis, xyz(k, 2));
-            Eigen::Map<Vector3d> s1_k(&s1(k, 0));
+            Eigen::Map<const Vector3d> s1_k(&s1(k, 0));
             double dphi = -1.0 * (dr.dot(s1_k)) / e_r_s0[k];
             Vector3d dpv = D[k] * (dr + e_X_r[k] * dphi);
             double w_inv_this = w_inv[k];
@@ -148,7 +148,7 @@ std::vector<std::vector<double>> GradientsCalculator::get_gradients(
                               static_cast<double>(hkl(k, 2))};
             Vector3d tmp = F * (U * (db_dp_j * hkl_k));
             Vector3d dr = S * unit_rotate_around_origin(tmp, axis, xyz(k, 2));
-            Eigen::Map<Vector3d> s1_k(&s1(k, 0));
+            Eigen::Map<const Vector3d> s1_k(&s1(k, 0));
             double dphi = -1.0 * (dr.dot(s1_k)) / e_r_s0[k];
             Vector3d dpv = D[k] * (dr + e_X_r[k] * dphi);
             double w_inv_this = w_inv[k];
