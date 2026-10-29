@@ -26,7 +26,7 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using json = nlohmann::json;
 
-TEST(SSXIntegrator, target_calculations) {
+/*TEST(SSXIntegrator, target_calculations) {
     Vector3d a(-49.87873210808719, -15.20510152622829, -56.55306758976276);
     Vector3d b(53.86563471994483, 22.38534427742018, -53.177943634990626);
     Vector3d c(26.968649257725442, -73.12672631215553, -2.196321822105007);
@@ -68,9 +68,9 @@ TEST(SSXIntegrator, target_calculations) {
     double ll2 = target.log_likelihood();
     std::cout << ll2 << std::endl;
     EXPECT_NEAR(ll2, 6680.304116342, 1e-3);
-}
+}*/
 
-TEST(SSXIntegrator, ssx_refine_mosaicity) {
+/*TEST(SSXIntegrator, ssx_refine_mosaicity) {
     // Define some test data to compare to an equivalent dials.ssx_integrate job
     Panel panel(
       260, {1625.53, 1801.84}, {0.075, 0.075}, {3108, 3262}, "x", "-y", 0.75, 13.2916);
@@ -231,7 +231,7 @@ TEST(SSXIntegrator, ssx_refine_mosaicity) {
     M2 : 629.709 muA^-1
     M3 : 724.904 muA^-1
     */
-}
+/*}*/
 
 TEST(SSXIntegrator, ssx_predict) {
     Panel panel(

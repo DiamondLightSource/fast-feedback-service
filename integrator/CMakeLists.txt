@@ -58,6 +58,7 @@ target_link_libraries(integrator
 target_link_libraries(serial_integrator
     PRIVATE
     predictor
+    ssx_integrator
     fmt::fmt
     h5read
     argparse

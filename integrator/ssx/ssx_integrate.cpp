@@ -8,32 +8,35 @@
 #include "integrator/extent.hpp"
 #include "integrator/sigma_estimation.hpp"
 #include "max_likelihood_target.hpp"
+#include <experimental/mdspan>
 #include "predictor/index_generators.hpp"
 #include "reflection_likelihood.hpp"
 
 using Matrix3d = Eigen::Matrix3d;
 using Vector2d = Eigen::Vector2d;
-
+template <typename T>
+using mdspan_type =
+  std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 /*
 The input vectors are typically short (<100 values),
 as they are the data for successfully indexed spots.
 */
 Simple6MosaicityParameterisation refine_mosaicity(
-  const std::vector<Vector3d> &xyzcal_px,
-  const std::vector<Vector3d> &xyzobs_px,
-  const std::vector<Vector3d> &covariances,
-  const std::vector<double> &intensities,
-  const std::vector<Eigen::Vector3i> &miller_indices,
-  const std::vector<Vector2d> &mobs,
-  const Vector3d &s0,
-  const Panel &panel,
-  const Matrix3d &A) {
+    mdspan_type<const double> &xyzcal_px,
+    mdspan_type<const double> &xyzobs_px,
+    mdspan_type<const double> &covariances,
+    mdspan_type<const double> &intensities,
+    mdspan_type<const int> &miller_indices,
+    mdspan_type<const double> &mobs,
+    const Eigen::Vector3d &s0,
+    const Panel &panel,
+    const Eigen::Matrix3d &A) {
     double max_separation = 2.0;
     // perform max separation filter
     std::vector<std::size_t> keep;
-    for (int i = 0; i < xyzcal_px.size(); i++) {
-        if (std::pow(std::pow(xyzcal_px[i][0] - xyzobs_px[i][0], 2)
-                       + std::pow(xyzcal_px[i][1] - xyzobs_px[i][1], 2),
+    for (std::size_t i = 0; i < xyzcal_px.extent(0); i++) {
+        if (std::pow(std::pow(xyzcal_px(i,0) - xyzobs_px(i,0), 2)
+                       + std::pow(xyzcal_px(i,1) - xyzobs_px(i,1), 2),
                      0.5)
             < max_separation) {
             keep.push_back(i);
@@ -55,12 +58,12 @@ Simple6MosaicityParameterisation refine_mosaicity(
     mobs_f.reserve(keep.size());
 
     for (auto i : keep) {
-        intensities_f.push_back(intensities[i]);
-        covariances_f.push_back(covariances[i]);
-        xyzobs_f.push_back(xyzobs_px[i]);
-        xyzcal_f.push_back(xyzcal_px[i]);
-        miller_indices_f.push_back(miller_indices[i]);
-        mobs_f.push_back(mobs[i]);
+        intensities_f.push_back(intensities(i,0));
+        covariances_f.push_back({covariances(i,0), covariances(i,1), covariances(i,2)});
+        xyzobs_f.push_back({xyzobs_px(i,0), xyzobs_px(i,1), xyzobs_px(i,2)});
+        xyzcal_f.push_back({xyzcal_px(i,0), xyzcal_px(i,1), xyzcal_px(i,2)});
+        miller_indices_f.push_back({miller_indices(i,0), miller_indices(i,1), miller_indices(i,2)});
+        mobs_f.push_back({mobs(i,0), mobs(i,1)});
     }
     // End of filtering section.
 
@@ -128,7 +131,7 @@ std::vector<Prediction> predict_ssx(const Simple6MosaicityParameterisation &mode
     return predictions;
 }
 
-void ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
+/*void ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
                    const std::vector<Vector3d> &xyzobs_px,
                    const std::vector<Vector3d> &covariances,
                    const std::vector<double> &intensities,
@@ -147,4 +150,4 @@ void ssx_integrate(const std::vector<Vector3d> &xyzcal_px,
                                                               panel,
                                                               A);
     std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);
-}
+}*/
