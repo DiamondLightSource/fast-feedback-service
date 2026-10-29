@@ -5,8 +5,8 @@
 # version for the whole tree, the dx2 submodule included. Consumers make a
 # dependency available where they use it and never declare it themselves.
 # Whatever conda-forge serves at the right version comes from the
-# environment instead; GTest carries FIND_PACKAGE_ARGS, so the environment's
-# copy wins and git is only the fallback.
+# environment instead; nanobind and GTest carry FIND_PACKAGE_ARGS, so the
+# environment's copy wins and git is only the fallback.
 #
 # The CI cache of fetched sources is keyed on this file, so a changed pin
 # starts that cache empty. A declaration made anywhere else would be built
@@ -15,10 +15,20 @@
 set(FETCHCONTENT_QUIET OFF)
 include(FetchContent)
 
+# conda-forge ships nanobind as a python package with its cmake config inside
+# it, out of reach of the prefix search, so the interpreter is asked for it.
+# The version is exact so the environment and the fallback agree.
+execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_VARIABLE nanobind_ROOT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
 FetchContent_Declare(
     nanobind
     GIT_REPOSITORY https://github.com/wjakob/nanobind.git
     GIT_TAG v2.8.0
+    FIND_PACKAGE_ARGS 2.8.0 EXACT CONFIG
 )
 
 # A fork of p-ranav/argparse carrying terminal-width wrapping and mutually
