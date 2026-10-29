@@ -85,31 +85,25 @@ jobs:
           restore-keys: |
             ccache-${{ steps.prep.outputs.platform-pair }}-
 
-      # Persist the fetched dependency sources the same way. These carry
-      # submodules of their own, so a cold run clones a tree of repositories
-      # before anything compiles and one unreachable host fails the configure
-      # step. The key covers the files that choose the dependencies and the
-      # toolchain, so a changed pin or base image starts from an empty
-      # directory rather than reusing trees built against the old one.
+      # Persist the fetched dependency sources the same way. The build uses
+      # them as they are, so the key covers every file that declares a
+      # dependency or chooses the toolchain.
       - name: Restore dependency sources
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/deps-${{ steps.prep.outputs.platform-pair }}
-          key: deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('CMakeLists.txt', 'Dockerfile') }}-${{ github.sha }}
-          restore-keys: |
-            deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('CMakeLists.txt', 'Dockerfile') }}-
+          key: deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'Dockerfile') }}
 
       # List each restored dependency with the commit it sits at. The
       # directory starts empty on every job, so anything in it came from the
-      # cache. The combined cache action does not report which key matched;
-      # its own log line names it.
+      # cache.
       - name: Report restored dependency sources
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         run: |
           deps="${{ runner.temp }}/deps-${{ steps.prep.outputs.platform-pair }}"
           if ! compgen -G "$deps/*-src" > /dev/null; then
-            echo "No dependency sources restored, cold start"
+            echo "No dependency sources restored, every dependency will be fetched"
             exit 0
           fi
           for src in "$deps"/*-src; do
