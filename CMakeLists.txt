@@ -65,24 +65,9 @@ find_package(spdlog REQUIRED)
 find_package(nlohmann_json 3.11.3 REQUIRED)
 find_package(Eigen3 3.4 REQUIRED)
 
-# Dependency fetching - only for packages NOT in conda
-set(FETCHCONTENT_QUIET OFF)
-include(FetchContent)
-
-FetchContent_Declare(
-  nanobind
-  GIT_REPOSITORY https://github.com/wjakob/nanobind.git
-  GIT_TAG        v2.8.0
-)
-FetchContent_MakeAvailable(nanobind)
-
-FetchContent_Declare(
-    argparse
-    GIT_REPOSITORY  https://github.com/ndevenish/argparse
-    GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
-    EXCLUDE_FROM_ALL
-)
-FetchContent_MakeAvailable(argparse)
+# Packages conda-forge cannot provide, pinned in one place
+include(Dependencies)
+FetchContent_MakeAvailable(nanobind argparse)
 
 # Required for Python module build of ffbidx
 set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
@@ -99,29 +84,11 @@ else()
     set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
 endif()
 
-# Pinned to a commit rather than a branch. The indexer links the Eigen3::Eigen
-# already found in the conda environment, so its only submodule, Eigen on
-# gitlab.com, is never compiled and is skipped. That keeps every
-# configure-time fetch on GitHub.
-FetchContent_Declare(
-  ffbidx
-  GIT_REPOSITORY https://github.com/paulscherrerinstitute/fast-feedback-indexer.git
-  GIT_TAG 6f6e3c78d847dce6fdebf0a93dcd4440af0737f4
-  GIT_SUBMODULES ""
-)
 FetchContent_MakeAvailable(ffbidx)
 
-# GTest - try find_package first, fallback to FetchContent
-find_package(GTest QUIET)
-if(NOT GTest_FOUND AND NOT TARGET GTest::gtest_main)
-    FetchContent_Declare(
-        GTest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.14.0
-        EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(GTest)
-endif()
+# Made available here so a found package's imported targets are visible to
+# the whole tree, not only the directory that looked for it
+FetchContent_MakeAvailable(GTest)
 
 # Discover GoogleTest cases at ctest time, not build time. The default
 # POST_BUILD mode runs each test binary during the build, where conda's

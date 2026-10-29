@@ -86,14 +86,14 @@ jobs:
             ccache-${{ steps.prep.outputs.platform-pair }}-
 
       # Persist the fetched dependency sources the same way. The build uses
-      # them as they are, so the key covers every file that declares a
-      # dependency or chooses the toolchain.
+      # them as they are, so the key covers the file that pins them and the
+      # one that chooses the toolchain.
       - name: Restore dependency sources
         if: ${{github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'}}
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/deps-${{ steps.prep.outputs.platform-pair }}
-          key: deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'Dockerfile') }}
+          key: deps-${{ steps.prep.outputs.platform-pair }}-${{ hashFiles('cmake/Modules/Dependencies.cmake', 'Dockerfile') }}
 
       # List each restored dependency with the commit it sits at. The
       # directory starts empty on every job, so anything in it came from the
