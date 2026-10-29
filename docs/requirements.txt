@@ -1,0 +1,13 @@
+# Python packages for building the documentation.
+#
+# The Doxygen and Graphviz *binaries* are NOT pip-installable and must
+# be provided separately (conda-forge: `doxygen graphviz`, or apt:
+# `doxygen graphviz`). Exhale invokes the `doxygen` binary at build
+# time.
+sphinx>=7.0
+breathe>=4.35
+exhale>=0.3.7
+furo>=2024.1.29
+myst-parser>=2.0
+# Resolves the docs version from git, as the python build does.
+setuptools_scm>=8
