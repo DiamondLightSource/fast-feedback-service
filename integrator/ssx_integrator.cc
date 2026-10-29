@@ -191,7 +191,8 @@ int main(int argc, char **argv) {
     auto scans = elist_json_obj["scan"];
     for (auto expt: elist_json_obj["experiment"]){
         std::string identifier = expt["identifier"];
-        json crystal_json = expt["crystal"];
+        int crystal_id = expt["crystal"];
+        json crystal_json =  elist_json_obj["crystal"][crystal_id];
         Crystal this_crystal(crystal_json);
         int scan_id = expt["scan"];
         int image_no = scans[scan_id]["image_range"][0];
@@ -209,6 +210,9 @@ int main(int argc, char **argv) {
 
     std::unordered_map<int, size_t> reflections_in_image;
 
+    const std::vector<std::string>& identifiers = reflections.get_identifiers();
+    const std::vector<uint64_t>& expt_ids = reflections.get_experiment_ids();
+
     std::vector<std::jthread> threads;
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
         threads.emplace_back([&, thread_id]() {
@@ -221,17 +225,14 @@ int main(int argc, char **argv) {
                 }
             }
             ReflectionTable table = reflections.select(sel);
+            std::string identifier = identifiers[thread_id];
             
 
             std::vector<std::string> identifiers = table.get_identifiers();
-            if (identifiers.size() != 1){
-                logger.error("Reflection table selection went wrong.");
-                return;
-            }
-            int image_no = identifier_to_image_number[identifiers[0]];
+            int image_no = identifier_to_image_number[identifier];
             reflections_in_image[image_no] = table.size();
             num_reflections += table.size();
-            Crystal this_crystal = identifier_to_crystal_model[identifiers[0]];
+            Crystal this_crystal = identifier_to_crystal_model[identifier];
             // make mdspans of data
             auto xyzobs_px_ = table.column<double>("xyzobs.px.value");
             if (!xyzobs_px_.has_value()) {
@@ -254,12 +255,12 @@ int main(int argc, char **argv) {
             }
             mdspan_type<const double> covariances = covariances_opt.value();
 
-            auto intensities_opt = table.column<double>("intensity.sum.value");
+            auto intensities_opt = table.column<int>("intensity.sum.value");
             if (!intensities_opt) {
                 logger.error("Column 'intensity.sum.value' not found in reflection data.");
                 return;
             }
-            mdspan_type<const double> intensities = intensities_opt.value();
+            mdspan_type<const int> strong_intensities = intensities_opt.value();
 
             auto miller_indices_opt = table.column<int>("miller_index");
             if (!miller_indices_opt) {
@@ -279,13 +280,14 @@ int main(int argc, char **argv) {
             Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
                                                               xyzobs_px,
                                                               covariances,
-                                                              intensities,
+                                                              strong_intensities,
                                                               miller_indices,
                                                               mobs,
                                                               s0,
                                                               panel,
                                                               this_crystal.get_A_matrix());
             std::vector<Prediction> predictions = predict_ssx(model, s0, panel, this_crystal.get_A_matrix());
+            logger.info("Predicted {} reflections on image {}", predictions.size(), image_no);
 
             // then save output predictions into a joint area to iterate over in integration.
         });

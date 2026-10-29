@@ -25,7 +25,7 @@ Simple6MosaicityParameterisation refine_mosaicity(
     mdspan_type<const double> &xyzcal_px,
     mdspan_type<const double> &xyzobs_px,
     mdspan_type<const double> &covariances,
-    mdspan_type<const double> &intensities,
+    mdspan_type<const int> &intensities,
     mdspan_type<const int> &miller_indices,
     mdspan_type<const double> &mobs,
     const Eigen::Vector3d &s0,
@@ -58,7 +58,7 @@ Simple6MosaicityParameterisation refine_mosaicity(
     mobs_f.reserve(keep.size());
 
     for (auto i : keep) {
-        intensities_f.push_back(intensities(i,0));
+        intensities_f.push_back(static_cast<double>(intensities(i,0)));
         covariances_f.push_back({covariances(i,0), covariances(i,1), covariances(i,2)});
         xyzobs_f.push_back({xyzobs_px(i,0), xyzobs_px(i,1), xyzobs_px(i,2)});
         xyzcal_f.push_back({xyzcal_px(i,0), xyzcal_px(i,1), xyzcal_px(i,2)});
@@ -99,7 +99,7 @@ Simple6MosaicityParameterisation refine_mosaicity(
       FisherScoringMaximumLikelihood(model, target);
     scorer.solve();
     Matrix3d sigma = model.sigma();
-    model.print_mosaicity();
+    //model.print_mosaicity();
     return model;
 }
 
