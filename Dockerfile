@@ -46,9 +46,13 @@ ENV CCACHE_COMPILERCHECK=content
 # Each cached source is passed to cmake as an override, since FetchContent
 # keeps its download record in the build tree and would re-clone it. git
 # must trust the sources, which belong to the CI runner's user, not root.
+#
+# ccache keeps its statistics in the cache directory, which persists across
+# runs, so they are zeroed first to report this build alone.
 RUN --mount=type=cache,target=/ccache \
     --mount=type=cache,target=/deps \
-    deps_args="" \
+    ccache --zero-stats \
+    && deps_args="" \
     && for src in /deps/*-src; do \
         [ -d "$src" ] || continue; \
         name=$(basename "$src" -src | tr a-z A-Z); \
@@ -64,7 +68,7 @@ RUN --mount=type=cache,target=/ccache \
                 -DFETCHCONTENT_BASE_DIR=/deps \
                 ${deps_args}" \
     /opt/ffs/bin/pip3 install --no-build-isolation --root-user-action=ignore /opt/ffs_src \
-    && ccache --show-stats
+    && ccache --show-stats --verbose
 
 # The extension modules arrive with the wheel rather than with cmake, so
 # prove they import before the runtime stage copies the prefix
