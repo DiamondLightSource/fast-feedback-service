@@ -64,25 +64,15 @@ find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(nlohmann_json 3.11.3 REQUIRED)
 find_package(Eigen3 3.4 REQUIRED)
+find_package(mdspan 0.6 REQUIRED)
 
-# Dependency fetching - only for packages NOT in conda
-set(FETCHCONTENT_QUIET OFF)
-include(FetchContent)
+# Dependencies taken from git, or from the environment when it has them
+include(Dependencies)
+FetchContent_MakeAvailable(nanobind argparse lodepng)
 
-FetchContent_Declare(
-  nanobind
-  GIT_REPOSITORY https://github.com/wjakob/nanobind.git
-  GIT_TAG        v2.8.0
-)
-FetchContent_MakeAvailable(nanobind)
-
-FetchContent_Declare(
-    argparse
-    GIT_REPOSITORY  https://github.com/ndevenish/argparse
-    GIT_TAG f362c4647e7b4bbfef8320040409560b5f90e9e0
-    EXCLUDE_FROM_ALL
-)
-FetchContent_MakeAvailable(argparse)
+# lodepng ships no cmake build of its own
+add_library(lodepng STATIC "${lodepng_SOURCE_DIR}/lodepng.cpp")
+target_include_directories(lodepng PUBLIC "${lodepng_SOURCE_DIR}")
 
 # Required for Python module build of ffbidx
 set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
@@ -99,24 +89,9 @@ else()
     set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
 endif()
 
-FetchContent_Declare(
-  ffbidx
-  GIT_REPOSITORY https://github.com/paulscherrerinstitute/fast-feedback-indexer.git
-  GIT_TAG main
-)
 FetchContent_MakeAvailable(ffbidx)
 
-# GTest - try find_package first, fallback to FetchContent
-find_package(GTest QUIET)
-if(NOT GTest_FOUND AND NOT TARGET GTest::gtest_main)
-    FetchContent_Declare(
-        GTest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.14.0
-        EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(GTest)
-endif()
+FetchContent_MakeAvailable(GTest)
 
 # Discover GoogleTest cases at ctest time, not build time. The default
 # POST_BUILD mode runs each test binary during the build, where conda's

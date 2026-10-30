@@ -115,8 +115,9 @@ struct TestBackgroundPool {
         : keys(num_reflections * kBackgroundPoolEntriesPerReflection),
           counts(num_reflections * kBackgroundPoolEntriesPerReflection) {
         const size_t capacity = num_reflections * kBackgroundPoolEntriesPerReflection;
-        cudaMemset(keys.data(), 0xFF, capacity * sizeof(unsigned long long));
-        cudaMemset(counts.data(), 0, capacity * sizeof(uint32_t));
+        cuda_check(
+          cudaMemset(keys.data(), 0xFF, capacity * sizeof(unsigned long long)));
+        cuda_check(cudaMemset(counts.data(), 0, capacity * sizeof(uint32_t)));
         pool.keys = keys.data();
         pool.counts = counts.data();
         pool.capacity = static_cast<uint32_t>(capacity);
@@ -305,9 +306,8 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
 #pragma region Allocate buffers
     // Allocate a blank (all-zero) detector image on the GPU, reused per image
     auto d_image = PitchedMalloc<pixel_t>(width, height);
-    cudaMemset2D(
-      d_image.get(), d_image.pitch_bytes(), 0, width * sizeof(pixel_t), height);
-    cuda_throw_error();
+    cuda_check(cudaMemset2D(
+      d_image.get(), d_image.pitch_bytes(), 0, width * sizeof(pixel_t), height));
 
     DeviceBuffer<scalar_t> d_d_matrix(9);
     DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
@@ -331,24 +331,24 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     DeviceBuffer<unsigned long long> d_intensity_times_x(num_reflections);
     DeviceBuffer<unsigned long long> d_intensity_times_y(num_reflections);
     DeviceBuffer<unsigned long long> d_intensity_times_z(num_reflections);
-    cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
-    cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(
-      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(
-      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(
-      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long));
+    cuda_check(cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
+    cuda_check(cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(cudaMemset(
+      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long)));
 
     // All-valid detector mask (non-zero = valid) and a per-reflection success
     // flag. The kernel clears success on a masked or out-of-image foreground
     // pixel; with no mask and an image-sized grid, neither occurs here.
     DeviceBuffer<uint8_t> d_mask(static_cast<size_t>(width) * height);
-    cudaMemset(d_mask.data(), 1, static_cast<size_t>(width) * height * sizeof(uint8_t));
+    cuda_check(cudaMemset(
+      d_mask.data(), 1, static_cast<size_t>(width) * height * sizeof(uint8_t)));
     DeviceBuffer<uint8_t> d_success(num_reflections);
-    cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t));
-    cuda_throw_error();
+    cuda_check(cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t)));
 #pragma endregion Allocate buffers
 
 #pragma region Dispatch
@@ -375,11 +375,10 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
         }
         if (refl_indices_this_image.empty()) continue;
 
-        cudaMemcpy(d_reflection_indices.data(),
-                   refl_indices_this_image.data(),
-                   refl_indices_this_image.size() * sizeof(size_t),
-                   cudaMemcpyHostToDevice);
-        cuda_throw_error();
+        cuda_check(cudaMemcpy(d_reflection_indices.data(),
+                              refl_indices_this_image.data(),
+                              refl_indices_this_image.size() * sizeof(size_t),
+                              cudaMemcpyHostToDevice));
 
         compute_kabsch_transform(d_image.get(),
                                  d_image.pitch_bytes(),
@@ -414,8 +413,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                                  d_success.data(),
                                  nullptr);
     }
-    cudaDeviceSynchronize();
-    cuda_throw_error();
+    cuda_check(cudaDeviceSynchronize());
 #pragma endregion Dispatch
 
 #pragma region Compare counts
@@ -603,12 +601,15 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     DeviceBuffer<unsigned long long> d_itx(num_reflections);
     DeviceBuffer<unsigned long long> d_ity(num_reflections);
     DeviceBuffer<unsigned long long> d_itz(num_reflections);
-    cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
-    cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(d_itx.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(d_ity.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(d_itz.data(), 0, num_reflections * sizeof(unsigned long long));
+    cuda_check(cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
+    cuda_check(cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(
+      cudaMemset(d_itx.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(
+      cudaMemset(d_ity.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(
+      cudaMemset(d_itz.data(), 0, num_reflections * sizeof(unsigned long long)));
 
     // Real detector mask (non-zero = valid); all-valid fallback if absent.
     std::vector<uint8_t> h_mask(static_cast<size_t>(width) * height, 1);
@@ -618,8 +619,7 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     DeviceBuffer<uint8_t> d_mask(static_cast<size_t>(width) * height);
     d_mask.assign(h_mask.data());
     DeviceBuffer<uint8_t> d_success(num_reflections);
-    cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t));
-    cuda_throw_error();
+    cuda_check(cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t)));
 #pragma endregion Allocate buffers
 
 #pragma region Dispatch
@@ -652,20 +652,18 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
         ASSERT_TRUE(reader.is_image_available(static_cast<size_t>(image_num)))
           << "Image frame " << image_num << " not available in " << in.image_template;
         reader.get_image_into(static_cast<size_t>(image_num), host_image.data());
-        cudaMemcpy2D(d_image.get(),
-                     d_image.pitch_bytes(),
-                     host_image.data(),
-                     width * sizeof(pixel_t),
-                     width * sizeof(pixel_t),
-                     height,
-                     cudaMemcpyHostToDevice);
-        cuda_throw_error();
+        cuda_check(cudaMemcpy2D(d_image.get(),
+                                d_image.pitch_bytes(),
+                                host_image.data(),
+                                width * sizeof(pixel_t),
+                                width * sizeof(pixel_t),
+                                height,
+                                cudaMemcpyHostToDevice));
 
-        cudaMemcpy(d_reflection_indices.data(),
-                   refl_indices_this_image.data(),
-                   refl_indices_this_image.size() * sizeof(size_t),
-                   cudaMemcpyHostToDevice);
-        cuda_throw_error();
+        cuda_check(cudaMemcpy(d_reflection_indices.data(),
+                              refl_indices_this_image.data(),
+                              refl_indices_this_image.size() * sizeof(size_t),
+                              cudaMemcpyHostToDevice));
 
         compute_kabsch_transform(d_image.get(),
                                  d_image.pitch_bytes(),
@@ -700,8 +698,7 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
                                  d_success.data(),
                                  nullptr);
     }
-    cudaDeviceSynchronize();
-    cuda_throw_error();
+    cuda_check(cudaDeviceSynchronize());
 #pragma endregion Dispatch
 
 #pragma region Reduce background
@@ -728,8 +725,7 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
                        d_bg_count_r.data(),
                        d_bg_success.data(),
                        nullptr);
-    cudaDeviceSynchronize();
-    cuda_throw_error();
+    cuda_check(cudaDeviceSynchronize());
     std::vector<double> h_bg_mean(num_reflections);
     std::vector<double> h_bg_sum_value(num_reflections);
     std::vector<uint8_t> h_bg_success(num_reflections);
@@ -900,9 +896,8 @@ void KabschTransformTest::RunForegroundSumSaturation(FGAlgorithm algo) {
     // Every pixel at the ceiling of the pixel type: an all-ones byte fill is
     // the maximum at either compiled width.
     auto d_image = PitchedMalloc<pixel_t>(width, height);
-    cudaMemset2D(
-      d_image.get(), d_image.pitch_bytes(), 0xFF, width * sizeof(pixel_t), height);
-    cuda_throw_error();
+    cuda_check(cudaMemset2D(
+      d_image.get(), d_image.pitch_bytes(), 0xFF, width * sizeof(pixel_t), height));
 
     DeviceBuffer<scalar_t> d_d_matrix(9);
     DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
@@ -923,23 +918,23 @@ void KabschTransformTest::RunForegroundSumSaturation(FGAlgorithm algo) {
     DeviceBuffer<unsigned long long> d_intensity_times_x(num_reflections);
     DeviceBuffer<unsigned long long> d_intensity_times_y(num_reflections);
     DeviceBuffer<unsigned long long> d_intensity_times_z(num_reflections);
-    cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t));
-    cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(
-      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(
-      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(
-      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long));
+    cuda_check(cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
+    cuda_check(cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(cudaMemset(
+      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long)));
 
     // All-valid mask: a masked foreground pixel would clear success and skip
     // the accumulation, leaving nothing to measure.
     DeviceBuffer<uint8_t> d_mask(static_cast<size_t>(width) * height);
-    cudaMemset(d_mask.data(), 1, static_cast<size_t>(width) * height * sizeof(uint8_t));
+    cuda_check(cudaMemset(
+      d_mask.data(), 1, static_cast<size_t>(width) * height * sizeof(uint8_t)));
     DeviceBuffer<uint8_t> d_success(num_reflections);
-    cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t));
-    cuda_throw_error();
+    cuda_check(cudaMemset(d_success.data(), 1, num_reflections * sizeof(uint8_t)));
 #pragma endregion Allocate buffers
 
 #pragma region Dispatch
@@ -966,11 +961,10 @@ void KabschTransformTest::RunForegroundSumSaturation(FGAlgorithm algo) {
         }
         if (refl_indices_this_image.empty()) continue;
 
-        cudaMemcpy(d_reflection_indices.data(),
-                   refl_indices_this_image.data(),
-                   refl_indices_this_image.size() * sizeof(size_t),
-                   cudaMemcpyHostToDevice);
-        cuda_throw_error();
+        cuda_check(cudaMemcpy(d_reflection_indices.data(),
+                              refl_indices_this_image.data(),
+                              refl_indices_this_image.size() * sizeof(size_t),
+                              cudaMemcpyHostToDevice));
 
         compute_kabsch_transform(d_image.get(),
                                  d_image.pitch_bytes(),
@@ -1005,8 +999,7 @@ void KabschTransformTest::RunForegroundSumSaturation(FGAlgorithm algo) {
                                  d_success.data(),
                                  nullptr);
     }
-    cudaDeviceSynchronize();
-    cuda_throw_error();
+    cuda_check(cudaDeviceSynchronize());
 #pragma endregion Dispatch
 
 #pragma region Assertions

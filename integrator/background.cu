@@ -145,19 +145,11 @@ uint32_t compute_background(BackgroundModel model,
     cub::DoubleBuffer<unsigned long long> keys(pool.keys, d_spare_keys.data());
     cub::DoubleBuffer<uint32_t> counts(pool.counts, d_spare_counts.data());
     size_t temp_bytes = 0;
-    cudaError_t err = cub::DeviceRadixSort::SortPairs(
-      nullptr, temp_bytes, keys, counts, n, 0, end_bit, stream);
-    if (err != cudaSuccess) {
-        throw std::runtime_error(fmt::format("Background pool sort sizing failed: {}",
-                                             cudaGetErrorString(err)));
-    }
+    cuda_check(cub::DeviceRadixSort::SortPairs(
+      nullptr, temp_bytes, keys, counts, n, 0, end_bit, stream));
     DeviceBuffer<uint8_t> d_temp(temp_bytes);
-    err = cub::DeviceRadixSort::SortPairs(
-      d_temp.data(), temp_bytes, keys, counts, n, 0, end_bit, stream);
-    if (err != cudaSuccess) {
-        throw std::runtime_error(
-          fmt::format("Background pool sort failed: {}", cudaGetErrorString(err)));
-    }
+    cuda_check(cub::DeviceRadixSort::SortPairs(
+      d_temp.data(), temp_bytes, keys, counts, n, 0, end_bit, stream));
 
     DeviceBuffer<uint32_t> d_occupied(1);
     const unsigned int blocks = static_cast<unsigned int>(
@@ -176,15 +168,11 @@ uint32_t compute_background(BackgroundModel model,
       d_background_success,
       d_occupied.data());
 
-    err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        throw std::runtime_error(fmt::format("Background reduction launch failed: {}",
-                                             cudaGetErrorString(err)));
-    }
+    cuda_check_launch("background_reduce_kernel");
 
     // The scratch buffers are freed on return, so the stream has to finish
     // with them first.
-    cudaStreamSynchronize(stream);
+    cuda_check(cudaStreamSynchronize(stream));
     uint32_t occupied = 0;
     d_occupied.extract(&occupied);
     return occupied;

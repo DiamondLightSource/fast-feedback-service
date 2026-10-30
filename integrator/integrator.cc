@@ -810,7 +810,7 @@ int main(int argc, char **argv) {
           static_cast<size_t>(num_cpu_threads) * width * height * sizeof(pixel_t);
         size_t free_bytes = 0;
         size_t total_bytes = 0;
-        CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
+        cuda_check(cudaMemGetInfo(&free_bytes, &total_bytes));
         const size_t other_bytes = image_bytes + kOtherAllocationsMargin;
         if (pool_bytes + other_bytes > free_bytes) {
             const size_t room = free_bytes > other_bytes ? free_bytes - other_bytes : 0;
@@ -858,21 +858,24 @@ int main(int argc, char **argv) {
     // host after the loop if fg_count == 0.
     DeviceBuffer<uint8_t> d_success(num_reflections);
 
-    cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t));
-    cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t));
+    cuda_check(
+      cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
+    cuda_check(
+      cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t)));
     // An all-ones byte fill makes every key BG_POOL_EMPTY_KEY.
-    cudaMemset(d_background_pool_keys.data(),
-               0xFF,
-               background_pool_capacity * sizeof(unsigned long long));
-    cudaMemset(
-      d_background_pool_counts.data(), 0, background_pool_capacity * sizeof(uint32_t));
-    cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t));
-    cudaMemset(
-      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(
-      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long));
-    cudaMemset(
-      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long));
+    cuda_check(cudaMemset(d_background_pool_keys.data(),
+                          0xFF,
+                          background_pool_capacity * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_background_pool_counts.data(), 0, background_pool_capacity * sizeof(uint32_t)));
+    cuda_check(
+      cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(cudaMemset(
+      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_intensity_times_z.data(), 0, num_reflections * sizeof(unsigned long long)));
     // Pre-fill success with dont_integrate complement (1 = ok, 0 = skipped/failed).
     std::vector<uint8_t> success_init(num_reflections);
     for (size_t i = 0; i < num_reflections; ++i) {
@@ -892,8 +895,6 @@ int main(int argc, char **argv) {
     }
     DeviceBuffer<size_t> d_all_reflection_indices(all_reflection_indices.size());
     d_all_reflection_indices.assign(all_reflection_indices.data());
-
-    cuda_throw_error();
 #pragma endregion Prep GPU Data Buffers
 
 #pragma region Thread launch
@@ -1016,16 +1017,15 @@ int main(int argc, char **argv) {
                 }
 
                 // Copy image data to device memory
-                cudaMemcpy2DAsync(device_image.get(),
-                                  device_image.pitch_bytes(),
-                                  host_image.get(),
-                                  width * sizeof(pixel_t),
-                                  width * sizeof(pixel_t),
-                                  height,
-                                  cudaMemcpyHostToDevice,
-                                  stream);
+                cuda_check(cudaMemcpy2DAsync(device_image.get(),
+                                             device_image.pitch_bytes(),
+                                             host_image.get(),
+                                             width * sizeof(pixel_t),
+                                             width * sizeof(pixel_t),
+                                             height,
+                                             cudaMemcpyHostToDevice,
+                                             stream));
                 copy_done.record(stream);
-                cuda_throw_error();
 
                 // This image's reflections, within the indices uploaded before
                 // the loop.
@@ -1108,8 +1108,7 @@ int main(int argc, char **argv) {
     // reduction reads the histograms those kernels filled.
     // Perhaps better to have each thread synchronize its stream before joining,
     // this is simper for now, but worth testing during profiling.
-    cudaDeviceSynchronize();
-    cuda_throw_error();
+    cuda_check(cudaDeviceSynchronize());
 
     // Reduce each reflection's background histogram into an estimate on the
     // device (Tukey/IQR constant model), then copy the small results back.
@@ -1129,8 +1128,7 @@ int main(int argc, char **argv) {
                 background_pool_occupied,
                 background_pool_capacity,
                 100.0 * background_pool_occupied / background_pool_capacity);
-    cudaDeviceSynchronize();
-    cuda_throw_error();
+    cuda_check(cudaDeviceSynchronize());
 #pragma endregion Background Reduction
 
 #pragma region Summation Integration Finalization

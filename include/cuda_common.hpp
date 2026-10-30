@@ -11,11 +11,13 @@
 #include <cinttypes>
 #include <filesystem>
 #include <fstream>
+#include <source_location>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
 
 #include "common.hpp"
+#include "cuda_error.hpp"
 #include "ffs_logger.hpp"
 
 // #if __has_include(<hdf5.h>)
@@ -25,55 +27,26 @@
 // }
 // #endif
 
-class cuda_error : public std::runtime_error {
-  public:
-    using std::runtime_error::runtime_error;
-};
-
-inline auto cuda_error_string(cudaError_t err) {
-    const char *err_name = cudaGetErrorName(err);
-    const char *err_str = cudaGetErrorString(err);
-    return fmt::format("{}: {}", std::string{err_name}, std::string{err_str});
-}
-inline auto _cuda_check_error(cudaError_t err, const char *file, int line_num) {
-    if (err != cudaSuccess) {
-        throw cuda_error(
-          fmt::format("{}:{}: {}", file, line_num, cuda_error_string(err)));
-    }
-}
-
-#define CUDA_CHECK(x) _cuda_check_error((x), __FILE__, __LINE__)
-
-/// Raise an exception IF CUDA is in an error state, with the name and description
-inline auto cuda_throw_error() -> void {
-    auto err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        throw cuda_error(cuda_error_string(err));
-    }
-}
-
 template <typename T>
-auto make_cuda_malloc(size_t num_items = 1) {
+auto make_cuda_malloc(
+  size_t num_items = 1,
+  const std::source_location location = std::source_location::current()) {
     using Tb = typename std::remove_extent<T>::type;
     Tb *obj = nullptr;
-    auto err = cudaMalloc(&obj, sizeof(Tb) * num_items);
-    if (err != cudaSuccess || obj == nullptr) {
-        throw cuda_error(
-          fmt::format("Error in make_cuda_malloc: {}", cuda_error_string(err)));
-    }
+    cuda_check(cudaMalloc(&obj, sizeof(Tb) * num_items), location);
+    cuda_check_allocated(obj, "cudaMalloc", location);
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
 
 template <typename T>
-auto make_cuda_managed_malloc(size_t num_items) {
+auto make_cuda_managed_malloc(
+  size_t num_items,
+  const std::source_location location = std::source_location::current()) {
     using Tb = typename std::remove_extent<T>::type;
     Tb *obj = nullptr;
-    auto err = cudaMallocManaged(&obj, sizeof(Tb) * num_items);
-    if (err != cudaSuccess || obj == nullptr) {
-        throw cuda_error(
-          fmt::format("Error in make_cuda_managed_malloc: {}", cuda_error_string(err)));
-    }
+    cuda_check(cudaMallocManaged(&obj, sizeof(Tb) * num_items), location);
+    cuda_check_allocated(obj, "cudaMallocManaged", location);
 
     auto deleter = [](Tb *ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
@@ -81,29 +54,28 @@ auto make_cuda_managed_malloc(size_t num_items) {
 
 /// Allocate memory using cudaMallocHost
 template <typename T>
-auto make_cuda_pinned_malloc(size_t num_items = 1) {
+auto make_cuda_pinned_malloc(
+  size_t num_items = 1,
+  const std::source_location location = std::source_location::current()) {
     using Tb = typename std::remove_extent<T>::type;
     Tb *obj = nullptr;
-    auto err = cudaMallocHost(&obj, sizeof(Tb) * num_items);
-    if (err != cudaSuccess || obj == nullptr) {
-        throw cuda_error(
-          fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
-    }
+    cuda_check(cudaMallocHost(&obj, sizeof(Tb) * num_items), location);
+    cuda_check_allocated(obj, "cudaMallocHost", location);
     auto deleter = [](Tb *ptr) { cudaFreeHost(ptr); };
     return std::shared_ptr<T[]>{obj, deleter};
 }
 
 template <typename T>
-auto make_cuda_pitched_malloc(size_t width, size_t height) {
+auto make_cuda_pitched_malloc(
+  size_t width,
+  size_t height,
+  const std::source_location location = std::source_location::current()) {
     static_assert(!std::is_unbounded_array_v<T>,
                   "T automatically returns unbounded array pointer");
     size_t pitch = 0;
     T *obj = nullptr;
-    auto err = cudaMallocPitch(&obj, &pitch, width * sizeof(T), height);
-    if (err != cudaSuccess || obj == nullptr) {
-        throw cuda_error(
-          fmt::format("Error in make_cuda_pitched_malloc: {}", cuda_error_string(err)));
-    }
+    cuda_check(cudaMallocPitch(&obj, &pitch, width * sizeof(T), height), location);
+    cuda_check_allocated(obj, "cudaMallocPitch", location);
 
     auto deleter = [](T *ptr) { cudaFree(ptr); };
 
@@ -124,8 +96,12 @@ struct PitchedMalloc {
     PitchedMalloc(std::shared_ptr<T[]> data, size_t width, size_t height, size_t pitch)
         : _data(data), width(width), height(height), pitch(pitch) {}
 
-    PitchedMalloc(size_t width, size_t height) : width(width), height(height) {
-        auto [alloc, alloc_pitch] = make_cuda_pitched_malloc<T>(width, height);
+    PitchedMalloc(size_t width,
+                  size_t height,
+                  const std::source_location location = std::source_location::current())
+        : width(width), height(height) {
+        auto [alloc, alloc_pitch] =
+          make_cuda_pitched_malloc<T>(width, height, location);
         _data = alloc;
         pitch = alloc_pitch;
     }
@@ -151,7 +127,7 @@ class CudaStream {
 
   public:
     CudaStream() {
-        cudaStreamCreate(&_stream);
+        cuda_check(cudaStreamCreate(&_stream));
     }
     ~CudaStream() {
         cudaStreamDestroy(_stream);
@@ -166,9 +142,7 @@ class CudaEvent {
 
   public:
     CudaEvent() {
-        if (cudaEventCreate(&event) != cudaSuccess) {
-            cuda_throw_error();
-        }
+        cuda_check(cudaEventCreate(&event));
     }
     CudaEvent(cudaEvent_t event) : event(event) {}
 
@@ -176,22 +150,16 @@ class CudaEvent {
         cudaEventDestroy(event);
     }
     void record(cudaStream_t stream = 0) {
-        if (cudaEventRecord(event, stream) != cudaSuccess) {
-            cuda_throw_error();
-        }
+        cuda_check(cudaEventRecord(event, stream));
     }
     /// Elapsed Event time, in milliseconds
     float elapsed_time(CudaEvent &since) {
         float elapsed_time = 0.0f;
-        if (cudaEventElapsedTime(&elapsed_time, since.event, event) != cudaSuccess) {
-            cuda_throw_error();
-        }
+        cuda_check(cudaEventElapsedTime(&elapsed_time, since.event, event));
         return elapsed_time;
     }
     void synchronize() {
-        if (cudaEventSynchronize(event) != cudaSuccess) {
-            cuda_throw_error();
-        }
+        cuda_check(cudaEventSynchronize(event));
     }
 };
 
@@ -232,24 +200,23 @@ class DeviceBuffer {
    * @brief Construct a device buffer with specified element count
    *
    * Allocates GPU memory for the specified number of elements and logs
-   * the allocation details. Throws std::runtime_error if allocation
-   * fails.
+   * the allocation details. Throws cuda_error if allocation fails.
    *
    * @param count Number of elements to allocate
-   * @throws std::runtime_error If cudaMalloc fails
+   * @param location The site to attribute a failure to.
+   * @throws cuda_error If cudaMalloc fails
    */
-    DeviceBuffer(size_t count) : count_(count) {
+    DeviceBuffer(size_t count,
+                 const std::source_location location = std::source_location::current())
+        : count_(count) {
         // Attempt to allocate device memory
         auto err = cudaMalloc(&device_ptr_, count_ * sizeof(T));
         if (err != cudaSuccess) {
-            auto error_msg =
-              fmt::format("cudaMalloc failed for {} elements of size {}: {} ({})",
-                          count,
-                          sizeof(T),
-                          cudaGetErrorString(err),
-                          cudaGetErrorName(err));
-            logger.error(error_msg);
-            throw std::runtime_error(error_msg);
+            logger.error("cudaMalloc failed for {} elements of size {}: {}",
+                         count,
+                         sizeof(T),
+                         cuda_error_string(err));
+            cuda_check(err, location);
         }
         // Log successful allocation for debugging
         logger.debug("Allocated {} bytes of {} memory for {} elements",
@@ -305,20 +272,19 @@ class DeviceBuffer {
    * elements.
    *
    * @param host_data Pointer to host memory containing data to copy
-   * @throws std::runtime_error If cudaMemcpy fails
+   * @param location The site to attribute a failure to.
+   * @throws cuda_error If cudaMemcpy fails
    */
-    void assign(const T *host_data) {
+    void assign(const T *host_data,
+                const std::source_location location = std::source_location::current()) {
         // Perform synchronous host-to-device memory copy
         auto err = cudaMemcpy(
           device_ptr_, host_data, count_ * sizeof(T), cudaMemcpyHostToDevice);
         if (err != cudaSuccess) {
-            auto error_msg =
-              fmt::format("cudaMemcpy (host to device) failed for {} elements: {} ({})",
-                          count_,
-                          cudaGetErrorString(err),
-                          cudaGetErrorName(err));
-            logger.error(error_msg);
-            throw std::runtime_error(error_msg);
+            logger.error("cudaMemcpy (host to device) failed for {} elements: {}",
+                         count_,
+                         cuda_error_string(err));
+            cuda_check(err, location);
         }
         logger.debug("Copied {} bytes: {} {} {}",
                      count_ * sizeof(T),
@@ -335,20 +301,20 @@ class DeviceBuffer {
    * elements.
    *
    * @param host_data Pointer to host memory where data will be copied
-   * @throws std::runtime_error If cudaMemcpy fails
+   * @param location The site to attribute a failure to.
+   * @throws cuda_error If cudaMemcpy fails
    */
-    void extract(T *host_data) const {
+    void extract(
+      T *host_data,
+      const std::source_location location = std::source_location::current()) const {
         // Perform synchronous device-to-host memory copy
         auto err = cudaMemcpy(
           host_data, device_ptr_, count_ * sizeof(T), cudaMemcpyDeviceToHost);
         if (err != cudaSuccess) {
-            auto error_msg =
-              fmt::format("cudaMemcpy (device to host) failed for {} elements: {} ({})",
-                          count_,
-                          cudaGetErrorString(err),
-                          cudaGetErrorName(err));
-            logger.error(error_msg);
-            throw std::runtime_error(error_msg);
+            logger.error("cudaMemcpy (device to host) failed for {} elements: {}",
+                         count_,
+                         cuda_error_string(err));
+            cuda_check(err, location);
         }
         logger.debug("Copied {} bytes: {} {} {}",
                      count_ * sizeof(T),
@@ -446,18 +412,18 @@ void save_device_data_to_png(PixelType *device_ptr,
     // Allocate host vector to hold the copied data
     std::vector<PixelType> host_data(width * height);
 
-    // Copy data from device to host asynchronously
-    cudaMemcpy2DAsync(host_data.data(),
-                      width * sizeof(PixelType),  // Host pitch (bytes)
-                      device_ptr,
-                      device_pitch,               // Device pitch (bytes)
-                      width * sizeof(PixelType),  // Width (bytes)
-                      height,
-                      cudaMemcpyDeviceToHost,
-                      stream);
+    // Copy data from device to host asynchronously.
+    cuda_check(cudaMemcpy2DAsync(host_data.data(),
+                                 width * sizeof(PixelType),  // Host pitch (bytes)
+                                 device_ptr,
+                                 device_pitch,               // Device pitch (bytes)
+                                 width * sizeof(PixelType),  // Width (bytes)
+                                 height,
+                                 cudaMemcpyDeviceToHost,
+                                 stream));
 
     // Synchronize the stream to ensure the copy is complete
-    cudaStreamSynchronize(stream);
+    cuda_check(cudaStreamSynchronize(stream));
 
     // Apply the transformation function to each pixel
     for (auto &pixel : host_data) {
@@ -496,18 +462,18 @@ void save_device_data_to_txt(PixelType *device_ptr,
     // Allocate host vector to hold the copied data
     std::vector<PixelType> host_data(width * height);
 
-    // Copy data from device to host asynchronously
-    cudaMemcpy2DAsync(host_data.data(),
-                      width * sizeof(PixelType),  // Host pitch (bytes)
-                      device_ptr,
-                      device_pitch,               // Device pitch (bytes)
-                      width * sizeof(PixelType),  // Width (bytes)
-                      height,
-                      cudaMemcpyDeviceToHost,
-                      stream);
+    // Copy data from device to host asynchronously.
+    cuda_check(cudaMemcpy2DAsync(host_data.data(),
+                                 width * sizeof(PixelType),  // Host pitch (bytes)
+                                 device_ptr,
+                                 device_pitch,               // Device pitch (bytes)
+                                 width * sizeof(PixelType),  // Width (bytes)
+                                 height,
+                                 cudaMemcpyDeviceToHost,
+                                 stream));
 
     // Synchronize the stream to ensure the copy is complete
-    cudaStreamSynchronize(stream);
+    cuda_check(cudaStreamSynchronize(stream));
 
     // Open an output file for the coordinates
     auto out = fmt::output_file(fmt::format("{}.txt", output_filename));

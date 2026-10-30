@@ -47,9 +47,10 @@ class DevicePool {
   public:
     DevicePool(uint32_t capacity, uint32_t num_reflections)
         : keys_(capacity), counts_(capacity), spill_(num_reflections) {
-        cudaMemset(keys_.data(), 0xFF, capacity * sizeof(unsigned long long));
-        cudaMemset(counts_.data(), 0, capacity * sizeof(uint32_t));
-        cudaMemset(spill_.data(), 0, num_reflections * sizeof(uint32_t));
+        cuda_check(
+          cudaMemset(keys_.data(), 0xFF, capacity * sizeof(unsigned long long)));
+        cuda_check(cudaMemset(counts_.data(), 0, capacity * sizeof(uint32_t)));
+        cuda_check(cudaMemset(spill_.data(), 0, num_reflections * sizeof(uint32_t)));
         pool_.keys = keys_.data();
         pool_.counts = counts_.data();
         pool_.capacity = capacity;
@@ -69,8 +70,8 @@ class DevicePool {
         const uint32_t n = static_cast<uint32_t>(pixels.size());
         insert_pixels_kernel<<<(n + 127) / 128, 128>>>(
           pool_, d_refl.data(), d_value.data(), spill_.data(), n);
-        cuda_throw_error();
-        cudaDeviceSynchronize();
+        cuda_check_launch("insert_pixels_kernel");
+        cuda_check(cudaDeviceSynchronize());
     }
 
     // (reflection, value) -> count, read back from the unsorted pool.
