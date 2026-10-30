@@ -774,16 +774,16 @@ void compute_kabsch_transform(pixel_t *d_image,
               prev_high, static_cast<uint32_t>(smem_bytes))) {
             int blocks_no_smem = 0;
             int blocks_with_smem = 0;
-            cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+            cuda_check(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
               &blocks_no_smem,
               kabsch_transform<algo>,
               static_cast<int>(KABSCH_THREADS),
-              0);
-            cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+              0));
+            cuda_check(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
               &blocks_with_smem,
               kabsch_transform<algo>,
               static_cast<int>(KABSCH_THREADS),
-              smem_bytes);
+              smem_bytes));
             if (blocks_with_smem < blocks_no_smem) {
                 static std::once_flag occupancy_warning_flag;
                 std::call_once(occupancy_warning_flag, [&] {
