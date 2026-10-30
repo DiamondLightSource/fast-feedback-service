@@ -712,6 +712,7 @@ int main(int argc, char **argv) {
     auto next_image = std::atomic<int>(first_image);
     auto completed_images = std::atomic<int>(0);
     auto cpu_sync = std::barrier{num_cpu_threads};
+    auto fatal_error = std::atomic<bool>(false);
 
     double time_waiting_for_images = 0.0;
 
@@ -904,177 +905,193 @@ int main(int argc, char **argv) {
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
         threads.emplace_back([&, thread_id]() {
             auto stop_token = global_stop.get_token();
-            CudaStream stream;  // Per-thread CUDA stream
-            // Recorded after each image's host-to-device copy, which reads
-            // host_image until it completes.
-            CudaEvent copy_done;
+            bool arrived_at_barrier = false;
+            try {
+                CudaStream stream;  // Per-thread CUDA stream
+                // Recorded after each image's host-to-device copy, which reads
+                // host_image until it completes.
+                CudaEvent copy_done;
 
-            // Full image buffers for decompression (pinned memory for faster transfer)
-            auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
-            auto raw_chunk_buffer =
-              std::vector<uint8_t>(width * height * sizeof(pixel_t));
+                // Full image buffers for decompression (pinned memory for faster transfer)
+                auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
+                auto raw_chunk_buffer =
+                  std::vector<uint8_t>(width * height * sizeof(pixel_t));
 
-            // Device memory for GPU processing
-            auto device_image = PitchedMalloc<pixel_t>(width, height);
+                // Device memory for GPU processing
+                auto device_image = PitchedMalloc<pixel_t>(width, height);
 
-            // Let all threads do setup tasks before reading starts
-            cpu_sync.arrive_and_wait();
+                // Let all threads do setup tasks before reading starts
+                cpu_sync.arrive_and_wait();
+                arrived_at_barrier = true;
 
-            auto last_image_received = std::chrono::high_resolution_clock::now();
+                auto last_image_received = std::chrono::high_resolution_clock::now();
 
-            while (!stop_token.stop_requested()) {
-                auto image_num = next_image.fetch_add(1);
-                if (image_num > last_image) {
-                    break;
-                }
-
-                // Check if this image has any reflections
-                if (reflections_by_image.find(image_num)
-                    == reflections_by_image.end()) {
-                    completed_images += 1;
-                    continue;
-                }
-
-                {
-                    std::scoped_lock lock(reader_mutex);
-                    auto swmr_wait_start_time =
-                      std::chrono::high_resolution_clock::now();
-
-                    // Check that our image is available and wait if not
-                    while (!reader.is_image_available(image_num)
-                           && !stop_token.stop_requested()) {
-                        auto current_time = std::chrono::high_resolution_clock::now();
-                        auto elapsed_wait_time =
-                          std::chrono::duration_cast<std::chrono::duration<double>>(
-                            current_time - last_image_received)
-                            .count();
-
-                        if (elapsed_wait_time > wait_timeout) {
-                            logger.error("Timeout waiting for image {}", image_num);
-                            global_stop.request_stop();
-                            break;
-                        }
-
-                        std::this_thread::sleep_for(100ms);
-                    }
-
-                    if (stop_token.stop_requested()) {
+                while (!stop_token.stop_requested()) {
+                    auto image_num = next_image.fetch_add(1);
+                    if (image_num > last_image) {
                         break;
                     }
 
-                    last_image_received = std::chrono::high_resolution_clock::now();
-                    time_waiting_for_images +=
-                      std::chrono::duration_cast<std::chrono::duration<double>>(
-                        std::chrono::high_resolution_clock::now()
-                        - swmr_wait_start_time)
-                        .count();
-                }
-
-                // Fetch the image data from the reader
-                std::span<uint8_t> buffer;
-                while (true) {
-                    {
-                        std::scoped_lock lock(reader_mutex);
-                        buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
-                    }
-
-                    if (buffer.size() == 0) {
-                        logger.warn("Got buffer size 0 for image {}. Sleeping.",
-                                    image_num);
-                        std::this_thread::sleep_for(100ms);
+                    // Check if this image has any reflections
+                    if (reflections_by_image.find(image_num)
+                        == reflections_by_image.end()) {
+                        completed_images += 1;
                         continue;
                     }
-                    break;
-                }
 
-                // Decompress the data into pinned host memory, once the previous
-                // image's copy out of it has finished.
-                copy_done.synchronize();
-                switch (reader.get_raw_chunk_compression()) {
-                case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
-                    // Returns the bytes consumed from the chunk, or a
-                    // negative error code.
-                    const int64_t consumed = bshuf_decompress_lz4(buffer.data() + 12,
-                                                                  host_image.get(),
-                                                                  width * height,
-                                                                  sizeof(pixel_t),
-                                                                  0);
-                    if (consumed < 0) {
-                        throw std::runtime_error(
-                          fmt::format("bitshuffle/LZ4 decompression of image {} "
-                                      "failed with code {}",
-                                      image_num,
-                                      consumed));
+                    {
+                        std::scoped_lock lock(reader_mutex);
+                        auto swmr_wait_start_time =
+                          std::chrono::high_resolution_clock::now();
+
+                        // Check that our image is available and wait if not
+                        while (!reader.is_image_available(image_num)
+                               && !stop_token.stop_requested()) {
+                            auto current_time =
+                              std::chrono::high_resolution_clock::now();
+                            auto elapsed_wait_time =
+                              std::chrono::duration_cast<std::chrono::duration<double>>(
+                                current_time - last_image_received)
+                                .count();
+
+                            if (elapsed_wait_time > wait_timeout) {
+                                logger.error("Timeout waiting for image {}", image_num);
+                                global_stop.request_stop();
+                                break;
+                            }
+
+                            std::this_thread::sleep_for(100ms);
+                        }
+
+                        if (stop_token.stop_requested()) {
+                            break;
+                        }
+
+                        last_image_received = std::chrono::high_resolution_clock::now();
+                        time_waiting_for_images +=
+                          std::chrono::duration_cast<std::chrono::duration<double>>(
+                            std::chrono::high_resolution_clock::now()
+                            - swmr_wait_start_time)
+                            .count();
                     }
-                    break;
-                }
-                case Reader::ChunkCompression::BYTE_OFFSET_32:
-                    decompress_byte_offset<pixel_t>(
-                      buffer,
-                      {host_image.get(),
-                       static_cast<std::span<pixel_t>::size_type>(width * height)});
-                    break;
-                }
 
-                // Copy image data to device memory
-                cuda_check(cudaMemcpy2DAsync(device_image.get(),
+                    // Fetch the image data from the reader
+                    std::span<uint8_t> buffer;
+                    while (true) {
+                        {
+                            std::scoped_lock lock(reader_mutex);
+                            buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
+                        }
+
+                        if (buffer.size() == 0) {
+                            logger.warn("Got buffer size 0 for image {}. Sleeping.",
+                                        image_num);
+                            std::this_thread::sleep_for(100ms);
+                            continue;
+                        }
+                        break;
+                    }
+
+                    // Decompress the data into pinned host memory, once the previous
+                    // image's copy out of it has finished.
+                    copy_done.synchronize();
+                    switch (reader.get_raw_chunk_compression()) {
+                    case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
+                        // Returns the bytes consumed from the chunk, or a
+                        // negative error code.
+                        const int64_t consumed =
+                          bshuf_decompress_lz4(buffer.data() + 12,
+                                               host_image.get(),
+                                               width * height,
+                                               sizeof(pixel_t),
+                                               0);
+                        if (consumed < 0) {
+                            throw std::runtime_error(
+                              fmt::format("bitshuffle/LZ4 decompression of image {} "
+                                          "failed with code {}",
+                                          image_num,
+                                          consumed));
+                        }
+                        break;
+                    }
+                    case Reader::ChunkCompression::BYTE_OFFSET_32:
+                        decompress_byte_offset<pixel_t>(
+                          buffer,
+                          {host_image.get(),
+                           static_cast<std::span<pixel_t>::size_type>(width * height)});
+                        break;
+                    }
+
+                    // Copy image data to device memory
+                    cuda_check(cudaMemcpy2DAsync(device_image.get(),
+                                                 device_image.pitch_bytes(),
+                                                 host_image.get(),
+                                                 width * sizeof(pixel_t),
+                                                 width * sizeof(pixel_t),
+                                                 height,
+                                                 cudaMemcpyHostToDevice,
+                                                 stream));
+                    copy_done.record(stream);
+
+                    // This image's reflections, within the indices uploaded before
+                    // the loop.
+                    const size_t num_refls_this_image =
+                      reflections_by_image.at(image_num).size();
+                    const size_t *d_reflection_indices =
+                      d_all_reflection_indices.data()
+                      + image_index_offset.at(image_num);
+
+                    // Launch Kabsch transform kernel for this image
+                    // This computes Kabsch coordinates and atomically accumulates
+                    // foreground/background intensities for summation integration
+                    logger.info("Launching GPU kernel for image {} with {} reflections",
+                                image_num,
+                                num_refls_this_image);
+                    compute_kabsch_transform(device_image.get(),
                                              device_image.pitch_bytes(),
-                                             host_image.get(),
-                                             width * sizeof(pixel_t),
-                                             width * sizeof(pixel_t),
+                                             width,
                                              height,
-                                             cudaMemcpyHostToDevice,
-                                             stream));
-                copy_done.record(stream);
+                                             image_num,
+                                             d_d_matrix.data(),
+                                             wavelength_scalar,
+                                             det_params,
+                                             osc_start_scalar,
+                                             osc_width_scalar,
+                                             image_range_start,
+                                             s0_vec,
+                                             rot_axis_vec,
+                                             d_s1_vectors.data(),
+                                             d_phi_values.data(),
+                                             d_bboxes.data(),
+                                             d_reflection_indices,
+                                             num_refls_this_image,
+                                             d_mask.data(),
+                                             corner_tile_by_image.at(image_num),
+                                             delta_b,
+                                             delta_m,
+                                             fg_algorithm,
+                                             d_foreground_sum.data(),
+                                             d_foreground_count.data(),
+                                             background_pool,
+                                             d_background_spill.data(),
+                                             d_intensity_times_x.data(),
+                                             d_intensity_times_y.data(),
+                                             d_intensity_times_z.data(),
+                                             d_success.data(),
+                                             stream);
 
-                // This image's reflections, within the indices uploaded before
-                // the loop.
-                const size_t num_refls_this_image =
-                  reflections_by_image.at(image_num).size();
-                const size_t *d_reflection_indices =
-                  d_all_reflection_indices.data() + image_index_offset.at(image_num);
-
-                // Launch Kabsch transform kernel for this image
-                // This computes Kabsch coordinates and atomically accumulates
-                // foreground/background intensities for summation integration
-                logger.info("Launching GPU kernel for image {} with {} reflections",
-                            image_num,
-                            num_refls_this_image);
-                compute_kabsch_transform(device_image.get(),
-                                         device_image.pitch_bytes(),
-                                         width,
-                                         height,
-                                         image_num,
-                                         d_d_matrix.data(),
-                                         wavelength_scalar,
-                                         det_params,
-                                         osc_start_scalar,
-                                         osc_width_scalar,
-                                         image_range_start,
-                                         s0_vec,
-                                         rot_axis_vec,
-                                         d_s1_vectors.data(),
-                                         d_phi_values.data(),
-                                         d_bboxes.data(),
-                                         d_reflection_indices,
-                                         num_refls_this_image,
-                                         d_mask.data(),
-                                         corner_tile_by_image.at(image_num),
-                                         delta_b,
-                                         delta_m,
-                                         fg_algorithm,
-                                         d_foreground_sum.data(),
-                                         d_foreground_count.data(),
-                                         background_pool,
-                                         d_background_spill.data(),
-                                         d_intensity_times_x.data(),
-                                         d_intensity_times_y.data(),
-                                         d_intensity_times_z.data(),
-                                         d_success.data(),
-                                         stream);
-
-                logger.trace("Thread {} loaded image {}", thread_id, image_num);
-                completed_images += 1;
+                    logger.trace("Thread {} loaded image {}", thread_id, image_num);
+                    completed_images += 1;
+                }
+            } catch (const std::exception &e) {
+                logger.error("Thread {} stopped on an unrecoverable error: {}",
+                             thread_id,
+                             e.what());
+                fatal_error = true;
+                global_stop.request_stop();
+                if (!arrived_at_barrier) {
+                    cpu_sync.arrive_and_drop();
+                }
             }
         });
     }
@@ -1082,6 +1099,13 @@ int main(int argc, char **argv) {
     // Wait for all threads to finish
     for (auto &thread : threads) {
         thread.join();
+    }
+
+    // The accumulators are missing at least one image, and a CUDA error may
+    // have left the context unusable, so nothing after this point can run.
+    if (fatal_error) {
+        logger.error("Integration stopped on a reader thread error; no output written");
+        return 1;
     }
 
     float total_time =
