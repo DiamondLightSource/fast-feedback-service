@@ -479,10 +479,14 @@ int main(int argc, char **argv) {
 
     std::vector<BoundingBoxExtents> bboxes;
     std::vector<int> predicted_ids;
+    std::vector<int> predicted_miller_index;
+    std::vector<double> predicted_partialities;
     std::unordered_map<int, std::vector<size_t>> reflections_by_image;
     std::unordered_map<int, uint32_t> corner_tile_by_image;
     bboxes.reserve(num_reflections);
     predicted_ids.reserve(num_reflections);
+    predicted_partialities.reserve(num_reflections);
+    predicted_miller_index.reserve(num_reflections*3);
     uint64_t cumulative_index = 0;
     int current_id = 0;
     // Map is ordered by keys
@@ -496,6 +500,10 @@ int main(int argc, char **argv) {
             uint32_t &image_max = corner_tile_by_image[key];
             image_max = std::max(image_max, corner_grid);
             predicted_ids.emplace_back(current_id);
+            predicted_partialities.emplace_back(p.partiality);
+            predicted_miller_index.emplace_back(p.h[0]);
+            predicted_miller_index.emplace_back(p.h[1]);
+            predicted_miller_index.emplace_back(p.h[2]);
         }
         std::vector<uint64_t> refl_indices;
         refl_indices.reserve(predictions.size());
@@ -608,6 +616,11 @@ int main(int argc, char **argv) {
     // non-zero = valid, 0 = masked. If the reader provides no mask,
     // treat every pixel as valid. Stored flat (width*height), indexed
     // `gy * width + gx`.
+
+
+    // What do we need: s1, s2, s0, panel for pixel lab coord, sigma,
+    // Could precompute pixel to lab coords?
+
     std::vector<uint8_t> h_mask(static_cast<size_t>(width) * height, 1);
     if (auto mask_opt = reader.get_mask()) {
         const auto &mask_span = *mask_opt;
@@ -845,7 +858,11 @@ int main(int argc, char **argv) {
     ReflectionTable integrated_data(ids_in, final_identifiers);
     integrated_data.add_column("intensity.sum.value", num_reflections, 1, intensities);
     integrated_data.add_column("id", num_reflections, 1, predicted_ids);
+    integrated_data.add_column("partiality", num_reflections, 1, predicted_partialities);
+    integrated_data.add_column("miller_index", num_reflections, 3, predicted_miller_index);
     integrated_data.write("integrated.refl");
+
+    // Add profile models to an integrated.expt list.
 
     return 0;
 }
