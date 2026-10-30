@@ -103,7 +103,7 @@ endfunction()
 add_integrator_variant(integrator)
 add_integrator_variant(integrator32 PIXEL_DATA_32BIT)
 
-add_serial_integrator_variant(serial_integrator)
+add_serial_integrator_variant(serial_integrator PIXEL_DATA_32BIT)
 
 add_subdirectory(ssx)
 add_subdirectory(tests)
