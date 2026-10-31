@@ -31,7 +31,7 @@ class Rotator {
         return Eigen::Matrix3d{
           {cos(theta) + axis_(0) * axis_(0) * (1 - cos(theta)),
            -axis_(2) * sin(theta) + axis_(0) * axis_(1) * (1 - cos(theta)),
-           axis_(1) * sin(theta) + axis_(0) * axis_(1) * (1 - cos(theta))},
+           axis_(1) * sin(theta) + axis_(0) * axis_(2) * (1 - cos(theta))},
           {axis_(2) * sin(theta) + axis_(0) * axis_(1) * (1 - cos(theta)),
            cos(theta) + axis_(1) * axis_(1) * (1 - cos(theta)),
            -axis_(0) * sin(theta) + axis_(1) * axis_(2) * (1 - cos(theta))},
