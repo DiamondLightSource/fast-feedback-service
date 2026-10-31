@@ -11,7 +11,7 @@
 
 /**
  * @brief A class to store the axis of rotation and return a rotation matrix for
- * a given angle using the Rodriguez formula.
+ * a given angle about it.
  */
 class Rotator {
   private:
@@ -26,18 +26,7 @@ class Rotator {
      * @param theta The rotation angle θ, in degrees
      */
     Eigen::Matrix3d rotation_matrix(double theta) const {
-        // Convert to radians
-        theta = theta * M_PI / 180;
-        return Eigen::Matrix3d{
-          {cos(theta) + axis_(0) * axis_(0) * (1 - cos(theta)),
-           -axis_(2) * sin(theta) + axis_(0) * axis_(1) * (1 - cos(theta)),
-           axis_(1) * sin(theta) + axis_(0) * axis_(2) * (1 - cos(theta))},
-          {axis_(2) * sin(theta) + axis_(0) * axis_(1) * (1 - cos(theta)),
-           cos(theta) + axis_(1) * axis_(1) * (1 - cos(theta)),
-           -axis_(0) * sin(theta) + axis_(1) * axis_(2) * (1 - cos(theta))},
-          {-axis_(1) * sin(theta) + axis_(0) * axis_(2) * (1 - cos(theta)),
-           axis_(0) * sin(theta) + axis_(1) * axis_(2) * (1 - cos(theta)),
-           cos(theta) + axis_(2) * axis_(2) * (1 - cos(theta))}};
+        return Eigen::AngleAxisd(theta * M_PI / 180, axis_).toRotationMatrix();
     }
 
     /**
