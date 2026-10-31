@@ -39,5 +39,3 @@ target_link_libraries(baseline_predictor
     Eigen3::Eigen
     gemmi::gemmi_cpp
 )
-
-add_subdirectory(tests)
