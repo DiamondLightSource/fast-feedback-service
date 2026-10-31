@@ -9,6 +9,7 @@
 #include "integrator.cuh"
 
 #include <bitshuffle.h>
+#include <unistd.h>
 
 #include <Eigen/Dense>
 #include <algorithm>
@@ -18,6 +19,7 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
@@ -36,6 +38,7 @@
 
 #include "../spotfinder/cbfread.hpp"
 #include "../spotfinder/shmread.hpp"
+#include "banner.hpp"
 #include "common.hpp"
 #include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
@@ -300,6 +303,10 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
 
 #pragma region Application Entry
 int main(int argc, char **argv) {
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("integrator");
+    }
     logger.info("Version: {}", FFS_VERSION);
 
     // Parse arguments
