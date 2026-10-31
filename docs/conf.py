@@ -72,6 +72,10 @@ html_title = "fast-feedback-service documentation"
 # Breathe reads the XML from the Doxygen run that Exhale triggers below.
 breathe_projects = {"ffs": "./doxyoutput/xml"}
 breathe_default_project = "ffs"
+# Breathe skips members of .c/.cc/.cpp files when resolving unqualified
+# names, which leaves file-local functions with empty pages. Search all
+# files instead.
+breathe_implementation_filename_extensions: list[str] = []
 
 # Exhale configuration
 
@@ -99,14 +103,18 @@ exhale_args = {
         EXTRACT_ALL      = YES
         EXTRACT_STATIC   = YES
         HIDE_UNDOC_MEMBERS = NO
-        # CUDA qualifiers and the host/device shim expand to nothing so
+        # Anonymous namespaces are file-private and Doxygen can only
+        # name them with a generated "@<digits>" placeholder.
+        EXCLUDE_SYMBOLS  = @*
+        # CUDA qualifiers and the host/device shims expand to nothing so
         # the parser sees plain C++ signatures.
         MACRO_EXPANSION  = YES
         EXPAND_ONLY_PREDEF = YES
         PREDEFINED       = __cplusplus=202002L \\
                            __global__= __device__= __host__= \\
                            __forceinline__= __shared__= __constant__= \\
-                           __restrict__= __noinline__= FFS_HD=
+                           __restrict__= __noinline__= FFS_HD= \\
+                           DEVICE_HOST=
         """
     ),
 }
