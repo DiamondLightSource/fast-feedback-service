@@ -176,12 +176,12 @@ Then open `docs/_build/html/index.html`.
 | [`spotfinder/`]   | CUDA implementation of the spotfinder algorithm |
 | [`tests/`]        | Tests for the spotfinder code |
 
-[`src/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/src
-[`spotfinder/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/spotfinder
+[`src/`]: src/
+[`spotfinder/`]: spotfinder/
 [`build/bin/`]: build/bin/
-[`Dockerfile`]: https://github.com/DiamondLightSource/fast-feedback-service/blob/main/Dockerfile
-[`environment.yml`]: https://github.com/DiamondLightSource/fast-feedback-service/blob/main/environment.yml
-[`baseline/spotfinder`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/baseline/spotfinder
-[`h5read/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/h5read
-[`include/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/include
-[`tests/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/tests
+[`Dockerfile`]: Dockerfile
+[`environment.yml`]: environment.yml
+[`baseline/spotfinder`]: baseline/spotfinder
+[`h5read/`]: h5read/
+[`include/`]: include/
+[`tests/`]: tests/

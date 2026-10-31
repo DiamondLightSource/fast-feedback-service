@@ -12,7 +12,9 @@
 # Doxygen configuration inlined below, so there is no separate Doxyfile
 # to keep in sync.
 
+import re
 import textwrap
+from pathlib import Path
 
 # Project information
 
@@ -122,3 +124,33 @@ exhale_args = {
 # The language Exhale/Breathe should assume for the generated tree.
 primary_domain = "cpp"
 highlight_language = "cpp"
+
+# README link rewriting
+
+# Repository the README's relative links resolve against on the docs site.
+REPO_URL = "https://github.com/DiamondLightSource/fast-feedback-service"
+
+# A reference link definition with a repo-relative target, e.g.
+# "[`src/`]: src/". Absolute URLs and in-page anchors are left alone.
+_RELATIVE_LINK_DEFINITION = re.compile(
+    r"^(\[[^\]]+\]):\s+(?!https?://|#)(\S+)$", flags=re.MULTILINE
+)
+
+
+def _absolute_readme_links(
+    app: object, relative_path: Path, parent_docname: str, content: list[str]
+) -> None:
+    """Point the README's repo-relative links at GitHub while it is
+    included into the docs. On GitHub the same links stay relative and
+    follow whichever branch or tag is being viewed; inside Sphinx they
+    would resolve as missing documents instead. GitHub redirects a
+    tree/ URL to blob/ for files, so one form covers both."""
+    if relative_path.name != "README.md":
+        return
+    content[0] = _RELATIVE_LINK_DEFINITION.sub(
+        lambda m: f"{m[1]}: {REPO_URL}/tree/main/{m[2]}", content[0]
+    )
+
+
+def setup(app):
+    app.connect("include-read", _absolute_readme_links)
