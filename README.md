@@ -1,5 +1,9 @@
 # Fast Feedback Service
-This is a GPU implementation of the [DIALS](https://dials.github.io/) spotfinder algorithm. It is designed to be used in a beamline for real-time feedback and x-ray centring during data collections.
+GPU-accelerated processing of X-ray diffraction data, following the
+[DIALS](https://dials.github.io/) algorithms. It serves both as a
+real-time feedback service on the beamline, where GPU spotfinding
+drives X-ray centring, and as an accelerated spotfind-index-integrate
+pipeline for fast feedback on complete datasets.
 
 The service, a python script in [`src/`], watches a queue for requests to process images. It then launches the compiled C++ CUDA executable to process the images. This executable is compiled from the source code in [`spotfinder/`].
 
@@ -140,6 +144,23 @@ Run:
 ```bash
 python -m pytest tests/ -v --regression
 ```
+
+## Documentation
+
+API documentation is generated from the Doxygen comments in the source
+by Doxygen + Sphinx (via Breathe and Exhale) and published to GitHub
+Pages on every push to `main`.
+
+To build it locally you need the `doxygen` and `graphviz` binaries
+(e.g. `mamba install -c conda-forge doxygen graphviz`) plus the Python
+packages:
+
+```bash
+pip install -r docs/requirements.txt
+sphinx-build -b html docs docs/_build/html
+```
+
+Then open `docs/_build/html/index.html`.
 
 ## Goals
 - [x] 500 Hz throughput for Eiger real-time data collection
