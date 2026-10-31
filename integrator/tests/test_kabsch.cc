@@ -66,6 +66,7 @@
 #include "integrator.cuh"
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
+#include "integrator/background_pool.hpp"
 #include "integrator/extent.hpp"
 #include "kabsch.cuh"
 #include "math/math_utils.cuh"
@@ -107,26 +108,45 @@ struct KabschInputs {
     std::vector<BoundingBoxExtents> bboxes;
 };
 
-/// Recover per-reflection background pixel counts from the device slot tables
-/// (sum of every occupied slot's count, plus the pixels a full table spilled).
-/// The kernel no longer keeps a running background count; it is derived here.
-static std::vector<uint32_t> background_counts(
-  const DeviceBuffer<unsigned long long> &d_slots,
-  const DeviceBuffer<uint32_t> &d_spill,
-  size_t num_reflections) {
-    std::vector<unsigned long long> slots(num_reflections * NUM_BG_SLOTS);
-    std::vector<uint32_t> spill(num_reflections);
-    d_slots.extract(slots.data());
-    d_spill.extract(spill.data());
-    std::vector<uint32_t> counts(num_reflections);
-    for (size_t r = 0; r < num_reflections; ++r) {
-        uint32_t total = spill[r];
-        for (int i = 0; i < NUM_BG_SLOTS; ++i) {
-            total += background_entry_count(slots[r * NUM_BG_SLOTS + i]);
-        }
-        counts[r] = total;
+/// A background pool at the integrator's default size, emptied and ready for
+/// the kernel to fill.
+struct TestBackgroundPool {
+    explicit TestBackgroundPool(size_t num_reflections)
+        : keys(num_reflections * kBackgroundPoolEntriesPerReflection),
+          counts(num_reflections * kBackgroundPoolEntriesPerReflection) {
+        const size_t capacity = num_reflections * kBackgroundPoolEntriesPerReflection;
+        cuda_check(
+          cudaMemset(keys.data(), 0xFF, capacity * sizeof(unsigned long long)));
+        cuda_check(cudaMemset(counts.data(), 0, capacity * sizeof(uint32_t)));
+        pool.keys = keys.data();
+        pool.counts = counts.data();
+        pool.capacity = static_cast<uint32_t>(capacity);
     }
-    return counts;
+
+    DeviceBuffer<unsigned long long> keys;
+    DeviceBuffer<uint32_t> counts;
+    BackgroundPool pool;
+};
+
+/// Recover per-reflection background pixel counts from the device pool (sum of
+/// every entry's count for that reflection, plus the pixels a full pool
+/// spilled). The kernel keeps no running background count, so it is derived
+/// here.
+static std::vector<uint32_t> background_counts(const TestBackgroundPool &bg,
+                                               const DeviceBuffer<uint32_t> &d_spill,
+                                               size_t num_reflections) {
+    std::vector<unsigned long long> keys(bg.pool.capacity);
+    std::vector<uint32_t> counts(bg.pool.capacity);
+    std::vector<uint32_t> totals(num_reflections);
+    bg.keys.extract(keys.data());
+    bg.counts.extract(counts.data());
+    d_spill.extract(totals.data());
+    for (uint32_t i = 0; i < bg.pool.capacity; ++i) {
+        if (keys[i] != BG_POOL_EMPTY_KEY) {
+            totals[background_pool_key_reflection(keys[i])] += counts[i];
+        }
+    }
+    return totals;
 }
 
 /// Parse indexed_1_10.expt + integrated_1_10.refl into kernel-facing inputs.
@@ -303,7 +323,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     DeviceBuffer<uint32_t> d_fg_count(num_reflections);
     // Background histogram (one bin per integer value) + overflow tail. The
     // background pixel count is recovered by summing these on the host.
-    DeviceBuffer<unsigned long long> d_bg_slots(num_reflections * NUM_BG_SLOTS);
+    TestBackgroundPool bg_pool(num_reflections);
     DeviceBuffer<uint32_t> d_bg_spill(num_reflections);
     // Centre-of-mass accumulators: kernel writes unconditionally when any
     // foreground pixel is found, so valid device memory is required even
@@ -313,9 +333,6 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
     DeviceBuffer<unsigned long long> d_intensity_times_z(num_reflections);
     cuda_check(cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
     cuda_check(cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t)));
-    cuda_check(cudaMemset(d_bg_slots.data(),
-                          0,
-                          num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long)));
     cuda_check(cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t)));
     cuda_check(cudaMemset(
       d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long)));
@@ -388,7 +405,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
                                  algo,
                                  d_fg_sum.data(),
                                  d_fg_count.data(),
-                                 d_bg_slots.data(),
+                                 bg_pool.pool,
                                  d_bg_spill.data(),
                                  d_intensity_times_x.data(),
                                  d_intensity_times_y.data(),
@@ -402,7 +419,7 @@ void KabschTransformTest::RunPixelCountComparison(FGAlgorithm algo) {
 #pragma region Compare counts
     std::vector<uint32_t> h_fg_count(num_reflections);
     std::vector<uint32_t> h_bg_count =
-      background_counts(d_bg_slots, d_bg_spill, num_reflections);
+      background_counts(bg_pool, d_bg_spill, num_reflections);
     d_fg_count.extract(h_fg_count.data());
 
     // Load baseline foreground/background pixel counts. The baseline writes
@@ -579,16 +596,13 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     // Per-reflection accumulators (zeroed; the kernel atomically adds into them).
     DeviceBuffer<accumulator_t> d_fg_sum(num_reflections);
     DeviceBuffer<uint32_t> d_fg_count(num_reflections);
-    DeviceBuffer<unsigned long long> d_bg_slots(num_reflections * NUM_BG_SLOTS);
+    TestBackgroundPool bg_pool(num_reflections);
     DeviceBuffer<uint32_t> d_bg_spill(num_reflections);
     DeviceBuffer<unsigned long long> d_itx(num_reflections);
     DeviceBuffer<unsigned long long> d_ity(num_reflections);
     DeviceBuffer<unsigned long long> d_itz(num_reflections);
     cuda_check(cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
     cuda_check(cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t)));
-    cuda_check(cudaMemset(d_bg_slots.data(),
-                          0,
-                          num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long)));
     cuda_check(cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t)));
     cuda_check(
       cudaMemset(d_itx.data(), 0, num_reflections * sizeof(unsigned long long)));
@@ -676,7 +690,7 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
                                  algo,
                                  d_fg_sum.data(),
                                  d_fg_count.data(),
-                                 d_bg_slots.data(),
+                                 bg_pool.pool,
                                  d_bg_spill.data(),
                                  d_itx.data(),
                                  d_ity.data(),
@@ -691,7 +705,7 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     std::vector<accumulator_t> h_fg_sum(num_reflections);
     std::vector<uint32_t> h_fg_count(num_reflections);
     std::vector<uint32_t> h_bg_count =
-      background_counts(d_bg_slots, d_bg_spill, num_reflections);
+      background_counts(bg_pool, d_bg_spill, num_reflections);
     d_fg_sum.extract(h_fg_sum.data());
     d_fg_count.extract(h_fg_count.data());
 
@@ -703,7 +717,7 @@ void KabschTransformTest::RunIntensitySumComparison(FGAlgorithm algo) {
     DeviceBuffer<uint32_t> d_bg_count_r(num_reflections);
     DeviceBuffer<uint8_t> d_bg_success(num_reflections);
     compute_background(BackgroundModel::Constant,
-                       d_bg_slots.data(),
+                       bg_pool.pool,
                        d_bg_spill.data(),
                        num_reflections,
                        d_bg_mean.data(),
@@ -899,16 +913,13 @@ void KabschTransformTest::RunForegroundSumSaturation(FGAlgorithm algo) {
     // device memory, but a saturated image gives their contents no meaning.
     DeviceBuffer<accumulator_t> d_fg_sum(num_reflections);
     DeviceBuffer<uint32_t> d_fg_count(num_reflections);
-    DeviceBuffer<unsigned long long> d_bg_slots(num_reflections * NUM_BG_SLOTS);
+    TestBackgroundPool bg_pool(num_reflections);
     DeviceBuffer<uint32_t> d_bg_spill(num_reflections);
     DeviceBuffer<unsigned long long> d_intensity_times_x(num_reflections);
     DeviceBuffer<unsigned long long> d_intensity_times_y(num_reflections);
     DeviceBuffer<unsigned long long> d_intensity_times_z(num_reflections);
     cuda_check(cudaMemset(d_fg_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
     cuda_check(cudaMemset(d_fg_count.data(), 0, num_reflections * sizeof(uint32_t)));
-    cuda_check(cudaMemset(d_bg_slots.data(),
-                          0,
-                          num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long)));
     cuda_check(cudaMemset(d_bg_spill.data(), 0, num_reflections * sizeof(uint32_t)));
     cuda_check(cudaMemset(
       d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long)));
@@ -980,7 +991,7 @@ void KabschTransformTest::RunForegroundSumSaturation(FGAlgorithm algo) {
                                  algo,
                                  d_fg_sum.data(),
                                  d_fg_count.data(),
-                                 d_bg_slots.data(),
+                                 bg_pool.pool,
                                  d_bg_spill.data(),
                                  d_intensity_times_x.data(),
                                  d_intensity_times_y.data(),

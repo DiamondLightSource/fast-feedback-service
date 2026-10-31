@@ -43,6 +43,7 @@
 #include "h5read.h"
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
+#include "integrator/background_pool.hpp"
 #include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
 #include "integrator/lp_correction.hpp"
@@ -273,6 +274,15 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
             "glm (robust-Poisson GLM constant background).")
           .default_value<std::string>("constant");
 
+        add_argument("--background.pool_entries_per_reflection")
+          .help(
+            "Size of the shared background pool, in entries per reflection on "
+            "average. Each entry holds one distinct background value of one "
+            "reflection; reflections share the pool, so a single one may use many.")
+          .metavar("N")
+          .default_value(kBackgroundPoolEntriesPerReflection)
+          .scan<'u', uint32_t>();
+
         add_argument("--min_zeta")
           .help(
             "Reflections close to the rotation axis, with a zeta below this threshold "
@@ -363,6 +373,15 @@ int main(int argc, char **argv) {
     BackgroundModel background_model =
       parse_background_model(parser.get<std::string>("background"));
     logger.info("Background model: {}", parser.get<std::string>("background"));
+
+    // Checked with the other options, so a bad value fails before sigma
+    // estimation and bbox computation.
+    const uint32_t background_pool_entries_per_reflection =
+      parser.get<uint32_t>("background.pool_entries_per_reflection");
+    if (background_pool_entries_per_reflection == 0) {
+        logger.error("--background.pool_entries_per_reflection must be at least 1");
+        return 1;
+    }
 
 #pragma endregion Data preparation
 
@@ -693,6 +712,7 @@ int main(int argc, char **argv) {
     auto next_image = std::atomic<int>(first_image);
     auto completed_images = std::atomic<int>(0);
     auto cpu_sync = std::barrier{num_cpu_threads};
+    auto fatal_error = std::atomic<bool>(false);
 
     double time_waiting_for_images = 0.0;
 
@@ -762,16 +782,62 @@ int main(int argc, char **argv) {
     // These persist across all images and accumulate atomically
     DeviceBuffer<accumulator_t> d_foreground_sum(num_reflections);
     DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
-    // Per-reflection background slot table: one entry per distinct pixel value,
-    // keyed on the value, plus a spill counter for pixels dropped by a full
-    // table. The Kabsch kernel fills these; compute_background() reduces them
-    // into an estimate after the image loop.
-    DeviceBuffer<unsigned long long> d_background_slots(num_reflections * NUM_BG_SLOTS);
+    // Shared background pool: one entry per distinct (reflection, value) pair,
+    // plus a per-reflection spill counter for pixels that arrive once the pool
+    // is full. The Kabsch kernel fills these; compute_background() reduces them
+    // into estimates after the image loop.
+    //
+    // Entries are indexed in 32 bits, on the device and in the sort, which
+    // bounds the pool.
+    const uint64_t background_pool_capacity =
+      static_cast<uint64_t>(num_reflections) * background_pool_entries_per_reflection;
+    if (background_pool_capacity > static_cast<uint64_t>(UINT32_MAX)) {
+        logger.error(
+          "Background pool of {} entries exceeds the 32-bit index limit of {} "
+          "(--background.pool_entries_per_reflection times the reflection count)",
+          background_pool_capacity,
+          UINT32_MAX);
+        return 1;
+    }
+
+    // Two copies of the pool must fit beside the image buffers, since the
+    // reduction sorts into a second one.
+    {
+        constexpr double kGiB = 1024.0 * 1024.0 * 1024.0;
+        constexpr size_t kOtherAllocationsMargin = size_t{256} << 20;
+        const size_t entry_bytes = sizeof(unsigned long long) + sizeof(uint32_t);
+        const size_t pool_bytes = 2 * background_pool_capacity * entry_bytes;
+        const size_t image_bytes =
+          static_cast<size_t>(num_cpu_threads) * width * height * sizeof(pixel_t);
+        size_t free_bytes = 0;
+        size_t total_bytes = 0;
+        cuda_check(cudaMemGetInfo(&free_bytes, &total_bytes));
+        const size_t other_bytes = image_bytes + kOtherAllocationsMargin;
+        if (pool_bytes + other_bytes > free_bytes) {
+            const size_t room = free_bytes > other_bytes ? free_bytes - other_bytes : 0;
+            const size_t fits =
+              room / (2 * entry_bytes * std::max<size_t>(num_reflections, 1));
+            logger.error(
+              "The background pool needs {:.1f} GiB but {:.1f} GiB is free; set "
+              "--background.pool_entries_per_reflection to {} or lower",
+              pool_bytes / kGiB,
+              room / kGiB,
+              fits);
+            return 1;
+        }
+    }
+    DeviceBuffer<unsigned long long> d_background_pool_keys(background_pool_capacity);
+    DeviceBuffer<uint32_t> d_background_pool_counts(background_pool_capacity);
+    BackgroundPool background_pool;
+    background_pool.keys = d_background_pool_keys.data();
+    background_pool.counts = d_background_pool_counts.data();
+    background_pool.capacity = static_cast<uint32_t>(background_pool_capacity);
     DeviceBuffer<uint32_t> d_background_spill(num_reflections);
-    logger.info("Background slot tables: {} reflections x {} slots = {:.1f} MiB",
-                num_reflections,
-                NUM_BG_SLOTS,
-                (num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long))
+    logger.info("Background pool: {} entries ({} per reflection), {:.1f} MiB",
+                background_pool_capacity,
+                background_pool_entries_per_reflection,
+                background_pool_capacity
+                  * (sizeof(unsigned long long) + sizeof(uint32_t))
                   / (1024.0 * 1024.0));
     // Reduced background estimates (written by compute_background()).
     DeviceBuffer<double> d_background_mean(num_reflections);
@@ -797,11 +863,12 @@ int main(int argc, char **argv) {
       cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
     cuda_check(
       cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t)));
-    // An all-zero slot is empty, because a stored entry always has a count of
-    // at least 1.
-    cuda_check(cudaMemset(d_background_slots.data(),
-                          0,
-                          num_reflections * NUM_BG_SLOTS * sizeof(unsigned long long)));
+    // An all-ones byte fill makes every key BG_POOL_EMPTY_KEY.
+    cuda_check(cudaMemset(d_background_pool_keys.data(),
+                          0xFF,
+                          background_pool_capacity * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_background_pool_counts.data(), 0, background_pool_capacity * sizeof(uint32_t)));
     cuda_check(
       cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t)));
     cuda_check(cudaMemset(
@@ -816,6 +883,19 @@ int main(int argc, char **argv) {
         success_init[i] = dont_integrate[i] ? 0 : 1;
     }
     d_success.assign(success_init.data());
+
+    // Every image's reflection indices in one device array, uploaded once, with
+    // each image's start offset. A per-image allocation would end in a cudaFree,
+    // which waits for the whole device and so serialises the reader threads.
+    std::unordered_map<int, size_t> image_index_offset;
+    std::vector<size_t> all_reflection_indices;
+    for (const auto &[image, refls] : reflections_by_image) {
+        image_index_offset[image] = all_reflection_indices.size();
+        all_reflection_indices.insert(
+          all_reflection_indices.end(), refls.begin(), refls.end());
+    }
+    DeviceBuffer<size_t> d_all_reflection_indices(all_reflection_indices.size());
+    d_all_reflection_indices.assign(all_reflection_indices.data());
 #pragma endregion Prep GPU Data Buffers
 
 #pragma region Thread launch
@@ -825,172 +905,193 @@ int main(int argc, char **argv) {
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
         threads.emplace_back([&, thread_id]() {
             auto stop_token = global_stop.get_token();
-            CudaStream stream;  // Per-thread CUDA stream
+            bool arrived_at_barrier = false;
+            try {
+                CudaStream stream;  // Per-thread CUDA stream
+                // Recorded after each image's host-to-device copy, which reads
+                // host_image until it completes.
+                CudaEvent copy_done;
 
-            // Full image buffers for decompression (pinned memory for faster transfer)
-            auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
-            auto raw_chunk_buffer =
-              std::vector<uint8_t>(width * height * sizeof(pixel_t));
+                // Full image buffers for decompression (pinned memory for faster transfer)
+                auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
+                auto raw_chunk_buffer =
+                  std::vector<uint8_t>(width * height * sizeof(pixel_t));
 
-            // Device memory for GPU processing
-            auto device_image = PitchedMalloc<pixel_t>(width, height);
+                // Device memory for GPU processing
+                auto device_image = PitchedMalloc<pixel_t>(width, height);
 
-            // Let all threads do setup tasks before reading starts
-            cpu_sync.arrive_and_wait();
+                // Let all threads do setup tasks before reading starts
+                cpu_sync.arrive_and_wait();
+                arrived_at_barrier = true;
 
-            auto last_image_received = std::chrono::high_resolution_clock::now();
+                auto last_image_received = std::chrono::high_resolution_clock::now();
 
-            while (!stop_token.stop_requested()) {
-                auto image_num = next_image.fetch_add(1);
-                if (image_num > last_image) {
-                    break;
-                }
-
-                // Check if this image has any reflections
-                if (reflections_by_image.find(image_num)
-                    == reflections_by_image.end()) {
-                    completed_images += 1;
-                    continue;
-                }
-
-                {
-                    std::scoped_lock lock(reader_mutex);
-                    auto swmr_wait_start_time =
-                      std::chrono::high_resolution_clock::now();
-
-                    // Check that our image is available and wait if not
-                    while (!reader.is_image_available(image_num)
-                           && !stop_token.stop_requested()) {
-                        auto current_time = std::chrono::high_resolution_clock::now();
-                        auto elapsed_wait_time =
-                          std::chrono::duration_cast<std::chrono::duration<double>>(
-                            current_time - last_image_received)
-                            .count();
-
-                        if (elapsed_wait_time > wait_timeout) {
-                            logger.error("Timeout waiting for image {}", image_num);
-                            global_stop.request_stop();
-                            break;
-                        }
-
-                        std::this_thread::sleep_for(100ms);
-                    }
-
-                    if (stop_token.stop_requested()) {
+                while (!stop_token.stop_requested()) {
+                    auto image_num = next_image.fetch_add(1);
+                    if (image_num > last_image) {
                         break;
                     }
 
-                    last_image_received = std::chrono::high_resolution_clock::now();
-                    time_waiting_for_images +=
-                      std::chrono::duration_cast<std::chrono::duration<double>>(
-                        std::chrono::high_resolution_clock::now()
-                        - swmr_wait_start_time)
-                        .count();
-                }
-
-                // Fetch the image data from the reader
-                std::span<uint8_t> buffer;
-                while (true) {
-                    {
-                        std::scoped_lock lock(reader_mutex);
-                        buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
-                    }
-
-                    if (buffer.size() == 0) {
-                        logger.warn("Got buffer size 0 for image {}. Sleeping.",
-                                    image_num);
-                        std::this_thread::sleep_for(100ms);
+                    // Check if this image has any reflections
+                    if (reflections_by_image.find(image_num)
+                        == reflections_by_image.end()) {
+                        completed_images += 1;
                         continue;
                     }
-                    break;
-                }
 
-                // Decompress the data into pinned host memory
-                switch (reader.get_raw_chunk_compression()) {
-                case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
-                    // Returns the bytes consumed from the chunk, or a
-                    // negative error code.
-                    const int64_t consumed = bshuf_decompress_lz4(buffer.data() + 12,
-                                                                  host_image.get(),
-                                                                  width * height,
-                                                                  sizeof(pixel_t),
-                                                                  0);
-                    if (consumed < 0) {
-                        throw std::runtime_error(
-                          fmt::format("bitshuffle/LZ4 decompression of image {} "
-                                      "failed with code {}",
-                                      image_num,
-                                      consumed));
+                    {
+                        std::scoped_lock lock(reader_mutex);
+                        auto swmr_wait_start_time =
+                          std::chrono::high_resolution_clock::now();
+
+                        // Check that our image is available and wait if not
+                        while (!reader.is_image_available(image_num)
+                               && !stop_token.stop_requested()) {
+                            auto current_time =
+                              std::chrono::high_resolution_clock::now();
+                            auto elapsed_wait_time =
+                              std::chrono::duration_cast<std::chrono::duration<double>>(
+                                current_time - last_image_received)
+                                .count();
+
+                            if (elapsed_wait_time > wait_timeout) {
+                                logger.error("Timeout waiting for image {}", image_num);
+                                global_stop.request_stop();
+                                break;
+                            }
+
+                            std::this_thread::sleep_for(100ms);
+                        }
+
+                        if (stop_token.stop_requested()) {
+                            break;
+                        }
+
+                        last_image_received = std::chrono::high_resolution_clock::now();
+                        time_waiting_for_images +=
+                          std::chrono::duration_cast<std::chrono::duration<double>>(
+                            std::chrono::high_resolution_clock::now()
+                            - swmr_wait_start_time)
+                            .count();
                     }
-                    break;
-                }
-                case Reader::ChunkCompression::BYTE_OFFSET_32:
-                    decompress_byte_offset<pixel_t>(
-                      buffer,
-                      {host_image.get(),
-                       static_cast<std::span<pixel_t>::size_type>(width * height)});
-                    break;
-                }
 
-                // Copy image data to device memory
-                cuda_check(cudaMemcpy2DAsync(device_image.get(),
+                    // Fetch the image data from the reader
+                    std::span<uint8_t> buffer;
+                    while (true) {
+                        {
+                            std::scoped_lock lock(reader_mutex);
+                            buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
+                        }
+
+                        if (buffer.size() == 0) {
+                            logger.warn("Got buffer size 0 for image {}. Sleeping.",
+                                        image_num);
+                            std::this_thread::sleep_for(100ms);
+                            continue;
+                        }
+                        break;
+                    }
+
+                    // Decompress the data into pinned host memory, once the previous
+                    // image's copy out of it has finished.
+                    copy_done.synchronize();
+                    switch (reader.get_raw_chunk_compression()) {
+                    case Reader::ChunkCompression::BITSHUFFLE_LZ4: {
+                        // Returns the bytes consumed from the chunk, or a
+                        // negative error code.
+                        const int64_t consumed =
+                          bshuf_decompress_lz4(buffer.data() + 12,
+                                               host_image.get(),
+                                               width * height,
+                                               sizeof(pixel_t),
+                                               0);
+                        if (consumed < 0) {
+                            throw std::runtime_error(
+                              fmt::format("bitshuffle/LZ4 decompression of image {} "
+                                          "failed with code {}",
+                                          image_num,
+                                          consumed));
+                        }
+                        break;
+                    }
+                    case Reader::ChunkCompression::BYTE_OFFSET_32:
+                        decompress_byte_offset<pixel_t>(
+                          buffer,
+                          {host_image.get(),
+                           static_cast<std::span<pixel_t>::size_type>(width * height)});
+                        break;
+                    }
+
+                    // Copy image data to device memory
+                    cuda_check(cudaMemcpy2DAsync(device_image.get(),
+                                                 device_image.pitch_bytes(),
+                                                 host_image.get(),
+                                                 width * sizeof(pixel_t),
+                                                 width * sizeof(pixel_t),
+                                                 height,
+                                                 cudaMemcpyHostToDevice,
+                                                 stream));
+                    copy_done.record(stream);
+
+                    // This image's reflections, within the indices uploaded before
+                    // the loop.
+                    const size_t num_refls_this_image =
+                      reflections_by_image.at(image_num).size();
+                    const size_t *d_reflection_indices =
+                      d_all_reflection_indices.data()
+                      + image_index_offset.at(image_num);
+
+                    // Launch Kabsch transform kernel for this image
+                    // This computes Kabsch coordinates and atomically accumulates
+                    // foreground/background intensities for summation integration
+                    logger.info("Launching GPU kernel for image {} with {} reflections",
+                                image_num,
+                                num_refls_this_image);
+                    compute_kabsch_transform(device_image.get(),
                                              device_image.pitch_bytes(),
-                                             host_image.get(),
-                                             width * sizeof(pixel_t),
-                                             width * sizeof(pixel_t),
+                                             width,
                                              height,
-                                             cudaMemcpyHostToDevice,
-                                             stream));
+                                             image_num,
+                                             d_d_matrix.data(),
+                                             wavelength_scalar,
+                                             det_params,
+                                             osc_start_scalar,
+                                             osc_width_scalar,
+                                             image_range_start,
+                                             s0_vec,
+                                             rot_axis_vec,
+                                             d_s1_vectors.data(),
+                                             d_phi_values.data(),
+                                             d_bboxes.data(),
+                                             d_reflection_indices,
+                                             num_refls_this_image,
+                                             d_mask.data(),
+                                             corner_tile_by_image.at(image_num),
+                                             delta_b,
+                                             delta_m,
+                                             fg_algorithm,
+                                             d_foreground_sum.data(),
+                                             d_foreground_count.data(),
+                                             background_pool,
+                                             d_background_spill.data(),
+                                             d_intensity_times_x.data(),
+                                             d_intensity_times_y.data(),
+                                             d_intensity_times_z.data(),
+                                             d_success.data(),
+                                             stream);
 
-                // Get reflection indices for this image and copy to device
-                const auto &refl_indices = reflections_by_image[image_num];
-                size_t num_refls_this_image = refl_indices.size();
-
-                // Allocate per-image device buffer for reflection indices
-                DeviceBuffer<size_t> d_reflection_indices(num_refls_this_image);
-                d_reflection_indices.assign(refl_indices.data());
-
-                // Launch Kabsch transform kernel for this image
-                // This computes Kabsch coordinates and atomically accumulates
-                // foreground/background intensities for summation integration
-                logger.info("Launching GPU kernel for image {} with {} reflections",
-                            image_num,
-                            num_refls_this_image);
-                compute_kabsch_transform(device_image.get(),
-                                         device_image.pitch_bytes(),
-                                         width,
-                                         height,
-                                         image_num,
-                                         d_d_matrix.data(),
-                                         wavelength_scalar,
-                                         det_params,
-                                         osc_start_scalar,
-                                         osc_width_scalar,
-                                         image_range_start,
-                                         s0_vec,
-                                         rot_axis_vec,
-                                         d_s1_vectors.data(),
-                                         d_phi_values.data(),
-                                         d_bboxes.data(),
-                                         d_reflection_indices.data(),
-                                         num_refls_this_image,
-                                         d_mask.data(),
-                                         corner_tile_by_image.at(image_num),
-                                         delta_b,
-                                         delta_m,
-                                         fg_algorithm,
-                                         d_foreground_sum.data(),
-                                         d_foreground_count.data(),
-                                         d_background_slots.data(),
-                                         d_background_spill.data(),
-                                         d_intensity_times_x.data(),
-                                         d_intensity_times_y.data(),
-                                         d_intensity_times_z.data(),
-                                         d_success.data(),
-                                         stream);
-
-                logger.trace("Thread {} loaded image {}", thread_id, image_num);
-                completed_images += 1;
+                    logger.trace("Thread {} loaded image {}", thread_id, image_num);
+                    completed_images += 1;
+                }
+            } catch (const std::exception &e) {
+                logger.error("Thread {} stopped on an unrecoverable error: {}",
+                             thread_id,
+                             e.what());
+                fatal_error = true;
+                global_stop.request_stop();
+                if (!arrived_at_barrier) {
+                    cpu_sync.arrive_and_drop();
+                }
             }
         });
     }
@@ -998,6 +1099,13 @@ int main(int argc, char **argv) {
     // Wait for all threads to finish
     for (auto &thread : threads) {
         thread.join();
+    }
+
+    // The accumulators are missing at least one image, and a CUDA error may
+    // have left the context unusable, so nothing after this point can run.
+    if (fatal_error) {
+        logger.error("Integration stopped on a reader thread error; no output written");
+        return 1;
     }
 
     float total_time =
@@ -1029,15 +1137,21 @@ int main(int argc, char **argv) {
     // Reduce each reflection's background histogram into an estimate on the
     // device (Tukey/IQR constant model), then copy the small results back.
     logger.info("Reducing background histograms for {} reflections", num_reflections);
-    compute_background(background_model,
-                       d_background_slots.data(),
-                       d_background_spill.data(),
-                       num_reflections,
-                       d_background_mean.data(),
-                       d_background_sum_value.data(),
-                       d_background_count.data(),
-                       d_background_success.data(),
-                       0);
+    const uint32_t background_pool_occupied =
+      compute_background(background_model,
+                         background_pool,
+                         d_background_spill.data(),
+                         num_reflections,
+                         d_background_mean.data(),
+                         d_background_sum_value.data(),
+                         d_background_count.data(),
+                         d_background_success.data(),
+                         0);
+    // How full the pool got is the margin before it would start to spill.
+    logger.info("Background pool: {} of {} entries used ({:.1f}%)",
+                background_pool_occupied,
+                background_pool_capacity,
+                100.0 * background_pool_occupied / background_pool_capacity);
     cuda_check(cudaDeviceSynchronize());
 #pragma endregion Background Reduction
 
@@ -1072,12 +1186,12 @@ int main(int argc, char **argv) {
     d_intensity_times_z.extract(h_intensity_times_z.data());
     d_success.extract(h_success.data());
 
-    // A slot table holds any pixel value, so it has no range to run out of;
-    // what it can exhaust is the number of DISTINCT values per reflection. A
-    // reflection that spills has lost pixels of unknown value, so the reduction
-    // already failed it. Report the count rather than aborting: the rest of the
-    // run is unaffected, and the number is what says whether NUM_BG_SLOTS needs
-    // raising.
+    // The pool holds any pixel value, so it has no range to run out of; what it
+    // can exhaust is the number of distinct (reflection, value) pairs across the
+    // sweep. A reflection that spills has lost pixels of unknown value, so the
+    // reduction already failed it. Report the count rather than aborting: the
+    // rest of the run is unaffected, and the number is what says whether the
+    // pool needs enlarging.
     {
         size_t spilling = 0;
         for (size_t i = 0; i < num_reflections; ++i) {
@@ -1087,12 +1201,11 @@ int main(int argc, char **argv) {
         }
         if (spilling > 0) {
             logger.warn(
-              "{} of {} reflection(s) held more than NUM_BG_SLOTS={} distinct "
-              "background values and were not integrated; raise NUM_BG_SLOTS if "
-              "this is a significant fraction",
+              "{} of {} reflection(s) lost background pixels to a full pool; set "
+              "--background.pool_entries_per_reflection above {}",
               spilling,
               num_reflections,
-              NUM_BG_SLOTS);
+              background_pool_entries_per_reflection);
         }
     }
 
@@ -1103,7 +1216,12 @@ int main(int argc, char **argv) {
     std::vector<double> backgrounds(num_reflections);  // b̄  (background mean per pixel)
     std::vector<double> background_sigmas(num_reflections);  // σ(b̄)
     size_t valid_reflections = 0;
-    size_t background_failures = 0;  // fg present but Tukey estimate rejected
+    size_t background_failures = 0;  // fg present but background estimate rejected
+    // 1 for a reflection written to the output: it was not skipped, the kernel
+    // kept its success flag, and it has foreground pixels and a valid
+    // background estimate. The count, the statistics and the output all read
+    // this.
+    std::vector<uint8_t> success_final(num_reflections, 0);
 
     for (size_t i = 0; i < num_reflections; ++i) {
         uint32_t fg_count = h_foreground_count[i];
@@ -1121,9 +1239,8 @@ int main(int argc, char **argv) {
 
         double fg_sum = h_foreground_sum[i];
 
-        // Tally rejected estimates (no inlier pixels, or the IQR fence ran past
-        // the histogram range) purely for error reporting and logging; the
-        // reflection is marked unintegrated below regardless.
+        // Tally rejected estimates (no inlier pixels, too few pixels for the
+        // GLM, or pixels lost to a full pool) for the warning below.
         if (!h_background_success[i]) {
             ++background_failures;
         }
@@ -1158,7 +1275,12 @@ int main(int argc, char **argv) {
         sigmas[i] = (variance > 0.0) ? std::sqrt(variance) : 0.0;
         backgrounds[i] = bg_mean;
         background_sigmas[i] = (bg_variance > 0.0) ? std::sqrt(bg_variance) : 0.0;
-        valid_reflections++;
+
+        const bool ok = h_success[i] && h_background_success[i] && !dont_integrate[i];
+        success_final[i] = ok ? 1 : 0;
+        if (ok) {
+            valid_reflections++;
+        }
     }
 
     logger.info("Summation integration complete: {} valid reflections out of {}",
@@ -1168,7 +1290,7 @@ int main(int argc, char **argv) {
     if (background_failures > 0) {
         logger.warn(
           "Background estimate rejected for {} of {} reflections with "
-          "foreground pixels; NUM_BG_SLOTS may be too small for their background",
+          "foreground pixels; any that lost pixels to a full pool are counted above",
           background_failures,
           num_reflections);
     }
@@ -1183,7 +1305,7 @@ int main(int argc, char **argv) {
         size_t n_positive_isigma = 0;
         double sum_i_over_sigma = 0.0;
         for (size_t i = 0; i < num_reflections; ++i) {
-            if (variances[i] >= 0) {
+            if (success_final[i]) {
                 sum_intensity += intensities[i];
                 sum_sigma += sigmas[i];
                 sum_bg += backgrounds[i];
@@ -1229,7 +1351,6 @@ int main(int argc, char **argv) {
     double pf = beam.get_polarization_fraction();
     LPCorrection lpcalculator(s0, pn, pf, rotation_axis);
 
-    std::vector<uint8_t> success_final(num_reflections);
     for (size_t i = 0; i < num_reflections; ++i) {
         nfg_out[i] = static_cast<int>(h_foreground_count[i]);
         nbg_out[i] = static_cast<int>(h_background_count[i]);
@@ -1240,12 +1361,6 @@ int main(int argc, char **argv) {
         // device reduction.
         bg_sum_out[i] = h_background_success[i] ? h_background_sum_value[i] : 0.0;
         bg_mean_out[i] = h_background_success[i] ? h_background_mean[i] : 0.0;
-
-        // Success: kernel-flagged AND fg_count > 0 AND a valid background
-        // estimate AND not dont_integrated.
-        bool ok = h_success[i] && (h_foreground_count[i] > 0) && h_background_success[i]
-                  && !dont_integrate[i];
-        success_final[i] = ok ? 1 : 0;
 
         // Centre-of-mass: kernel accumulated intensity·(2k+1), so divide by 2·I.
         double fg_sum_d = static_cast<double>(h_foreground_sum[i]);
