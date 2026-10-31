@@ -38,17 +38,16 @@ extern __constant__ KernelConstants kernel_constants;
 #pragma region Device Functions
 /**
  * @brief Calculate the dispersion flags for a given pixel.
- * @param image Pointer to the input image data.
- * @param mask Pointer to the mask data indicating valid pixels.
- * @param image_pitch The pitch of the image data.
- * @param mask_pitch The pitch of the mask data.
+ * @param image Shared-memory tile of the image, indexed in local coordinates.
+ * @param mask Shared-memory tile of the mask, nonzero for valid pixels.
  * @param this_pixel The pixel value at the current position.
- * @param x The x-coordinate of the pixel.
- * @param y The y-coordinate of the pixel.
+ * @param local_x The x-coordinate of the pixel within the tile.
+ * @param local_y The y-coordinate of the pixel within the tile.
+ * @param global_x The x-coordinate of the pixel in the image.
+ * @param global_y The y-coordinate of the pixel in the image.
  * @param width The width of the image.
  * @param height The height of the image.
- * @param kernel_width The radius of the kernel in the x-direction.
- * @param kernel_height The radius of the kernel in the y-direction.
+ * @param kernel_radius The radius of the square kernel in both directions.
  * @param min_count Minimum number of valid pixels required to be considered a valid spot.
  * @param n_sig_b Background noise significance level.
  * @param n_sig_s Signal significance level.
@@ -128,19 +127,13 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
 #pragma region Thresholding kernels
 /**
  * @brief Kernel for computing the basic threshold based on variance and mean.
- * @param image Pointer to the input image data.
- * @param mask Pointer to the mask data indicating valid pixels.
- * @param result_mask Pointer to the output mask data where results will be stored.
- * @param image_pitch The pitch of the image data.
- * @param mask_pitch The pitch of the mask data.
- * @param result_pitch The pitch of the result mask data.
- * @param width The width of the image.
- * @param height The height of the image.
- * @param max_valid_pixel_value The maximum valid trusted pixel value.
- * @param min_count Minimum number of valid pixels required to be considered a valid spot.
- * @param threshold The global threshold for intensity.
- * @param n_sig_b Background noise significance level.
- * @param n_sig_s Signal significance level.
+ *
+ * Image dimensions, pitches and thresholds are read from kernel_constants.
+ * blockIdx.z selects the image within a batch.
+ *
+ * @param image_ptr Pointer to the input image data.
+ * @param mask_ptr Pointer to the mask data indicating valid pixels.
+ * @param result_mask_ptr Pointer to the output mask where results are stored.
  */
 __global__ void dispersion(pixel_t __restrict__ *image_ptr,
                            uint8_t __restrict__ *mask_ptr,
@@ -235,20 +228,13 @@ __global__ void dispersion(pixel_t __restrict__ *image_ptr,
 
 /**
  * @brief Kernel for computing the dispersion threshold.
- * @param image Pointer to the input image data.
- * @param mask Pointer to the mask data indicating valid pixels.
- * @param result_mask Pointer to the output mask data where results will be stored.
- * @param image_pitch The pitch of the image data.
- * @param mask_pitch The pitch of the mask data.
- * @param result_pitch The pitch of the result mask data.
- * @param width The width of the image.
- * @param height The height of the image.
- * @param max_valid_pixel_value The maximum valid trusted pixel value.
- * @param kernel_width The radius of the kernel in the x-direction.
- * @param kernel_height The radius of the kernel in the y-direction.
- * @param min_count Minimum number of valid pixels required to be considered a valid spot.
- * @param n_sig_b Background noise significance level.
- * @param n_sig_s Signal significance level.
+ *
+ * Image dimensions, pitches and thresholds are read from kernel_constants.
+ * blockIdx.z selects the image within a batch.
+ *
+ * @param image_ptr Pointer to the input image data.
+ * @param mask_ptr Pointer to the mask data indicating valid pixels.
+ * @param result_mask_ptr Pointer to the output mask where results are stored.
  */
 __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
                                                uint8_t __restrict__ *mask_ptr,
@@ -343,19 +329,16 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
 
 /**
  * @brief Kernel for computing the final threshold after dispersion mask.
- * @param image Pointer to the input image data.
- * @param mask Pointer to the mask data indicating valid pixels.
- * @param dispersion_mask Pointer to the dispersion mask used for extended algorithm.
- * @param result_mask Pointer to the output mask data where results will be stored.
- * @param image_pitch The pitch of the image data.
- * @param mask_pitch The pitch of the mask data.
- * @param dispersion_mask_pitch The pitch of the dispersion mask data.
- * @param result_mask_pitch The pitch of the result mask data.
- * @param width The width of the image.
- * @param height The height of the image.
- * @param max_valid_pixel_value The maximum valid trusted pixel value.
- * @param n_sig_s Signal significance level.
- * @param threshold Global threshold for the intensity.
+ *
+ * Image dimensions, pitches and thresholds are read from kernel_constants.
+ * blockIdx.z selects the image within a batch.
+ *
+ * @param image_ptr Pointer to the input image data.
+ * @param mask_ptr Pointer to the mask data indicating valid pixels.
+ * @param dispersion_mask_ptr Pointer to the eroded dispersion mask from the
+ *        first pass.
+ * @param result_mask_ptr Pointer to the output mask where results are stored.
+ * @param dispersion_mask_pitch The pitch of the dispersion mask, in elements.
  */
 __global__ void dispersion_extended_second_pass(
   pixel_t __restrict__ *image_ptr,

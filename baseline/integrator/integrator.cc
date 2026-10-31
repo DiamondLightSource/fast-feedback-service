@@ -1,5 +1,5 @@
 /**
- * @file baseline_integrator.cc
+ * @file integrator.cc
  * @brief Main application for baseline CPU-only integration
  */
 

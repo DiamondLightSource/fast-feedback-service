@@ -239,7 +239,11 @@ __device__ __forceinline__ void px_to_mm(int gx,
  * the detector edge. Corners off the image still give real Kabsch coordinates
  * and classify the same as any other, so we don't guard for them here.
  *
+ * @param cx Corner x-coordinate in pixels.
+ * @param cy Corner y-coordinate in pixels.
+ * @param d_matrix Detector matrix (3x3 flattened) for mm to lab conversion.
  * @param wavelength Beam wavelength in Å.
+ * @param det_params Detector geometry used for the pixel to mm conversion.
  * @return s1 in lab frame, units of 1/Å (lies on the Ewald sphere).
  */
 __device__ __forceinline__ Vector3D
@@ -429,6 +433,7 @@ __device__ __forceinline__ bool pixel_is_foreground(
  * @param image_num Current image number in the sequence
  * @param d_matrix Detector coordinate transformation matrix (3x3)
  * @param wavelength X-ray wavelength in Angstroms
+ * @param det_params Detector geometry used for the pixel to mm conversion
  * @param osc_start Starting oscillation angle in degrees
  * @param osc_width Oscillation width per image in degrees
  * @param image_range_start First image number in the range

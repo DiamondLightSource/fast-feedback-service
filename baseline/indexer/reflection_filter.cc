@@ -124,7 +124,7 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid,
 
 /**
  * @brief Perform outlier rejection on a reflection table based on centroid residuals.
- * @param ReflectionTable The reflection table.
+ * @param reflections The reflection table.
  * @returns A reflection table that is a subset of the input table.
  */
 ReflectionTable outlier_filter(ReflectionTable &reflections) {

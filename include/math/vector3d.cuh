@@ -6,7 +6,7 @@
  * (double3/float3) for optimal GPU performance. The implementation wraps CUDA's
  * native types with convenient mathematical operations.
  * 
- *  * Performance Design:
+ * Performance Design:
  * - Uses CUDA's hardware-optimized double3/float3 types directly
  * - Free functions avoid virtual function call overhead
  * - Maintains guaranteed memory layout for vectorized GPU operations

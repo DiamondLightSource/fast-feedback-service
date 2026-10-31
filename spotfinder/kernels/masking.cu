@@ -59,7 +59,7 @@ __device__ float get_distance_from_center(float x,
  *         d = λ / (2 * sin(ϴ))
  * @param wavelength The wavelength of the X-ray beam in Å
  * @param distance_to_detector The distance from the sample to the detector in m
- * @param distance_from_center The distance of the reflection from the beam center in m
+ * @param distance_from_centre The distance of the reflection from the beam center in m
  * @return The calculated d value
 */
 __device__ float get_resolution(float wavelength,
@@ -84,7 +84,7 @@ __device__ float get_resolution(float wavelength,
  * provided that the pixel is not already masked, by setting the mask value of
  * the pixel to 0 in the mask data.
  *
- * @param mask Pointer to the mask data indicating valid pixels.
+ * @param mask_ptr Pointer to the mask data indicating valid pixels.
  * @param mask_pitch The pitch (width in bytes) of the mask data.
  * @param width The width of the image.
  * @param height The height of the image.

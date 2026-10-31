@@ -45,11 +45,10 @@ constexpr uint32_t KABSCH_THREADS = 128;
 /**
  * @brief Host wrapper function for image-based Kabsch computation
  * 
- * Launches a kernel over the padded grid (image plus any bbox overflow past
- * the detector edge) to compute Kabsch coordinates for pixels that fall within
- * reflection bounding boxes, classifying each pixel as foreground or background
- * and atomically accumulating intensities for summation integration. A masked
- * or out-of-image foreground pixel fails the reflection via d_success.
+ * Launches the shoebox-parallel Kabsch kernel, one block per reflection on
+ * this image, to classify each shoebox pixel as foreground or background and
+ * atomically accumulate intensities for summation integration. A masked or
+ * out-of-image foreground pixel fails the reflection via d_success.
  *
  * @param d_image Device pointer to image data (pitched allocation)
  * @param image_pitch Pitch in bytes of the device image allocation
@@ -58,8 +57,9 @@ constexpr uint32_t KABSCH_THREADS = 128;
  * @param image_num Current image/frame number
  * @param d_matrix Detector matrix (3x3 flattened) for pixel to lab conversion
  * @param wavelength Beam wavelength for s_pixel normalization
- * @param osc_start Oscillation start angle (radians)
- * @param osc_width Oscillation width per image (radians)
+ * @param det_params Detector geometry used for the pixel to mm conversion
+ * @param osc_start Oscillation start angle (degrees)
+ * @param osc_width Oscillation width per image (degrees)
  * @param image_range_start First image number in the scan
  * @param s0 Incident beam vector
  * @param rot_axis Rotation axis vector
@@ -76,6 +76,7 @@ constexpr uint32_t KABSCH_THREADS = 128;
  *        falls back to per-pixel corner recompute
  * @param delta_b Foreground extent in e₁/e₂ directions (n_sigma × σ_D), radians
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M), radians
+ * @param algorithm Foreground model used to classify each pixel
  * @param d_foreground_sum Device array to accumulate foreground intensities per reflection
  * @param d_foreground_count Device array to count foreground pixels per reflection
  * @param background_pool Shared device background pool, keyed on (reflection, value)

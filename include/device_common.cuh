@@ -1,5 +1,5 @@
 /**
- * @file device_common.hu
+ * @file device_common.cuh
  * @brief Common device functions
  */
 

@@ -117,7 +117,7 @@ image_modules_t *h5read_get_image_modules(h5read_handle *obj, size_t frame_numbe
 void h5read_free_image_modules(image_modules_t *modules);
 
 /// Parse basic command arguments with verbose, filename in form:
-///     Usage: <prog> [-h|--help] [-v] [FILE.nxs]
+///     Usage: \<prog\> [-h|--help] [-v] [FILE.nxs]
 h5read_handle *h5read_parse_standard_args(int argc, char **argv);
 
 #ifdef __cplusplus

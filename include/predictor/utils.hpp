@@ -23,36 +23,36 @@ class Rotator {
     /**
      * @brief Output a rotation matrix corresponding to a given axis and angle.
      *
-     * @param θ The angle of rotation (in degrees)
+     * @param theta The rotation angle θ, in degrees
      */
-    Eigen::Matrix3d rotation_matrix(double θ) const {
+    Eigen::Matrix3d rotation_matrix(double theta) const {
         // Convert to radians
-        θ = θ * M_PI / 180;
+        theta = theta * M_PI / 180;
         return Eigen::Matrix3d{
-          {cos(θ) + axis_(0) * axis_(0) * (1 - cos(θ)),
-           -axis_(2) * sin(θ) + axis_(0) * axis_(1) * (1 - cos(θ)),
-           axis_(1) * sin(θ) + axis_(0) * axis_(1) * (1 - cos(θ))},
-          {axis_(2) * sin(θ) + axis_(0) * axis_(1) * (1 - cos(θ)),
-           cos(θ) + axis_(1) * axis_(1) * (1 - cos(θ)),
-           -axis_(0) * sin(θ) + axis_(1) * axis_(2) * (1 - cos(θ))},
-          {-axis_(1) * sin(θ) + axis_(0) * axis_(2) * (1 - cos(θ)),
-           axis_(0) * sin(θ) + axis_(1) * axis_(2) * (1 - cos(θ)),
-           cos(θ) + axis_(2) * axis_(2) * (1 - cos(θ))}};
+          {cos(theta) + axis_(0) * axis_(0) * (1 - cos(theta)),
+           -axis_(2) * sin(theta) + axis_(0) * axis_(1) * (1 - cos(theta)),
+           axis_(1) * sin(theta) + axis_(0) * axis_(1) * (1 - cos(theta))},
+          {axis_(2) * sin(theta) + axis_(0) * axis_(1) * (1 - cos(theta)),
+           cos(theta) + axis_(1) * axis_(1) * (1 - cos(theta)),
+           -axis_(0) * sin(theta) + axis_(1) * axis_(2) * (1 - cos(theta))},
+          {-axis_(1) * sin(theta) + axis_(0) * axis_(2) * (1 - cos(theta)),
+           axis_(0) * sin(theta) + axis_(1) * axis_(2) * (1 - cos(theta)),
+           cos(theta) + axis_(2) * axis_(2) * (1 - cos(theta))}};
     }
 
     /**
      * @brief Rotate a 3D vector by a given angle around the pre-specified axis
      */
-    Eigen::Vector3d rotate(const Eigen::Vector3d &vec, double θ) const {
-        return rotation_matrix(θ) * vec;
+    Eigen::Vector3d rotate(const Eigen::Vector3d &vec, double theta) const {
+        return rotation_matrix(theta) * vec;
     }
 
     /**
      * @brief Multiply the rotation matrix (angle θ) by a 3x3 matrix and return
      * the result.
      */
-    Eigen::Matrix3d rotate(const Eigen::Matrix3d &mat, double θ) const {
-        return rotation_matrix(θ) * mat;
+    Eigen::Matrix3d rotate(const Eigen::Matrix3d &mat, double theta) const {
+        return rotation_matrix(theta) * mat;
     }
 };
 
