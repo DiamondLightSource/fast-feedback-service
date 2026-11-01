@@ -3,16 +3,18 @@
 Draw the README banner from the spots the GPU spotfinder finds.
 
 Renders the art in banner.cc as a detector frame, one Gaussian spot per
-glyph on a Poisson background, and hands it to the spotfinder through
-its shared-memory reader. The picture is what comes back: every pixel it
-flagged as strong, coloured by its counts, and a red cross at each
-centroid it reports. The background dots are too faint to make a spot,
-so they only show in the frame behind.
+glyph on a Poisson background, handing it to the spotfinder through the
+shared-memory reader. The spotfinder filters out the smaller decoy spots
+and returns the strong pixels along with their weighted centroids. These
+are then used as the basis for the logo, coloured by counts with the
+cross drawn at its computed centroid.
 
 The strong pixels come from the spotfinder's --writeout debug output,
-so this breaks if that format changes. It needs a GPU and a built
-spotfinder, so the SVG is committed and this is only rerun when the art
-or a colour map changes.
+so this breaks if that format changes.
+
+Since this uses the actual GPU spotfinder it requires a machine with a
+GPU, hence this does not run in CI. Instead the image is committed and
+must be manually updated if the algorithm or art direction changes.
 """
 
 from __future__ import annotations
@@ -46,30 +48,54 @@ DEFAULT_OUTPUT = REPO_ROOT / "docs" / "images" / "banner.svg"
 # The spotfinder a plain ./build.sh produces
 DEFAULT_SPOTFINDER = REPO_ROOT / "build" / "bin" / "spotfinder"
 
-# Pixels per character of art. A terminal cell is about twice as tall as it is
-# wide and the art puts spots in every other column, so this keeps the lattice
-# square at 16 px in both directions.
+# Pixels per character of art. Terminal cells are about twice as tall as they
+# are wide and the art only uses every other column, so this gives a square
+# 16 px lattice.
 CELL_WIDTH_PX = 8
 CELL_HEIGHT_PX = 16
 
 # Empty detector around the art, in pixels
 MARGIN_PX = 24
 
-# Peak height above background, in counts, for each glyph. The three letter
-# glyphs sit well above the dispersion threshold. The background glyph is low
-# enough that no more of it passes than the minimum spot size discards. At 8
-# counts one background spot was found with seed 3, so it sits at 5.
+# Peak height above background, in counts, for each glyph. The letter glyphs
+# sit well above the dispersion threshold. The background glyph is kept low
+# enough that it never makes a spot; at 8 counts one got through with seed 3,
+# hence 5.
 GLYPH_PEAK_COUNTS = {"●": 400.0, "•": 150.0, "∙": 60.0, "·": 5.0}
 
-# The glyph that stands for background rather than a spot in the lettering
+# The glyph used for background dots rather than the lettering
 BACKGROUND_GLYPH = "·"
 
-# Spot width, in pixels. Narrow enough that neighbouring spots 16 px apart
-# never touch, wide enough to clear the spotfinder's minimum spot size.
+# Spot width, in pixels. Narrow enough that spots 16 px apart never touch, and
+# wide enough to clear the spotfinder's minimum spot size.
 SPOT_SIGMA_PX = 1.5
 
 # Mean background, in counts per pixel, as on a photon-counting detector
 BACKGROUND_COUNTS = 1.0
+
+# Decoy hot pixels and two-pixel clusters scattered over the frame. Both are
+# below the spotfinder's minimum spot size of 3 pixels, so they are flagged as
+# strong but never kept as spots.
+SPECK_SINGLES = 18
+SPECK_PAIRS = 6
+
+# Counts in a speck's brightest pixel, lowest and highest
+SPECK_COUNTS = (80, 400)
+
+# Seed for where the specks go, picked by eye from a few layouts
+SPECK_SEED = 11
+
+# Closest a speck may come to a glyph, and to another speck measured along x
+# plus y, in pixels
+SPECK_GLYPH_CLEARANCE_PX = 6
+SPECK_SPACING_PX = 8
+
+# Closest a speck may come to the image edge, in pixels. Older spotfinder
+# builds draw the --writeout box up to 7 px outside each kept spot with no
+# bounds check, which crashes on a spot near the edge. A speck only gets a box
+# if it merges with a noise pixel into a 3-pixel group, but it costs nothing to
+# keep them clear.
+SPECK_EDGE_CLEARANCE_PX = 9
 
 # Seed for the Poisson noise, so a regeneration with unchanged inputs gives an
 # identical picture
@@ -85,7 +111,7 @@ WAVELENGTH_A = 0.976
 DETECTOR_DISTANCE_MM = 200.0
 PIXEL_SIZE_M = 7.5e-5
 
-# Number of colour steps between the faintest and the brightest found spot
+# Number of colour steps between the faintest and the brightest strong pixel
 COLOUR_STEPS = 8
 
 # Half-length of each arm of the centroid cross, in pixels. Long enough to
@@ -99,28 +125,29 @@ CENTROID_STROKE_PX = 0.5
 # own --writeout images
 CENTROID_COLOUR = "#FF0000"
 
-# Length of one loop of the cross animation, in seconds. The scan line adds
-# each cross at the start of the loop and it fades away halfway through.
-WAVE_CYCLE_S = 10.0
+# Length of one loop of the animation, in seconds. The scan line adds the
+# crosses at the start and each one fades away half a loop after it appeared.
+LOOP_S = 10.0
 
-# Time for the scan line to cross the banner from top to bottom, in seconds
-WAVE_SWEEP_S = 3.0
+# Time for the scan line to travel from the top of the banner to the bottom,
+# in seconds
+SCAN_SWEEP_S = 3.0
 
-# Time for a cross to appear as the scan line reaches it, and to fade away
+# Time for a cross to fade in as the scan line reaches it, and to fade out
 # half a loop later, in seconds
 CROSS_FADE_IN_S = 0.3
 CROSS_FADE_OUT_S = 1.0
 
-# Height of the scan line, in pixels. It fades from clear at its trailing edge
-# to SCAN_OPACITY at its leading edge, so the tail stays short.
+# Height of the scan line, in pixels. It is clear at its trailing edge and
+# SCAN_OPACITY at its leading edge, which keeps the tail short.
 SCAN_BAND_PX = 6.0
 SCAN_OPACITY = 0.6
 
 # Opacity of the brightest pixel of the detector frame behind the spots
 FRAME_MAX_OPACITY = 0.55
 
-# Scale of the rendered SVG relative to the detector, so it reads at README
-# width without being resampled
+# Size the SVG asks to be shown at, relative to one screen pixel per detector
+# pixel
 DISPLAY_SCALE = 1.5
 
 
@@ -177,10 +204,48 @@ def art_spots(art: list[str]) -> list[tuple[float, float, str]]:
     return spots
 
 
+def place_specks(
+    shape: tuple[int, int], spots: list[tuple[float, float, str]]
+) -> list[tuple[int, int, float]]:
+    """Scatter hot pixels and two-pixel clusters clear of the art and of each other.
+
+    Returns each speck pixel as (x, y, counts). The first SPECK_SINGLES specks
+    are one pixel; the rest gain a dimmer neighbour along x or y.
+    """
+    height, width = shape
+    rng = np.random.default_rng(SPECK_SEED)
+    edge = SPECK_EDGE_CLEARANCE_PX
+    taken: list[tuple[int, int]] = []
+    pixels = []
+    while len(taken) < SPECK_SINGLES + SPECK_PAIRS:
+        # Draw a position and reject it if it crowds a glyph or another speck
+        x = int(rng.integers(edge, width - edge))
+        y = int(rng.integers(edge, height - edge))
+        near_glyph = any(
+            (x - gx) ** 2 + (y - gy) ** 2 <= SPECK_GLYPH_CLEARANCE_PX**2
+            for gx, gy, _ in spots
+        )
+        near_speck = any(abs(x - a) + abs(y - b) < SPECK_SPACING_PX for a, b in taken)
+        if near_glyph or near_speck:
+            continue
+
+        counts = float(rng.integers(*SPECK_COUNTS))
+        pixels.append((x, y, counts))
+        if len(taken) >= SPECK_SINGLES:
+            dx, dy = (1, 0) if rng.random() < 0.5 else (0, 1)
+            pixels.append((x + dx, y + dy, counts * rng.uniform(0.5, 1.0)))
+        taken.append((x, y))
+    return pixels
+
+
 def render_frame(
-    shape: tuple[int, int], spots: list[tuple[float, float, str]], seed: int
+    shape: tuple[int, int],
+    spots: list[tuple[float, float, str]],
+    specks: list[tuple[int, int, float]],
+    seed: int,
 ) -> np.ndarray:
-    """Render a detector frame: Gaussian spots on background, with Poisson noise.
+    """Render a detector frame: Gaussian spots and specks on background, with
+    Poisson noise.
 
     Coordinates follow the spotfinder's convention, in which pixel i spans
     [i, i + 1), so the centre of pixel i is at i + 0.5.
@@ -192,6 +257,8 @@ def render_frame(
         expected += GLYPH_PEAK_COUNTS[glyph] * np.exp(
             -((xx - x) ** 2 + (yy - y) ** 2) / (2 * SPOT_SIGMA_PX**2)
         )
+    for x, y, counts in specks:
+        expected[y, x] += counts
     return np.random.default_rng(seed).poisson(expected).astype(np.uint16)
 
 
@@ -250,13 +317,13 @@ def find_spots(
         read_fd, write_fd = os.pipe()
         command = [
             str(spotfinder),
-            str(dump),
+            str(dump),  # A directory selects the shared-memory reader
             "--images",
             "1",
-            "--writeout",
-            "--output-for-index",
+            "--writeout",  # The only output that lists the strong pixels
+            "--output-for-index",  # Adds the centroids to the pipe JSON
             "--pipe_fd",
-            str(write_fd),
+            str(write_fd),  # Where the JSON goes
         ]
         process = subprocess.Popen(
             command,
@@ -290,8 +357,8 @@ def find_spots(
 def colour_steps(ramp: tuple[str, ...]) -> list[str]:
     """Interpolate COLOUR_STEPS colours from the faintest spot colour to the brightest.
 
-    The ramp's last colour is for background, so found spots run over the
-    first three only.
+    The ramp's last colour is the background colour, so the strong pixels only
+    use the first three.
     """
     stops = [
         tuple(int(colour[i : i + 2], 16) for i in (1, 3, 5)) for colour in ramp[2::-1]
@@ -332,9 +399,9 @@ def png_bytes(rgba: np.ndarray) -> bytes:
 def frame_png(frame: np.ndarray, colour: str) -> str:
     """Return the frame as a base64 PNG in one colour, with counts as opacity.
 
-    Opacity follows log counts, so the background speckle and the faint
-    background spots stay visible next to the strongest spots. It fades to
-    nothing across the margin, so the frame has no hard edge against the page.
+    Opacity follows log counts so the background speckle and the faint dots
+    still show next to the strongest spots. It also fades to nothing across
+    the margin, so the frame has no hard edge against the page.
     """
     level = np.log1p(frame.astype(np.float64))
     fade = edge_fade(frame.shape)
@@ -391,17 +458,18 @@ def build_svg(
         for step, outline in sorted(outlines.items())
     ]
 
-    # The scan line's leading edge runs from y = 0 to below the image over one
-    # sweep, so anything at y is reached after that fraction of it
+    # The scan line's leading edge moves from y = 0 to below the image over one
+    # sweep, so it reaches anything at y after that fraction of the sweep
     sweep_distance = height + SCAN_BAND_PX
 
-    def wave_delay(y: float) -> float:
-        return y / sweep_distance * WAVE_SWEEP_S
+    def scan_delay(y: float) -> float:
+        return y / sweep_distance * SCAN_SWEEP_S
 
-    # The scan line, drawn with its leading edge on y = 0 and moved down by
-    # the animation. Its gradient runs across the band, so it travels with
-    # it. The mask sits on the group, not the moving polygon, so the line fades
-    # out at the image edges the same way the frame does.
+    # The scan line is drawn with its leading edge on y = 0 and moved down by
+    # the animation. Its gradient is defined in the same space, so it moves
+    # with the line. The edge fade is a mask on the group around the line
+    # rather than on the line itself, so the mask stays still while the line
+    # moves and the line fades out at the sides like the frame does.
     scan = (
         f'<linearGradient id="scan-fade" gradientUnits="userSpaceOnUse" '
         f'x1="0" y1="{-SCAN_BAND_PX:g}" x2="0" y2="0">'
@@ -417,42 +485,43 @@ def build_svg(
         "</g>"
     )
 
-    # A cross at each centroid the spotfinder reported, added as the scan line
-    # reaches it
+    # A cross at each centroid the spotfinder reported, timed to appear as the
+    # scan line reaches it
     crosses = []
     for cx, cy in centres:
-        delay = wave_delay(cy)
+        delay = scan_delay(cy)
         crosses.append(
             f'<path style="animation-delay:{delay:.3f}s" '
             f'd="M{cx - CENTROID_ARM_PX:.2f} {cy:.2f}h{2 * CENTROID_ARM_PX:g}'
             f'M{cx:.2f} {cy - CENTROID_ARM_PX:.2f}v{2 * CENTROID_ARM_PX:g}"/>'
         )
 
-    # Each cross fades in, holds until half the loop has passed since it
-    # appeared, then fades away, so the crosses leave in the order they came.
-    # Hidden before its delay has elapsed.
-    fade_in = CROSS_FADE_IN_S / WAVE_CYCLE_S * 100
-    fade_out = CROSS_FADE_OUT_S / WAVE_CYCLE_S * 100
+    # Each cross fades in at its delay, holds until half a loop after it
+    # appeared and then fades away, so the crosses leave in the order they
+    # came. It stays hidden until its delay has passed.
+    fade_in = CROSS_FADE_IN_S / LOOP_S * 100
+    fade_out = CROSS_FADE_OUT_S / LOOP_S * 100
     animation = (
-        f"@keyframes wave{{0%{{opacity:0}} {fade_in:.2f}%{{opacity:1}} "
+        f"@keyframes cross{{0%{{opacity:0}} {fade_in:.2f}%{{opacity:1}} "
         f"50%{{opacity:1}} {50 + fade_out:.2f}%{{opacity:0}} 100%{{opacity:0}}}}"
-        f".centroid path{{animation:wave {WAVE_CYCLE_S:g}s ease-in-out infinite "
+        f".centroid path{{animation:cross {LOOP_S:g}s ease-in-out infinite "
         "backwards}"
     )
 
     # The scan line crosses once at the start of each loop and waits below the
     # image for the rest of it
-    sweep = WAVE_SWEEP_S / WAVE_CYCLE_S * 100
+    sweep = SCAN_SWEEP_S / LOOP_S * 100
     start, end = (
         "transform:translateY(0px)",
         f"transform:translateY({sweep_distance:g}px)",
     )
     animation += (
         f"@keyframes scan{{0%{{{start}}} {sweep:.2f}%{{{end}}} 100%{{{end}}}}}"
-        f".scan{{animation:scan {WAVE_CYCLE_S:g}s linear infinite}}"
+        f".scan{{animation:scan {LOOP_S:g}s linear infinite}}"
     )
 
-    # Without motion, the crosses stay and the line is left out
+    # For readers who prefer reduced motion, the crosses stay up and the scan
+    # line is hidden
     animation += (
         "@media (prefers-reduced-motion: reduce){"
         ".centroid path{animation:none;opacity:1}.scan{display:none}}"
@@ -476,8 +545,7 @@ def build_svg(
 
     layers = []
     if include_frame:
-        # The frame takes the ramp's background colour, the one the art uses
-        # for its background glyph
+        # The frame is drawn in the ramp's faintest spot colour
         for scheme, ramp in (("dark", palette.dark), ("light", palette.light)):
             layers.append(
                 f'<image class="frame-{scheme}" width="{width}" height="{height}" '
@@ -548,24 +616,27 @@ def main() -> None:
     placed = art_spots(art)
     width = len(max(art, key=len)) * CELL_WIDTH_PX + 2 * MARGIN_PX
     height = len(art) * CELL_HEIGHT_PX + 2 * MARGIN_PX
-    frame = render_frame((height, width), placed, args.seed)
+    specks = place_specks((height, width), placed)
+    frame = render_frame((height, width), placed, specks, args.seed)
 
     # Let the spotfinder decide what is a spot
     centres, strong = find_spots(args.spotfinder, frame)
     lettering = sum(1 for _, _, glyph in placed if glyph != BACKGROUND_GLYPH)
     logger.info(
-        "Placed %d spots (%d lettering, %d background); the spotfinder found %d "
-        "from %d strong pixels",
+        "Placed %d spots (%d lettering, %d background) and %d specks; the "
+        "spotfinder found %d from %d strong pixels",
         len(placed),
         lettering,
         len(placed) - lettering,
+        SPECK_SINGLES + SPECK_PAIRS,
         len(centres),
         len(strong),
     )
     if len(centres) != lettering:
         logger.warning(
             "Found %d spots but the lettering has %d; check GLYPH_PEAK_COUNTS against "
-            "the dispersion threshold",
+            "the dispersion threshold, and that no speck grew past the minimum spot "
+            "size",
             len(centres),
             lettering,
         )
