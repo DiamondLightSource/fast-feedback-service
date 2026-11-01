@@ -127,8 +127,8 @@ by Doxygen + Sphinx (via Breathe and Exhale) and published to GitHub
 Pages on every push to `main`.
 
 To build it locally you need the `doxygen` and `graphviz` binaries
-(e.g. `mamba install -c conda-forge doxygen graphviz`) plus the Python
-packages:
+(`mamba install -c conda-forge doxygen=1.18.0 graphviz`, the version CI
+uses) plus the Python packages:
 
 ```bash
 pip install -r docs/requirements.txt
