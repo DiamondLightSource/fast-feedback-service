@@ -4,12 +4,15 @@ Draw the README banner from the spots the GPU spotfinder finds.
 
 Renders the art in banner.cc as a detector frame, one Gaussian spot per
 glyph on a Poisson background, and hands it to the spotfinder through
-its shared-memory reader. Each centroid it reports becomes a circle,
-sized and coloured by the counts around it; the background dots are too
-faint to make a spot, so they only show in the frame behind.
+its shared-memory reader. The picture is what comes back: every pixel it
+flagged as strong, coloured by its counts, and a red cross at each
+centroid it reports. The background dots are too faint to make a spot,
+so they only show in the frame behind.
 
-Needs a GPU and a built spotfinder, so the SVG is committed and this is
-only rerun when the art or a colour map changes.
+The strong pixels come from the spotfinder's --writeout debug output,
+so this breaks if that format changes. It needs a GPU and a built
+spotfinder, so the SVG is committed and this is only rerun when the art
+or a colour map changes.
 """
 
 from __future__ import annotations
@@ -68,9 +71,6 @@ SPOT_SIGMA_PX = 1.5
 # Mean background, in counts per pixel, as on a photon-counting detector
 BACKGROUND_COUNTS = 1.0
 
-# Half-width of the box summed to measure a spot's intensity, in pixels
-INTENSITY_BOX_HALF_PX = 3
-
 # Seed for the Poisson noise, so a regeneration with unchanged inputs gives an
 # identical picture
 DEFAULT_SEED = 3
@@ -88,8 +88,33 @@ PIXEL_SIZE_M = 7.5e-5
 # Number of colour steps between the faintest and the brightest found spot
 COLOUR_STEPS = 8
 
-# Spot radius in pixels at the faintest and the brightest found spot
-SPOT_RADIUS_PX = (1.3, 2.9)
+# Half-length of each arm of the centroid cross, in pixels. Long enough to
+# reach past the edge of the largest spots.
+CENTROID_ARM_PX = 5.0
+
+# Line width of the centroid crosses, in pixels
+CENTROID_STROKE_PX = 0.5
+
+# Colour of the centroid crosses in both schemes, the red of the spotfinder's
+# own --writeout images
+CENTROID_COLOUR = "#FF0000"
+
+# Length of one loop of the cross animation, in seconds. The scan line adds
+# each cross at the start of the loop and it fades away halfway through.
+WAVE_CYCLE_S = 10.0
+
+# Time for the scan line to cross the banner from top to bottom, in seconds
+WAVE_SWEEP_S = 3.0
+
+# Time for a cross to appear as the scan line reaches it, and to fade away
+# half a loop later, in seconds
+CROSS_FADE_IN_S = 0.3
+CROSS_FADE_OUT_S = 1.0
+
+# Height of the scan line, in pixels. It fades from clear at its trailing edge
+# to SCAN_OPACITY at its leading edge, so the tail stays short.
+SCAN_BAND_PX = 6.0
+SCAN_OPACITY = 0.6
 
 # Opacity of the brightest pixel of the detector frame behind the spots
 FRAME_MAX_OPACITY = 0.55
@@ -106,15 +131,6 @@ class Palette:
     name: str
     dark: tuple[str, ...]
     light: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class Spot:
-    """A spot the spotfinder reported, in detector pixels."""
-
-    x: float
-    y: float
-    intensity: float
 
 
 def read_banner_art(source: str) -> list[str]:
@@ -213,11 +229,22 @@ def write_shared_memory_dump(directory: Path, frame: np.ndarray) -> None:
     (directory / "image_000000_2").write_bytes(chunk)
 
 
-def find_spots(spotfinder: Path, frame: np.ndarray) -> list[tuple[float, float]]:
-    """Run the spotfinder over one frame and return the spot centroids it reports."""
+def find_spots(
+    spotfinder: Path, frame: np.ndarray
+) -> tuple[list[tuple[float, float]], list[tuple[int, int]]]:
+    """Run the spotfinder over one frame.
+
+    Returns the spot centroids it reports and every pixel it flagged as
+    strong, including those in groups too small to keep as a spot.
+    """
     with tempfile.TemporaryDirectory(prefix="ffs-banner-") as scratch:
-        dump = Path(scratch)
+        dump = Path(scratch) / "dump"
+        dump.mkdir()
         write_shared_memory_dump(dump, frame)
+
+        # --writeout drops its debug files into the working directory
+        work = Path(scratch) / "work"
+        work.mkdir()
 
         # The spotfinder writes one JSON line per image to the pipe it is given
         read_fd, write_fd = os.pipe()
@@ -226,12 +253,14 @@ def find_spots(spotfinder: Path, frame: np.ndarray) -> list[tuple[float, float]]
             str(dump),
             "--images",
             "1",
+            "--writeout",
             "--output-for-index",
             "--pipe_fd",
             str(write_fd),
         ]
         process = subprocess.Popen(
             command,
+            cwd=work,
             pass_fds=[write_fd],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -241,24 +270,21 @@ def find_spots(spotfinder: Path, frame: np.ndarray) -> list[tuple[float, float]]
             lines = pipe.read().splitlines()
         log, _ = process.communicate()
 
-    if process.returncode != 0 or not lines:
+        # One "x, y" line per strong pixel
+        pixel_list = work / "pixels_00000.txt"
+        strong = []
+        if pixel_list.exists():
+            for line in pixel_list.read_text().splitlines():
+                x, y = line.split(",")
+                strong.append((int(x), int(y)))
+
+    if process.returncode != 0 or not lines or not strong:
         raise RuntimeError(
             f"spotfinder exited {process.returncode} without reporting spots:\n"
             + log.decode(errors="replace")
         )
     centres = json.loads(lines[0])["spot_centers"]
-    return [(centres[i], centres[i + 1]) for i in range(0, len(centres), 3)]
-
-
-def measure_spots(frame: np.ndarray, centres: list[tuple[float, float]]) -> list[Spot]:
-    """Attach to each centroid the background-subtracted counts in a box around it."""
-    spots = []
-    half = INTENSITY_BOX_HALF_PX
-    for x, y in centres:
-        column, row = int(x), int(y)
-        box = frame[row - half : row + half + 1, column - half : column + half + 1]
-        spots.append(Spot(x, y, float(box.sum() - BACKGROUND_COUNTS * box.size)))
-    return spots
+    return [(centres[i], centres[i + 1]) for i in range(0, len(centres), 3)], strong
 
 
 def colour_steps(ramp: tuple[str, ...]) -> list[str]:
@@ -311,13 +337,7 @@ def frame_png(frame: np.ndarray, colour: str) -> str:
     nothing across the margin, so the frame has no hard edge against the page.
     """
     level = np.log1p(frame.astype(np.float64))
-    height, width = frame.shape
-    to_edge = np.minimum.outer(
-        np.minimum(np.arange(height), np.arange(height)[::-1]),
-        np.minimum(np.arange(width), np.arange(width)[::-1]),
-    )
-    fade = np.clip(to_edge / MARGIN_PX, 0.0, 1.0)
-    fade = fade * fade * (3 - 2 * fade)
+    fade = edge_fade(frame.shape)
     alpha = np.round(level / level.max() * fade * FRAME_MAX_OPACITY * 255).astype(
         np.uint8
     )
@@ -327,39 +347,132 @@ def frame_png(frame: np.ndarray, colour: str) -> str:
     return base64.b64encode(png_bytes(rgba)).decode("ascii")
 
 
+def edge_fade(shape: tuple[int, int]) -> np.ndarray:
+    """Return 1 inside the margin falling to 0 at the image edge, as a smoothstep."""
+    height, width = shape
+    to_edge = np.minimum.outer(
+        np.minimum(np.arange(height), np.arange(height)[::-1]),
+        np.minimum(np.arange(width), np.arange(width)[::-1]),
+    )
+    fade = np.clip(to_edge / MARGIN_PX, 0.0, 1.0)
+    return fade * fade * (3 - 2 * fade)
+
+
+def edge_mask_png(shape: tuple[int, int]) -> str:
+    """Return the edge fade as a base64 PNG for an SVG luminance mask."""
+    grey = np.round(edge_fade(shape) * 255).astype(np.uint8)
+    rgba = np.repeat(grey[..., None], 4, axis=2)
+    rgba[..., 3] = 255
+    return base64.b64encode(png_bytes(rgba)).decode("ascii")
+
+
 def build_svg(
     frame: np.ndarray,
-    spots: list[Spot],
+    strong: list[tuple[int, int]],
+    centres: list[tuple[float, float]],
     palette: Palette,
     include_frame: bool,
     provenance: str,
 ) -> str:
-    """Draw the found spots, and optionally the frame behind them, as an SVG."""
+    """Draw the strong pixels and centroids, and optionally the frame, as an SVG."""
     height, width = frame.shape
 
-    # Each spot gets a colour step and radius from its log intensity, scaled
-    # between the faintest and the brightest found spot
-    logs = np.log([max(spot.intensity, 1.0) for spot in spots])
-    span = max(logs.max() - logs.min(), 1e-9)
-    circles = []
-    for spot, value in zip(spots, logs, strict=True):
-        t = (value - logs.min()) / span
-        step = round(t * (COLOUR_STEPS - 1))
-        radius = SPOT_RADIUS_PX[0] + t * (SPOT_RADIUS_PX[1] - SPOT_RADIUS_PX[0])
-        circles.append(
-            f'<circle class="s{step}" cx="{spot.x:.2f}" cy="{spot.y:.2f}" r="{radius:.2f}"/>'
+    # Each strong pixel gets a colour step from its log counts, scaled between
+    # the faintest and the brightest strong pixel. One path per step keeps the
+    # file small next to a rect per pixel.
+    levels = np.log1p([float(frame[y, x]) for x, y in strong])
+    span = max(levels.max() - levels.min(), 1e-9)
+    outlines: dict[int, list[str]] = {}
+    for (x, y), level in zip(strong, levels, strict=True):
+        step = round((level - levels.min()) / span * (COLOUR_STEPS - 1))
+        outlines.setdefault(step, []).append(f"M{x} {y}h1v1h-1z")
+    pixel_paths = [
+        f'<path class="s{step}" d="{"".join(outline)}"/>'
+        for step, outline in sorted(outlines.items())
+    ]
+
+    # The scan line's leading edge runs from y = 0 to below the image over one
+    # sweep, so anything at y is reached after that fraction of it
+    sweep_distance = height + SCAN_BAND_PX
+
+    def wave_delay(y: float) -> float:
+        return y / sweep_distance * WAVE_SWEEP_S
+
+    # The scan line, drawn with its leading edge on y = 0 and moved down by
+    # the animation. Its gradient runs across the band, so it travels with
+    # it. The mask sits on the group, not the moving polygon, so the line fades
+    # out at the image edges the same way the frame does.
+    scan = (
+        f'<linearGradient id="scan-fade" gradientUnits="userSpaceOnUse" '
+        f'x1="0" y1="{-SCAN_BAND_PX:g}" x2="0" y2="0">'
+        f'<stop offset="0" stop-color="{CENTROID_COLOUR}" stop-opacity="0"/>'
+        f'<stop offset="1" stop-color="{CENTROID_COLOUR}" '
+        f'stop-opacity="{SCAN_OPACITY:g}"/></linearGradient>'
+        f'<mask id="edge-fade" maskUnits="userSpaceOnUse" x="0" y="0" '
+        f'width="{width}" height="{height}"><image width="{width}" '
+        f'height="{height}" href="data:image/png;base64,{edge_mask_png(frame.shape)}"/>'
+        f'</mask><g mask="url(#edge-fade)">'
+        f'<rect class="scan" fill="url(#scan-fade)" x="0" y="{-SCAN_BAND_PX:g}" '
+        f'width="{width}" height="{SCAN_BAND_PX:g}"/>'
+        "</g>"
+    )
+
+    # A cross at each centroid the spotfinder reported, added as the scan line
+    # reaches it
+    crosses = []
+    for cx, cy in centres:
+        delay = wave_delay(cy)
+        crosses.append(
+            f'<path style="animation-delay:{delay:.3f}s" '
+            f'd="M{cx - CENTROID_ARM_PX:.2f} {cy:.2f}h{2 * CENTROID_ARM_PX:g}'
+            f'M{cx:.2f} {cy - CENTROID_ARM_PX:.2f}v{2 * CENTROID_ARM_PX:g}"/>'
         )
+
+    # Each cross fades in, holds until half the loop has passed since it
+    # appeared, then fades away, so the crosses leave in the order they came.
+    # Hidden before its delay has elapsed.
+    fade_in = CROSS_FADE_IN_S / WAVE_CYCLE_S * 100
+    fade_out = CROSS_FADE_OUT_S / WAVE_CYCLE_S * 100
+    animation = (
+        f"@keyframes wave{{0%{{opacity:0}} {fade_in:.2f}%{{opacity:1}} "
+        f"50%{{opacity:1}} {50 + fade_out:.2f}%{{opacity:0}} 100%{{opacity:0}}}}"
+        f".centroid path{{animation:wave {WAVE_CYCLE_S:g}s ease-in-out infinite "
+        "backwards}"
+    )
+
+    # The scan line crosses once at the start of each loop and waits below the
+    # image for the rest of it
+    sweep = WAVE_SWEEP_S / WAVE_CYCLE_S * 100
+    start, end = (
+        "transform:translateY(0px)",
+        f"transform:translateY({sweep_distance:g}px)",
+    )
+    animation += (
+        f"@keyframes scan{{0%{{{start}}} {sweep:.2f}%{{{end}}} 100%{{{end}}}}}"
+        f".scan{{animation:scan {WAVE_CYCLE_S:g}s linear infinite}}"
+    )
+
+    # Without motion, the crosses stay and the line is left out
+    animation += (
+        "@media (prefers-reduced-motion: reduce){"
+        ".centroid path{animation:none;opacity:1}.scan{display:none}}"
+    )
 
     # One class per colour step, dark ramp by default and the light ramp when
     # the viewer prefers a light scheme
-    dark, light = colour_steps(palette.dark), colour_steps(palette.light)
-    dark_rules = " ".join(f".s{i}{{fill:{colour}}}" for i, colour in enumerate(dark))
-    light_rules = " ".join(f".s{i}{{fill:{colour}}}" for i, colour in enumerate(light))
-    style = [dark_rules, ".frame-light{display:none}"]
-    style.append(
+    def rules(ramp: tuple[str, ...]) -> str:
+        return " ".join(
+            f".s{i}{{fill:{colour}}}" for i, colour in enumerate(colour_steps(ramp))
+        )
+
+    style = [
+        rules(palette.dark),
+        ".frame-light{display:none}",
         "@media (prefers-color-scheme: light){"
-        f"{light_rules} .frame-dark{{display:none}} .frame-light{{display:inline}}}}"
-    )
+        f"{rules(palette.light)} .frame-dark{{display:none}} "
+        ".frame-light{display:inline}}",
+        animation,
+    ]
 
     layers = []
     if include_frame:
@@ -380,7 +493,14 @@ def build_svg(
             f"<metadata>{provenance}</metadata>",
             f"<style>{' '.join(style)}</style>",
             *layers,
-            *circles,
+            '<g shape-rendering="crispEdges">',
+            *pixel_paths,
+            "</g>",
+            scan,
+            f'<g class="centroid" fill="none" stroke="{CENTROID_COLOUR}" '
+            f'stroke-width="{CENTROID_STROKE_PX:g}">',
+            *crosses,
+            "</g>",
             "</svg>",
             "",
         ]
@@ -431,20 +551,22 @@ def main() -> None:
     frame = render_frame((height, width), placed, args.seed)
 
     # Let the spotfinder decide what is a spot
-    spots = measure_spots(frame, find_spots(args.spotfinder, frame))
+    centres, strong = find_spots(args.spotfinder, frame)
     lettering = sum(1 for _, _, glyph in placed if glyph != BACKGROUND_GLYPH)
     logger.info(
-        "Placed %d spots (%d lettering, %d background); the spotfinder found %d",
+        "Placed %d spots (%d lettering, %d background); the spotfinder found %d "
+        "from %d strong pixels",
         len(placed),
         lettering,
         len(placed) - lettering,
-        len(spots),
+        len(centres),
+        len(strong),
     )
-    if len(spots) != lettering:
+    if len(centres) != lettering:
         logger.warning(
             "Found %d spots but the lettering has %d; check GLYPH_PEAK_COUNTS against "
             "the dispersion threshold",
-            len(spots),
+            len(centres),
             lettering,
         )
 
@@ -467,7 +589,7 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        build_svg(frame, spots, palette, not args.no_frame, provenance)
+        build_svg(frame, strong, centres, palette, not args.no_frame, provenance)
     )
     logger.info("Wrote %s", args.output)
 
