@@ -1,14 +1,6 @@
 # Fast Feedback Service
 
-```text
-            ·
-• ● ∙ • ● ● ●     • ● ● ● ●     ● • ∙ • ∙ • ●   ● ● • • ● • • ●
-• ∙             • ●       ● •   ● ∙                   • ●
-● • • • •       • ● ● ∙ ● ● ●   • ● • • ● • ●         ● ●
-• ●             • ●       ● •             ● •         • •
-● •             ● ●       ● ●   ● ∙ ● ● ∙ • ∙         • •
-                        ·
-```
+![FAST, drawn in diffraction spots found by the spotfinder][banner]
 
 <p align="center">
   <a href="https://diamondlightsource.github.io/fast-feedback-service/">Documentation</a> ·
@@ -81,6 +73,7 @@ source, is published at
 | [`tests/`]          | Python tests for the programs and pipelines                 |
 | [`docs/`]           | Sphinx documentation                                        |
 
+[banner]: docs/images/banner.svg
 [building]: docs/building.md
 [service]: docs/service.md
 [testing]: docs/testing.md

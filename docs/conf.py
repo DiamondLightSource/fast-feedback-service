@@ -135,16 +135,17 @@ highlight_language = "cpp"
 # Repository the README's relative links resolve against on the docs site.
 REPO_URL = "https://github.com/DiamondLightSource/fast-feedback-service"
 
-# A reference link definition pointing at a page of these docs, e.g.
-# "[building]: docs/building.md".
-_DOCS_PAGE_LINK_DEFINITION = re.compile(
-    r"^(\[[^\]]+\]):\s+docs/([^/\s]+\.md)$", flags=re.MULTILINE
+# A reference link definition pointing at a page or file of these docs,
+# e.g. "[building]: docs/building.md" or "[banner]: docs/images/banner.svg".
+# The docs/ directory itself, "[`docs/`]: docs/", is a repository link.
+_DOCS_LINK_DEFINITION = re.compile(
+    r"^(\[[^\]]+\]):\s+docs/(\S+\.\w+)$", flags=re.MULTILINE
 )
 
 # A reference link definition with any other repo-relative target, e.g.
 # "[`src/`]: src/". Absolute URLs and in-page anchors are left alone.
 _RELATIVE_LINK_DEFINITION = re.compile(
-    r"^(\[[^\]]+\]):\s+(?!https?://|#|docs/[^/\s]+\.md$)(\S+)$",
+    r"^(\[[^\]]+\]):\s+(?!https?://|#|docs/\S+\.\w+$)(\S+)$",
     flags=re.MULTILINE,
 )
 
@@ -157,14 +158,15 @@ def _absolute_readme_links(
     follow whichever branch or tag is being viewed; inside Sphinx they
     would resolve as missing documents instead. GitHub redirects a
     tree/ URL to blob/ for files, so one form covers both. Links to
-    pages of these docs are the exception: they are made relative to
-    docs/, where the README is included, so they stay on the site."""
+    pages and files of these docs are the exception: they are made
+    relative to docs/, where the README is included, so they stay on the
+    site and images are copied into it."""
     if relative_path.name != "README.md":
         return
     content[0] = _RELATIVE_LINK_DEFINITION.sub(
         lambda m: f"{m[1]}: {REPO_URL}/tree/main/{m[2]}", content[0]
     )
-    content[0] = _DOCS_PAGE_LINK_DEFINITION.sub(r"\1: \2", content[0])
+    content[0] = _DOCS_LINK_DEFINITION.sub(r"\1: \2", content[0])
 
 
 # Tabs written as plain Markdown
