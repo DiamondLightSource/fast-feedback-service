@@ -1,6 +1,12 @@
-# Fast Feedback Service
+<h1 align="center">Fast Feedback Service</h1>
+
+<div align="center">
 
 ![FAST, drawn in diffraction spots found by the spotfinder][banner]
+
+<sub><sub>*FAST* logo detected through the GPU spotfinder  |  [`Generated with synthetic data`][banner_svg]</sub></sub>
+
+</div>
 
 <p align="center">
   <a href="https://diamondlightsource.github.io/fast-feedback-service/">Documentation</a> ·
@@ -9,7 +15,8 @@
 </p>
 
 <p align="center">
-  <a href="https://diamondlightsource.github.io/fast-feedback-service/"><img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/DiamondLightSource/fast-feedback-service/docs.yml?branch=main&style=flat-square&label=docs&logo=readthedocs&logoColor=white&color=1F6FBF"></a>
+  <a href="https://github.com/DiamondLightSource/fast-feedback-service/actions/workflows/docker-image.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/DiamondLightSource/fast-feedback-service/docker-image.yml?branch=main&style=flat-square&label=build&logo=githubactions&logoColor=white"></a>
+  <a href="https://diamondlightsource.github.io/fast-feedback-service/"><img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/DiamondLightSource/fast-feedback-service/docs.yml?branch=main&style=flat-square&label=docs&logo=readthedocs&logoColor=white"></a>
   <a href="https://github.com/DiamondLightSource/fast-feedback-service/pkgs/container/fast-feedback-service"><img alt="Container image" src="https://img.shields.io/badge/container-ghcr.io-1F6FBF?style=flat-square&logo=docker&logoColor=white"></a>
   <a href="https://developer.nvidia.com/cuda-toolkit"><img alt="CUDA 13" src="https://img.shields.io/badge/CUDA-13-76B900?style=flat-square&logo=nvidia&logoColor=white"></a>
   <a href="https://github.com/DiamondLightSource/fast-feedback-service/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/DiamondLightSource/fast-feedback-service?style=flat-square&color=1F6FBF"></a>
@@ -74,6 +81,7 @@ source, is published at
 | [`docs/`]           | Sphinx documentation                                        |
 
 [banner]: docs/images/banner.svg
+[banner_svg]: scripts/banner_svg.py
 [building]: docs/building.md
 [service]: docs/service.md
 [testing]: docs/testing.md

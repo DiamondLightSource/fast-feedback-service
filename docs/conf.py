@@ -169,6 +169,21 @@ def _absolute_readme_links(
     content[0] = _DOCS_LINK_DEFINITION.sub(r"\1: \2", content[0])
 
 
+# The README's centred HTML title, e.g. '<h1 align="center">Title</h1>'
+_HTML_TITLE = re.compile(r'^<h1 align="center">(.+?)</h1>$', flags=re.MULTILINE)
+
+
+def _markdown_readme_title(
+    app: object, relative_path: Path, parent_docname: str, content: list[str]
+) -> None:
+    """Turn the README's HTML title back into a Markdown heading while it
+    is included into the docs. GitHub only centres a heading written as
+    HTML, but Sphinx takes the page title from Markdown headings alone."""
+    if relative_path.name != "README.md":
+        return
+    content[0] = _HTML_TITLE.sub(r"# \1", content[0], count=1)
+
+
 # Tabs written as plain Markdown
 
 # A block of alternatives between "<!-- tabs: GROUP -->" and
@@ -214,4 +229,5 @@ def _markdown_tabs(app: object, docname: str, source: list[str]) -> None:
 
 def setup(app):
     app.connect("include-read", _absolute_readme_links)
+    app.connect("include-read", _markdown_readme_title)
     app.connect("source-read", _markdown_tabs)
