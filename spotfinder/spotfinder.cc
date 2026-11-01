@@ -988,21 +988,29 @@ int main(int argc, char **argv) {
                             }
                         }
                         // Go over each shoebox and write a square
-                        // for (auto box : boxes) {
-                        for (int i = 0; i < boxes.size(); ++i) {
-                            auto &box = boxes[i];
-                            constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
+                        constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
+
+                        // The outline sits outside the box, so for a spot near an
+                        // edge it runs off the image. Coordinates are signed so they
+                        // can go below zero, and pixels off the image are skipped.
+                        auto paint_shoebox = [&](int64_t x, int64_t y) {
+                            if (x >= 0 && x < width && y >= 0 && y < height) {
+                                buffer[y * width + x] = color_shoebox;
+                            }
+                        };
+                        for (const auto &box : boxes) {
+                            const int64_t l = box.l, r = box.r, t = box.t, b = box.b;
 
                             // edgeMin/edgeMax define how thick the border is
                             constexpr int edgeMin = 5, edgeMax = 7;
                             for (int edge = edgeMin; edge <= edgeMax; ++edge) {
-                                for (int x = box.l - edge; x <= box.r + edge; ++x) {
-                                    buffer[width * (box.t - edge) + x] = color_shoebox;
-                                    buffer[width * (box.b + edge) + x] = color_shoebox;
+                                for (int64_t x = l - edge; x <= r + edge; ++x) {
+                                    paint_shoebox(x, t - edge);
+                                    paint_shoebox(x, b + edge);
                                 }
-                                for (int y = box.t - edge; y <= box.b + edge; ++y) {
-                                    buffer[width * y + box.l - edge] = color_shoebox;
-                                    buffer[width * y + box.r + edge] = color_shoebox;
+                                for (int64_t y = t - edge; y <= b + edge; ++y) {
+                                    paint_shoebox(l - edge, y);
+                                    paint_shoebox(r + edge, y);
                                 }
                             }
                         }
