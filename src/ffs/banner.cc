@@ -8,6 +8,9 @@
  * The art was generated once by rendering "FAST" with pyfiglet and replacing
  * each filled cell of the lettering with a spot of random brightness, then
  * tidied by hand.
+ *
+ * FFS_BANNER_PALETTE pins the colour map by its index in bike_shed, and
+ * scripts/preview_banner.sh uses it to show every palette.
  */
 #include "banner.hpp"
 
@@ -15,6 +18,7 @@
 #include <fmt/core.h>
 
 #include <array>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -230,13 +234,35 @@ void print_art(std::string_view program,
       "{} · {}\n\n", fmt::styled("FAST", bold), fmt::styled(program, styles[1]));
 }
 
+/**
+ * @brief Choose this run's colour map.
+ *
+ * @return The palette FFS_BANNER_PALETTE names by index, or a random one if it
+ *         is unset, malformed or out of range
+ */
+const Palette &pick_palette() {
+    // An override must parse in full and index into the table
+    const char *pinned = std::getenv("FFS_BANNER_PALETTE");
+    if (pinned != nullptr) {
+        const std::string_view value{pinned};
+        size_t index = 0;
+        const auto [end, error] =
+          std::from_chars(value.data(), value.data() + value.size(), index);
+        if (error == std::errc{} && end == value.data() + value.size()
+            && index < bike_shed.size()) {
+            return bike_shed[index];
+        }
+    }
+    std::random_device entropy;
+    std::uniform_int_distribution<size_t> pick(0, bike_shed.size() - 1);
+    return bike_shed[pick(entropy)];
+}
+
 }  // namespace
 
 void print_banner(std::string_view program) {
     // Pick this run's colour map and the ramp for the terminal background
-    std::random_device entropy;
-    std::uniform_int_distribution<size_t> pick(0, bike_shed.size() - 1);
-    const Palette &palette = bike_shed[pick(entropy)];
+    const Palette &palette = pick_palette();
     const Ramp &ramp =
       detect_background() == Background::Light ? palette.light : palette.dark;
 
