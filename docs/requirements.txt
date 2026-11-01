@@ -10,5 +10,7 @@ breathe>=5.1.0
 exhale>=0.3.7
 furo>=2025.12.19
 myst-parser>=5.1.0
+# Synced tabs; 0.6 keeps the selection across page loads.
+sphinx-design>=0.7.0
 # Resolves the docs version from git, as the python build does.
 setuptools_scm>=10.3.4

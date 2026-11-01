@@ -11,21 +11,23 @@ mamba env create -f environment.yml -p ./ENV
 
 The [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) is the
 exception, and is installed separately. The build only needs `nvcc` on
-`PATH`, so any installation will do; NVIDIA's installers put it under
-`/usr/local`, versioned by release:
+`PATH`. Which version to install is covered under
+[Building the project](#building-the-project).
+
+<!-- tabs: site -->
+**Standalone:** Any installation will do. NVIDIA's installers put it
+under `/usr/local`, versioned by release:
 
 ```bash
 export PATH=/usr/local/cuda-13.3/bin:$PATH
 ```
 
-Which version to install is covered under
-[Building the project](#building-the-project).
-
-At Diamond, CUDA comes from the module system instead:
+**Diamond:** CUDA comes from the module system:
 
 ```bash
 module load cuda/13.3.1
 ```
+<!-- end tabs -->
 
 ## Building the project
 
@@ -79,8 +81,15 @@ The CUDA version is read from `ARG CUDA_VERSION` in the [`Dockerfile`],
 because the container base image is what limits which version can be
 used. `build.sh` reports the CUDA it found and warns when it differs from
 that one, since binaries built against one CUDA need the same one on the
-library path to run. Its messages suggest the matching Diamond module;
+library path to run.
+
+<!-- tabs: site -->
+**Standalone:** Its messages suggest the matching Diamond module;
 elsewhere, they mean putting that version's `nvcc` on `PATH`.
+
+**Diamond:** Its messages name the module that matches, and `--cuda`
+changes which one they suggest.
+<!-- end tabs -->
 
 ### Choosing a GPU architecture
 CUDA code is compiled for specific compute capabilities, and a binary

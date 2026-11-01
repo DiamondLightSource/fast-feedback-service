@@ -51,6 +51,7 @@ extensions = [
     "breathe",
     "exhale",
     "myst_parser",
+    "sphinx_design",
 ]
 
 # Allow the README (Markdown) to be pulled into the toctree.
@@ -61,6 +62,10 @@ source_suffix = {
 
 # Generate heading anchors so the README's in-page links resolve.
 myst_heading_anchors = 3
+
+# ":::" fences, which the generated tab sets below are written in, so
+# they nest around code blocks without counting backticks.
+myst_enable_extensions = ["colon_fence"]
 
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
@@ -162,5 +167,49 @@ def _absolute_readme_links(
     content[0] = _DOCS_PAGE_LINK_DEFINITION.sub(r"\1: \2", content[0])
 
 
+# Tabs written as plain Markdown
+
+# A block of alternatives between "<!-- tabs: GROUP -->" and
+# "<!-- end tabs -->", each starting with a bold label such as
+# "**Diamond:**". GitHub hides the comments and shows the alternatives in
+# turn; the docs build makes them tabs, synced across the group.
+_TABS_BLOCK = re.compile(
+    r"^<!-- tabs: (?P<group>[\w-]+) -->\n(?P<body>.*?)^<!-- end tabs -->$",
+    flags=re.MULTILINE | re.DOTALL,
+)
+_TAB_LABEL = re.compile(r"^\*\*(?P<label>[^*\n]+):\*\*[ \t]*", flags=re.MULTILINE)
+
+
+def _tab_set(block: re.Match[str]) -> str:
+    """Rewrite one block of alternatives as a sphinx-design tab set, one
+    tab per label. Text before the first label has no tab to go in, so
+    it is an error rather than silently dropped."""
+    body = block["body"]
+    labels = list(_TAB_LABEL.finditer(body))
+    if not labels or body[: labels[0].start()].strip():
+        raise ValueError(
+            f"tabs block '{block['group']}' must start with a **Label:** line"
+        )
+    lines = ["::::{tab-set}", f":sync-group: {block['group']}", ""]
+    for label, following in zip(labels, labels[1:] + [None]):
+        end = following.start() if following else len(body)
+        lines += [
+            f":::{{tab-item}} {label['label']}",
+            f":sync: {label['label'].lower().replace(' ', '-')}",
+            "",
+            body[label.end() : end].strip(),
+            ":::",
+            "",
+        ]
+    lines.append("::::")
+    return "\n".join(lines)
+
+
+def _markdown_tabs(app: object, docname: str, source: list[str]) -> None:
+    """Turn the tabs blocks in a page into tab sets before MyST parses it."""
+    source[0] = _TABS_BLOCK.sub(_tab_set, source[0])
+
+
 def setup(app):
     app.connect("include-read", _absolute_readme_links)
+    app.connect("source-read", _markdown_tabs)
