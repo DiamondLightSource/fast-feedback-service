@@ -14,6 +14,7 @@
 # only place python can read an extension module from.
 #   ./build.sh --clean      discard the build directory and start over
 #   ./build.sh -j N         limit parallelism
+#   ./build.sh --cpu        build without CUDA: the CPU baseline only
 #
 # The programs are run straight out of the build directory, as
 # ./build/bin/spotfinder, and are always what the last compile produced. The
@@ -28,6 +29,7 @@ CUDA_MODULE=${CUDA_MODULE:-cuda/$_cuda_version}
 
 CLEAN=false
 INSTALL=false
+CPU=false
 JOBS=""
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -42,7 +44,8 @@ while [[ $# -gt 0 ]]; do
         -c|--clean)   CLEAN=true; shift ;;
         -j|--jobs)    JOBS="$2"; shift 2 ;;
         --cuda)       CUDA_MODULE="$2"; shift 2 ;;
-        -h|--help)    sed -n '2,17p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        --cpu)        CPU=true; shift ;;
+        -h|--help)    sed -n '2,18p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *)            fail "Unknown option: $1" ;;
     esac
 done
@@ -72,28 +75,34 @@ if [[ -n "$dx2_at" && -n "$dx2_want" && "$dx2_at" != "$dx2_want" ]]; then
     warn "    git submodule update --init --recursive"
 fi
 
-command -v nvcc >/dev/null || fail "No nvcc on PATH. Load a CUDA module: module load $CUDA_MODULE"
-
-cuda_found=$(nvcc --version | sed -n 's/.*release \([0-9.]*\).*/\1/p')
-cuda_wanted=${CUDA_MODULE#*/}
-status "CUDA $cuda_found from $(command -v nvcc)"
-if [[ "$cuda_found" != "${cuda_wanted%.*}" ]]; then
-    warn "Both deployments build against $CUDA_MODULE, so this does not match them."
-    warn "Binaries built here also need this same CUDA on the library path to run."
-    warn "To match: module load $CUDA_MODULE"
+if [[ "$CPU" == "true" ]]; then
+    ENABLE_CUDA=OFF
+    warn "Building without CUDA: the CPU baseline only, with no spotfinder or integrator"
 else
-    status "Matches what the deployments build against ($CUDA_MODULE)"
-fi
+    ENABLE_CUDA=ON
+    command -v nvcc >/dev/null || fail "No nvcc on PATH. Load a CUDA module: module load $CUDA_MODULE, or pass --cpu to build the CPU baseline only"
 
-# cmake pins the cuda compiler in its cache and keeps it across reconfigures,
-# so a build directory stays on whichever cuda configured it.
-if [[ -f build/CMakeCache.txt ]]; then
-    cached_nvcc=$(sed -n 's/^CMAKE_CUDA_COMPILER:FILEPATH=//p' build/CMakeCache.txt)
-    if [[ -n "$cached_nvcc" && "$cached_nvcc" != "$(command -v nvcc)" ]]; then
-        warn "The build directory is configured against a different CUDA:"
-        warn "    configured with  $cached_nvcc"
-        warn "    loaded now       $(command -v nvcc)"
-        fail "Reconfiguring will not change it. Run ./build.sh --clean"
+    cuda_found=$(nvcc --version | sed -n 's/.*release \([0-9.]*\).*/\1/p')
+    cuda_wanted=${CUDA_MODULE#*/}
+    status "CUDA $cuda_found from $(command -v nvcc)"
+    if [[ "$cuda_found" != "${cuda_wanted%.*}" ]]; then
+        warn "Both deployments build against $CUDA_MODULE, so this does not match them."
+        warn "Binaries built here also need this same CUDA on the library path to run."
+        warn "To match: module load $CUDA_MODULE"
+    else
+        status "Matches what the deployments build against ($CUDA_MODULE)"
+    fi
+
+    # cmake pins the cuda compiler in its cache and keeps it across reconfigures,
+    # so a build directory stays on whichever cuda configured it.
+    if [[ -f build/CMakeCache.txt ]]; then
+        cached_nvcc=$(sed -n 's/^CMAKE_CUDA_COMPILER:FILEPATH=//p' build/CMakeCache.txt)
+        if [[ -n "$cached_nvcc" && "$cached_nvcc" != "$(command -v nvcc)" ]]; then
+            warn "The build directory is configured against a different CUDA:"
+            warn "    configured with  $cached_nvcc"
+            warn "    loaded now       $(command -v nvcc)"
+            fail "Reconfiguring will not change it. Run ./build.sh --clean"
+        fi
     fi
 fi
 
@@ -121,14 +130,22 @@ if [[ ! -f build/CMakeCache.txt ]] \
     INSTALL=true
 fi
 
+# FFS_ENABLE_CUDA is cached, so switching between a CUDA and a CPU build needs
+# pip to reconfigure with the new value; ninja alone would keep the old one.
+if [[ -f build/CMakeCache.txt ]]; then
+    cached_cuda=$(sed -n 's/^FFS_ENABLE_CUDA:BOOL=//p' build/CMakeCache.txt)
+    [[ "$cached_cuda" == "$ENABLE_CUDA" ]] || INSTALL=true
+fi
+
 [[ -n "$JOBS" ]] && export CMAKE_BUILD_PARALLEL_LEVEL="$JOBS"
 
 if [[ "$INSTALL" == "true" ]]; then
-    check_nvcc_works
+    [[ "$CPU" == "true" ]] || check_nvcc_works
     status "Installing (configures, compiles and installs into the environment)"
     # Dependencies are resolved here, unlike the deployments: environment.yml
     # carries what the C++ build needs, not the package's python requirements.
-    python -m pip install --no-build-isolation -e .
+    python -m pip install --no-build-isolation -e . \
+        -Ccmake.define.FFS_ENABLE_CUDA="$ENABLE_CUDA"
 else
     status "Compiling"
     ninja -C build ${JOBS:+-j "$JOBS"}
