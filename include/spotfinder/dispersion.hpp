@@ -23,17 +23,15 @@
 #include "ffs_hd.hpp"
 
 /**
- * @brief Which arithmetic form of the background test to evaluate.
+ * @brief Which arithmetic form of the thresholds to evaluate.
  *
- * The two are the same comparison rearranged, the second multiplied through by
- * the mean so that the index of dispersion is never formed. They are not
- * bit-identical in float, and the GPU has always evaluated the first where the
- * CPU baseline evaluates the second, so the choice is explicit rather than
+ * The two are the same comparison rearranged, and disagree on pixels sitting
+ * within a float ulp of either bound, so the choice is explicit rather than
  * incidental.
  */
 enum class DispersionImpl : uint8_t {
-    GpuRatio,           ///< Form the index of dispersion, then compare
-    DialsDivisionFree,  ///< Multiply the comparison through by the mean
+    FastInteger,        ///< Multiply through to whole numbers, as DIALS does
+    DialsDivisionFree,  ///< Form the mean and variance, then compare in float
 };
 
 /**
@@ -59,17 +57,51 @@ struct DispersionFlags {
 };
 
 /**
+ * @brief The thresholds evaluated through a float mean and variance.
+ *
+ * The background comparison is multiplied through by the mean so that the
+ * index of dispersion is never formed, which removes one division. The mean
+ * and the variance are still divisions, and computing the variance from the
+ * two raw moments in float cancels most of their significant digits over a
+ * background patch, so this form decides marginal pixels less accurately than
+ * the whole-number one.
+ *
+ * @param moments The neighbourhood's reduced moments.
+ * @param n_sig_b Background threshold, in sampling deviations of the index of
+ *                dispersion (σ of variance/μ).
+ * @param n_sig_s Signal threshold, in Poisson deviations above the local mean
+ *                (σ = √μ).
+ * @param global_threshold Lowest count the centre pixel may have and still be
+ *                         called signal, in PHOTONS.
+ * @return Both flags.
+ */
+FFS_HD inline DispersionFlags dispersion_flags_division_free(
+  const DispersionMoments &moments,
+  float n_sig_b,
+  float n_sig_s,
+  float global_threshold) {
+    const float n = static_cast<float>(moments.n);
+    const float sum = static_cast<float>(moments.sum);
+    const float sumsq = static_cast<float>(moments.sumsq);
+
+    // Sample mean, and the unbiased sample variance in the form that needs
+    // only the two raw moments.
+    const float mean = sum / n;
+    const float variance = (n * sumsq - sum * sum) / (n * (n - 1.0f));
+
+    const float background_threshold = 1.0f + n_sig_b * std::sqrt(2.0f / (n - 1.0f));
+    const float this_pixel = static_cast<float>(moments.this_pixel);
+
+    return {
+      variance > mean * background_threshold,
+      this_pixel > mean + n_sig_s * std::sqrt(mean) && this_pixel >= global_threshold};
+}
+
+/**
  * @brief Apply the background and signal thresholds to one neighbourhood.
  *
- * The background comparison is formed from a sample mean and an unbiased
- * sample variance, and compared either as the index of dispersion against
- * 1 + n_sig_b·√(2/(n-1)) or with that bound multiplied back through by the
- * mean. The second spells the same inequality with one division fewer.
- *
- * Both follow DispersionThreshold::compute_threshold at
- * dials/algorithms/image/threshold/local.h:493-498 in DIALS 3.30, which is the
- * threshold dials.find_spots runs, though DIALS reaches it in double over
- * moments it also holds in double, where these are float.
+ * Reproduces DispersionThreshold::compute_threshold at
+ * dials/algorithms/image/threshold/local.h:493-498 in DIALS 3.30.
  *
  * @param moments The neighbourhood's reduced moments.
  * @param min_count Fewest valid neighbours for either threshold to carry
@@ -90,36 +122,38 @@ FFS_HD inline DispersionFlags dispersion_flags(
   float n_sig_b,
   float n_sig_s,
   float global_threshold = 0.0f,
-  DispersionImpl impl = DispersionImpl::GpuRatio) {
+  DispersionImpl impl = DispersionImpl::FastInteger) {
     // Below min_count the sampling deviation is too wide for the comparison to
-    // say anything, and a single valid pixel would divide by zero.
+    // say anything, and a single valid pixel leaves no allowance at all.
     if (moments.n < min_count) {
         return {false, false};
     }
 
-    const float n = static_cast<float>(moments.n);
-    const float sum = static_cast<float>(moments.sum);
-    const float sumsq = static_cast<float>(moments.sumsq);
-
-    // Sample mean, and the unbiased sample variance in the form that needs
-    // only the two raw moments.
-    const float mean = sum / n;
-    const float variance = (n * sumsq - sum * sum) / (n * (n - 1.0f));
-
-    const float background_threshold = 1.0f + n_sig_b * std::sqrt(2.0f / (n - 1.0f));
-    bool not_background = false;
-    switch (impl) {
-    case DispersionImpl::GpuRatio:
-        not_background = variance / mean > background_threshold;
-        break;
-    case DispersionImpl::DialsDivisionFree:
-        not_background = variance > mean * background_threshold;
-        break;
+    if (impl == DispersionImpl::DialsDivisionFree) {
+        return dispersion_flags_division_free(
+          moments, n_sig_b, n_sig_s, global_threshold);
     }
 
-    const float this_pixel = static_cast<float>(moments.this_pixel);
-    const bool is_signal =
-      this_pixel > mean + n_sig_s * std::sqrt(mean) && this_pixel >= global_threshold;
+    // The subtraction below cancels almost entirely over a background patch,
+    // so it runs on the exact counts rather than in float.
+    const int64_t n = static_cast<int64_t>(moments.n);
+    const int64_t sum = static_cast<int64_t>(moments.sum);
+    const int64_t sumsq = static_cast<int64_t>(moments.sumsq);
+    const int64_t this_pixel = static_cast<int64_t>(moments.this_pixel);
 
-    return {not_background, is_signal};
+    // How far the variance runs beyond the mean, against what n_sig_b allows.
+    // Both sides carry the same scale, so neither is divided back down.
+    const int64_t variance_excess = n * sumsq - sum * sum - sum * (n - 1);
+    const float variance_allowance =
+      static_cast<float>(sum) * n_sig_b * std::sqrt(2.0f * static_cast<float>(n - 1));
+
+    // The same comparison for the centre pixel against the local mean.
+    const int64_t pixel_excess = n * this_pixel - sum;
+    const float pixel_allowance =
+      n_sig_s * std::sqrt(static_cast<float>(sum) * static_cast<float>(n));
+
+    const bool is_signal = static_cast<float>(pixel_excess) > pixel_allowance
+                           && static_cast<float>(this_pixel) >= global_threshold;
+
+    return {static_cast<float>(variance_excess) > variance_allowance, is_signal};
 }
