@@ -245,19 +245,19 @@ TEST(DispersionThreshold, ReportsNeitherFlagBelowMinCount) {
     }
 }
 
-// The global threshold is the one place the GPU deliberately differs from
-// DIALS, which demands a count strictly above it. Raising it past the centre
-// pixel must still suppress the signal flag.
+// The global threshold admits a count strictly above it, so the centre pixel's
+// own value is the first one rejected. Raising it must suppress the signal flag
+// and leave the background flag alone.
 TEST(DispersionThreshold, GlobalThresholdSuppressesTheSignalFlag) {
     const DispersionMoments spot{429, 38943, 180, 49};
     for (const auto impl : kBothForms) {
         const auto below = dispersion_flags(
+          spot, kDialsMinCount, kDialsNSigB, kDialsNSigS, 179.0f, impl);
+        EXPECT_TRUE(below.is_signal) << "a count above the threshold was rejected";
+        const auto equal = dispersion_flags(
           spot, kDialsMinCount, kDialsNSigB, kDialsNSigS, 180.0f, impl);
-        EXPECT_TRUE(below.is_signal) << "a count equal to the threshold was rejected";
-        const auto above = dispersion_flags(
-          spot, kDialsMinCount, kDialsNSigB, kDialsNSigS, 181.0f, impl);
-        EXPECT_FALSE(above.is_signal) << "a count below the threshold was accepted";
-        EXPECT_TRUE(above.not_background)
+        EXPECT_FALSE(equal.is_signal) << "a count equal to the threshold was accepted";
+        EXPECT_TRUE(equal.not_background)
           << "the global threshold reached the background flag";
     }
 }

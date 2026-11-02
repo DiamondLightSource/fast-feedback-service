@@ -86,7 +86,7 @@ FFS_HD inline DispersionFlags division_free(const DispersionMoments &moments,
 
     return {
       variance > mean * background_threshold,
-      this_pixel > mean + n_sig_s * std::sqrt(mean) && this_pixel >= global_threshold};
+      this_pixel > mean + n_sig_s * std::sqrt(mean) && this_pixel > global_threshold};
 }
 
 /**
@@ -115,7 +115,7 @@ FFS_HD inline DispersionFlags fast_integer(const DispersionMoments &moments,
       n_sig_s * std::sqrt(static_cast<float>(sum) * static_cast<float>(n));
 
     const bool is_signal = static_cast<float>(pixel_excess) > pixel_allowance
-                           && static_cast<float>(this_pixel) >= global_threshold;
+                           && static_cast<float>(this_pixel) > global_threshold;
 
     return {static_cast<float>(variance_excess) > variance_allowance, is_signal};
 }
@@ -135,8 +135,9 @@ FFS_HD inline DispersionFlags fast_integer(const DispersionMoments &moments,
  *                dispersion (σ of variance/μ).
  * @param n_sig_s Signal threshold, in Poisson deviations above the local mean
  *                (σ = √μ).
- * @param global_threshold Lowest count the centre pixel may have and still be
- *                         called signal, in PHOTONS. 0 disables the test.
+ * @param global_threshold Count the centre pixel must exceed to be called
+ *                         signal, in PHOTONS. Strictly greater, as DIALS has
+ *                         it, so 0 excludes an empty pixel.
  * @param impl Which arithmetic form to evaluate.
  * @return Both flags, each false when the neighbourhood is below min_count.
  */
