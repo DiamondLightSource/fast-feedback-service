@@ -46,8 +46,10 @@ extern __constant__ KernelConstants kernel_constants;
  * 
  * @param dispersion_mask_ptr Pointer to the dispersion mask data
  * @param erosion_mask_ptr (Output) empty mask to store the erosion result
+ * @param mask_ptr Pointer to the detector mask, nonzero for valid pixels
  * @param dispersion_mask_pitch Pitch of the dispersion mask data
  * @param erosion_mask_pitch Pitch of the erosion mask data
+ * @param mask_pitch Pitch of the detector mask data
  * @param radius Radius of the erosion kernel
  */
 __global__ void erosion(uint8_t __restrict__ *dispersion_mask_ptr,

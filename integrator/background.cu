@@ -1,86 +1,103 @@
 /**
  * @file background.cu
- * @brief GPU per-reflection background reduction kernel.
+ * @brief GPU per-reflection background reduction.
  *
- * Reduces the per-reflection background slot tables accumulated by the Kabsch
- * kernel into background estimates, using the single-source model code in
+ * Reduces the shared background pool accumulated by the Kabsch kernel into
+ * per-reflection background estimates, using the single-source model code in
  * integrator/background.hpp so the result matches the baseline CPU path.
+ *
+ * A radix sort of the pool keys puts each reflection's entries next to each
+ * other, ascending by value, because a key carries the reflection index above
+ * the value. Each reflection then finds its run by binary search and reads it
+ * as an ordinary sorted histogram. The pool is sized to a few dozen entries per
+ * reflection, so the sort covers a few million keys and runs once per sweep.
  */
 
 #include <cuda_runtime.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <cub/device/device_radix_sort.cuh>
 #include <stdexcept>
 
 #include "cuda_common.hpp"
 #include "integrator.cuh"
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
+#include "integrator/background_pool.hpp"
 
 namespace {
 constexpr int BACKGROUND_REDUCE_THREADS = 128;
+
+/// First index in sorted keys[0, n) whose key is not less than target.
+__device__ uint32_t lower_bound_key(const unsigned long long *keys,
+                                    uint32_t n,
+                                    unsigned long long target) {
+    uint32_t lo = 0;
+    uint32_t hi = n;
+    while (lo < hi) {
+        const uint32_t mid = lo + (hi - lo) / 2;
+        if (keys[mid] < target) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
 }
+}  // namespace
 
 /**
  * @brief One thread per reflection: evaluate the background model over that
- *        reflection's slot table.
+ *        reflection's run of the sorted pool.
  *
- * The slot table is compacted and sorted IN PLACE: occupied slots move to the
- * front of the reflection's range and are ordered ascending by value, which is
- * the precondition BackgroundHistogramView carries. The table is consumed once, so
- * rewriting it costs nothing and avoids per-thread scratch, keeping register
- * and local-memory use independent of NUM_BG_SLOTS.
+ * The run is repacked into (value, count) entries in the key buffer the sort
+ * did not finish in, so BackgroundHistogramView sees the same layout the
+ * baseline builds. The runs do not overlap, so each thread
+ * writes only its own range.
  */
 __global__ void background_reduce_kernel(BackgroundModel model,
-                                         unsigned long long *d_background_slots,
+                                         const unsigned long long *d_sorted_keys,
+                                         const uint32_t *d_sorted_counts,
+                                         unsigned long long *d_entries,
+                                         uint32_t capacity,
                                          const uint32_t *d_background_spill,
                                          size_t num_reflections,
                                          double *d_background_mean,
                                          double *d_background_sum_value,
                                          uint32_t *d_background_count,
-                                         uint8_t *d_background_success) {
+                                         uint8_t *d_background_success,
+                                         uint32_t *d_occupied) {
     const size_t r = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (r >= num_reflections) return;
 
-    unsigned long long *slots = d_background_slots + r * NUM_BG_SLOTS;
-
-    // Compact. The write index never runs ahead of the read index, so no
-    // unread slot is overwritten.
-    int num_entries = 0;
-    for (int i = 0; i < NUM_BG_SLOTS; ++i) {
-        const unsigned long long entry = slots[i];
-        if (entry != 0ull) {
-            slots[num_entries++] = entry;
-        }
+    // Empty keys sort after every real key, so the first one marks the end of
+    // the occupied entries.
+    if (r == 0) {
+        *d_occupied = lower_bound_key(d_sorted_keys, capacity, BG_POOL_EMPTY_KEY);
     }
 
-    // Insertion sort ascending by value. Occupancy is a median of 2-3 entries
-    // and a measured worst case in the tens, so this beats anything with a
-    // better asymptotic bound.
-    for (int i = 1; i < num_entries; ++i) {
-        const unsigned long long entry = slots[i];
-        const uint32_t value = background_entry_value(entry);
-        int j = i - 1;
-        while (j >= 0 && background_entry_value(slots[j]) > value) {
-            slots[j + 1] = slots[j];
-            --j;
-        }
-        slots[j + 1] = entry;
-    }
+    const uint32_t reflection = static_cast<uint32_t>(r);
+    const uint32_t begin =
+      lower_bound_key(d_sorted_keys, capacity, background_pool_key(reflection, 0));
+    const uint32_t end =
+      lower_bound_key(d_sorted_keys, capacity, background_pool_key(reflection + 1, 0));
 
-    BackgroundHistogramView view;
-    view.entries = slots;
-    view.num_entries = num_entries;
-    view.spill_count = d_background_spill[r];
-
-    // Total background pixel count for this reflection (num_pixels.background),
-    // spilled pixels included: they were measured, just not recorded.
-    uint32_t total = view.spill_count;
-    for (int i = 0; i < num_entries; ++i) {
-        total += background_entry_count(slots[i]);
+    // Repack the run, already ascending by value, and total its pixels.
+    // Spilled pixels count towards num_pixels.background: they were measured,
+    // just not recorded.
+    uint32_t total = d_background_spill[r];
+    for (uint32_t i = begin; i < end; ++i) {
+        d_entries[i] = background_entry_pack(
+          background_pool_key_value(d_sorted_keys[i]), d_sorted_counts[i]);
+        total += d_sorted_counts[i];
     }
     d_background_count[r] = total;
+
+    BackgroundHistogramView view;
+    view.entries = d_entries + begin;
+    view.num_entries = static_cast<int>(end - begin);
+    view.spill_count = d_background_spill[r];
 
     BackgroundResult res;
     switch (model) {
@@ -97,29 +114,66 @@ __global__ void background_reduce_kernel(BackgroundModel model,
     d_background_success[r] = res.valid ? 1u : 0u;
 }
 
-void compute_background(BackgroundModel model,
-                        unsigned long long *d_background_slots,
-                        const uint32_t *d_background_spill,
-                        size_t num_reflections,
-                        double *d_background_mean,
-                        double *d_background_sum_value,
-                        uint32_t *d_background_count,
-                        uint8_t *d_background_success,
-                        cudaStream_t stream) {
-    if (num_reflections == 0) return;
+uint32_t compute_background(BackgroundModel model,
+                            BackgroundPool pool,
+                            const uint32_t *d_background_spill,
+                            size_t num_reflections,
+                            double *d_background_mean,
+                            double *d_background_sum_value,
+                            uint32_t *d_background_count,
+                            uint8_t *d_background_success,
+                            cudaStream_t stream) {
+    if (num_reflections == 0 || pool.capacity == 0) return 0;
 
+    // Only the bits a real key can set take part in the sort: the 32 value bits
+    // and enough above them for the largest reflection index. An empty key has
+    // all of those bits set, so it still sorts last.
+    int end_bit = 32;
+    while (end_bit < 64 && (num_reflections >> (end_bit - 32)) != 0) {
+        ++end_bit;
+    }
+
+    // A 32-bit count keeps CUB on 32-bit offsets, the same width the pool
+    // indexes its entries with.
+    const uint32_t n = pool.capacity;
+
+    // DoubleBuffer keeps the peak at two copies of the pool; the other form
+    // allocates a third. The key buffer the sort did not finish in holds the
+    // repacked entries.
+    DeviceBuffer<unsigned long long> d_spare_keys(pool.capacity);
+    DeviceBuffer<uint32_t> d_spare_counts(pool.capacity);
+    cub::DoubleBuffer<unsigned long long> keys(pool.keys, d_spare_keys.data());
+    cub::DoubleBuffer<uint32_t> counts(pool.counts, d_spare_counts.data());
+    size_t temp_bytes = 0;
+    cuda_check(cub::DeviceRadixSort::SortPairs(
+      nullptr, temp_bytes, keys, counts, n, 0, end_bit, stream));
+    DeviceBuffer<uint8_t> d_temp(temp_bytes);
+    cuda_check(cub::DeviceRadixSort::SortPairs(
+      d_temp.data(), temp_bytes, keys, counts, n, 0, end_bit, stream));
+
+    DeviceBuffer<uint32_t> d_occupied(1);
     const unsigned int blocks = static_cast<unsigned int>(
       (num_reflections + BACKGROUND_REDUCE_THREADS - 1) / BACKGROUND_REDUCE_THREADS);
-
     background_reduce_kernel<<<blocks, BACKGROUND_REDUCE_THREADS, 0, stream>>>(
       model,
-      d_background_slots,
+      keys.Current(),
+      counts.Current(),
+      keys.Alternate(),
+      pool.capacity,
       d_background_spill,
       num_reflections,
       d_background_mean,
       d_background_sum_value,
       d_background_count,
-      d_background_success);
+      d_background_success,
+      d_occupied.data());
 
     cuda_check_launch("background_reduce_kernel");
+
+    // The scratch buffers are freed on return, so the stream has to finish
+    // with them first.
+    cuda_check(cudaStreamSynchronize(stream));
+    uint32_t occupied = 0;
+    d_occupied.extract(&occupied);
+    return occupied;
 }

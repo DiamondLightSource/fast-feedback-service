@@ -56,7 +56,7 @@ DEVICE_HOST scalar_type degrees_to_radians(scalar_type degrees) {
  * @param d Denominator (must be > 0)
  * @return Ceiling of n/d
  * 
- * @example ceil_div(15, 4) returns 4, whereas 15/4 returns 3
+ * For example, ceil_div(15, 4) returns 4, whereas 15/4 returns 3.
  */
 template <typename T>
 DEVICE_HOST constexpr T ceil_div(T n, T d) {

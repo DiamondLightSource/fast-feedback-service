@@ -147,8 +147,8 @@ TEST(ConstantBackgroundImplComparison, DefaultIsDialsIndependent) {
 
 namespace {
 
-// Build the sorted entry list a slot table would produce for a bins vector
-// indexed by value, which is a compact way to write a fixture.
+// Build the sorted entry list the pool reduction would hand a reflection, from
+// a bins vector indexed by value, which is a compact way to write a fixture.
 std::vector<unsigned long long> entries_of(const std::vector<uint32_t> &bins) {
     std::vector<unsigned long long> entries;
     for (std::size_t v = 0; v < bins.size(); ++v) {
@@ -265,8 +265,8 @@ TEST(TukeyConstantBackground, LargeValuesRepresentedExactly) {
     EXPECT_DOUBLE_EQ(r.weighted_sum, 50045.0) << "inlier sum over 5000..5009";
 }
 
-// A full slot table loses pixels of unknown value, so the estimate is refused
-// rather than computed from a truncated histogram.
+// A reflection that lost pixels to a full pool has lost them at unknown value,
+// so the estimate is refused rather than computed from a truncated histogram.
 TEST(TukeyConstantBackground, SpillRejected) {
     std::vector<uint32_t> bins(64, 0);
     for (int v = 0; v <= 9; ++v) bins[v] = 1;

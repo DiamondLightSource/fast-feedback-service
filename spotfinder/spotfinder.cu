@@ -133,7 +133,6 @@ void debug_writeout(uint8_t *device_data,
  *
  * @param blocks The dimensions of the grid of blocks.
  * @param threads The dimensions of the grid of threads within each block.
- * @param shared_memory The size of shared memory required per block (in bytes).
  * @param stream The CUDA stream to execute the kernel.
  * @param image PitchedMalloc object for the image data.
  * @param mask PitchedMalloc object for the mask data indicating valid pixels.
@@ -197,7 +196,6 @@ void call_do_spotfinding_dispersion(dim3 blocks,
  *
  * @param blocks The dimensions of the grid of blocks.
  * @param threads The dimensions of the grid of threads within each block.
- * @param shared_memory The size of shared memory required per block (in bytes).
  * @param stream The CUDA stream to execute the kernel.
  * @param image PitchedMalloc object for the image data.
  * @param mask PitchedMalloc object for the mask data indicating valid pixels.
@@ -209,7 +207,6 @@ void call_do_spotfinding_dispersion(dim3 blocks,
  * @param min_count The minimum number of valid pixels required in the local neighborhood. Default is 3.
  * @param n_sig_b The background noise significance level. Default is 6.0.
  * @param n_sig_s The signal significance level. Default is 3.0.
- * @param threshold The global threshold for intensity values. Default is 0.
  */
 void call_do_spotfinding_extended(dim3 blocks,
                                   dim3 threads,

@@ -97,6 +97,7 @@ void map_centroids_to_reciprocal_space_grid(
  * @param d_min Cut the data at this resolution limit for the FFT
  * @param b_iso The isotropic B-factor used to weight the points as a function of resolution.
  * @param n_points The size of each dimension of the FFT grid.
+ * @param nthreads The number of threads the FFT may use.
  * @returns A boolean array indicating which coordinates were used for the FFT.
  */
 std::vector<bool> fft3d(mdspan_type<double> const &reciprocal_space_vectors,

@@ -4,7 +4,6 @@ find_package(LZ4 REQUIRED)
 find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
-find_package(lodepng)
 
 add_executable(spotfinder
     spotfinder.cc

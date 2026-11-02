@@ -64,30 +64,6 @@ enum class BackgroundModel : uint8_t { Constant, Glm };
  */
 enum class ConstantBackgroundImpl : uint8_t { DialsIndependent, SharedCore };
 
-// Number of open-addressed slots in each per-reflection sparse background
-// histogram. This bounds the number of DISTINCT pixel values a reflection may
-// hold, not the values themselves, so any 32-bit pixel value is representable
-// exactly and there is no high tail. Measured
-// occupancy is a median of 2-3 distinct values with a worst case of 39, so 64
-// leaves substantial headroom; device-memory cost is
-// num_reflections * NUM_BG_SLOTS * 8 bytes. A reflection that exceeds this
-// spills, and a spilled reflection is rejected (see
-// tukey_constant_background).
-constexpr int NUM_BG_SLOTS = 64;
-
-static_assert((NUM_BG_SLOTS & (NUM_BG_SLOTS - 1)) == 0,
-              "NUM_BG_SLOTS must be a power of two so the probe index can be "
-              "masked rather than reduced modulo");
-
-/// @brief log2(NUM_BG_SLOTS), the shift a hashed value is reduced by.
-FFS_HD constexpr int background_slot_bits() {
-    int bits = 0;
-    for (int n = NUM_BG_SLOTS; n > 1; n >>= 1) {
-        ++bits;
-    }
-    return bits;
-}
-
 // Parameters for the robust-Poisson GLM constant background, matching the DIALS
 // defaults (dials.algorithms.background.glm: tuning_constant 1.345,
 // max_iter 100, tolerance 1e-3, min_pixels 10). Held here as the single source
@@ -104,9 +80,9 @@ constexpr uint32_t kGlmMinPixels = 10;
  *
  * entries holds one packed (value, count) pair per distinct pixel value,
  * sorted ascending by value; entries with a zero count are not present.
- * spill_count holds the number of pixels dropped because the slot table that
- * produced these entries was full, which makes the histogram incomplete by an
- * unknown amount and so fails the reflection.
+ * spill_count holds the number of pixels dropped because the background pool
+ * that produced these entries was full, which makes the histogram incomplete by
+ * an unknown amount and so fails the reflection.
  *
  * Ascending order is a precondition: both models locate quartiles by a
  * cumulative scan and rely on it.
@@ -165,10 +141,11 @@ struct BackgroundResult {
  * surviving inliers. Failure is reported via BackgroundResult::valid.
  *
  * Entries carry their own values, so there is no representable range and no
- * high tail: any pixel value is held exactly. What a slot table can exhaust
- * instead is the number of distinct values, and a full table (spill_count > 0)
- * has lost pixels of unknown magnitude, so the estimate is rejected rather
- * than computed from a truncated histogram.
+ * high tail: any pixel value is held exactly. What the background pool can
+ * exhaust instead is its entries for distinct values, and a reflection that
+ * lost pixels to a full pool (spill_count > 0) has lost them at unknown
+ * magnitude, so the estimate is rejected rather than computed from a truncated
+ * histogram.
  */
 FFS_HD inline BackgroundResult tukey_constant_background(
   const BackgroundHistogramView &hist) {
@@ -187,7 +164,7 @@ FFS_HD inline BackgroundResult tukey_constant_background(
         return result;  // no background pixels, so no estimate (valid stays false)
     }
 
-    // Pixels were dropped by a full slot table, so the histogram is incomplete
+    // Pixels were dropped by a full background pool, so the histogram is incomplete
     // by an unknown amount and the quartiles cannot be trusted.
     if (hist.spill_count > 0) {
         return result;
@@ -352,7 +329,7 @@ FFS_HD inline GlmExpectation glm_expectation(double mu, double svar, double c) {
  * representation.
  *
  * Every pixel value is recorded exactly, so the fit is exact whatever the
- * background level. A full slot table (spill_count > 0) is rejected for the
+ * background level. A reflection that spilled (spill_count > 0) is rejected for the
  * same reason as in tukey_constant_background().
  *
  * The sole numerical divergence from DIALS is the Hessian: DIALS sums H += b
@@ -557,7 +534,7 @@ class BackgroundAggregator {
  * @param model Background model the shared core applies (Constant = Tukey;
  *        Glm = robust-Poisson GLM).
  * @return BackgroundResult with mean and weighted_sum; valid is false when the
- *         estimate is rejected (no inliers, too few pixels, a full slot table,
+ *         estimate is rejected (no inliers, too few pixels, a full pool,
  *         or non-convergence), in which case the caller marks the reflection
  *         unintegrated. Mirrors the BackgroundResult::valid channel the GPU
  *         reduction uses.

@@ -15,6 +15,9 @@ dependencies:
   # be importable here rather than fetched into a throwaway environment
   - scikit-build-core=1.1.1
   - setuptools_scm=10.3.4
+  # The extension build asks this interpreter where nanobind's cmake config
+  # is, so it has to be importable here too
+  - nanobind=2.8.0
   - zocalo
   - workflows
   - pydantic

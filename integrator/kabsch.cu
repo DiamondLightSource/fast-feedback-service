@@ -239,7 +239,11 @@ __device__ __forceinline__ void px_to_mm(int gx,
  * the detector edge. Corners off the image still give real Kabsch coordinates
  * and classify the same as any other, so we don't guard for them here.
  *
+ * @param cx Corner x-coordinate in pixels.
+ * @param cy Corner y-coordinate in pixels.
+ * @param d_matrix Detector matrix (3x3 flattened) for mm to lab conversion.
  * @param wavelength Beam wavelength in Å.
+ * @param det_params Detector geometry used for the pixel to mm conversion.
  * @return s1 in lab frame, units of 1/Å (lies on the Ewald sphere).
  */
 __device__ __forceinline__ Vector3D
@@ -429,6 +433,7 @@ __device__ __forceinline__ bool pixel_is_foreground(
  * @param image_num Current image number in the sequence
  * @param d_matrix Detector coordinate transformation matrix (3x3)
  * @param wavelength X-ray wavelength in Angstroms
+ * @param det_params Detector geometry used for the pixel to mm conversion
  * @param osc_start Starting oscillation angle in degrees
  * @param osc_width Oscillation width per image in degrees
  * @param image_range_start First image number in the range
@@ -446,8 +451,8 @@ __device__ __forceinline__ bool pixel_is_foreground(
  * @param delta_m Foreground extent in e₃ direction (n_sigma × σ_M)
  * @param d_foreground_sum Output: accumulated foreground intensities per reflection
  * @param d_foreground_count Output: foreground pixel counts per reflection
- * @param d_background_slots Output: per-reflection slot tables, num_reflections*NUM_BG_SLOTS entries
- * @param d_background_spill Output: per-reflection count of pixels dropped by a full slot table
+ * @param background_pool Output: shared background pool, keyed on (reflection, value)
+ * @param d_background_spill Output: per-reflection count of pixels dropped by a full background pool
  * @param d_intensity_times_x Output: intensity·(2gx+1) per reflection (centre-of-mass)
  * @param d_intensity_times_y Output: intensity·(2gy+1) per reflection (centre-of-mass)
  * @param d_intensity_times_z Output: intensity·(2z+1) per reflection (centre-of-mass)
@@ -480,7 +485,7 @@ __global__ void kabsch_transform(pixel_t *d_image,
                                  // Output accumulators (atomically updated)
                                  accumulator_t *d_foreground_sum,
                                  uint32_t *d_foreground_count,
-                                 unsigned long long *d_background_slots,
+                                 BackgroundPool background_pool,
                                  uint32_t *d_background_spill,
                                  unsigned long long *d_intensity_times_x,
                                  unsigned long long *d_intensity_times_y,
@@ -610,9 +615,9 @@ __global__ void kabsch_transform(pixel_t *d_image,
             if (pixel_in_image && mask_flag != 0) {
                 const int value = static_cast<int>(raw_value);
                 if (value >= 0) {
-                    background_accumulate(d_background_slots,
-                                          d_background_spill,
-                                          refl_idx,
+                    background_accumulate(background_pool,
+                                          static_cast<uint32_t>(refl_idx),
+                                          &d_background_spill[refl_idx],
                                           static_cast<uint32_t>(value));
                 }
             }
@@ -706,7 +711,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                               FGAlgorithm algorithm,
                               accumulator_t *d_foreground_sum,
                               uint32_t *d_foreground_count,
-                              unsigned long long *d_background_slots,
+                              BackgroundPool background_pool,
                               uint32_t *d_background_spill,
                               unsigned long long *d_intensity_times_x,
                               unsigned long long *d_intensity_times_y,
@@ -774,16 +779,16 @@ void compute_kabsch_transform(pixel_t *d_image,
               prev_high, static_cast<uint32_t>(smem_bytes))) {
             int blocks_no_smem = 0;
             int blocks_with_smem = 0;
-            cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+            cuda_check(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
               &blocks_no_smem,
               kabsch_transform<algo>,
               static_cast<int>(KABSCH_THREADS),
-              0);
-            cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+              0));
+            cuda_check(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
               &blocks_with_smem,
               kabsch_transform<algo>,
               static_cast<int>(KABSCH_THREADS),
-              smem_bytes);
+              smem_bytes));
             if (blocks_with_smem < blocks_no_smem) {
                 static std::once_flag occupancy_warning_flag;
                 std::call_once(occupancy_warning_flag, [&] {
@@ -823,7 +828,7 @@ void compute_kabsch_transform(pixel_t *d_image,
                                                       delta_m,
                                                       d_foreground_sum,
                                                       d_foreground_count,
-                                                      d_background_slots,
+                                                      background_pool,
                                                       d_background_spill,
                                                       d_intensity_times_x,
                                                       d_intensity_times_y,
