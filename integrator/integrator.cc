@@ -946,56 +946,6 @@ int main(int argc, char **argv) {
 
                         // Check that our image is available and wait if not
                         while (!reader.is_image_available(image_num)
-                              && !stop_token.stop_requested()) {
-                            auto current_time = std::chrono::high_resolution_clock::now();
-                            auto elapsed_wait_time =
-                              std::chrono::duration_cast<std::chrono::duration<double>>(
-                                current_time - last_image_received)
-                                .count();
-
-                            if (elapsed_wait_time > wait_timeout) {
-                                logger.error("Timeout waiting for image {}", image_num);
-                                global_stop.request_stop();
-                                break;
-                            }
-
-                            //std::this_thread::sleep_for(0.1);
-                        }
-
-                        if (stop_token.stop_requested()) {
-                            break;
-                        }
-
-                        last_image_received = std::chrono::high_resolution_clock::now();
-                        time_waiting_for_images +=
-                          std::chrono::duration_cast<std::chrono::duration<double>>(
-                            std::chrono::high_resolution_clock::now()
-                            - swmr_wait_start_time)
-                            .count();
-                    }
-
-                    // Fetch the image data from the reader
-                    std::span<uint8_t> buffer;
-                    while (true) {
-                    {
-                        std::scoped_lock lock(reader_mutex);
-                        buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
-                    }
-
-                    if (buffer.size() == 0) {
-                        logger.warn("Got buffer size 0 for image {}. Sleeping.",
-                                    image_num);
-                        //std::this_thread::sleep_for(0.1);
-                        continue;
-                    }
-
-                    {
-                        std::scoped_lock lock(reader_mutex);
-                        auto swmr_wait_start_time =
-                          std::chrono::high_resolution_clock::now();
-
-                        // Check that our image is available and wait if not
-                        while (!reader.is_image_available(image_num)
                                && !stop_token.stop_requested()) {
                             auto current_time =
                               std::chrono::high_resolution_clock::now();
