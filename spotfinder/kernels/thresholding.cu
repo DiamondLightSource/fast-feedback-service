@@ -37,40 +37,36 @@ extern __constant__ KernelConstants kernel_constants;
 
 #pragma region Device Functions
 /**
- * @brief Calculate the dispersion flags for a given pixel.
- * @param image Shared-memory tile of the image, indexed in local coordinates.
- * @param mask Shared-memory tile of the mask, nonzero for valid pixels.
- * @param this_pixel The pixel value at the current position.
- * @param local_x The x-coordinate of the pixel within the tile.
- * @param local_y The y-coordinate of the pixel within the tile.
- * @param global_x The x-coordinate of the pixel in the image.
- * @param global_y The y-coordinate of the pixel in the image.
+ * @brief Reduce one pixel's neighbourhood to the moments the dispersion
+ *        decision needs.
+ *
+ * Walks the (2r+1) * (2r+1) window around the pixel out of shared memory,
+ * skipping neighbours that fall outside the image or that the mask excludes.
+ * The sums are 64-bit so that a saturated neighbour cannot wrap them: the
+ * centre pixel is the only one the trusted-range guard covers.
+ *
+ * @param image The block's image tile in shared memory, halo included.
+ * @param mask The matching mask tile.
+ * @param this_pixel The centre pixel's own count, in PHOTONS.
+ * @param local_x The centre pixel's x-coordinate within the shared tile.
+ * @param local_y The centre pixel's y-coordinate within the shared tile.
+ * @param global_x The centre pixel's x-coordinate within the image.
+ * @param global_y The centre pixel's y-coordinate within the image.
  * @param width The width of the image.
  * @param height The height of the image.
- * @param kernel_radius The radius of the square kernel in both directions.
- * @param min_count Minimum number of valid pixels required to be considered a valid spot.
- * @param n_sig_b Background noise significance level.
- * @param n_sig_s Signal significance level.
- * @return A tuple <bool not_background, bool is_signal, uint8_t n> where:
- *        - not_background: True if the pixel is not part of the background.
- *        - is_signal: True if the pixel is a strong signal.
- *        - n: The number of valid pixels in the local neighbourhood.
+ * @param kernel_radius One-direction width of the window.
+ * @return The reduced moments, with n counting the valid pixels found.
  */
-__device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
-  PitchedArray2D<pixel_t> image,
-  PitchedArray2D<uint8_t> mask,
-  pixel_t this_pixel,
-  int local_x,
-  int local_y,
-  int global_x,
-  int global_y,
-  uint32_t width,
-  uint32_t height,
-  uint8_t kernel_radius,
-  uint8_t min_count,
-  float n_sig_b,
-  float n_sig_s) {
-    // Initialize variables for computing the local sum and count
+__device__ DispersionMoments calculate_dispersion_moments(PitchedArray2D<pixel_t> image,
+                                                          PitchedArray2D<uint8_t> mask,
+                                                          pixel_t this_pixel,
+                                                          int local_x,
+                                                          int local_y,
+                                                          int global_x,
+                                                          int global_y,
+                                                          uint32_t width,
+                                                          uint32_t height,
+                                                          uint8_t kernel_radius) {
     uint64_t sum = 0;
     uint64_t sumsq = 0;
     uint8_t n = 0;
@@ -99,28 +95,7 @@ __device__ cuda::std::tuple<bool, bool, uint8_t> calculate_dispersion_flags(
         }
     }
 
-    // Check if the pixel has enough valid neighbours
-    if (n < min_count) {
-        return {false, false, n};
-    }
-
-    // Compute local mean and variance
-    float sum_f = static_cast<float>(sum);
-    float sumsq_f = static_cast<float>(sumsq);
-
-    float mean = sum_f / n;
-    float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
-    float dispersion = variance / mean;
-
-    // Compute the background threshold and signal threshold
-    float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
-    bool not_background = dispersion > background_threshold;
-    float signal_threshold = mean + n_sig_s * sqrt(mean);
-
-    // Check if the pixel is a strong pixel
-    bool is_signal = this_pixel > signal_threshold;
-
-    return {not_background, is_signal, n};
+    return {sum, sumsq, this_pixel, n};
 }
 #pragma endregion
 
@@ -207,23 +182,25 @@ __global__ void dispersion(pixel_t __restrict__ *image_ptr,
         return;
     }
 
-    // Calculate the dispersion flags
-    auto [not_background, is_signal, n] =
-      calculate_dispersion_flags(shared_image,
-                                 shared_mask,
-                                 this_pixel,
-                                 local_x,
-                                 local_y,
-                                 global_x,
-                                 global_y,
-                                 kernel_constants.width,
-                                 kernel_constants.height,
-                                 KERNEL_RADIUS,
-                                 kernel_constants.min_count,
-                                 kernel_constants.n_sig_b,
-                                 kernel_constants.n_sig_s);
+    // Reduce the neighbourhood, then apply the shared thresholding decision
+    const DispersionMoments moments =
+      calculate_dispersion_moments(shared_image,
+                                   shared_mask,
+                                   this_pixel,
+                                   local_x,
+                                   local_y,
+                                   global_x,
+                                   global_y,
+                                   kernel_constants.width,
+                                   kernel_constants.height,
+                                   KERNEL_RADIUS);
+    const DispersionFlags flags = dispersion_flags(moments,
+                                                   kernel_constants.min_count,
+                                                   kernel_constants.n_sig_b,
+                                                   kernel_constants.n_sig_s);
 
-    result_mask(global_x, global_y) = not_background && is_signal && n > 1;
+    result_mask(global_x, global_y) =
+      flags.not_background && flags.is_signal && moments.n > 1;
 }
 
 /**
@@ -308,23 +285,24 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
         return;
     }
 
-    // Calculate the dispersion flags
-    auto [not_background, is_signal, n] =
-      calculate_dispersion_flags(shared_image,
-                                 shared_mask,
-                                 this_pixel,
-                                 local_x,
-                                 local_y,
-                                 global_x,
-                                 global_y,
-                                 kernel_constants.width,
-                                 kernel_constants.height,
-                                 KERNEL_RADIUS,
-                                 kernel_constants.min_count,
-                                 kernel_constants.n_sig_b,
-                                 kernel_constants.n_sig_s);
+    // Reduce the neighbourhood, then apply the shared thresholding decision
+    const DispersionMoments moments =
+      calculate_dispersion_moments(shared_image,
+                                   shared_mask,
+                                   this_pixel,
+                                   local_x,
+                                   local_y,
+                                   global_x,
+                                   global_y,
+                                   kernel_constants.width,
+                                   kernel_constants.height,
+                                   KERNEL_RADIUS);
+    const DispersionFlags flags = dispersion_flags(moments,
+                                                   kernel_constants.min_count,
+                                                   kernel_constants.n_sig_b,
+                                                   kernel_constants.n_sig_s);
 
-    result_mask(global_x, global_y) = not_background && n > 1;
+    result_mask(global_x, global_y) = flags.not_background && moments.n > 1;
 }
 
 /**
