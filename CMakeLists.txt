@@ -161,13 +161,38 @@ target_link_libraries(ffs_common PUBLIC
     argparse
 )
 
-# Check if CUDA is available
-find_package(CUDAToolkit)
+# The service is built with CUDA. A machine without a working CUDA compiler
+# falls back to the CPU baseline, its libraries and their tests, and nothing
+# else. The test is for the compiler rather than the toolkit, because the GPU
+# directories enable CUDA as a language; a toolkit found without nvcc would
+# pass here and fail at project().
+include(CheckLanguage)
+check_language(CUDA)
+if(CMAKE_CUDA_COMPILER)
+    set(_ffs_cuda_compiler_found ON)
+else()
+    set(_ffs_cuda_compiler_found OFF)
+endif()
+option(FFS_ENABLE_CUDA
+    "Build with CUDA; OFF builds the CPU baseline only, for machines without a CUDA compiler"
+    ${_ffs_cuda_compiler_found})
+unset(_ffs_cuda_compiler_found)
 
-if (CUDAToolkit_FOUND)
-    message(STATUS "CUDA found: Building CUDA components.")
-    set(FFS_ENABLE_CUDA ON)
-    
+if(FFS_ENABLE_CUDA AND NOT CMAKE_CUDA_COMPILER)
+    message(FATAL_ERROR
+        "FFS_ENABLE_CUDA is ON but no working CUDA compiler was found.\n"
+        "   Put nvcc on PATH or set CUDACXX to it, or configure with\n"
+        "   -DFFS_ENABLE_CUDA=OFF to build the CPU baseline only."
+    )
+endif()
+
+if(FFS_ENABLE_CUDA)
+    message(STATUS "Building CUDA components with ${CMAKE_CUDA_COMPILER}")
+
+    # Imported targets are scoped to the directory that finds them, so
+    # cuda_parser below needs CUDA::cudart found here at the root.
+    find_package(CUDAToolkit REQUIRED)
+
     # SetCudaArchitectures already probed the local GPU; check that what
     # we are about to compile can actually run on it.
     if(FFS_DETECTED_GPU_ARCH)
@@ -204,9 +229,14 @@ if (CUDAToolkit_FOUND)
     else()
         message(STATUS "Could not detect GPU compute capability (nvidia-smi not available or no GPU present)")
     endif()
+elseif(CMAKE_CUDA_COMPILER)
+    message(STATUS "FFS_ENABLE_CUDA is OFF: building the CPU baseline only")
 else()
-    message(STATUS "CUDA not found: Skipping CUDA components.")
-    set(FFS_ENABLE_CUDA OFF)
+    message(WARNING
+        "No working CUDA compiler found: building the CPU baseline only, without\n"
+        "   the spotfinder, integrator or fast indexer. Put nvcc on PATH and\n"
+        "   reconfigure with -DFFS_ENABLE_CUDA=ON for the full build."
+    )
 endif()
 
 # Conditionally add a CUDA common library
