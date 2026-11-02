@@ -57,29 +57,21 @@ struct DispersionFlags {
 };
 
 /**
- * @brief The thresholds evaluated through a float mean and variance.
+ * @brief The two arithmetic forms, reached only through dispersion_flags.
  *
- * The background comparison is multiplied through by the mean so that the
- * index of dispersion is never formed, which removes one division. The mean
- * and the variance are still divisions, and computing the variance from the
- * two raw moments in float cancels most of their significant digits over a
- * background patch, so this form decides marginal pixels less accurately than
- * the whole-number one.
- *
- * @param moments The neighbourhood's reduced moments.
- * @param n_sig_b Background threshold, in sampling deviations of the index of
- *                dispersion (σ of variance/μ).
- * @param n_sig_s Signal threshold, in Poisson deviations above the local mean
- *                (σ = √μ).
- * @param global_threshold Lowest count the centre pixel may have and still be
- *                         called signal, in PHOTONS.
- * @return Both flags.
+ * Both take a neighbourhood already known to hold at least min_count valid
+ * pixels; neither is safe at n = 1, where the sampling deviation divides by
+ * zero. Parameters carry the meanings documented on dispersion_flags.
  */
-FFS_HD inline DispersionFlags dispersion_flags_division_free(
-  const DispersionMoments &moments,
-  float n_sig_b,
-  float n_sig_s,
-  float global_threshold) {
+namespace dispersion_detail {
+
+/**
+ * @brief Evaluate both thresholds in float, through a mean and a variance.
+ */
+FFS_HD inline DispersionFlags division_free(const DispersionMoments &moments,
+                                            float n_sig_b,
+                                            float n_sig_s,
+                                            float global_threshold) {
     const float n = static_cast<float>(moments.n);
     const float sum = static_cast<float>(moments.sum);
     const float sumsq = static_cast<float>(moments.sumsq);
@@ -98,42 +90,12 @@ FFS_HD inline DispersionFlags dispersion_flags_division_free(
 }
 
 /**
- * @brief Apply the background and signal thresholds to one neighbourhood.
- *
- * Reproduces DispersionThreshold::compute_threshold at
- * dials/algorithms/image/threshold/local.h:493-498 in DIALS 3.30.
- *
- * @param moments The neighbourhood's reduced moments.
- * @param min_count Fewest valid neighbours for either threshold to carry
- *                  meaning; below it the pixel is reported as neither.
- * @param n_sig_b Background threshold, in sampling deviations of the index of
- *                dispersion (σ of variance/μ).
- * @param n_sig_s Signal threshold, in Poisson deviations above the local mean
- *                (σ = √μ).
- * @param global_threshold Lowest count the centre pixel may have and still be
- *                         called signal, in PHOTONS. 0 disables the test,
- *                         which is what the GPU has always done.
- * @param impl Which arithmetic form to evaluate.
- * @return Both flags, each false when the neighbourhood is below min_count.
+ * @brief Evaluate both thresholds in 64-bit integers, on the raw moments.
  */
-FFS_HD inline DispersionFlags dispersion_flags(
-  const DispersionMoments &moments,
-  uint8_t min_count,
-  float n_sig_b,
-  float n_sig_s,
-  float global_threshold = 0.0f,
-  DispersionImpl impl = DispersionImpl::FastInteger) {
-    // Below min_count the sampling deviation is too wide for the comparison to
-    // say anything, and a single valid pixel leaves no allowance at all.
-    if (moments.n < min_count) {
-        return {false, false};
-    }
-
-    if (impl == DispersionImpl::DialsDivisionFree) {
-        return dispersion_flags_division_free(
-          moments, n_sig_b, n_sig_s, global_threshold);
-    }
-
+FFS_HD inline DispersionFlags fast_integer(const DispersionMoments &moments,
+                                           float n_sig_b,
+                                           float n_sig_s,
+                                           float global_threshold) {
     // The subtraction below cancels almost entirely over a background patch,
     // so it runs on the exact counts rather than in float.
     const int64_t n = static_cast<int64_t>(moments.n);
@@ -156,4 +118,49 @@ FFS_HD inline DispersionFlags dispersion_flags(
                            && static_cast<float>(this_pixel) >= global_threshold;
 
     return {static_cast<float>(variance_excess) > variance_allowance, is_signal};
+}
+
+}  // namespace dispersion_detail
+
+/**
+ * @brief Apply the background and signal thresholds to one neighbourhood.
+ *
+ * Reproduces DispersionThreshold::compute_threshold at
+ * dials/algorithms/image/threshold/local.h:493-498 in DIALS 3.30.
+ *
+ * @param moments The neighbourhood's reduced moments.
+ * @param min_count Fewest valid neighbours for either threshold to carry
+ *                  meaning; below it the pixel is reported as neither.
+ * @param n_sig_b Background threshold, in sampling deviations of the index of
+ *                dispersion (σ of variance/μ).
+ * @param n_sig_s Signal threshold, in Poisson deviations above the local mean
+ *                (σ = √μ).
+ * @param global_threshold Lowest count the centre pixel may have and still be
+ *                         called signal, in PHOTONS. 0 disables the test.
+ * @param impl Which arithmetic form to evaluate.
+ * @return Both flags, each false when the neighbourhood is below min_count.
+ */
+FFS_HD inline DispersionFlags dispersion_flags(
+  const DispersionMoments &moments,
+  uint8_t min_count,
+  float n_sig_b,
+  float n_sig_s,
+  float global_threshold = 0.0f,
+  DispersionImpl impl = DispersionImpl::FastInteger) {
+    // Below min_count the sampling deviation is too wide for the comparison to
+    // say anything, and a single valid pixel leaves no allowance at all.
+    if (moments.n < min_count) {
+        return {false, false};
+    }
+
+    switch (impl) {
+    case DispersionImpl::DialsDivisionFree:
+        return dispersion_detail::division_free(
+          moments, n_sig_b, n_sig_s, global_threshold);
+    case DispersionImpl::FastInteger:
+        return dispersion_detail::fast_integer(
+          moments, n_sig_b, n_sig_s, global_threshold);
+    }
+
+    return {false, false};
 }
