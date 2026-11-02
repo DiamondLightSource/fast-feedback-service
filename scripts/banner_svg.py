@@ -42,8 +42,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Where the art and the colour maps are defined
 BANNER_SOURCE = REPO_ROOT / "src" / "ffs" / "banner.cc"
 
-# Where the README and the docs pick the picture up
-DEFAULT_OUTPUT = REPO_ROOT / "docs" / "images" / "banner.svg"
+# Where the README and the docs pick the pictures up, one per colour scheme
+# as banner-dark.svg and banner-light.svg
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "docs" / "images"
 
 # The spotfinder a plain ./build.sh produces
 DEFAULT_SPOTFINDER = REPO_ROOT / "build" / "bin" / "spotfinder"
@@ -145,6 +146,12 @@ SCAN_OPACITY = 0.6
 
 # Opacity of the brightest pixel of the detector frame behind the spots
 FRAME_MAX_OPACITY = 0.55
+
+# Panel the banner sits on for light pages, and its corner radius in pixels.
+# The dark ramp keeps its contrast on a dark panel, where the light ramp
+# washes the spots out against a white page.
+LIGHT_PANEL_COLOUR = "#1C2330"
+PANEL_CORNER_PX = 8
 
 # Size the SVG asks to be shown at, relative to one screen pixel per detector
 # pixel
@@ -437,11 +444,16 @@ def build_svg(
     frame: np.ndarray,
     strong: list[tuple[int, int]],
     centres: list[tuple[float, float]],
-    palette: Palette,
+    ramp: tuple[str, ...],
     include_frame: bool,
     provenance: str,
+    background: str | None = None,
 ) -> str:
-    """Draw the strong pixels and centroids, and optionally the frame, as an SVG."""
+    """Draw the strong pixels and centroids, and optionally the frame, as an SVG.
+
+    A page picks between the dark and light versions itself, since an SVG
+    shown as an image cannot see the page's theme.
+    """
     height, width = frame.shape
 
     # Each strong pixel gets a colour step from its log counts, scaled between
@@ -527,31 +539,25 @@ def build_svg(
         ".centroid path{animation:none;opacity:1}.scan{display:none}}"
     )
 
-    # One class per colour step, dark ramp by default and the light ramp when
-    # the viewer prefers a light scheme
-    def rules(ramp: tuple[str, ...]) -> str:
-        return " ".join(
-            f".s{i}{{fill:{colour}}}" for i, colour in enumerate(colour_steps(ramp))
-        )
-
-    style = [
-        rules(palette.dark),
-        ".frame-light{display:none}",
-        "@media (prefers-color-scheme: light){"
-        f"{rules(palette.light)} .frame-dark{{display:none}} "
-        ".frame-light{display:inline}}",
-        animation,
-    ]
+    # One class per colour step
+    steps = " ".join(
+        f".s{i}{{fill:{colour}}}" for i, colour in enumerate(colour_steps(ramp))
+    )
+    style = [steps, animation]
 
     layers = []
+    if background is not None:
+        # A rounded panel behind everything, for showing on a light page
+        layers.append(
+            f'<rect width="{width}" height="{height}" rx="{PANEL_CORNER_PX}" '
+            f'fill="{background}"/>'
+        )
     if include_frame:
         # The frame is drawn in the ramp's faintest spot colour
-        for scheme, ramp in (("dark", palette.dark), ("light", palette.light)):
-            layers.append(
-                f'<image class="frame-{scheme}" width="{width}" height="{height}" '
-                f'image-rendering="pixelated" '
-                f'href="data:image/png;base64,{frame_png(frame, ramp[2])}"/>'
-            )
+        layers.append(
+            f'<image width="{width}" height="{height}" image-rendering="pixelated" '
+            f'href="data:image/png;base64,{frame_png(frame, ramp[2])}"/>'
+        )
 
     return "\n".join(
         [
@@ -583,7 +589,10 @@ def main() -> None:
         help="colour map from banner.cc, by name (default: ice)",
     )
     parser.add_argument(
-        "--output", type=Path, default=DEFAULT_OUTPUT, help="SVG to write"
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help="directory to write banner-dark.svg and banner-light.svg into",
     )
     parser.add_argument(
         "--spotfinder",
@@ -658,11 +667,22 @@ def main() -> None:
         f"Spots found by spotfinder {version[-1] if version else '(unknown version)'}."
     )
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        build_svg(frame, strong, centres, palette, not args.no_frame, provenance)
-    )
-    logger.info("Wrote %s", args.output)
+    # One SVG per page theme, both in the dark ramp: transparent for dark
+    # pages, and on a dark panel for light ones
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    for scheme, background in (("dark", None), ("light", LIGHT_PANEL_COLOUR)):
+        output = args.output_dir / f"banner-{scheme}.svg"
+        svg = build_svg(
+            frame,
+            strong,
+            centres,
+            palette.dark,
+            not args.no_frame,
+            provenance,
+            background=background,
+        )
+        output.write_text(svg)
+        logger.info("Wrote %s", output)
 
 
 if __name__ == "__main__":

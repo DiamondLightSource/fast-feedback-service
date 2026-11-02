@@ -136,7 +136,7 @@ highlight_language = "cpp"
 REPO_URL = "https://github.com/DiamondLightSource/fast-feedback-service"
 
 # A reference link definition pointing at a page or file of these docs,
-# e.g. "[building]: docs/building.md" or "[banner]: docs/images/banner.svg".
+# e.g. "[building]: docs/building.md".
 # The docs/ directory itself, "[`docs/`]: docs/", is a repository link.
 _DOCS_LINK_DEFINITION = re.compile(
     r"^(\[[^\]]+\]):\s+docs/(\S+\.\w+)$", flags=re.MULTILINE
@@ -182,6 +182,44 @@ def _markdown_readme_title(
     if relative_path.name != "README.md":
         return
     content[0] = _HTML_TITLE.sub(r"# \1", content[0], count=1)
+
+
+# The README's banner as a <picture>, a dark source and a light fallback,
+# both under docs/
+_THEMED_PICTURE = re.compile(
+    r"^<picture>\s*"
+    r'<source media="\(prefers-color-scheme: dark\)" srcset="docs/(?P<dark>\S+)">\s*'
+    r'<img alt="(?P<alt>[^"]*)" src="docs/(?P<light>\S+)">\s*'
+    r"</picture>$",
+    flags=re.MULTILINE,
+)
+
+
+def _themed_image(path: str, alt: str, scheme: str) -> str:
+    return (
+        f"```{{image}} {path}\n:alt: {alt}\n:class: only-{scheme}\n"
+        ":align: center\n```\n"
+    )
+
+
+def _themed_readme_picture(
+    app: object, relative_path: Path, parent_docname: str, content: list[str]
+) -> None:
+    """Turn the README's themed <picture> into one image per theme while it
+    is included into the docs. GitHub picks the source from the reader's
+    GitHub theme, but on the site the theme toggle only changes the page,
+    and Sphinx does not copy images named in raw HTML. Furo shows only the
+    image whose only-dark or only-light class matches its theme."""
+    if relative_path.name != "README.md":
+        return
+    content[0] = _THEMED_PICTURE.sub(
+        lambda m: (
+            _themed_image(m["dark"], m["alt"], "dark")
+            + "\n"
+            + _themed_image(m["light"], m["alt"], "light")
+        ),
+        content[0],
+    )
 
 
 # Tabs written as plain Markdown
@@ -230,4 +268,5 @@ def _markdown_tabs(app: object, docname: str, source: list[str]) -> None:
 def setup(app):
     app.connect("include-read", _absolute_readme_links)
     app.connect("include-read", _markdown_readme_title)
+    app.connect("include-read", _themed_readme_picture)
     app.connect("source-read", _markdown_tabs)

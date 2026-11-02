@@ -2,7 +2,10 @@
 
 <div align="center">
 
-![FAST, drawn in diffraction spots found by the spotfinder][banner]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/banner-dark.svg">
+  <img alt="FAST, drawn in diffraction spots found by the spotfinder" src="docs/images/banner-light.svg">
+</picture>
 
 <sub><sub>*FAST* logo detected through the GPU spotfinder  |  [`Generated with synthetic data`][banner_svg]</sub></sub>
 
@@ -80,7 +83,6 @@ source, is published at
 | [`tests/`]          | Python tests for the programs and pipelines                 |
 | [`docs/`]           | Sphinx documentation                                        |
 
-[banner]: docs/images/banner.svg
 [banner_svg]: scripts/banner_svg.py
 [building]: docs/building.md
 [service]: docs/service.md
