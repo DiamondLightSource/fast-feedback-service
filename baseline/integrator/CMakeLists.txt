@@ -27,3 +27,5 @@ target_link_libraries(baseline_integrator
     version
     ${CMAKE_THREAD_LIBS_INIT}
 )
+
+add_subdirectory(tests)
