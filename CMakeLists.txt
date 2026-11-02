@@ -58,109 +58,6 @@ else()
     set(FFS_INSTALL_PYTHONDIR ${FFS_PYTHON_SITEARCH}/ffs)
 endif()
 
-# Dependency fetching
-# Find packages that are in conda environment
-find_package(fmt REQUIRED)
-find_package(spdlog REQUIRED)
-find_package(nlohmann_json 3.11.3 REQUIRED)
-find_package(Eigen3 3.4 REQUIRED)
-find_package(mdspan 0.6 REQUIRED)
-
-# Dependencies taken from git, or from the environment when it has them
-include(Dependencies)
-FetchContent_MakeAvailable(nanobind argparse lodepng)
-
-# lodepng ships no cmake build of its own
-add_library(lodepng STATIC "${lodepng_SOURCE_DIR}/lodepng.cpp")
-target_include_directories(lodepng PUBLIC "${lodepng_SOURCE_DIR}")
-
-# Required for Python module build of ffbidx
-set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
-set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
-set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
-
-# ffbidx installs its own python module here, and the module's runtime path
-# expects its library one directory tree up. Under a wheel build that is the
-# site-packages being assembled; a plain cmake build gets the prefix-relative
-# path instead, so the destination stays inside whatever prefix it is given.
-if(SKBUILD)
-    set(PYTHON_MODULE_PATH ${SKBUILD_PLATLIB_DIR} CACHE PATH "ffbidx python site-packages path" FORCE)
-else()
-    set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
-endif()
-
-FetchContent_MakeAvailable(ffbidx)
-
-FetchContent_MakeAvailable(GTest)
-
-# Discover GoogleTest cases at ctest time, not build time. The default
-# POST_BUILD mode runs each test binary during the build, where conda's
-# rpath makes it load the stale installed libdx2.so and fail on any dx2
-# ABI change. gtest_discover_tests() reads this default, so it also
-# covers the dx2 submodule without editing it. Must be set before
-# add_subdirectory(dx2).
-set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
-
-# Handle inclusion of dx2 dependency using git submodule
-set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
-
-if(EXISTS ${dx2_SOURCE_DIR}/CMakeLists.txt)
-    # dx2 declares its library without a type, so it follows
-    # BUILD_SHARED_LIBS. Build it static: it is then absorbed into the
-    # binaries and the extension modules, which leaves the wheel carrying no
-    # shared library of its own and nothing to resolve at runtime. Restored
-    # afterwards so the setting does not reach the fetched dependencies.
-    set(_ffs_build_shared_libs ${BUILD_SHARED_LIBS})
-    set(BUILD_SHARED_LIBS OFF)
-    add_subdirectory(${dx2_SOURCE_DIR})
-    set(BUILD_SHARED_LIBS ${_ffs_build_shared_libs})
-    unset(_ffs_build_shared_libs)
-    message(STATUS "Found dx2: ${dx2_SOURCE_DIR}")
-else()
-    message(FATAL_ERROR "dx2 submodule not found. Please run 'git submodule update --init --recursive'.")
-endif()
-
-include_directories(${dx2_SOURCE_DIR}/include)
-
-# Make a small library that we can link to to get the version
-project(version CXX)
-configure_file(version.cc.in version.cc @ONLY)
-add_library(version STATIC version.cc)
-
-
-# Create an interface library for compile definitions
-add_library(compile_options INTERFACE)
-
-# Eigen's device std::complex helpers need constexpr as __host__ __device__ (#20015).
-target_compile_options(compile_options INTERFACE
-    "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>"
-)
-
-# Add compile definitions if enabled
-if(USE_REDUCED_PRECISION)
-    target_compile_definitions(compile_options INTERFACE USE_REDUCED_PRECISION)
-    message(STATUS "Building with reduced (single) precision")
-else()
-    message(STATUS "Building with double precision")
-endif()
-
-# Make a common C++ library for shared code
-add_library(ffs_common STATIC 
-    src/ffs/ffs_logger.cc
-    src/ffs/arg_parser.cc
-    src/ffs/thread_count.cc
-    src/ffs/banner.cc
-)
-target_include_directories(ffs_common PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_link_libraries(ffs_common PUBLIC
-    compile_options
-    spdlog::spdlog
-    fmt::fmt
-    argparse
-)
-
 # The service is built with CUDA. A machine without a working CUDA compiler
 # falls back to the CPU baseline, its libraries and their tests, and nothing
 # else. The test is for the compiler rather than the toolkit, because the GPU
@@ -239,6 +136,112 @@ else()
     )
 endif()
 
+# Dependency fetching
+# Find packages that are in conda environment
+find_package(fmt REQUIRED)
+find_package(spdlog REQUIRED)
+find_package(nlohmann_json 3.11.3 REQUIRED)
+find_package(Eigen3 3.4 REQUIRED)
+find_package(mdspan 0.6 REQUIRED)
+
+# Dependencies taken from git, or from the environment when it has them
+include(Dependencies)
+FetchContent_MakeAvailable(nanobind argparse lodepng)
+
+# lodepng ships no cmake build of its own
+add_library(lodepng STATIC "${lodepng_SOURCE_DIR}/lodepng.cpp")
+target_include_directories(lodepng PUBLIC "${lodepng_SOURCE_DIR}")
+
+# ffbidx is a CUDA project throughout, so a CPU baseline build leaves it out.
+if(FFS_ENABLE_CUDA)
+    # Required for Python module build of ffbidx
+    set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
+    set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
+    set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
+
+    # ffbidx installs its own python module here, and the module's runtime path
+    # expects its library one directory tree up. Under a wheel build that is the
+    # site-packages being assembled; a plain cmake build gets the prefix-relative
+    # path instead, so the destination stays inside whatever prefix it is given.
+    if(SKBUILD)
+        set(PYTHON_MODULE_PATH ${SKBUILD_PLATLIB_DIR} CACHE PATH "ffbidx python site-packages path" FORCE)
+    else()
+        set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+    endif()
+
+    FetchContent_MakeAvailable(ffbidx)
+endif()
+
+FetchContent_MakeAvailable(GTest)
+
+# Discover GoogleTest cases at ctest time, not build time. The default
+# POST_BUILD mode runs each test binary during the build, where conda's
+# rpath makes it load the stale installed libdx2.so and fail on any dx2
+# ABI change. gtest_discover_tests() reads this default, so it also
+# covers the dx2 submodule without editing it. Must be set before
+# add_subdirectory(dx2).
+set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
+
+# Handle inclusion of dx2 dependency using git submodule
+set(dx2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/dx2")
+
+if(EXISTS ${dx2_SOURCE_DIR}/CMakeLists.txt)
+    # dx2 declares its library without a type, so it follows
+    # BUILD_SHARED_LIBS. Build it static: it is then absorbed into the
+    # binaries and the extension modules, which leaves the wheel carrying no
+    # shared library of its own and nothing to resolve at runtime. Restored
+    # afterwards so the setting does not reach the fetched dependencies.
+    set(_ffs_build_shared_libs ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF)
+    add_subdirectory(${dx2_SOURCE_DIR})
+    set(BUILD_SHARED_LIBS ${_ffs_build_shared_libs})
+    unset(_ffs_build_shared_libs)
+    message(STATUS "Found dx2: ${dx2_SOURCE_DIR}")
+else()
+    message(FATAL_ERROR "dx2 submodule not found. Please run 'git submodule update --init --recursive'.")
+endif()
+
+include_directories(${dx2_SOURCE_DIR}/include)
+
+# Make a small library that we can link to to get the version
+project(version CXX)
+configure_file(version.cc.in version.cc @ONLY)
+add_library(version STATIC version.cc)
+
+
+# Create an interface library for compile definitions
+add_library(compile_options INTERFACE)
+
+# Eigen's device std::complex helpers need constexpr as __host__ __device__ (#20015).
+target_compile_options(compile_options INTERFACE
+    "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>"
+)
+
+# Add compile definitions if enabled
+if(USE_REDUCED_PRECISION)
+    target_compile_definitions(compile_options INTERFACE USE_REDUCED_PRECISION)
+    message(STATUS "Building with reduced (single) precision")
+else()
+    message(STATUS "Building with double precision")
+endif()
+
+# Make a common C++ library for shared code
+add_library(ffs_common STATIC 
+    src/ffs/ffs_logger.cc
+    src/ffs/arg_parser.cc
+    src/ffs/thread_count.cc
+    src/ffs/banner.cc
+)
+target_include_directories(ffs_common PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(ffs_common PUBLIC
+    compile_options
+    spdlog::spdlog
+    fmt::fmt
+    argparse
+)
+
 # Conditionally add a CUDA common library
 if (FFS_ENABLE_CUDA)
     add_library(cuda_parser STATIC
@@ -260,5 +263,7 @@ enable_testing()
 
 add_subdirectory(h5read)
 add_subdirectory(baseline)
-add_subdirectory(spotfinder)
-add_subdirectory(integrator)
+if(FFS_ENABLE_CUDA)
+    add_subdirectory(spotfinder)
+    add_subdirectory(integrator)
+endif()
