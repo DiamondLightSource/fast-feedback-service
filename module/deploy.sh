@@ -44,7 +44,9 @@ Build and install the fast feedback service into a module prefix.
 
 OPTIONS:
     -v, --version NAME     Release name; names the install directory and
-                           the module (default: $VERSION)
+                           the module, and must equal the version the
+                           source resolves to. dev takes any version.
+                           (default: $VERSION)
     -p, --prefix PATH      Install prefix, overriding
                            <install-root>/<version>
         --install-root DIR Base of the install tree (default: $INSTALL_ROOT)
@@ -124,10 +126,10 @@ if [[ "$INSTALL_LATEST" == "true" ]]; then
     print_status "Latest:      $MODULE_ROOT/latest -> $MODULE_NAME"
 fi
 
-# Create the build and runtime environments
+# Create the build environment
 if [[ "$RECREATE" == "true" ]]; then
-    print_warning "Removing existing environments"
-    rm -rf "$BUILD_ENV" "$PREFIX"
+    print_warning "Removing the existing build environment"
+    rm -rf "$BUILD_ENV"
 fi
 
 if [[ -d "$BUILD_ENV" ]]; then
@@ -135,6 +137,30 @@ if [[ -d "$BUILD_ENV" ]]; then
 else
     print_status "Creating build environment"
     mamba create -y -f "$SRC/environment.yml" -p "$BUILD_ENV" ninja
+fi
+
+# Resolve the version before anything is installed. A release name has to
+# match it exactly, which only a clean checkout of that tag does; dev is the
+# rolling name and takes whatever the source resolves to.
+if ! resolved=$(cd "$SRC" && "$BUILD_ENV/bin/python" -m setuptools_scm 2>/dev/null) \
+   || [[ -z "$resolved" ]]; then
+    print_error "Could not resolve the version with $BUILD_ENV/bin/python."
+    print_error "Rerun with --recreate to rebuild the build environment."
+    exit 1
+fi
+print_status "Resolved:    $resolved"
+if [[ "$VERSION" != "dev" && "$VERSION" != "$resolved" ]]; then
+    print_error "--version $VERSION does not match the source, which resolves to $resolved."
+    print_error "Deploy a release from a clean checkout of its tag:"
+    print_error "    git worktree add <dir> v$VERSION"
+    exit 1
+fi
+
+# Create the runtime environment. Removed only now, so a refused release
+# leaves an existing install alone.
+if [[ "$RECREATE" == "true" ]]; then
+    print_warning "Removing the existing runtime environment"
+    rm -rf "$PREFIX"
 fi
 
 if [[ -d "$PREFIX" ]]; then
@@ -214,7 +240,12 @@ if [[ ${#installed[@]} -lt 5 ]]; then
 fi
 patch_rpaths "${installed[@]}"
 
+# The installed package has to carry the version resolved before the build
 ffs_version="$("$PREFIX/bin/python" -c 'import ffs; print(ffs.__version__)')"
+if [[ "$ffs_version" != "$resolved" ]]; then
+    print_error "Installed version $ffs_version, but the source resolved to $resolved"
+    exit 1
+fi
 print_status "Installed version $ffs_version"
 
 # Verify the install
