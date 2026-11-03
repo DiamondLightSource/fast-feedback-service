@@ -70,6 +70,12 @@ extern "C" void stop_processing(int sig) {
     }
 }
 
+inline fastvec::Vector3D to_vector3d(const Eigen::Vector3d &v) {
+    return fastvec::make_vector3d(static_cast<scalar_t>(v.x()),
+                                  static_cast<scalar_t>(v.y()),
+                                  static_cast<scalar_t>(v.z()));
+}
+
 #pragma region Argument Parsing
 class SSXIntegratorArgumentParser : public CUDAArgumentParser {
   public:
@@ -489,6 +495,20 @@ int main(int argc, char **argv) {
     predicted_miller_index.reserve(num_reflections*3);
     uint64_t cumulative_index = 0;
     int current_id = 0;
+
+    Eigen::Matrix<scalar_t, 3, 3, Eigen::RowMajor> d_matrix_flat =
+        panel.get_d_matrix().cast<scalar_t>();
+    std::vector<fastvec::Vector3D> s1_vectors_vec;
+    std::vector<fastvec::Vector3D> s2_vectors_vec;
+    s1_vectors_vec.reserve(num_reflections);
+    s2_vectors_vec.reserve(num_reflections);
+    fastvec::Vector3D s0_vec = to_vector3d(s0);
+    DetectorParameters det_params = make_detector_params(panel);
+    //for (size_t i = 0; i < num_reflections; ++i) {
+    //    s1_vectors_vec[i] = to_vector3d(s1_vectors, i);
+    //    s2_vectors_vec[i] = to_vector3d(s2_vectors, i);
+    //}
+
     // Map is ordered by keys
     for (const auto& [key, predictions] : *predictions_mapptr) {
         for (const auto& p: predictions){
@@ -504,6 +524,8 @@ int main(int argc, char **argv) {
             predicted_miller_index.emplace_back(p.h[0]);
             predicted_miller_index.emplace_back(p.h[1]);
             predicted_miller_index.emplace_back(p.h[2]);
+            s1_vectors_vec.push_back(to_vector3d(p.s1));
+            s2_vectors_vec.push_back(to_vector3d(p.s2));
         }
         std::vector<uint64_t> refl_indices;
         refl_indices.reserve(predictions.size());
@@ -589,14 +611,7 @@ int main(int argc, char **argv) {
     // computing mask - need s1, s2 from refl table
     //                - need s0, covariance matrix, panel
 
-    /*Eigen::Matrix<scalar_t, 3, 3, Eigen::RowMajor> d_matrix_flat =
-        panel.get_d_matrix().cast<scalar_t>();
-    std::vector<fastvec::Vector3D> s1_vectors_vec(num_reflections);
-    std::vector<fastvec::Vector3D> s2_vectors_vec(num_reflections);
-    for (size_t i = 0; i < num_reflections; ++i) {
-        s1_vectors_vec[i] = to_vector3d(s1_vectors, i);
-        s2_vectors_vec[i] = to_vector3d(s2_vectors, i);
-    }*/
+    
     // Allocate and copy GPU buffers (shared across all threads)
     /*DeviceBuffer<scalar_t> d_d_matrix(9);
     DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);

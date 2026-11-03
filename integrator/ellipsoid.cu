@@ -16,6 +16,44 @@
 #include "ellipsoid.cuh"
 #include "math/math_utils.cuh"
 
+__device__ __forceinline__ bool is_foreground(const Vector3D &eps,
+                                              double sigma) {
+    // FIXME do this double d1 = detail::AT_B_A(x1 - mubar, Sbar_inv);
+
+    return ellipsoid_val <= scalar_t(1.0);
+}
+
+__device__ Vector3D pixel_to_kabsch_ellipsoid(const Vector3D &s0,
+                                    const Vector3D &s1_c,
+                                    const Vector3D &s_pixel) {
+    Vector3D e1 = normalized(cross(s1_c, s0));
+    Vector3D e2 = normalized(cross(s1_c, e1));
+    scalar_t s1_len = norm(s1_c);
+    Vector3D deltaS = s_pixel - s1_c;
+    scalar_t eps1 = dot(e1, deltaS) / s1_len;
+    scalar_t eps2 = dot(e2, deltaS) / s1_len;  
+    return make_vector3d(eps1, eps2, 0);                            
+}
+
+
+__device__ __forceinline__ bool corner_is_foreground(
+  int cx,
+  int cy,
+  const Vector3D &s0,
+  const Vector3D &s1_c,
+  const Vector3D &s2_c,
+  const scalar_t *d_matrix,
+  scalar_t wavelength,
+  const DetectorParameters &det_params) {
+    const Vector3D s_pixel = corner_s_pixel(cx, cy, d_matrix, wavelength, det_params);
+    const Vector3D eps = pixel_to_kabsch_ellipsoid(s0, s2_c, s_pixel);
+    // eps gives x1, but need x1 - mubar
+    if (is_foreground_ellipsoid(eps, sigma)) return true;
+    return false;
+
+
+  }
+
 __global__ void ellipsoid_integrate(pixel_t *d_image,
                         size_t image_pitch,
                         uint32_t width,
