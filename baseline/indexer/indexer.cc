@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
     auto t1 = std::chrono::system_clock::now();
     // Banner for interactive runs only
     if (isatty(fileno(stdout))) {
-        print_banner("baseline_indexer", ffs_version());
+        print_banner("baseline_indexer");
     }
     logger.info("baseline_indexer {}", ffs_version());
     auto parser =

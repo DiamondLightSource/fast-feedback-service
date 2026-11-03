@@ -40,6 +40,7 @@ function(add_integrator_variant target)
         Eigen3::Eigen
         ffs_version
         ffs_common
+        ffs_cli
         cuda_parser
     )
 

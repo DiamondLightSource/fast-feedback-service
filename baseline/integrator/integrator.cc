@@ -51,7 +51,7 @@ enum class FGAlgorithm : uint8_t { Ellipsoid, Dials };
 #pragma region Argument Parsing
 class BaselineIntegratorArgumentParser : public FFSArgumentParser {
   public:
-    BaselineIntegratorArgumentParser(std::string version) : FFSArgumentParser(version) {
+    BaselineIntegratorArgumentParser() : FFSArgumentParser() {
         add_h5read_arguments();
         add_integrator_arguments();
     }
@@ -529,12 +529,12 @@ BackgroundChoice parse_background_choice(const std::string &name) {
 int main(int argc, char **argv) {
     // Banner for interactive runs only
     if (isatty(fileno(stdout))) {
-        print_banner("baseline_integrator", ffs_version());
+        print_banner("baseline_integrator");
     }
     logger.info("baseline_integrator {}", ffs_version());
 
     // Parse arguments
-    auto parser = BaselineIntegratorArgumentParser(std::string(ffs_version()));
+    auto parser = BaselineIntegratorArgumentParser();
     auto args = parser.parse_args(argc, argv);
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();

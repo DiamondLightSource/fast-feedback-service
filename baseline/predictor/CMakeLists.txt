@@ -36,6 +36,7 @@ target_link_libraries(baseline_predictor
     spdlog::spdlog
     ffs_version
     ffs_common
+    ffs_cli
     Eigen3::Eigen
     gemmi::gemmi_cpp
 )

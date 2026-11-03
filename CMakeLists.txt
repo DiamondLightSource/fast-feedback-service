@@ -141,11 +141,9 @@ else()
 endif()
 
 # Make a common C++ library for shared code
-add_library(ffs_common STATIC 
+add_library(ffs_common STATIC
     src/ffs/ffs_logger.cc
-    src/ffs/arg_parser.cc
     src/ffs/thread_count.cc
-    src/ffs/banner.cc
 )
 target_include_directories(ffs_common PUBLIC
     ${CMAKE_SOURCE_DIR}/include
@@ -154,7 +152,17 @@ target_link_libraries(ffs_common PUBLIC
     compile_options
     spdlog::spdlog
     fmt::fmt
-    argparse
+)
+
+# Argument parsing and the startup banner, shared by the programs only
+add_library(ffs_cli STATIC
+    src/ffs/arg_parser.cc
+    src/ffs/banner.cc
+)
+# Links the version, which ffs_common must not, so tests do not relink per commit
+target_link_libraries(ffs_cli
+    PUBLIC argparse
+    PRIVATE ffs_version fmt::fmt compile_options
 )
 
 # Check if CUDA is available
@@ -216,7 +224,7 @@ if (FFS_ENABLE_CUDA)
     )
 
     target_link_libraries(cuda_parser
-        ffs_common
+        ffs_cli
         argparse
         CUDA::cudart
     )

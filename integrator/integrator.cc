@@ -197,7 +197,7 @@ extern "C" void stop_processing(int sig) {
 #pragma region Argument Parsing
 class IntegratorArgumentParser : public CUDAArgumentParser {
   public:
-    IntegratorArgumentParser(std::string version) : CUDAArgumentParser(version) {
+    IntegratorArgumentParser() : CUDAArgumentParser() {
         add_h5read_arguments();      // Override to use refl + expt
         add_integrator_arguments();  // Add integrator-specific args
     }
@@ -305,12 +305,12 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
 int main(int argc, char **argv) {
     // Banner for interactive runs only
     if (isatty(fileno(stdout))) {
-        print_banner("integrator", ffs_version());
+        print_banner("integrator");
     }
     logger.info("integrator {}", ffs_version());
 
     // Parse arguments
-    auto parser = IntegratorArgumentParser(std::string(ffs_version()));
+    auto parser = IntegratorArgumentParser();
     auto args = parser.parse_args(argc, argv);
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();

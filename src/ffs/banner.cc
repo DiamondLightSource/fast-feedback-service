@@ -25,6 +25,8 @@
 #include <cstdlib>
 #include <random>
 
+#include "version.hpp"
+
 // File-local, so names like Background can't clash elsewhere in the project.
 namespace {
 
@@ -265,13 +267,13 @@ const Palette &pick_palette() {
 
 }  // namespace
 
-void print_banner(std::string_view program, std::string_view version) {
+void print_banner(std::string_view program) {
     // Pick this run's colour map and the ramp for the terminal background
     const Palette &palette = pick_palette();
     const Ramp &ramp =
       detect_background() == Background::Light ? palette.light : palette.dark;
 
     const ColourMode mode = detect_colour_mode();
-    print_art(program, version, resolve_styles(ramp, mode), mode);
+    print_art(program, ffs_version(), resolve_styles(ramp, mode), mode);
     std::fflush(stdout);
 }

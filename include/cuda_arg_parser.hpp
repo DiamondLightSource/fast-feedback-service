@@ -47,7 +47,7 @@ struct CUDAArguments : public FFSArguments {
  */
 class CUDAArgumentParser : public FFSArgumentParser {
   public:
-    explicit CUDAArgumentParser(std::string version);
+    CUDAArgumentParser();
 
     /**
      * @brief Parses command-line arguments and returns CUDA-specific

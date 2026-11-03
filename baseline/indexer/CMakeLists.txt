@@ -28,6 +28,7 @@ target_link_libraries(baseline_indexer
     spdlog::spdlog
     ffs_version
     ffs_common
+    ffs_cli
     ${CMAKE_THREAD_LIBS_INIT}
 )
 

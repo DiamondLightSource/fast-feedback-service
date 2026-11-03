@@ -31,6 +31,7 @@ target_link_libraries(spotfinder
     dx2
     ffs_version
     ffs_common
+    ffs_cli
     cuda_parser
 )
 
@@ -67,6 +68,7 @@ target_link_libraries(spotfinder32
     dx2
     ffs_version
     ffs_common
+    ffs_cli
     cuda_parser
 )
 target_compile_definitions(spotfinder32 PRIVATE PIXEL_DATA_32BIT)

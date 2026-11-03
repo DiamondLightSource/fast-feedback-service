@@ -12,7 +12,5 @@
  *        version to stdout.
  *
  * @param program Name shown under the art, e.g. "spotfinder".
- * @param version Version shown after the name, normally ffs_version(). Passed
- *        in rather than read here, so ffs_common does not link the version.
  */
-void print_banner(std::string_view program, std::string_view version);
+void print_banner(std::string_view program);
