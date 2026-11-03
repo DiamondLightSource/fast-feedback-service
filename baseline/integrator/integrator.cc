@@ -64,10 +64,10 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .action([&](const std::string &value) { _experiment_filepath = value; });
     }
 
-    auto const reflections() const -> std::string {
+    auto reflections() const -> std::string {
         return _reflection_filepath;
     }
-    auto const experiment() const -> std::string {
+    auto experiment() const -> std::string {
         return _experiment_filepath;
     }
 
