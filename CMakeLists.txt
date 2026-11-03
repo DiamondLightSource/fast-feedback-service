@@ -167,7 +167,7 @@ target_link_libraries(ffs_cli
 
 # The banner on its own, which the modulefile runs on load
 add_executable(ffs_banner src/ffs/ffs_banner.cc)
-target_link_libraries(ffs_banner PRIVATE ffs_cli)
+target_link_libraries(ffs_banner PRIVATE ffs_cli ffs_version argparse)
 install(TARGETS ffs_banner RUNTIME DESTINATION ${FFS_INSTALL_BINDIR} COMPONENT ffs)
 
 # Check if CUDA is available

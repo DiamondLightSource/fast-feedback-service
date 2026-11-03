@@ -10,7 +10,7 @@
  * tidied by hand.
  *
  * FFS_BANNER_PALETTE pins the colour map by its index in bike_shed, and
- * scripts/preview_banner.sh uses it to show every palette.
+ * `ffs_banner --preview` shows every palette with its index.
  */
 #include "banner.hpp"
 
@@ -275,5 +275,20 @@ void print_banner(std::string_view program) {
 
     const ColourMode mode = detect_colour_mode();
     print_art(program, ffs_version(), resolve_styles(ramp, mode), mode);
+    std::fflush(stdout);
+}
+
+void print_banner_preview(std::string_view program) {
+    // Walk the table in order, so each label is the index FFS_BANNER_PALETTE
+    // takes to pin that colour map
+    const ColourMode mode = detect_colour_mode();
+    for (size_t index = 0; index < bike_shed.size(); ++index) {
+        for (const Background background : {Background::Dark, Background::Light}) {
+            const bool light = background == Background::Light;
+            const Ramp &ramp = light ? bike_shed[index].light : bike_shed[index].dark;
+            fmt::print("palette {}, {} background\n", index, light ? "light" : "dark");
+            print_art(program, ffs_version(), resolve_styles(ramp, mode), mode);
+        }
+    }
     std::fflush(stdout);
 }
