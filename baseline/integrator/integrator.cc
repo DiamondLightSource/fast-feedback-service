@@ -523,10 +523,10 @@ BackgroundChoice parse_background_choice(const std::string &name) {
 
 #pragma region Application Entry
 int main(int argc, char **argv) {
-    logger.info("Baseline Integrator Version: {}", FFS_VERSION);
+    logger.info("Baseline Integrator Version: {}", ffs_version());
 
     // Parse arguments
-    auto parser = BaselineIntegratorArgumentParser(FFS_VERSION);
+    auto parser = BaselineIntegratorArgumentParser(std::string(ffs_version()));
     auto args = parser.parse_args(argc, argv);
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();

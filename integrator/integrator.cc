@@ -305,12 +305,12 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
 int main(int argc, char **argv) {
     // Banner for interactive runs only
     if (isatty(fileno(stdout))) {
-        print_banner("integrator", FFS_VERSION);
+        print_banner("integrator", ffs_version());
     }
-    logger.info("Version: {}", FFS_VERSION);
+    logger.info("Version: {}", ffs_version());
 
     // Parse arguments
-    auto parser = IntegratorArgumentParser(FFS_VERSION);
+    auto parser = IntegratorArgumentParser(std::string(ffs_version()));
     auto args = parser.parse_args(argc, argv);
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();

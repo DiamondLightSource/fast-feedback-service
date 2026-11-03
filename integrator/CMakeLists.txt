@@ -38,7 +38,7 @@ function(add_integrator_variant target)
         spdlog::spdlog
         dx2
         Eigen3::Eigen
-        version
+        ffs_version
         ffs_common
         cuda_parser
     )

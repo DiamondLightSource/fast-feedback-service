@@ -420,12 +420,12 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
 int main(int argc, char **argv) {
     // Banner for interactive runs only
     if (isatty(fileno(stdout))) {
-        print_banner("spotfinder", FFS_VERSION);
+        print_banner("spotfinder", ffs_version());
     }
-    logger.info("Spotfinder version: {}", FFS_VERSION);
+    logger.info("Spotfinder version: {}", ffs_version());
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader
-    SpotfinderArgumentParser parser(FFS_VERSION);
+    auto parser = SpotfinderArgumentParser(std::string(ffs_version()));
 
     auto args = parser.parse_args(argc, argv);
     auto const file = parser.file();

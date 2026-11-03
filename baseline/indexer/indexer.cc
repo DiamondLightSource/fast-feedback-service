@@ -57,8 +57,9 @@ int main(int argc, char **argv) {
     // indexing process. The output is a set of models - a new crystal model that
     // describes the crystal lattice and an updated set of experiment models.
     auto t1 = std::chrono::system_clock::now();
-    logger.info("Baseline indexer version: {}", FFS_VERSION);
-    auto parser = argparse::ArgumentParser("baseline_indexer", FFS_VERSION);
+    logger.info("Baseline indexer version: {}", ffs_version());
+    auto parser =
+      argparse::ArgumentParser("baseline_indexer", std::string(ffs_version()));
     parser.add_argument("-e", "--expt").help("Path to the DIALS expt file");
     parser.add_argument("-r", "--refl")
       .help("Path to the h5 reflection table file containing spotfinding results");

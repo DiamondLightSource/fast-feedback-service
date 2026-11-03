@@ -29,7 +29,7 @@ target_link_libraries(spotfinder
     nlohmann_json::nlohmann_json
     spdlog::spdlog
     dx2
-    version
+    ffs_version
     ffs_common
     cuda_parser
 )
@@ -65,7 +65,7 @@ target_link_libraries(spotfinder32
     nlohmann_json::nlohmann_json
     spdlog::spdlog
     dx2
-    version
+    ffs_version
     ffs_common
     cuda_parser
 )

@@ -1,8 +1,8 @@
-# Resolve the project version and build the `version` library around it.
+# Resolve the project version and build the `ffs_version` library around it.
 #
 # setuptools_scm is the one resolver, configured in pyproject.toml;
 # every other consumer reads what it produces. The compiled programs
-# link FFS_VERSION from the generated version.cc, and the python package
+# read ffs_version() from the generated version.cc, and the python package
 # imports __version__ from the generated _version.py, so the binaries
 # and the package cannot disagree.
 #
@@ -44,7 +44,7 @@ else()
     message(STATUS "Version from setuptools_scm: ${FFS_VERSION_FULL}")
 
     # Resolve again on every build of a plain cmake tree
-    add_custom_target(ffs_version
+    add_custom_target(ffs_version_resolve
         COMMAND "${CMAKE_COMMAND}"
             "-DFFS_SOURCE_DIR=${FFS_SOURCE_DIR}"
             "-DFFS_BINARY_DIR=${FFS_BINARY_DIR}"
@@ -56,9 +56,9 @@ else()
     )
 endif()
 
-add_library(version STATIC "${FFS_BINARY_DIR}/version.cc")
-if(TARGET ffs_version)
-    add_dependencies(version ffs_version)
+add_library(ffs_version STATIC "${FFS_BINARY_DIR}/version.cc")
+if(TARGET ffs_version_resolve)
+    add_dependencies(ffs_version ffs_version_resolve)
 endif()
 
 # Installed beside the extension modules, so the wheel, an editable install

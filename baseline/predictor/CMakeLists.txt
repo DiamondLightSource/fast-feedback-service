@@ -34,7 +34,7 @@ target_link_libraries(baseline_predictor
     argparse
     nlohmann_json::nlohmann_json
     spdlog::spdlog
-    version
+    ffs_version
     ffs_common
     Eigen3::Eigen
     gemmi::gemmi_cpp

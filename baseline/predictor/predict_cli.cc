@@ -84,8 +84,9 @@ void verify_arguments(const argparse::ArgumentParser &parser) {
 
 int main(int argc, char **argv) {
     auto t1 = std::chrono::system_clock::now();
-    logger.info("Baseline predictor version: {}", FFS_VERSION);
-    auto parser = argparse::ArgumentParser("baseline_predictor", FFS_VERSION);
+    logger.info("Baseline predictor version: {}", ffs_version());
+    auto parser =
+      argparse::ArgumentParser("baseline_predictor", std::string(ffs_version()));
     configure_parser(parser);
 
     // Parse the command-line input against the defined parser
