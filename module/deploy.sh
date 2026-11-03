@@ -228,10 +228,10 @@ patch_rpaths() {
 print_status "Rewriting RPATHs"
 platlib="$("$PREFIX/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')"
 shopt -s nullglob
+libraries=("$platlib"/ffs/*.so "$platlib"/ffbidx/*.so "$platlib"/lib64/*.so*)
 installed=("$PREFIX"/bin/spotfinder "$PREFIX"/bin/spotfinder32 \
            "$PREFIX"/bin/baseline_indexer "$PREFIX"/bin/integrator \
-           "$PREFIX"/bin/integrator32 \
-           "$platlib"/ffs/*.so "$platlib"/ffbidx/*.so "$platlib"/lib64/*.so*)
+           "$PREFIX"/bin/integrator32 "${libraries[@]}")
 shopt -u nullglob
 if [[ ${#installed[@]} -lt 5 ]]; then
     print_error "The install produced fewer artifacts than expected in $PREFIX."
@@ -277,8 +277,8 @@ for binary in spotfinder spotfinder32 baseline_indexer integrator \
     check_elf "$path"
 done
 
-for extension in "${extensions[@]}"; do
-    check_elf "$extension"
+for library in "${libraries[@]}"; do
+    check_elf "$library"
 done
 
 for script in ffs_spotfind_index_integrate ffs_index_integrate ssx_index; do
