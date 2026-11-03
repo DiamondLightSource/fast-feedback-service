@@ -38,7 +38,14 @@ dev = [
 [[tool.dynamic-metadata]]
 provider = "scikit_build_core.metadata.setuptools_scm"
 
+# The one place the version scheme is configured. cmake, the docs, CI and
+# deploy.sh all run setuptools_scm against this rather than resolving their own.
 [tool.setuptools_scm]
+
+# The default describe command with --first-parent, so the dev number counts
+# the merges into main rather than every commit on the merged branches
+[tool.setuptools_scm.scm.git]
+describe_command = "git describe --dirty --tags --long --first-parent --match *[0-9]*"
 
 # pytest.ini
 [tool.pytest.ini_options]
@@ -62,8 +69,9 @@ wheel.packages = ["src/ffs"]
 # of its components ship together
 install.components = ["ffs", "ffbidx_python", "ffbidx_libraries"]
 # Some C++ sources live under src/ffs and are compiled into ffs_common; they are
-# not part of the python package
-wheel.exclude = ["ffs/*.cc"]
+# not part of the python package. Nor is the _version.py template; cmake
+# installs the generated file in its place.
+wheel.exclude = ["ffs/*.cc", "ffs/*.in"]
 # The build directory holds cmake's cache and dependency sources, and an sdist
 # cannot carry the submodule or the fetched dependencies anyway
 sdist.exclude = ["build*", "notes", "docs"]
