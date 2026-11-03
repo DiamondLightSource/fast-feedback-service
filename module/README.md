@@ -30,7 +30,8 @@ OPTIONS:
         --module-root DIR  Where modulefiles live (default: /dls_sw/apps/Modules/modulefiles/fast-feedback-service)
         --module-name NAME Module name, overriding <version>
     -b, --build-env PATH   Build environment prefix (default: /tmp/ffs-build-env)
-    -c, --cuda MODULE      CUDA module to build against (default: cuda/13.0.2)
+    -c, --cuda MODULE      CUDA module to build against (default: cuda/<the
+                           Dockerfile's CUDA_VERSION>)
     -j, --jobs N           Cap parallel build jobs
     -r, --recreate         Delete and recreate both conda environments
     -i, --incremental      Reuse the build directory instead of starting
