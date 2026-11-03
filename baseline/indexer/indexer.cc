@@ -252,7 +252,7 @@ int main(int argc, char **argv) {
 
     // Now we need to generate candidate crystals from the lattice vectors and evaluate them
     // FFS output does not yet have flags - so set all to strong.
-    std::vector<std::size_t> flags(results.rlp.extent(0), strong_flag);
+    std::vector<uint64_t> flags(results.rlp.extent(0), strong_flag);
     // calculate entering array
     std::vector<bool> enterings(results.rlp.extent(0));
     Vector3d s0 = beam.get_s0();
@@ -570,8 +570,8 @@ int main(int argc, char **argv) {
                                       assign_results.miller_indices.extent(1),
                                       assign_results.miller_indices_data);
         // Set the indexed flag in the output.
-        auto flags_ = strong_reflections.column<std::size_t>("flags");
-        mdspan_type<size_t> flag_span;
+        auto flags_ = strong_reflections.column<uint64_t>("flags");
+        mdspan_type<uint64_t> flag_span;
         if (!flags_.has_value()) {
             for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
                 if ((assign_results.miller_indices(i, 0)) != 0
@@ -581,7 +581,7 @@ int main(int argc, char **argv) {
                 }
             }
             strong_reflections.add_column(std::string("flags"), flags);
-            flags_ = strong_reflections.column<std::size_t>("flags");
+            flags_ = strong_reflections.column<uint64_t>("flags");
             flag_span = flags_.value();
         } else {
             flag_span = flags_.value();

@@ -46,7 +46,7 @@ void simple_reflection_predictor(const MonochromaticBeam beam,
                                  const Panel &panel,
                                  ReflectionTable &reflections) {
     // actually a repredictor as assumes all successful.
-    auto flags_ = reflections.column<std::size_t>("flags");
+    auto flags_ = reflections.column<uint64_t>("flags");
     auto &flags = flags_.value();
     auto s1_ = reflections.column<double>("s1");
     auto &s1 = s1_.value();
