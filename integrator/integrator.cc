@@ -305,7 +305,7 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
 int main(int argc, char **argv) {
     // Banner for interactive runs only
     if (isatty(fileno(stdout))) {
-        print_banner("integrator");
+        print_banner("integrator", FFS_VERSION);
     }
     logger.info("Version: {}", FFS_VERSION);
 

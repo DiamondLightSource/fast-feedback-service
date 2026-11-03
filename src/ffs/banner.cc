@@ -204,10 +204,12 @@ std::array<fmt::text_style, spot_glyphs.size()> resolve_styles(const Ramp &ramp,
  * @brief Draw the art and the program name line in the given styles.
  *
  * @param program Name shown under the art
+ * @param version Version shown after the name
  * @param styles One style per spot glyph, as from resolve_styles()
  * @param mode Colour support of the terminal, deciding whether FAST is bold
  */
 void print_art(std::string_view program,
+               std::string_view version,
                const std::array<fmt::text_style, spot_glyphs.size()> &styles,
                ColourMode mode) {
     // Walk the art, colouring each spot glyph and passing everything else
@@ -227,11 +229,14 @@ void print_art(std::string_view program,
         art.remove_prefix(spot_glyphs[match].size());
     }
 
-    // Program name under the art in the palette's medium-intensity colour
+    // Program name under the art in the palette's medium-intensity colour,
+    // then the version unstyled
     const fmt::text_style bold =
       mode == ColourMode::None ? fmt::text_style{} : fmt::emphasis::bold;
-    fmt::print(
-      "{} · {}\n\n", fmt::styled("FAST", bold), fmt::styled(program, styles[1]));
+    fmt::print("{} · {} · {}\n\n",
+               fmt::styled("FAST", bold),
+               fmt::styled(program, styles[1]),
+               version);
 }
 
 /**
@@ -260,13 +265,13 @@ const Palette &pick_palette() {
 
 }  // namespace
 
-void print_banner(std::string_view program) {
+void print_banner(std::string_view program, std::string_view version) {
     // Pick this run's colour map and the ramp for the terminal background
     const Palette &palette = pick_palette();
     const Ramp &ramp =
       detect_background() == Background::Light ? palette.light : palette.dark;
 
     const ColourMode mode = detect_colour_mode();
-    print_art(program, resolve_styles(ramp, mode), mode);
+    print_art(program, version, resolve_styles(ramp, mode), mode);
     std::fflush(stdout);
 }

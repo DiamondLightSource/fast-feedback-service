@@ -45,7 +45,7 @@ struct FFSArguments {
  */
 class FFSArgumentParser : public argparse::ArgumentParser {
   public:
-    explicit FFSArgumentParser(std::string version = "0.1.0");
+    explicit FFSArgumentParser(std::string version);
     virtual ~FFSArgumentParser() = default;
 
     /**

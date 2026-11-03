@@ -420,7 +420,7 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
 int main(int argc, char **argv) {
     // Banner for interactive runs only
     if (isatty(fileno(stdout))) {
-        print_banner("spotfinder");
+        print_banner("spotfinder", FFS_VERSION);
     }
     logger.info("Spotfinder version: {}", FFS_VERSION);
 #pragma region Argument Parsing

@@ -36,6 +36,7 @@
 #include "refine_crystal.cc"
 #include "scan_static_predictor.cc"
 #include "score_crystals.cc"
+#include "version.hpp"
 #include "xyz_to_rlp.cc"
 
 using Eigen::Matrix3d;
@@ -56,7 +57,8 @@ int main(int argc, char **argv) {
     // indexing process. The output is a set of models - a new crystal model that
     // describes the crystal lattice and an updated set of experiment models.
     auto t1 = std::chrono::system_clock::now();
-    auto parser = argparse::ArgumentParser();
+    logger.info("Baseline indexer version: {}", FFS_VERSION);
+    auto parser = argparse::ArgumentParser("baseline_indexer", FFS_VERSION);
     parser.add_argument("-e", "--expt").help("Path to the DIALS expt file");
     parser.add_argument("-r", "--refl")
       .help("Path to the h5 reflection table file containing spotfinding results");

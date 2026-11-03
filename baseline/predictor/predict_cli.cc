@@ -29,6 +29,7 @@
 
 #include "ffs_logger.hpp"
 #include "predictor/predict.hpp"
+#include "version.hpp"
 
 using json = nlohmann::json;
 
@@ -83,7 +84,8 @@ void verify_arguments(const argparse::ArgumentParser &parser) {
 
 int main(int argc, char **argv) {
     auto t1 = std::chrono::system_clock::now();
-    auto parser = argparse::ArgumentParser();
+    logger.info("Baseline predictor version: {}", FFS_VERSION);
+    auto parser = argparse::ArgumentParser("baseline_predictor", FFS_VERSION);
     configure_parser(parser);
 
     // Parse the command-line input against the defined parser
