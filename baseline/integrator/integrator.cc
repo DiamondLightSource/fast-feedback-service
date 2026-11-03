@@ -3,8 +3,11 @@
  * @brief Main application for baseline CPU-only integration
  */
 
+#include <unistd.h>
+
 #include <Eigen/Dense>
 #include <chrono>
+#include <cstdio>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/detector.hpp>
@@ -22,6 +25,7 @@
 #include <vector>
 
 #include "arg_parser.hpp"
+#include "banner.hpp"
 #include "common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
@@ -523,7 +527,11 @@ BackgroundChoice parse_background_choice(const std::string &name) {
 
 #pragma region Application Entry
 int main(int argc, char **argv) {
-    logger.info("Baseline Integrator Version: {}", ffs_version());
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("baseline_integrator", ffs_version());
+    }
+    logger.info("baseline_integrator {}", ffs_version());
 
     // Parse arguments
     auto parser = BaselineIntegratorArgumentParser(std::string(ffs_version()));

@@ -307,7 +307,7 @@ int main(int argc, char **argv) {
     if (isatty(fileno(stdout))) {
         print_banner("integrator", ffs_version());
     }
-    logger.info("Version: {}", ffs_version());
+    logger.info("integrator {}", ffs_version());
 
     // Parse arguments
     auto parser = IntegratorArgumentParser(std::string(ffs_version()));

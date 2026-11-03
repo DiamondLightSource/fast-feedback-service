@@ -2,11 +2,13 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
+#include <unistd.h>
 
 #include <Eigen/Dense>
 #include <algorithm>
 #include <argparse/argparse.hpp>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
@@ -27,6 +29,7 @@
 #include <vector>
 
 #include "assign_indices.cc"
+#include "banner.hpp"
 #include "combinations.cc"
 #include "ffs_logger.hpp"
 #include "fft3d.cc"
@@ -57,7 +60,11 @@ int main(int argc, char **argv) {
     // indexing process. The output is a set of models - a new crystal model that
     // describes the crystal lattice and an updated set of experiment models.
     auto t1 = std::chrono::system_clock::now();
-    logger.info("Baseline indexer version: {}", ffs_version());
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("baseline_indexer", ffs_version());
+    }
+    logger.info("baseline_indexer {}", ffs_version());
     auto parser =
       argparse::ArgumentParser("baseline_indexer", std::string(ffs_version()));
     parser.add_argument("-e", "--expt").help("Path to the DIALS expt file");

@@ -422,7 +422,7 @@ int main(int argc, char **argv) {
     if (isatty(fileno(stdout))) {
         print_banner("spotfinder", ffs_version());
     }
-    logger.info("Spotfinder version: {}", ffs_version());
+    logger.info("spotfinder {}", ffs_version());
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader
     auto parser = SpotfinderArgumentParser(std::string(ffs_version()));
