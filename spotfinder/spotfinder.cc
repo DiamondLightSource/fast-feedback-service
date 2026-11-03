@@ -3,6 +3,7 @@
 #include <bitshuffle.h>
 #include <lodepng.h>
 #include <spdlog/spdlog.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <array>
@@ -14,6 +15,7 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <cstdio>
 #include <dx2/detector.hpp>
 #include <dx2/reflection.hpp>
 #include <dx2/scan.hpp>
@@ -25,6 +27,7 @@
 #include <thread>
 #include <utility>
 
+#include "banner.hpp"
 #include "cbfread.hpp"
 #include "common.hpp"
 #include "connected_components/connected_components.hpp"
@@ -415,6 +418,10 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
 
 #pragma region Application Entry
 int main(int argc, char **argv) {
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("spotfinder");
+    }
     logger.info("Spotfinder version: {}", FFS_VERSION);
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader

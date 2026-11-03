@@ -149,6 +149,7 @@ add_library(ffs_common STATIC
     src/ffs/ffs_logger.cc
     src/ffs/arg_parser.cc
     src/ffs/thread_count.cc
+    src/ffs/banner.cc
 )
 target_include_directories(ffs_common PUBLIC
     ${CMAKE_SOURCE_DIR}/include
