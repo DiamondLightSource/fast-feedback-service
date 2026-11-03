@@ -101,7 +101,7 @@ __device__ DispersionMoments calculate_dispersion_moments(PitchedArray2D<pixel_t
 
 #pragma region Thresholding kernels
 /**
- * @brief Kernel for computing the basic threshold based on variance and mean.
+ * @brief The dispersion first pass, shared by both thresholding algorithms.
  *
  * Image dimensions, pitches and thresholds are read from kernel_constants.
  * blockIdx.z selects the image within a batch.
@@ -109,10 +109,14 @@ __device__ DispersionMoments calculate_dispersion_moments(PitchedArray2D<pixel_t
  * @param image_ptr Pointer to the input image data.
  * @param mask_ptr Pointer to the mask data indicating valid pixels.
  * @param result_mask_ptr Pointer to the output mask where results are stored.
+ * @param require_signal Whether the centre pixel must clear the signal
+ *                       threshold as well as the background one; the extended
+ *                       algorithm leaves that to its second pass.
  */
-__global__ void dispersion(pixel_t __restrict__ *image_ptr,
-                           uint8_t __restrict__ *mask_ptr,
-                           uint8_t __restrict__ *result_mask_ptr) {
+__device__ inline void dispersion_pass(pixel_t __restrict__ *image_ptr,
+                                       uint8_t __restrict__ *mask_ptr,
+                                       uint8_t __restrict__ *result_mask_ptr,
+                                       bool require_signal) {
     // Move pointers to the correct slice
     image_ptr =
       image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
@@ -200,109 +204,25 @@ __global__ void dispersion(pixel_t __restrict__ *image_ptr,
                                                    kernel_constants.n_sig_s);
 
     result_mask(global_x, global_y) =
-      flags.not_background && flags.is_signal && moments.n > 1;
+      flags.not_background && (flags.is_signal || !require_signal) && moments.n > 1;
 }
 
 /**
- * @brief Kernel for computing the dispersion threshold.
- *
- * Image dimensions, pitches and thresholds are read from kernel_constants.
- * blockIdx.z selects the image within a batch.
- *
- * @param image_ptr Pointer to the input image data.
- * @param mask_ptr Pointer to the mask data indicating valid pixels.
- * @param result_mask_ptr Pointer to the output mask where results are stored.
+ * @brief Kernel for computing the basic threshold based on variance and mean.
+ */
+__global__ void dispersion(pixel_t __restrict__ *image_ptr,
+                           uint8_t __restrict__ *mask_ptr,
+                           uint8_t __restrict__ *result_mask_ptr) {
+    dispersion_pass(image_ptr, mask_ptr, result_mask_ptr, true);
+}
+
+/**
+ * @brief Kernel for the first pass of the extended dispersion threshold.
  */
 __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
                                                uint8_t __restrict__ *mask_ptr,
                                                uint8_t __restrict__ *result_mask_ptr) {
-    // Move pointers to the correct slice
-    image_ptr =
-      image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
-    result_mask_ptr =
-      result_mask_ptr
-      + (kernel_constants.mask_pitch * kernel_constants.height * blockIdx.z);
-
-    // Create pitched arrays for data access
-    PitchedArray2D<pixel_t> image(image_ptr, &kernel_constants.image_pitch);
-    PitchedArray2D<uint8_t> mask(mask_ptr, &kernel_constants.mask_pitch);
-    PitchedArray2D<uint8_t> result_mask(result_mask_ptr,
-                                        &kernel_constants.result_pitch);
-
-    // Calculate the pixel coordinates
-    auto block = cg::this_thread_block();
-    int global_x = block.group_index().x * block.group_dim().x + block.thread_index().x;
-    int global_y = block.group_index().y * block.group_dim().y + block.thread_index().y;
-
-    if (global_x >= kernel_constants.width || global_y >= kernel_constants.height)
-        return;  // Out of bounds guard
-
-    // Allocate shared memory for the image data
-    extern __shared__ uint8_t shared_mem[];
-    // Partition shared memory for image and mask data
-    uint8_t *shared_mask_ptr = shared_mem;
-    size_t shared_partition_size =
-      (blockDim.x + KERNEL_RADIUS * 2) * (blockDim.y + KERNEL_RADIUS * 2);
-    pixel_t *shared_image_ptr =
-      reinterpret_cast<pixel_t *>(&shared_mask_ptr[shared_partition_size]);
-
-    // Create pitched arrays for shared memory access
-    size_t shared_pitch = blockDim.x + KERNEL_RADIUS * 2;
-    PitchedArray2D<pixel_t> shared_image(shared_image_ptr, &shared_pitch);
-    PitchedArray2D<uint8_t> shared_mask(shared_mask_ptr, &shared_pitch);
-
-    int local_x = threadIdx.x + KERNEL_RADIUS;
-    int local_y = threadIdx.y + KERNEL_RADIUS;
-
-    // Get the pixel value at the current position
-    pixel_t this_pixel = image(global_x, global_y);
-
-    // Load this pixel into shared memory
-    shared_image(local_x, local_y) = this_pixel;
-    shared_mask(local_x, local_y) = mask(global_x, global_y);
-
-    // Load the surrounding pixels into shared memory
-    load_halo(block,
-              global_x,
-              global_y,
-              kernel_constants.width,
-              kernel_constants.height,
-              KERNEL_RADIUS,
-              KERNEL_RADIUS,
-              cuda::std::make_tuple(image, shared_image),
-              cuda::std::make_tuple(mask, shared_mask));
-
-    // Sync threads to ensure all shared memory is loaded
-    block.sync();
-
-    // Check if the pixel is masked and below the maximum valid pixel value
-    bool px_is_valid = shared_mask(local_x, local_y) != 0
-                       && this_pixel <= kernel_constants.max_valid_pixel_value;
-
-    // Validity guard
-    if (!px_is_valid) {
-        result_mask(global_x, global_y) = 0;
-        return;
-    }
-
-    // Reduce the neighbourhood, then apply the shared thresholding decision
-    const DispersionMoments moments =
-      calculate_dispersion_moments(shared_image,
-                                   shared_mask,
-                                   this_pixel,
-                                   local_x,
-                                   local_y,
-                                   global_x,
-                                   global_y,
-                                   kernel_constants.width,
-                                   kernel_constants.height,
-                                   KERNEL_RADIUS);
-    const DispersionFlags flags = dispersion_flags(moments,
-                                                   kernel_constants.min_count,
-                                                   kernel_constants.n_sig_b,
-                                                   kernel_constants.n_sig_s);
-
-    result_mask(global_x, global_y) = flags.not_background && moments.n > 1;
+    dispersion_pass(image_ptr, mask_ptr, result_mask_ptr, false);
 }
 
 /**
