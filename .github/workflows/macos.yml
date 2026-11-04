@@ -1,0 +1,50 @@
+name: macOS CPU build
+on: [push, pull_request]
+permissions:
+  contents: read
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-and-test:
+    name: CPU baseline on macOS
+    # Apple silicon, with no CUDA. This tests the build without CUDA and the
+    # libc++ toolchain together, where uint64_t and size_t are distinct types.
+    runs-on: macos-26
+    # A login shell, so each step runs inside the micromamba environment
+    defaults:
+      run:
+        shell: bash -el {0}
+    env:
+      # Where dials.data downloads the test datasets, kept between runs
+      DIALS_DATA: ${{ github.workspace }}/../dials_data
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history and tags, so setuptools_scm can resolve the version
+          fetch-depth: 0
+          submodules: recursive
+      # environment.yml pins the Linux gcc, which conda-forge does not build
+      # for macOS; the compilers metapackage supplies clang instead. Ninja is
+      # added because, without it, scikit-build-core falls back to make.
+      - name: Derive the macOS environment
+        run: |
+          grep -vE '^[[:space:]]*- (gcc|gxx)=' environment.yml > environment-macos.yml
+          echo '  - ninja' >> environment-macos.yml
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-file: environment-macos.yml
+          environment-name: ffs
+          cache-environment: true
+      - name: Restore test datasets
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.DIALS_DATA }}
+          key: dials-data-${{ hashFiles('h5read/tests/CMakeLists.txt') }}
+      - name: Download test datasets
+        run: dials.data get -q thaumatin_i03_rotation > /dev/null
+      - name: Build
+        run: ./build.sh --cpu
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

@@ -444,7 +444,7 @@ int main(int argc, char **argv) {
 #pragma region Predict or extract predictions
     // Determine if the data are predicted based on the reflection flags
     // If data are not predicted, run predict code.
-    auto flags_column_opt = reflections.column<size_t>("flags");
+    auto flags_column_opt = reflections.column<uint64_t>("flags");
     if (!flags_column_opt) {
         logger.error("Column 'flags' not found.");
         return 1;
@@ -1421,7 +1421,7 @@ int main(int argc, char **argv) {
     std::vector<double> s1_out(s1_vectors.data_handle(),
                                s1_vectors.data_handle() + s1_vectors.size());
     std::vector<int> id_col(num_reflections, 0);
-    std::vector<std::size_t> final_flags(num_reflections, IntegratedSum);
+    std::vector<uint64_t> final_flags(num_reflections, IntegratedSum);
 
     integrated_data.add_column("intensity.sum.value", num_reflections, 1, intensities);
     integrated_data.add_column(

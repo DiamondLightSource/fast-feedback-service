@@ -59,6 +59,84 @@ endif()
 # The version, and the small library that carries it into the programs
 include(ResolveVersion)
 
+# The service is built with CUDA. A machine without a working CUDA compiler
+# falls back to the CPU baseline, its libraries and their tests, and nothing
+# else. The test is for the compiler rather than the toolkit, because the GPU
+# directories enable CUDA as a language; a toolkit found without nvcc would
+# pass here and fail at project().
+include(CheckLanguage)
+check_language(CUDA)
+if(CMAKE_CUDA_COMPILER)
+    set(_ffs_cuda_compiler_found ON)
+else()
+    set(_ffs_cuda_compiler_found OFF)
+endif()
+option(FFS_ENABLE_CUDA
+    "Build with CUDA; OFF builds the CPU baseline only, for machines without a CUDA compiler"
+    ${_ffs_cuda_compiler_found})
+unset(_ffs_cuda_compiler_found)
+
+if(FFS_ENABLE_CUDA AND NOT CMAKE_CUDA_COMPILER)
+    message(FATAL_ERROR
+        "FFS_ENABLE_CUDA is ON but no working CUDA compiler was found.\n"
+        "   Put nvcc on PATH or set CUDACXX to it, or configure with\n"
+        "   -DFFS_ENABLE_CUDA=OFF to build the CPU baseline only."
+    )
+endif()
+
+if(FFS_ENABLE_CUDA)
+    message(STATUS "Building CUDA components with ${CMAKE_CUDA_COMPILER}")
+
+    # Imported targets are scoped to the directory that finds them, so
+    # cuda_parser below needs CUDA::cudart found here at the root.
+    find_package(CUDAToolkit REQUIRED)
+
+    # SetCudaArchitectures already probed the local GPU; check that what
+    # we are about to compile can actually run on it.
+    if(FFS_DETECTED_GPU_ARCH)
+        # A cubin loads on any later minor revision of its own major
+        # generation but never across one (an sm_80 cubin runs on 8.6,
+        # 8.7 and 8.9), and the driver can JIT PTX onto any device at or
+        # above its virtual architecture. Warn only when neither route
+        # covers the card that is actually here.
+        set(GPU_IS_COVERED FALSE)
+        math(EXPR DETECTED_MAJOR "${FFS_DETECTED_GPU_ARCH} / 10")
+        foreach(arch IN LISTS FFS_CUDA_ARCH_REAL)
+            math(EXPR ARCH_MAJOR "${arch} / 10")
+            if(ARCH_MAJOR EQUAL DETECTED_MAJOR AND NOT arch GREATER FFS_DETECTED_GPU_ARCH)
+                set(GPU_IS_COVERED TRUE)
+            endif()
+        endforeach()
+        foreach(arch IN LISTS FFS_CUDA_ARCH_VIRTUAL)
+            if(NOT arch GREATER FFS_DETECTED_GPU_ARCH)
+                set(GPU_IS_COVERED TRUE)
+            endif()
+        endforeach()
+
+        if(GPU_IS_COVERED)
+            message(STATUS "✓ Compiled architectures cover the detected GPU")
+        else()
+            message(WARNING
+                "Nothing being compiled can run on the GPU in this machine (sm_${FFS_DETECTED_GPU_ARCH}).\n"
+                "   Building for: ${CMAKE_CUDA_ARCHITECTURES}\n"
+                "   The resulting binaries will fail to load here.\n"
+                "   To build for the detected GPU: cmake -DCUDA_ARCH=native ..\n"
+                "   To build what the container ships: cmake -DCUDA_ARCH=all-supported .."
+            )
+        endif()
+    else()
+        message(STATUS "Could not detect GPU compute capability (nvidia-smi not available or no GPU present)")
+    endif()
+elseif(CMAKE_CUDA_COMPILER)
+    message(STATUS "FFS_ENABLE_CUDA is OFF: building the CPU baseline only")
+else()
+    message(WARNING
+        "No working CUDA compiler found: building the CPU baseline only, without\n"
+        "   the spotfinder, integrator or fast indexer. Put nvcc on PATH and\n"
+        "   reconfigure with -DFFS_ENABLE_CUDA=ON for the full build."
+    )
+endif()
+
 # Dependency fetching
 # Find packages that are in conda environment
 find_package(fmt REQUIRED)
@@ -75,22 +153,25 @@ FetchContent_MakeAvailable(nanobind argparse lodepng)
 add_library(lodepng STATIC "${lodepng_SOURCE_DIR}/lodepng.cpp")
 target_include_directories(lodepng PUBLIC "${lodepng_SOURCE_DIR}")
 
-# Required for Python module build of ffbidx
-set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
-set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
-set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
+# ffbidx is a CUDA project throughout, so a CPU baseline build leaves it out.
+if(FFS_ENABLE_CUDA)
+    # Required for Python module build of ffbidx
+    set(BUILD_FAST_INDEXER ON CACHE BOOL "" FORCE)
+    set(PYTHON_MODULE ON CACHE BOOL "" FORCE)
+    set(PYTHON_MODULE_RPATH ON CACHE BOOL "" FORCE)
 
-# ffbidx installs its own python module here, and the module's runtime path
-# expects its library one directory tree up. Under a wheel build that is the
-# site-packages being assembled; a plain cmake build gets the prefix-relative
-# path instead, so the destination stays inside whatever prefix it is given.
-if(SKBUILD)
-    set(PYTHON_MODULE_PATH ${SKBUILD_PLATLIB_DIR} CACHE PATH "ffbidx python site-packages path" FORCE)
-else()
-    set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+    # ffbidx installs its own python module here, and the module's runtime path
+    # expects its library one directory tree up. Under a wheel build that is the
+    # site-packages being assembled; a plain cmake build gets the prefix-relative
+    # path instead, so the destination stays inside whatever prefix it is given.
+    if(SKBUILD)
+        set(PYTHON_MODULE_PATH ${SKBUILD_PLATLIB_DIR} CACHE PATH "ffbidx python site-packages path" FORCE)
+    else()
+        set(PYTHON_MODULE_PATH ${FFS_PYTHON_SITEARCH} CACHE PATH "ffbidx python site-packages path" FORCE)
+    endif()
+
+    FetchContent_MakeAvailable(ffbidx)
 endif()
-
-FetchContent_MakeAvailable(ffbidx)
 
 FetchContent_MakeAvailable(GTest)
 
@@ -170,54 +251,6 @@ add_executable(ffs_banner src/ffs/ffs_banner.cc)
 target_link_libraries(ffs_banner PRIVATE ffs_cli ffs_version argparse)
 install(TARGETS ffs_banner RUNTIME DESTINATION ${FFS_INSTALL_BINDIR} COMPONENT ffs)
 
-# Check if CUDA is available
-find_package(CUDAToolkit)
-
-if (CUDAToolkit_FOUND)
-    message(STATUS "CUDA found: Building CUDA components.")
-    set(FFS_ENABLE_CUDA ON)
-    
-    # SetCudaArchitectures already probed the local GPU; check that what
-    # we are about to compile can actually run on it.
-    if(FFS_DETECTED_GPU_ARCH)
-        # A cubin loads on any later minor revision of its own major
-        # generation but never across one (an sm_80 cubin runs on 8.6,
-        # 8.7 and 8.9), and the driver can JIT PTX onto any device at or
-        # above its virtual architecture. Warn only when neither route
-        # covers the card that is actually here.
-        set(GPU_IS_COVERED FALSE)
-        math(EXPR DETECTED_MAJOR "${FFS_DETECTED_GPU_ARCH} / 10")
-        foreach(arch IN LISTS FFS_CUDA_ARCH_REAL)
-            math(EXPR ARCH_MAJOR "${arch} / 10")
-            if(ARCH_MAJOR EQUAL DETECTED_MAJOR AND NOT arch GREATER FFS_DETECTED_GPU_ARCH)
-                set(GPU_IS_COVERED TRUE)
-            endif()
-        endforeach()
-        foreach(arch IN LISTS FFS_CUDA_ARCH_VIRTUAL)
-            if(NOT arch GREATER FFS_DETECTED_GPU_ARCH)
-                set(GPU_IS_COVERED TRUE)
-            endif()
-        endforeach()
-
-        if(GPU_IS_COVERED)
-            message(STATUS "✓ Compiled architectures cover the detected GPU")
-        else()
-            message(WARNING
-                "Nothing being compiled can run on the GPU in this machine (sm_${FFS_DETECTED_GPU_ARCH}).\n"
-                "   Building for: ${CMAKE_CUDA_ARCHITECTURES}\n"
-                "   The resulting binaries will fail to load here.\n"
-                "   To build for the detected GPU: cmake -DCUDA_ARCH=native ..\n"
-                "   To build what the container ships: cmake -DCUDA_ARCH=all-supported .."
-            )
-        endif()
-    else()
-        message(STATUS "Could not detect GPU compute capability (nvidia-smi not available or no GPU present)")
-    endif()
-else()
-    message(STATUS "CUDA not found: Skipping CUDA components.")
-    set(FFS_ENABLE_CUDA OFF)
-endif()
-
 # Conditionally add a CUDA common library
 if (FFS_ENABLE_CUDA)
     add_library(cuda_parser STATIC
@@ -239,5 +272,7 @@ enable_testing()
 
 add_subdirectory(h5read)
 add_subdirectory(baseline)
-add_subdirectory(spotfinder)
-add_subdirectory(integrator)
+if(FFS_ENABLE_CUDA)
+    add_subdirectory(spotfinder)
+    add_subdirectory(integrator)
+endif()

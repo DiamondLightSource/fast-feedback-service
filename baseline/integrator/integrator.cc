@@ -68,10 +68,10 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .action([&](const std::string &value) { _experiment_filepath = value; });
     }
 
-    auto const reflections() const -> std::string {
+    auto reflections() const -> const std::string & {
         return _reflection_filepath;
     }
-    auto const experiment() const -> std::string {
+    auto experiment() const -> const std::string & {
         return _experiment_filepath;
     }
 
@@ -678,7 +678,7 @@ int main(int argc, char **argv) {
 #pragma region Predict or extract predictions
     // Determine if the data are predicted based on the reflection flags
     // If data are not predicted, run predict code.
-    auto flags_column_opt = reflections.column<size_t>("flags");
+    auto flags_column_opt = reflections.column<uint64_t>("flags");
     if (!flags_column_opt) {
         logger.error("Column 'flags' not found.");
         return 1;
@@ -1119,7 +1119,7 @@ int main(int argc, char **argv) {
       num_reflections,
       1,
       mean_bg);  // Useful for debug but not required for downstream
-    std::vector<std::size_t> final_flags(num_reflections, IntegratedSum);
+    std::vector<uint64_t> final_flags(num_reflections, IntegratedSum);
     integrated_data.add_column(std::string("flags"), num_reflections, 1, final_flags);
 
     // Only output successfully integrated reflections.

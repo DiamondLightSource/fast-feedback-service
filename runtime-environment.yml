@@ -3,7 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - boost-cpp=1.85.0
-  - fmt=11.2.0
+  - fmt=12.1.0
   - gemmi=0.7.3
   - hdf5=1.14.6
   - hdf5-external-filter-plugins=0.1.0
@@ -22,5 +22,5 @@ dependencies:
   - workflows
   - pydantic
   - rich
-  - spdlog=1.15.3
+  - spdlog=1.17.0
   - numpy=2.3.4

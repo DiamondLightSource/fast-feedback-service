@@ -28,3 +28,5 @@ target_link_libraries(baseline_integrator
     ffs_cli
     ${CMAKE_THREAD_LIBS_INIT}
 )
+
+add_subdirectory(tests)

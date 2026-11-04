@@ -75,6 +75,7 @@ extension module, use `./build.sh --install` to refresh them.
 ./build.sh --clean      discard the build directory and start over
 ./build.sh -j N         limit parallelism
 ./build.sh --cuda MOD   suggest a different CUDA module (Diamond only)
+./build.sh --cpu        build without CUDA: the CPU baseline only
 ```
 
 The CUDA version is read from `ARG CUDA_VERSION` in the [`Dockerfile`],
@@ -129,6 +130,24 @@ card.
 [nvcc-gpu-compilation]: https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#gpu-compilation
 [blackwell-compat]: https://docs.nvidia.com/cuda/blackwell-compatibility-guide/
 
+### Building without CUDA
+The CPU baseline in [`baseline/`] builds on a machine with no CUDA
+compiler: the baseline indexer, predictor and integrator, the
+`ffs.index` module, and their tests. The spotfinder, the GPU and SSX
+integrators and the fast indexer are left out.
+
+```bash
+./build.sh --cpu
+```
+
+A plain cmake configure decides by itself, building with CUDA when it
+finds a working nvcc and warning when it falls back to the CPU baseline.
+The `FFS_ENABLE_CUDA` cmake option overrides that decision. The choice
+is cached with the build directory, so a directory first configured
+without CUDA stays that way until it is reconfigured with
+`-DFFS_ENABLE_CUDA=ON`; `build.sh` does this itself when the requested
+build differs from the cached one.
+
 ## Building the documentation
 
 API documentation is generated from the Doxygen comments in the source
@@ -148,3 +167,4 @@ Then open `docs/_build/html/index.html`.
 
 [`environment.yml`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/environment.yml
 [`Dockerfile`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/Dockerfile
+[`baseline/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/baseline
