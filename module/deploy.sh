@@ -210,14 +210,19 @@ CMAKE_ARGS="-DCMAKE_PREFIX_PATH=$BUILD_ENV \
     "$PREFIX/bin/pip" install --no-build-isolation --no-deps \
         -C build-dir="$SRC/$BUILD_DIR" "$SRC"
 
-# Drop the build environment from the RPATHs; conda's gcc specs file adds it
+# Drop the build environment from the RPATHs; conda's gcc specs file adds it.
+# Entries relative to the file itself stay, since ffbidx's module finds its
+# library through $ORIGIN/../lib64.
 rpath="$PREFIX/lib:$PREFIX/lib64"
 patch_rpaths() {
-    local file
+    local file relative
     for file in "$@"; do
         [[ -f "$file" ]] || continue
         case "$(file -b "$file" 2>/dev/null)" in
-            ELF*) "$BUILD_ENV/bin/patchelf" --set-rpath "$rpath" "$file" ;;
+            ELF*)
+                relative=$("$BUILD_ENV/bin/patchelf" --print-rpath "$file" \
+                           | tr ':' '\n' | grep '^\$ORIGIN' | paste -sd: - || true)
+                "$BUILD_ENV/bin/patchelf" --set-rpath "${relative:+$relative:}$rpath" "$file" ;;
         esac
     done
 }
@@ -286,8 +291,9 @@ for script in ffs_spotfind_index_integrate ffs_index_integrate ssx_index; do
     [[ -x "$PREFIX/bin/$script" ]] || { print_error "$script missing"; failed=true; }
 done
 
-# ldd cannot see a missing Python extension, so import them
-modules="ffs.index ffs.pipeline ffs.spotfind_index_integrate ffs.index_integrate ffs.ssx_index"
+# ldd cannot see a missing Python extension, so import them. ffbidx is named
+# itself because the package only imports it inside a function.
+modules="ffs.index ffs.pipeline ffs.spotfind_index_integrate ffs.index_integrate ffs.ssx_index ffbidx"
 if ! "$PREFIX/bin/python" -c "import ${modules// /, }" >/dev/null 2>&1; then
     print_error "The deployed package cannot import its own modules:"
     "$PREFIX/bin/python" -c "import ${modules// /, }" 2>&1 | tail -3
