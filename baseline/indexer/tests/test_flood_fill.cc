@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 #include <math.h>
-#include <cmath>
 
 #include <Eigen/Dense>
+#include <cmath>
 #include <numeric>
 
 #include "common.hpp"
@@ -37,28 +37,27 @@ TEST(BaselineIndexer, flood_fill_test) {
 
     // Find channel peak (10 points)
     auto channel_it =
-        std::find(grid_points_per_void.begin(), grid_points_per_void.end(), 10);
+      std::find(grid_points_per_void.begin(), grid_points_per_void.end(), 10);
     ASSERT_NE(channel_it, grid_points_per_void.end());
 
-    size_t channel_idx =
-        std::distance(grid_points_per_void.begin(), channel_it);
+    size_t channel_idx = std::distance(grid_points_per_void.begin(), channel_it);
 
-    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[channel_idx][0],1), 0.2);   // z
-    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[channel_idx][1],1), 0.46);  // y
-    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[channel_idx][2],1), 0.5);   // x
+    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[channel_idx][0], 1), 0.2);   // z
+    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[channel_idx][1], 1), 0.46);  // y
+    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[channel_idx][2], 1), 0.5);   // x
 
     // Find corner cube peak (8 points)
     auto cube_it =
-        std::find(grid_points_per_void.begin(), grid_points_per_void.end(), 8);
+      std::find(grid_points_per_void.begin(), grid_points_per_void.end(), 8);
     ASSERT_NE(cube_it, grid_points_per_void.end());
 
-    size_t cube_idx =
-        std::distance(grid_points_per_void.begin(), cube_it);
+    size_t cube_idx = std::distance(grid_points_per_void.begin(), cube_it);
 
     // points over the boundary are equivalent modulo 1.0 (centre of space is at 0.5,0.5,0.5)
-    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[cube_idx][0],1), 0.9);   // z
-    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[cube_idx][1],1), 0.9);  // y (== 0.9 mod 1)
-    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[cube_idx][2],1), 0.9);   // x
+    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[cube_idx][0], 1), 0.9);  // z
+    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[cube_idx][1], 1),
+                     0.9);  // y (== 0.9 mod 1)
+    EXPECT_DOUBLE_EQ(std::fmod(centres_of_mass_frac[cube_idx][2], 1), 0.9);  // x
 }
 
 TEST(BaselineIndexer, flood_fill_filter_test) {
