@@ -270,7 +270,7 @@ class PipeHandler {
 #pragma region Argument Parser
 class SpotfinderArgumentParser : public CUDAArgumentParser {
   public:
-    SpotfinderArgumentParser(std::string version) : CUDAArgumentParser(version) {
+    SpotfinderArgumentParser() : CUDAArgumentParser() {
         add_h5read_arguments();
         add_spotfinder_arguments();
     }
@@ -422,10 +422,10 @@ int main(int argc, char **argv) {
     if (isatty(fileno(stdout))) {
         print_banner("spotfinder");
     }
-    logger.info("Spotfinder version: {}", FFS_VERSION);
+    logger.info("spotfinder {}", ffs_version());
 #pragma region Argument Parsing
     // Parse arguments and get our H5Reader
-    SpotfinderArgumentParser parser(FFS_VERSION);
+    auto parser = SpotfinderArgumentParser();
 
     auto args = parser.parse_args(argc, argv);
     auto const file = parser.file();

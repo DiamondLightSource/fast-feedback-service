@@ -6,11 +6,14 @@
  *
  */
 
+#include <unistd.h>
+
 #include <Eigen/Dense>
 #include <argparse/argparse.hpp>
 #include <chrono>
 #include <cmath>
 #include <common.hpp>
+#include <cstdio>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/crystal.hpp>
@@ -27,8 +30,10 @@
 #include <thread>
 #include <vector>
 
+#include "banner.hpp"
 #include "ffs_logger.hpp"
 #include "predictor/predict.hpp"
+#include "version.hpp"
 
 using json = nlohmann::json;
 
@@ -83,7 +88,13 @@ void verify_arguments(const argparse::ArgumentParser &parser) {
 
 int main(int argc, char **argv) {
     auto t1 = std::chrono::system_clock::now();
-    auto parser = argparse::ArgumentParser();
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("baseline_predictor");
+    }
+    logger.info("baseline_predictor {}", ffs_version());
+    auto parser =
+      argparse::ArgumentParser("baseline_predictor", std::string(ffs_version()));
     configure_parser(parser);
 
     // Parse the command-line input against the defined parser

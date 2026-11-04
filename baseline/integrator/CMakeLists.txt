@@ -23,7 +23,8 @@ target_link_libraries(baseline_integrator
     argparse
     nlohmann_json::nlohmann_json
     spdlog::spdlog
+    ffs_version
     ffs_common
-    version
+    ffs_cli
     ${CMAKE_THREAD_LIBS_INIT}
 )

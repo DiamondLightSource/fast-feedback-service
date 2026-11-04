@@ -10,7 +10,7 @@
  * tidied by hand.
  *
  * FFS_BANNER_PALETTE pins the colour map by its index in bike_shed, and
- * scripts/preview_banner.sh uses it to show every palette.
+ * `ffs_banner --preview` shows every palette with its index.
  */
 #include "banner.hpp"
 
@@ -24,6 +24,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <random>
+
+#include "version.hpp"
 
 // File-local, so names like Background can't clash elsewhere in the project.
 namespace {
@@ -204,10 +206,12 @@ std::array<fmt::text_style, spot_glyphs.size()> resolve_styles(const Ramp &ramp,
  * @brief Draw the art and the program name line in the given styles.
  *
  * @param program Name shown under the art
+ * @param version Version shown after the name
  * @param styles One style per spot glyph, as from resolve_styles()
  * @param mode Colour support of the terminal, deciding whether FAST is bold
  */
 void print_art(std::string_view program,
+               std::string_view version,
                const std::array<fmt::text_style, spot_glyphs.size()> &styles,
                ColourMode mode) {
     // Walk the art, colouring each spot glyph and passing everything else
@@ -227,11 +231,14 @@ void print_art(std::string_view program,
         art.remove_prefix(spot_glyphs[match].size());
     }
 
-    // Program name under the art in the palette's medium-intensity colour
+    // Program name under the art in the palette's medium-intensity colour,
+    // then the version unstyled
     const fmt::text_style bold =
       mode == ColourMode::None ? fmt::text_style{} : fmt::emphasis::bold;
-    fmt::print(
-      "{} · {}\n\n", fmt::styled("FAST", bold), fmt::styled(program, styles[1]));
+    fmt::print("{} · {} · {}\n\n",
+               fmt::styled("FAST", bold),
+               fmt::styled(program, styles[1]),
+               version);
 }
 
 /**
@@ -267,6 +274,21 @@ void print_banner(std::string_view program) {
       detect_background() == Background::Light ? palette.light : palette.dark;
 
     const ColourMode mode = detect_colour_mode();
-    print_art(program, resolve_styles(ramp, mode), mode);
+    print_art(program, ffs_version(), resolve_styles(ramp, mode), mode);
+    std::fflush(stdout);
+}
+
+void print_banner_preview(std::string_view program) {
+    // Walk the table in order, so each label is the index FFS_BANNER_PALETTE
+    // takes to pin that colour map
+    const ColourMode mode = detect_colour_mode();
+    for (size_t index = 0; index < bike_shed.size(); ++index) {
+        for (const Background background : {Background::Dark, Background::Light}) {
+            const bool light = background == Background::Light;
+            const Ramp &ramp = light ? bike_shed[index].light : bike_shed[index].dark;
+            fmt::print("palette {}, {} background\n", index, light ? "light" : "dark");
+            print_art(program, ffs_version(), resolve_styles(ramp, mode), mode);
+        }
+    }
     std::fflush(stdout);
 }
