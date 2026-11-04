@@ -42,6 +42,8 @@ jobs:
         with:
           path: ${{ env.DIALS_DATA }}
           key: dials-data-${{ hashFiles('h5read/tests/CMakeLists.txt') }}
+      - name: Download test datasets
+        run: dials.data get -q thaumatin_i03_rotation > /dev/null
       - name: Build
         run: ./build.sh --cpu
       - name: Test
