@@ -23,14 +23,17 @@ on a user's PATH.
 
 OPTIONS:
     -v, --version NAME     Release name; names the install directory and
-                           the module (default: dev)
+                           the module, and must equal the version the
+                           source resolves to. dev takes any version.
+                           (default: dev)
     -p, --prefix PATH      Install prefix, overriding
                            <install-root>/<version>
         --install-root DIR Base of the install tree (default: /dls_sw/apps/fast-feedback-service)
         --module-root DIR  Where modulefiles live (default: /dls_sw/apps/Modules/modulefiles/fast-feedback-service)
         --module-name NAME Module name, overriding <version>
     -b, --build-env PATH   Build environment prefix (default: /tmp/ffs-build-env)
-    -c, --cuda MODULE      CUDA module to build against (default: cuda/13.0.2)
+    -c, --cuda MODULE      CUDA module to build against (default: cuda/<the
+                           Dockerfile's CUDA_VERSION>)
     -j, --jobs N           Cap parallel build jobs
     -r, --recreate         Delete and recreate both conda environments
     -i, --incremental      Reuse the build directory instead of starting
@@ -47,6 +50,14 @@ OPTIONS:
 `--version` sets both the install directory and the module name, so
 `--version 1.0.0` installs to `<install-root>/1.0.0` and publishes
 `fast-feedback-service/1.0.0`.
+
+A release name is checked against the version setuptools_scm resolves
+from the source before anything is installed, and again against the
+installed package afterwards. `--version 1.0.0` therefore only deploys
+from a clean checkout of the `v1.0.0` tag; anything else stops with the
+version the source actually resolves to. `dev` is the rolling name and
+takes whatever the source resolves to, which the modulefile's
+`module-whatis` then records.
 
 The other path options override the derived values individually, which
 is how to stage a build somewhere private before publishing:

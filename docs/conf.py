@@ -12,7 +12,11 @@
 # Doxygen configuration inlined below, so there is no separate Doxyfile
 # to keep in sync.
 
+from __future__ import annotations
+
 import re
+import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -30,16 +34,25 @@ author = (
 )
 
 
-def _scm_version():
+def _scm_version() -> str:
     """Resolve the version with setuptools_scm, the same provider the
     python build uses, so the docs carry the version the package and
-    binaries are built with. Needs the git tags to be present."""
-    try:
-        from setuptools_scm import get_version
+    binaries are built with. Needs the git tags to be present.
 
-        return get_version(root="..", relative_to=__file__)
-    except (ImportError, LookupError):
+    It runs as a command, as cmake and CI run it, because the command
+    reads the configuration in pyproject.toml and get_version() does
+    not; called directly, it would count commits differently."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "setuptools_scm"],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
         return "0.0.0"
+    return result.stdout.strip()
 
 
 release = _scm_version()

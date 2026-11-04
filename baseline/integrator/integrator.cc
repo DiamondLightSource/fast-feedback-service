@@ -3,8 +3,11 @@
  * @brief Main application for baseline CPU-only integration
  */
 
+#include <unistd.h>
+
 #include <Eigen/Dense>
 #include <chrono>
+#include <cstdio>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/detector.hpp>
@@ -22,6 +25,7 @@
 #include <vector>
 
 #include "arg_parser.hpp"
+#include "banner.hpp"
 #include "common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
@@ -47,7 +51,7 @@ enum class FGAlgorithm : uint8_t { Ellipsoid, Dials };
 #pragma region Argument Parsing
 class BaselineIntegratorArgumentParser : public FFSArgumentParser {
   public:
-    BaselineIntegratorArgumentParser(std::string version) : FFSArgumentParser(version) {
+    BaselineIntegratorArgumentParser() : FFSArgumentParser() {
         add_h5read_arguments();
         add_integrator_arguments();
     }
@@ -523,10 +527,14 @@ BackgroundChoice parse_background_choice(const std::string &name) {
 
 #pragma region Application Entry
 int main(int argc, char **argv) {
-    logger.info("Baseline Integrator Version: {}", FFS_VERSION);
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("baseline_integrator");
+    }
+    logger.info("baseline_integrator {}", ffs_version());
 
     // Parse arguments
-    auto parser = BaselineIntegratorArgumentParser(FFS_VERSION);
+    auto parser = BaselineIntegratorArgumentParser();
     auto args = parser.parse_args(argc, argv);
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();
