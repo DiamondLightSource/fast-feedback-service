@@ -183,7 +183,8 @@ print(
     f"// kernel_size ({KERNEL}, {KERNEL}), n_sig_b {NSIG_B}, n_sig_s {NSIG_S}, "
     f"threshold {THRESHOLD}, min_count {MIN_COUNT}"
 )
-for c in cases + crossing_pairs():
+named = cases + crossing_pairs()
+for c in named:
     print(
         '    {{"{name}", {{{sum}, {sumsq}, {this_pixel}, {n}}}, {cv}, {value}}},'
         "  // mean {mean:.4f} var {variance:.4f} final {final}".format(
@@ -193,7 +194,7 @@ for c in cases + crossing_pairs():
 
 print()
 print(
-    f"// {dials_version()}, {len(cases)} named cases above and the rest drawn at random"
+    f"// {dials_version()}, {len(named)} named cases above and the rest drawn at random"
 )
 for c in random_cases(150):
     print(

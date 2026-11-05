@@ -98,10 +98,8 @@ const NamedCase named_cases[] = {
    false},
 };
 
-// Neighbourhoods drawn at random and scored by the same DIALS call, so the
-// table reaches cases nobody thought to write down. Eleven named cases do not
-// pin the comparison tightly: an error that shifts the bound by the window's
-// own sum slips past all of them, and lands inside this sample.
+// Neighbourhoods drawn at random and run through the same DIALS call, so the
+// table reaches cases nobody thought to write down.
 struct SampledCase {
     DispersionMoments moments;
     bool not_background;
