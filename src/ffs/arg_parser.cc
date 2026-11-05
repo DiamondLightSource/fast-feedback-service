@@ -25,6 +25,7 @@
 #include <fstream>
 
 #include "common.hpp"
+#include "version.hpp"
 
 #ifdef HAS_HDF5
 namespace _hdf5 {
@@ -32,12 +33,14 @@ namespace _hdf5 {
 }
 #endif
 
-FFSArgumentParser::FFSArgumentParser(std::string version)
-    : ArgumentParser("", version, argparse::default_arguments::help) {
+FFSArgumentParser::FFSArgumentParser()
+    : ArgumentParser("",
+                     std::string(ffs_version()),
+                     argparse::default_arguments::help) {
     add_argument("--version")
       .help("Print version information and exit")
-      .action([=](const auto &) {
-          fmt::print("{}\n", version);
+      .action([](const auto &) {
+          fmt::print("{}\n", ffs_version());
           std::exit(0);
       })
       .default_value(false)

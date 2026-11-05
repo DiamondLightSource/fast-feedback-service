@@ -2,11 +2,13 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/os.h>
+#include <unistd.h>
 
 #include <Eigen/Dense>
 #include <algorithm>
 #include <argparse/argparse.hpp>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
@@ -27,6 +29,7 @@
 #include <vector>
 
 #include "assign_indices.cc"
+#include "banner.hpp"
 #include "combinations.cc"
 #include "ffs_logger.hpp"
 #include "fft3d.cc"
@@ -36,6 +39,7 @@
 #include "refine_crystal.cc"
 #include "scan_static_predictor.cc"
 #include "score_crystals.cc"
+#include "version.hpp"
 #include "xyz_to_rlp.cc"
 
 using Eigen::Matrix3d;
@@ -56,7 +60,13 @@ int main(int argc, char **argv) {
     // indexing process. The output is a set of models - a new crystal model that
     // describes the crystal lattice and an updated set of experiment models.
     auto t1 = std::chrono::system_clock::now();
-    auto parser = argparse::ArgumentParser();
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("baseline_indexer");
+    }
+    logger.info("baseline_indexer {}", ffs_version());
+    auto parser =
+      argparse::ArgumentParser("baseline_indexer", std::string(ffs_version()));
     parser.add_argument("-e", "--expt").help("Path to the DIALS expt file");
     parser.add_argument("-r", "--refl")
       .help("Path to the h5 reflection table file containing spotfinding results");
@@ -252,7 +262,7 @@ int main(int argc, char **argv) {
 
     // Now we need to generate candidate crystals from the lattice vectors and evaluate them
     // FFS output does not yet have flags - so set all to strong.
-    std::vector<std::size_t> flags(results.rlp.extent(0), strong_flag);
+    std::vector<uint64_t> flags(results.rlp.extent(0), strong_flag);
     // calculate entering array
     std::vector<bool> enterings(results.rlp.extent(0));
     Vector3d s0 = beam.get_s0();
@@ -570,8 +580,8 @@ int main(int argc, char **argv) {
                                       assign_results.miller_indices.extent(1),
                                       assign_results.miller_indices_data);
         // Set the indexed flag in the output.
-        auto flags_ = strong_reflections.column<std::size_t>("flags");
-        mdspan_type<size_t> flag_span;
+        auto flags_ = strong_reflections.column<uint64_t>("flags");
+        mdspan_type<uint64_t> flag_span;
         if (!flags_.has_value()) {
             for (int i = 0; i < assign_results.miller_indices.extent(0); ++i) {
                 if ((assign_results.miller_indices(i, 0)) != 0
@@ -581,7 +591,7 @@ int main(int argc, char **argv) {
                 }
             }
             strong_reflections.add_column(std::string("flags"), flags);
-            flags_ = strong_reflections.column<std::size_t>("flags");
+            flags_ = strong_reflections.column<uint64_t>("flags");
             flag_span = flags_.value();
         } else {
             flag_span = flags_.value();

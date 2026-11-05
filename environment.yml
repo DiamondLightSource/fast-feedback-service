@@ -12,7 +12,7 @@ dependencies:
   - gxx=15.*
   - dials-data=2.4.134
   - eigen=3.4.0
-  - fmt=11.2.0
+  - fmt=12.1.0
   - gemmi=0.7.3
   - gtest=1.17.0
   - hdf5=1.14.6
@@ -20,6 +20,7 @@ dependencies:
   - lz4-c=1.10.0
   - mdspan=0.6.0
   - nanobind=2.8.0
+  - ninja=1.13.2
   - nlohmann_json=3.12.0
   - numpy=2.3.4
   - pre-commit=4.3.0
@@ -28,4 +29,4 @@ dependencies:
   - scikit-build-core=1.1.1
   - python=3.13.7
   - setuptools_scm=10.3.4
-  - spdlog=1.15.3
+  - spdlog=1.17.0

@@ -32,7 +32,7 @@ struct predicted_data_rotation {
     // Shape {size, 1}
     std::vector<int> panels;
     std::vector<bool> enter;
-    std::vector<size_t> flags;
+    std::vector<uint64_t> flags;
     std::vector<int> ids;
     std::vector<uint64_t> experiment_ids;
     std::vector<std::string> identifiers;

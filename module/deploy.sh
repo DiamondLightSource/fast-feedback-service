@@ -44,7 +44,9 @@ Build and install the fast feedback service into a module prefix.
 
 OPTIONS:
     -v, --version NAME     Release name; names the install directory and
-                           the module (default: $VERSION)
+                           the module, and must equal the version the
+                           source resolves to. dev takes any version.
+                           (default: $VERSION)
     -p, --prefix PATH      Install prefix, overriding
                            <install-root>/<version>
         --install-root DIR Base of the install tree (default: $INSTALL_ROOT)
@@ -124,10 +126,10 @@ if [[ "$INSTALL_LATEST" == "true" ]]; then
     print_status "Latest:      $MODULE_ROOT/latest -> $MODULE_NAME"
 fi
 
-# Create the build and runtime environments
+# Create the build environment
 if [[ "$RECREATE" == "true" ]]; then
-    print_warning "Removing existing environments"
-    rm -rf "$BUILD_ENV" "$PREFIX"
+    print_warning "Removing the existing build environment"
+    rm -rf "$BUILD_ENV"
 fi
 
 if [[ -d "$BUILD_ENV" ]]; then
@@ -135,6 +137,30 @@ if [[ -d "$BUILD_ENV" ]]; then
 else
     print_status "Creating build environment"
     mamba create -y -f "$SRC/environment.yml" -p "$BUILD_ENV" ninja
+fi
+
+# Resolve the version before anything is installed. A release name has to
+# match it exactly, which only a clean checkout of that tag does; dev is the
+# rolling name and takes whatever the source resolves to.
+if ! resolved=$(cd "$SRC" && "$BUILD_ENV/bin/python" -m setuptools_scm 2>/dev/null) \
+   || [[ -z "$resolved" ]]; then
+    print_error "Could not resolve the version with $BUILD_ENV/bin/python."
+    print_error "Rerun with --recreate to rebuild the build environment."
+    exit 1
+fi
+print_status "Resolved:    $resolved"
+if [[ "$VERSION" != "dev" && "$VERSION" != "$resolved" ]]; then
+    print_error "--version $VERSION does not match the source, which resolves to $resolved."
+    print_error "Deploy a release from a clean checkout of its tag:"
+    print_error "    git worktree add <dir> v$VERSION"
+    exit 1
+fi
+
+# Create the runtime environment. Removed only now, so a refused release
+# leaves an existing install alone.
+if [[ "$RECREATE" == "true" ]]; then
+    print_warning "Removing the existing runtime environment"
+    rm -rf "$PREFIX"
 fi
 
 if [[ -d "$PREFIX" ]]; then
@@ -184,14 +210,19 @@ CMAKE_ARGS="-DCMAKE_PREFIX_PATH=$BUILD_ENV \
     "$PREFIX/bin/pip" install --no-build-isolation --no-deps \
         -C build-dir="$SRC/$BUILD_DIR" "$SRC"
 
-# Drop the build environment from the RPATHs; conda's gcc specs file adds it
+# Drop the build environment from the RPATHs; conda's gcc specs file adds it.
+# Entries relative to the file itself stay, since ffbidx's module finds its
+# library through $ORIGIN/../lib64.
 rpath="$PREFIX/lib:$PREFIX/lib64"
 patch_rpaths() {
-    local file
+    local file relative
     for file in "$@"; do
         [[ -f "$file" ]] || continue
         case "$(file -b "$file" 2>/dev/null)" in
-            ELF*) "$BUILD_ENV/bin/patchelf" --set-rpath "$rpath" "$file" ;;
+            ELF*)
+                relative=$("$BUILD_ENV/bin/patchelf" --print-rpath "$file" \
+                           | tr ':' '\n' | grep '^\$ORIGIN' | paste -sd: - || true)
+                "$BUILD_ENV/bin/patchelf" --set-rpath "${relative:+$relative:}$rpath" "$file" ;;
         esac
     done
 }
@@ -202,10 +233,11 @@ patch_rpaths() {
 print_status "Rewriting RPATHs"
 platlib="$("$PREFIX/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')"
 shopt -s nullglob
+libraries=("$platlib"/ffs/*.so "$platlib"/ffbidx/*.so "$platlib"/lib64/*.so*)
 installed=("$PREFIX"/bin/spotfinder "$PREFIX"/bin/spotfinder32 \
            "$PREFIX"/bin/baseline_indexer "$PREFIX"/bin/integrator \
-           "$PREFIX"/bin/integrator32 \
-           "$platlib"/ffs/*.so "$platlib"/ffbidx/*.so "$platlib"/lib64/*.so*)
+           "$PREFIX"/bin/integrator32 "$PREFIX"/bin/ffs_banner \
+           "${libraries[@]}")
 shopt -u nullglob
 if [[ ${#installed[@]} -lt 5 ]]; then
     print_error "The install produced fewer artifacts than expected in $PREFIX."
@@ -214,7 +246,12 @@ if [[ ${#installed[@]} -lt 5 ]]; then
 fi
 patch_rpaths "${installed[@]}"
 
+# The installed package has to carry the version resolved before the build
 ffs_version="$("$PREFIX/bin/python" -c 'import ffs; print(ffs.__version__)')"
+if [[ "$ffs_version" != "$resolved" ]]; then
+    print_error "Installed version $ffs_version, but the source resolved to $resolved"
+    exit 1
+fi
 print_status "Installed version $ffs_version"
 
 # Verify the install
@@ -236,7 +273,7 @@ check_elf() {
 }
 
 for binary in spotfinder spotfinder32 baseline_indexer integrator \
-              integrator32; do
+              integrator32 ffs_banner; do
     path="$PREFIX/bin/$binary"
     if [[ ! -x "$path" ]]; then
         print_error "$binary was not installed"
@@ -246,16 +283,17 @@ for binary in spotfinder spotfinder32 baseline_indexer integrator \
     check_elf "$path"
 done
 
-for extension in "${extensions[@]}"; do
-    check_elf "$extension"
+for library in "${libraries[@]}"; do
+    check_elf "$library"
 done
 
 for script in ffs_spotfind_index_integrate ffs_index_integrate ssx_index; do
     [[ -x "$PREFIX/bin/$script" ]] || { print_error "$script missing"; failed=true; }
 done
 
-# ldd cannot see a missing Python extension, so import them
-modules="ffs.index ffs.pipeline ffs.spotfind_index_integrate ffs.index_integrate ffs.ssx_index"
+# ldd cannot see a missing Python extension, so import them. ffbidx is named
+# itself because the package only imports it inside a function.
+modules="ffs.index ffs.pipeline ffs.spotfind_index_integrate ffs.index_integrate ffs.ssx_index ffbidx"
 if ! "$PREFIX/bin/python" -c "import ${modules// /, }" >/dev/null 2>&1; then
     print_error "The deployed package cannot import its own modules:"
     "$PREFIX/bin/python" -c "import ${modules// /, }" 2>&1 | tail -3

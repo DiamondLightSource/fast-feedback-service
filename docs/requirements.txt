@@ -1,13 +1,16 @@
-# Python packages for building the documentation.
+# Python packages for building the documentation. Each floor is the
+# release the docs were last checked against.
 #
 # The Doxygen and Graphviz *binaries* are NOT pip-installable and must
-# be provided separately (conda-forge: `doxygen graphviz`, or apt:
-# `doxygen graphviz`). Exhale invokes the `doxygen` binary at build
+# be provided separately (conda-forge: `doxygen=1.18.0 graphviz`, as the
+# docs workflow pins). Exhale invokes the `doxygen` binary at build
 # time.
-sphinx>=7.2.5
-breathe>=4.35
+sphinx>=9.2.0
+breathe>=5.1.0
 exhale>=0.3.7
-furo>=2024.1.29
-myst-parser>=3.0
+furo>=2025.12.19
+myst-parser>=5.1.0
+# Synced tabs; 0.6 keeps the selection across page loads.
+sphinx-design>=0.7.0
 # Resolves the docs version from git, as the python build does.
-setuptools_scm>=8
+setuptools_scm>=10.3.4

@@ -101,7 +101,7 @@ std::pair<double, double> estimate_sigmas(ReflectionTable const &indexed,
                                           Experiment &expt,
                                           int min_bbox_depth) {
     logger.info("Estimation of spot extent parameters (σ_b, σ_m):");
-    auto flags = indexed.column<std::size_t>("flags");
+    auto flags = indexed.column<uint64_t>("flags");
     auto &flags_data = flags.value();
     std::vector<bool> selection(flags_data.extent(0), false);
     bool any_used_in_refinement = false;

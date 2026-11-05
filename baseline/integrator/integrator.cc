@@ -3,8 +3,11 @@
  * @brief Main application for baseline CPU-only integration
  */
 
+#include <unistd.h>
+
 #include <Eigen/Dense>
 #include <chrono>
+#include <cstdio>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/detector.hpp>
@@ -22,6 +25,7 @@
 #include <vector>
 
 #include "arg_parser.hpp"
+#include "banner.hpp"
 #include "common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
@@ -47,7 +51,7 @@ enum class FGAlgorithm : uint8_t { Ellipsoid, Dials };
 #pragma region Argument Parsing
 class BaselineIntegratorArgumentParser : public FFSArgumentParser {
   public:
-    BaselineIntegratorArgumentParser(std::string version) : FFSArgumentParser(version) {
+    BaselineIntegratorArgumentParser() : FFSArgumentParser() {
         add_h5read_arguments();
         add_integrator_arguments();
     }
@@ -64,10 +68,10 @@ class BaselineIntegratorArgumentParser : public FFSArgumentParser {
           .action([&](const std::string &value) { _experiment_filepath = value; });
     }
 
-    auto const reflections() const -> std::string {
+    auto reflections() const -> const std::string & {
         return _reflection_filepath;
     }
-    auto const experiment() const -> std::string {
+    auto experiment() const -> const std::string & {
         return _experiment_filepath;
     }
 
@@ -523,10 +527,14 @@ BackgroundChoice parse_background_choice(const std::string &name) {
 
 #pragma region Application Entry
 int main(int argc, char **argv) {
-    logger.info("Baseline Integrator Version: {}", FFS_VERSION);
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("baseline_integrator");
+    }
+    logger.info("baseline_integrator {}", ffs_version());
 
     // Parse arguments
-    auto parser = BaselineIntegratorArgumentParser(FFS_VERSION);
+    auto parser = BaselineIntegratorArgumentParser();
     auto args = parser.parse_args(argc, argv);
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();
@@ -670,7 +678,7 @@ int main(int argc, char **argv) {
 #pragma region Predict or extract predictions
     // Determine if the data are predicted based on the reflection flags
     // If data are not predicted, run predict code.
-    auto flags_column_opt = reflections.column<size_t>("flags");
+    auto flags_column_opt = reflections.column<uint64_t>("flags");
     if (!flags_column_opt) {
         logger.error("Column 'flags' not found.");
         return 1;
@@ -1111,7 +1119,7 @@ int main(int argc, char **argv) {
       num_reflections,
       1,
       mean_bg);  // Useful for debug but not required for downstream
-    std::vector<std::size_t> final_flags(num_reflections, IntegratedSum);
+    std::vector<uint64_t> final_flags(num_reflections, IntegratedSum);
     integrated_data.add_column(std::string("flags"), num_reflections, 1, final_flags);
 
     // Only output successfully integrated reflections.

@@ -25,8 +25,7 @@
 
 #include <cstdlib>
 
-CUDAArgumentParser::CUDAArgumentParser(std::string version)
-    : FFSArgumentParser(version) {
+CUDAArgumentParser::CUDAArgumentParser() : FFSArgumentParser() {
     add_argument("-d", "--device")
       .help("CUDA device index")
       .default_value(0)
