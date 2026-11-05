@@ -1,10 +1,8 @@
 name: Docs
 on: [push, pull_request]
-# Allow the deploy job to publish to GitHub Pages.
+# Read-only by default; only the deploy job can publish.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 # Cancel superseded runs on the same ref.
 concurrency:
   group: docs-${{ github.ref }}
@@ -58,6 +56,10 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
+    # Publishing to Pages authenticates with an OIDC token
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

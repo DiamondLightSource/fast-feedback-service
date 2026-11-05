@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: ["main"]
 
+# Read-only by default; the jobs that push to the registry widen it.
+permissions:
+  contents: read
+
 jobs:
 
   build:
@@ -23,6 +27,12 @@ jobs:
             platform: linux/arm64
 
     runs-on: ${{ matrix.runner }}
+
+    # A job-level block replaces the top-level one, so it restates the
+    # checkout's read access alongside the registry push.
+    permissions:
+      contents: read
+      packages: write
 
     # Both arches resolve the same version, so whichever sets it last is fine
     outputs:
@@ -193,6 +203,9 @@ jobs:
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push' }}
     needs: build
     runs-on: ubuntu-latest
+    # No checkout here; it only pushes the manifest
+    permissions:
+      packages: write
     env:
       VERSION: ${{ needs.build.outputs.version }}
 
