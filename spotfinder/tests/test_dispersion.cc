@@ -33,7 +33,7 @@ constexpr uint8_t kDialsMinCount = 2;
 constexpr float kDialsNSigB = 6.0f;
 constexpr float kDialsNSigS = 3.0f;
 
-struct ReferenceCase {
+struct NamedCase {
     const char *scenario;
     DispersionMoments moments;
     bool not_background;
@@ -41,7 +41,7 @@ struct ReferenceCase {
 };
 
 // DIALS 3.30.0.3-gdda5bf894-release
-const ReferenceCase kReferenceCases[] = {
+const NamedCase kNamedCases[] = {
   {"flat background of 2", {98, 196, 2, 49}, false, false},
   {"flat background with a bright centre", {146, 2692, 50, 49}, true, true},
   {"bright neighbour, quiet centre", {146, 2692, 2, 49}, true, false},
@@ -190,9 +190,9 @@ const SampledCase kSampledCases[] = {
 constexpr DispersionImpl kBothForms[] = {DispersionImpl::FastInteger,
                                          DispersionImpl::DialsDivisionFree};
 
-DispersionFlags evaluate(const ReferenceCase &reference, DispersionImpl impl) {
+DispersionFlags evaluate(const NamedCase &named, DispersionImpl impl) {
     return dispersion_flags(
-      reference.moments, kDialsMinCount, kDialsNSigB, kDialsNSigS, 0.0f, impl);
+      named.moments, kDialsMinCount, kDialsNSigB, kDialsNSigS, 0.0f, impl);
 }
 
 }  // namespace
@@ -203,12 +203,12 @@ DispersionFlags evaluate(const ReferenceCase &reference, DispersionImpl impl) {
 // the choice is a cost decision, not a numerical one.
 TEST(DispersionThreshold, BothFormsMatchDialsOnEveryCase) {
     for (const auto impl : kBothForms) {
-        for (const auto &reference : kReferenceCases) {
-            SCOPED_TRACE(reference.scenario);
-            const auto flags = evaluate(reference, impl);
-            EXPECT_EQ(flags.not_background, reference.not_background)
+        for (const auto &named : kNamedCases) {
+            SCOPED_TRACE(named.scenario);
+            const auto flags = evaluate(named, impl);
+            EXPECT_EQ(flags.not_background, named.not_background)
               << "background flag disagrees with DIALS";
-            EXPECT_EQ(flags.is_signal, reference.is_signal)
+            EXPECT_EQ(flags.is_signal, named.is_signal)
               << "signal flag disagrees with DIALS";
         }
     }
