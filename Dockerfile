@@ -92,6 +92,12 @@ ENV INTEGRATOR=/opt/ffs/bin/integrator
 ENV LD_LIBRARY_PATH=/opt/ffs/lib:$LD_LIBRARY_PATH
 # ENV ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
 
+# Run as an unprivileged UID with no passwd entry by default. It is
+# numeric so the kubelet can verify runAsNonRoot; a deployment sets the
+# real beamline UID over it. A later stage that installs packages needs
+# USER root first.
+USER 65532:65532
+
 # Batch image: run a pipeline over a single dataset, then exit. It
 # carries every batch entrypoint rather than one each, since they differ
 # only in which of the same three binaries they call. The caller selects
