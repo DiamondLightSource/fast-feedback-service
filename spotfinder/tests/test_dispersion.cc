@@ -29,9 +29,9 @@
 
 namespace {
 
-constexpr uint8_t kDialsMinCount = 2;
-constexpr float kDialsNSigB = 6.0f;
-constexpr float kDialsNSigS = 3.0f;
+constexpr uint8_t DIALS_MIN_COUNT = 2;
+constexpr float DIALS_N_SIG_B = 6.0f;
+constexpr float DIALS_N_SIG_S = 3.0f;
 
 struct NamedCase {
     const char *scenario;
@@ -41,7 +41,7 @@ struct NamedCase {
 };
 
 // DIALS 3.30.0.3-gdda5bf894-release
-const NamedCase kNamedCases[] = {
+const NamedCase named_cases[] = {
   {"flat background of 2", {98, 196, 2, 49}, false, false},
   {"flat background with a bright centre", {146, 2692, 50, 49}, true, true},
   {"bright neighbour, quiet centre", {146, 2692, 2, 49}, true, false},
@@ -109,7 +109,7 @@ struct SampledCase {
 };
 
 // DIALS 3.30.0.3-gdda5bf894-release
-const SampledCase kSampledCases[] = {
+const SampledCase sampled_cases[] = {
   {{352, 111880, 18, 39}, true, false},  {{1296, 40220, 54, 43}, false, true},
   {{1456, 71480, 33, 44}, true, false},  {{234, 19032, 4, 46}, true, false},
   {{80, 194, 2, 43}, false, false},      {{313, 54935, 2, 41}, true, false},
@@ -187,12 +187,12 @@ const SampledCase kSampledCases[] = {
   {{1272, 38484, 20, 43}, false, false}, {{1405, 43799, 49, 46}, false, true},
 };
 
-constexpr DispersionImpl kBothForms[] = {DispersionImpl::FastInteger,
+constexpr DispersionImpl both_forms[] = {DispersionImpl::FastInteger,
                                          DispersionImpl::DialsDivisionFree};
 
 DispersionFlags evaluate(const NamedCase &named, DispersionImpl impl) {
     return dispersion_flags(
-      named.moments, kDialsMinCount, kDialsNSigB, kDialsNSigS, 0.0f, impl);
+      named.moments, DIALS_MIN_COUNT, DIALS_N_SIG_B, DIALS_N_SIG_S, 0.0f, impl);
 }
 
 }  // namespace
@@ -202,8 +202,8 @@ DispersionFlags evaluate(const NamedCase &named, DispersionImpl impl) {
 // wrong first. Both forms have to clear it: the point of carrying two is that
 // the choice is a cost decision, not a numerical one.
 TEST(DispersionThreshold, BothFormsMatchDialsOnEveryCase) {
-    for (const auto impl : kBothForms) {
-        for (const auto &named : kNamedCases) {
+    for (const auto impl : both_forms) {
+        for (const auto &named : named_cases) {
             SCOPED_TRACE(named.scenario);
             const auto flags = evaluate(named, impl);
             EXPECT_EQ(flags.not_background, named.not_background)
@@ -218,12 +218,16 @@ TEST(DispersionThreshold, BothFormsMatchDialsOnEveryCase) {
 // land on DIALS's answer for all of it, not just for the cases chosen to be
 // legible.
 TEST(DispersionThreshold, BothFormsMatchDialsOverTheSample) {
-    for (const auto impl : kBothForms) {
+    for (const auto impl : both_forms) {
         int index = 0;
-        for (const auto &sampled : kSampledCases) {
+        for (const auto &sampled : sampled_cases) {
             SCOPED_TRACE("sampled case " + std::to_string(index++));
-            const auto flags = dispersion_flags(
-              sampled.moments, kDialsMinCount, kDialsNSigB, kDialsNSigS, 0.0f, impl);
+            const auto flags = dispersion_flags(sampled.moments,
+                                                DIALS_MIN_COUNT,
+                                                DIALS_N_SIG_B,
+                                                DIALS_N_SIG_S,
+                                                0.0f,
+                                                impl);
             EXPECT_EQ(flags.not_background, sampled.not_background)
               << "background flag disagrees with DIALS";
             EXPECT_EQ(flags.is_signal, sampled.is_signal)
@@ -237,9 +241,9 @@ TEST(DispersionThreshold, BothFormsMatchDialsOverTheSample) {
 // two-pixel case has to come back empty at the service's setting.
 TEST(DispersionThreshold, ReportsNeitherFlagBelowMinCount) {
     const DispersionMoments two_pixels{11, 85, 9, 2};
-    for (const auto impl : kBothForms) {
+    for (const auto impl : both_forms) {
         const auto flags =
-          dispersion_flags(two_pixels, 3, kDialsNSigB, kDialsNSigS, 0.0f, impl);
+          dispersion_flags(two_pixels, 3, DIALS_N_SIG_B, DIALS_N_SIG_S, 0.0f, impl);
         EXPECT_FALSE(flags.not_background) << "background flag set below min_count";
         EXPECT_FALSE(flags.is_signal) << "signal flag set below min_count";
     }
@@ -250,12 +254,12 @@ TEST(DispersionThreshold, ReportsNeitherFlagBelowMinCount) {
 // and leave the background flag alone.
 TEST(DispersionThreshold, GlobalThresholdSuppressesTheSignalFlag) {
     const DispersionMoments spot{429, 38943, 180, 49};
-    for (const auto impl : kBothForms) {
+    for (const auto impl : both_forms) {
         const auto below = dispersion_flags(
-          spot, kDialsMinCount, kDialsNSigB, kDialsNSigS, 179.0f, impl);
+          spot, DIALS_MIN_COUNT, DIALS_N_SIG_B, DIALS_N_SIG_S, 179.0f, impl);
         EXPECT_TRUE(below.is_signal) << "a count above the threshold was rejected";
         const auto equal = dispersion_flags(
-          spot, kDialsMinCount, kDialsNSigB, kDialsNSigS, 180.0f, impl);
+          spot, DIALS_MIN_COUNT, DIALS_N_SIG_B, DIALS_N_SIG_S, 180.0f, impl);
         EXPECT_FALSE(equal.is_signal) << "a count equal to the threshold was accepted";
         EXPECT_TRUE(equal.not_background)
           << "the global threshold reached the background flag";
