@@ -18,7 +18,7 @@ ENV PATH=/opt/ffs/bin:/opt/build_env/bin:/opt/bin:$PATH
 COPY environment.yml runtime-environment.yml /opt/
 
 # Create build environment from environment.yml
-RUN micromamba create -y -f /opt/environment.yml -p /opt/build_env ninja
+RUN micromamba create -y -f /opt/environment.yml -p /opt/build_env
 
 # Create the runtime environment from runtime-environment.yml
 RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
