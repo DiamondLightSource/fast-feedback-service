@@ -186,6 +186,7 @@ int main(int argc, char **argv) {
 
     auto &beam = beam_ops::require_monochromatic(expt.beam());
     Eigen::Vector3d s0 = beam.get_s0();
+    double wavelength = beam.get_wavelength();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
     const Crystal &crystal = expt.crystal();
     Eigen::Matrix3d A = crystal.get_A_matrix();
@@ -223,6 +224,8 @@ int main(int argc, char **argv) {
     // Ordered by keys i.e. image no
     std::unique_ptr<std::map<int, std::vector<Prediction>>> predictions_mapptr = std::make_unique<std::map<int, std::vector<Prediction>>>();
     std::mutex predictions_mutex;  // Mutex to protect the reflection intensities map
+    std::unique_ptr<std::map<int, Simple6MosaicityParameterisation>> models_mapptr = std::make_unique<std::map<int, Simple6MosaicityParameterisation>>();
+    std::mutex models_mutex;  // Mutex to protect the reflection intensities map
 
     // FIXME make thread pool.
     int nthreads = 28;
@@ -319,6 +322,8 @@ int main(int argc, char **argv) {
                 logger.info("Predicted {} reflections on image {}", predictions.size(), image_no);
                 std::lock_guard<std::mutex> lock(predictions_mutex);
                 (*predictions_mapptr)[image_no] = std::move(predictions);
+                std::lock_guard<std::mutex> lock2(models_mutex);
+                (*models_mapptr)[image_no] = std::move(model);
                 } catch (...) {
                     std::lock_guard<std::mutex> lk(eptr_mtx);
                     if (!eptr) eptr = std::current_exception();
@@ -498,11 +503,15 @@ int main(int argc, char **argv) {
 
     Eigen::Matrix<scalar_t, 3, 3, Eigen::RowMajor> d_matrix_flat =
         panel.get_d_matrix().cast<scalar_t>();
+    //Eigen::Matrix<scalar_t, 3, 3, Eigen::RowMajor> sigma_flat =
+    //    panel.get_d_matrix().cast<scalar_t>();
     std::vector<fastvec::Vector3D> s1_vectors_vec;
     std::vector<fastvec::Vector3D> s2_vectors_vec;
+    std::vector<std::array<double, 6>> sigma_matrices_vec;
     s1_vectors_vec.reserve(num_reflections);
     s2_vectors_vec.reserve(num_reflections);
     fastvec::Vector3D s0_vec = to_vector3d(s0);
+    scalar_t wavelength_scalar = static_cast<scalar_t>(wavelength);
     DetectorParameters det_params = make_detector_params(panel);
     //for (size_t i = 0; i < num_reflections; ++i) {
     //    s1_vectors_vec[i] = to_vector3d(s1_vectors, i);
@@ -527,6 +536,16 @@ int main(int argc, char **argv) {
             s1_vectors_vec.push_back(to_vector3d(p.s1));
             s2_vectors_vec.push_back(to_vector3d(p.s2));
         }
+        Simple6MosaicityParameterisation& model = (*models_mapptr)[key];
+        Matrix3d sigma = model.sigma();
+        std::array<double, 6> values = {
+            sigma(0,0),
+            sigma(0,1),
+            sigma(0,2),
+            sigma(1,1),
+            sigma(1,2),
+            sigma(2,2)};
+        sigma_matrices_vec.push_back(values);
         std::vector<uint64_t> refl_indices;
         refl_indices.reserve(predictions.size());
         for (uint64_t i=cumulative_index;i<cumulative_index+predictions.size();++i){
@@ -613,15 +632,15 @@ int main(int argc, char **argv) {
 
     
     // Allocate and copy GPU buffers (shared across all threads)
-    /*DeviceBuffer<scalar_t> d_d_matrix(9);
+    DeviceBuffer<scalar_t> d_d_matrix(9);
     DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
-    DeviceBuffer<scalar_t> d_s2_vectors(num_reflections);*/
+    DeviceBuffer<fastvec::Vector3D> d_s2_vectors(num_reflections);
     DeviceBuffer<BoundingBoxExtents> d_bboxes(num_reflections);
     DeviceBuffer<uint8_t> d_success(num_reflections);
 
-    /*d_d_matrix.assign(d_matrix_flat.data());
+    d_d_matrix.assign(d_matrix_flat.data());
     d_s1_vectors.assign(s1_vectors_vec.data());
-    d_s2_vectors.assign(s2_vectors_vec.data());*/
+    d_s2_vectors.assign(s2_vectors_vec.data());
     // Test case, let's just loop over bboxes summing all pixels.
     d_bboxes.assign(bboxes.data());
     std::vector<uint8_t> success_init(num_reflections, 1);
@@ -815,8 +834,14 @@ int main(int argc, char **argv) {
                                     width,
                                     height,
                                     image_num,
+                                    d_d_matrix.data(),
+                                    wavelength_scalar,
+                                    det_params,
+                                    s0_vec,
                                     d_bboxes.data(),
                                     d_reflection_indices.data(),
+                                    d_s2_vectors.data(),
+                                    sigma_matrices_vec.data(),
                                     num_refls_this_image,
                                     d_mask.data(),
                                     corner_tile_by_image.at(image_num),
