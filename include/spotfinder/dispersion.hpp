@@ -67,6 +67,9 @@ namespace dispersion_detail {
 
 /**
  * @brief Evaluate both thresholds in float, through a mean and a variance.
+ * 
+ * @note Selected only by the host tests; removable once the whole-number
+ *       form is settled as the only arithmetic the service runs.
  */
 FFS_HD inline DispersionFlags division_free(const DispersionMoments &moments,
                                             float n_sig_b,
