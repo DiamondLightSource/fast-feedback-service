@@ -6,6 +6,9 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 20)
+# No C++20 module units. Scanning for them adds -fmodules-ts to every C++
+# compile, which ccache cannot cache.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # Set the CUDA compute capability target(s). Defaults to autodetecting
 # the GPU in the build machine and building for that
