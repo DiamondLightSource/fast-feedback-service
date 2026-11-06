@@ -1,5 +1,9 @@
 name: CPU tests
-on: [push, pull_request]
+on:
+  push:
+    branches: ["main"]
+  pull_request: null
+  workflow_dispatch: null
 permissions:
   contents: read
 # Cancel superseded runs on the same ref.
