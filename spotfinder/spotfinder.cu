@@ -11,6 +11,9 @@
 // #include <bitshuffle.h>
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+#include <fmt/core.h>
+
+#include <stdexcept>
 
 #include "device_common.cuh"
 #include "kernels/erosion.cuh"
@@ -87,6 +90,56 @@ size_t calculate_shared_memory(dim3 threads, uint8_t radius) {
     * shared_block_width * shared_block_height * (sizeof(int) + sizeof(float) + sizeof(double))
     */
     return shared_block_width * shared_block_height * (sizeof(Types) + ...);
+}
+
+/**
+ * @brief Reject a thread block the thresholding kernels cannot run.
+ *
+ * load_halo fills the halo with the block's own threads. Each of the r
+ * threads with the lowest x index copies one column of the left halo, each of
+ * the r with the highest x copies one column of the right, and the same holds
+ * in y for the top and bottom rows; a thread in both sets also copies one
+ * corner pixel. A block with fewer than r threads in either dimension leaves
+ * part of the halo unwritten, so both extents must be at least the largest
+ * radius, r = 5.
+ *
+ * The largest shared memory request is the extended second pass, which
+ * stages two 8-bit mask tiles and the image over r = 5. At 32x16 in the
+ * 16-bit build that is 42 x 26 x (1 + 1 + 2) = 4368 bytes, against the
+ * 48 KiB per-block limit current devices report.
+ *
+ * @param threads The thread block the kernels will be launched with.
+ * @throws std::invalid_argument If the block is smaller than the halo radius,
+ *         or its shared memory exceeds the device's per-block limit.
+ */
+void check_launch_geometry(dim3 threads) {
+    if (threads.x < KERNEL_RADIUS_EXTENDED || threads.y < KERNEL_RADIUS_EXTENDED) {
+        throw std::invalid_argument(
+          fmt::format("Thread block {}x{} is smaller than the halo radius of {} in at "
+                      "least one dimension",
+                      threads.x,
+                      threads.y,
+                      KERNEL_RADIUS_EXTENDED));
+    }
+
+    size_t largest_request = calculate_shared_memory<pixel_t, uint8_t, uint8_t>(
+      threads, KERNEL_RADIUS_EXTENDED);
+
+    int device = 0;
+    cuda_check(cudaGetDevice(&device));
+    int shared_memory_limit = 0;
+    cuda_check(cudaDeviceGetAttribute(
+      &shared_memory_limit, cudaDevAttrMaxSharedMemoryPerBlock, device));
+
+    if (largest_request > static_cast<size_t>(shared_memory_limit)) {
+        throw std::invalid_argument(
+          fmt::format("Thread block {}x{} needs {} bytes of shared memory, above the "
+                      "device limit of {} bytes per block",
+                      threads.x,
+                      threads.y,
+                      largest_request,
+                      shared_memory_limit));
+    }
 }
 
 /**

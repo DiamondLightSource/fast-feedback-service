@@ -630,6 +630,7 @@ int main(int argc, char **argv) {
     dim3 blocks_dims{
       static_cast<unsigned int>(ceilf((float)width / gpu_thread_block_size.x)),
       static_cast<unsigned int>(ceilf((float)height / gpu_thread_block_size.y))};
+    check_launch_geometry(gpu_thread_block_size);
     const int num_threads_per_block = gpu_thread_block_size.x * gpu_thread_block_size.y;
     const int num_blocks = blocks_dims.x * blocks_dims.y;
     fmt::print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
