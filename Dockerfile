@@ -1,15 +1,20 @@
 # syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 ARG CUDA_VERSION=13.3.1
 
+# Source of the micromamba binary. The image is multi-arch, so each
+# platform build takes its own binary from it.
+FROM mambaorg/micromamba:2.10.0@sha256:e1476182cd40eb1f7c0cfae4adec9bfd78f3d7f05c61368306abfdc8939c1198 AS micromamba
+
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
 
 # Install dependencies
 RUN DEBIAN_FRONTEND=noninteractive \
     apt-get update && \
-    apt-get install -y --no-install-recommends git ca-certificates curl
+    apt-get install -y --no-install-recommends git ca-certificates
 
-# Install micromamba. Prefer install script so we don't have to determine platform here
-RUN curl -sL micro.mamba.pm/install.sh | BIN_FOLDER=/opt/bin INIT_YES=no bash
+# Install micromamba. It is statically linked, so it runs on the CUDA
+# base unchanged.
+COPY --from=micromamba /bin/micromamba /opt/bin/micromamba
 
 # Setup paths we use
 ENV PATH=/opt/ffs/bin:/opt/build_env/bin:/opt/bin:$PATH

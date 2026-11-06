@@ -1,6 +1,7 @@
-# The workflow actions are pinned to commit SHAs, which never move on
-# their own; this keeps them current. Dependabot reads the version from
-# the trailing comment on each pin and rewrites both together.
+# The workflow actions and the micromamba image are pinned to fixed
+# references, which never move on their own; this keeps them current.
+# For an action, Dependabot reads the version from the trailing comment
+# on the pin and rewrites both together.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -15,3 +16,12 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    # Only the micromamba image; the CUDA base images are bumped by hand
+    allow:
+      - dependency-name: "mambaorg/micromamba"
