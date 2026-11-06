@@ -258,11 +258,6 @@ void call_do_spotfinding_extended(dim3 blocks,
     );
     cuda_check_launch("dispersion_extended_first_pass");
 
-    // Calculate the shared memory required for the erosion pass
-    // This is before the stream synchronization to overlap the kernel execution
-    shared_memory = calculate_shared_memory<uint8_t>(
-      threads, KERNEL_RADIUS);  // Required shared memory
-
     // Synchronize the CUDA stream to ensure the first pass is complete
     cuda_check(cudaStreamSynchronize(stream));
 
@@ -287,13 +282,13 @@ void call_do_spotfinding_extended(dim3 blocks,
     */
 
     // Perform erosion
-    erosion<<<blocks, threads, shared_memory, stream>>>(d_dispersion_mask.get(),
-                                                        d_erosion_mask.get(),
-                                                        mask.get(),
-                                                        d_dispersion_mask.pitch,
-                                                        d_erosion_mask.pitch,
-                                                        mask.pitch,
-                                                        KERNEL_RADIUS);
+    erosion<<<blocks, threads, 0, stream>>>(d_dispersion_mask.get(),
+                                            d_erosion_mask.get(),
+                                            mask.get(),
+                                            d_dispersion_mask.pitch,
+                                            d_erosion_mask.pitch,
+                                            mask.pitch,
+                                            KERNEL_RADIUS);
     cuda_check_launch("erosion");
 
     // Calculate the shared memory required for the second pass
