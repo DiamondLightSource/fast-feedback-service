@@ -19,19 +19,13 @@
 
 using namespace fastvec;
 
-constexpr scalar_t ellipsoid_quantile_D = 6.0; //double D = chisq_quantile(2, probability_);
-
-struct Vec2D {
-    scalar_t x;
-    scalar_t y;
-};
-
+constexpr scalar_t ellipsoid_quantile_D = 11.8292; //double D = chisq_quantile(2, probability_);
 
 
 __device__ __forceinline__ bool is_foreground_ellipsoid(
     const Vec2D& eps,
     const Vec2D& mubar,
-    const scalar_t Sbar_inv[4], // 4 values in order (2x2 matrix)
+    const Mat2D& Sbar_inv, // 4 values in order (2x2 matrix)
     const scalar_t wavelength) {
     // Calculation is d = AT_B_A(x1 - mubar, Sbar_inv);
     scalar_t x0 = eps.x / wavelength;
@@ -39,10 +33,10 @@ __device__ __forceinline__ bool is_foreground_ellipsoid(
     scalar_t d0 = x0 - mubar.x;
     scalar_t d1 = x1 - mubar.y;
     scalar_t d =
-       d0 * d0 * Sbar_inv[0] +
-       d0 * d1 * Sbar_inv[1] +
-       d0 * d1 * Sbar_inv[2] +
-       d1 * d1 * Sbar_inv[3];                                         
+       d0 * d0 * Sbar_inv.xx +
+       d0 * d1 * Sbar_inv.xy +
+       d0 * d1 * Sbar_inv.yx +
+       d1 * d1 * Sbar_inv.yy;                                         
  
     return d < ellipsoid_quantile_D;
 }
@@ -61,39 +55,40 @@ __device__ Vec2D pixel_to_kabsch_ellipsoid(const Vector3D &s0,
 }
 
 
-__device__ __forceinline__ bool corner_is_foreground(
+__device__ __forceinline__ bool corner_is_foreground_ellipsoid(
   int cx,
   int cy,
   const Vector3D &s0,
-  const Vector3D &s2_c,
+  const Vector3D &s2c,
   const Vec2D &mubar,
   const scalar_t *d_matrix,
-  const scalar_t *Sbar_inv,
+  const Mat2D& Sbar_inv,
   scalar_t wavelength,
   const DetectorParameters &det_params) {
     const Vector3D s_pixel = corner_s_pixel(cx, cy, d_matrix, wavelength, det_params);
-    const Vec2D eps = pixel_to_kabsch_ellipsoid(s0, s2_c, s_pixel);
+    const Vec2D eps = pixel_to_kabsch_ellipsoid(s0, s2c, s_pixel);
     return is_foreground_ellipsoid(eps, mubar, Sbar_inv, wavelength);
 }
 
-__device__ __forceinline__ bool pixel_is_foreground(
+
+__device__ __forceinline__ bool pixel_is_foreground_ellipsoid(
   int px,
   int py,
   const Vector3D &s0,
-  const Vector3D &s2_c,
+  const Vector3D &s2c,
   const Vec2D& mubar,
   const scalar_t *d_matrix,
-  const scalar_t *Sbar_inv,
+  const Mat2D& Sbar_inv,
   scalar_t wavelength,
   const DetectorParameters &det_params) {
 #pragma unroll
     for (int dy = 0; dy <= 1; ++dy) {
 #pragma unroll
         for (int dx = 0; dx <= 1; ++dx) {
-            if (corner_is_foreground(px + dx,
+            if (corner_is_foreground_ellipsoid(px + dx,
                                     py + dy,
                                            s0,
-                                           s2_c,
+                                           s2c,
                                            mubar,
                                            d_matrix,
                                            Sbar_inv,
@@ -118,10 +113,11 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
                         const BoundingBoxExtents *d_bboxes,
                         const size_t *d_reflection_indices,
                         const Vector3D *d_s2_vectors,
-                        const scalar_t *sigma_matrices,
+                        const Vec2D *d_mubar,
+                        const Mat2D *d_sbar_inv,
                         size_t num_reflections_this_image,
                         const uint8_t *d_mask,
-                        uint32_t max_corner_tile_corners,
+                        uint32_t tile_capacity,
                         accumulator_t *d_foreground_sum,
                         uint32_t *d_foreground_count,
                         uint8_t *d_success){
@@ -135,39 +131,6 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
     const Vec2D mubar = d_mubar[refl_idx];
     const Mat2D Sbar_inv = d_sbar_inv[refl_idx];
     
-    // Add assert once sorted out updating bbox.
-    // assert(image_num >= bbox.z_min && image_num < bbox.z_max);
-    // Calculate things that are constant for the spot.
-    /*Matrix3D sigma;
-    sigma << sigma_matrix_values[0], etc;
-    const Vector3D r = s2c - s0;
-    const Matrix3D R = change_of_basis_op(s0, s2c);
-    const Matrix3D S = R * sigma * R.transpose();
-    const Vector3D mu = R * s2c;
-    scalar_t epsilon = (1.0 / wavelength) - mu.z;
-    //const Vector2D mu1 = {mu[0], mu[1]};
-
-    Vector2D S12 = {S.xy, S.xz};
-    Vector2D S21 = {S.zx, S.zy};
-    Vector2D mubar = {
-        mu.x + S.xz * epsilon / S.zz,
-        mu.y + S.yz * epsilon / S.zz
-    };
-
-    Matrix2D Sbar = S11 - outer_product(S12, S21) / S.zz;
-    Matrix2D Sbar_inv = inverse(Sbar);     */                   
-
-
-    /*const Matrix2D S11 = {S[0][0], S[0][1], S[1][0], S[1][1]};
-    const Vector2D S12 = {S[0][2], S[1][2]};
-    const Vector2D S21 = {S[2][0], S[2][1]};
-    const Vec2D mubar = {
-        mu.x + (S[0][2]* epsilon / S[2][2]),
-        mu.y + (S[1][2]* epsilon / S[2][2])
-    }; //mubar = mu1 + (S12 * epsilon / S[2][2]);
-    const Matrix2D Sbar = S11 - (S12 / S[2][2]) * S21;
-    const Matrix2D Sbar_inv = Sbar.inverse();*/
-
     // Pitched image accessor
     size_t elem_pitch = image_pitch / sizeof(pixel_t);
     PitchedArray2D<pixel_t> image(d_image, &elem_pitch);
@@ -175,11 +138,13 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
     const int h = bbox.y_max - bbox.y_min;
     const int npix = w * h;
 
+    extern __shared__ uint8_t s_corner[];
+
     auto corner_fg = [&](int cx, int cy) -> bool {
-        return corner_is_foreground(
+        return corner_is_foreground_ellipsoid(
             cx, cy, s0, s2c, mubar, d_matrix, Sbar_inv, wavelength, det_params
         );
-    }
+    };
 
     // Classify + accumulate one shoebox pixel. Shared by the tile and fallback
     // paths; the accumulation itself is unchanged from the per-pixel kernel.
@@ -215,20 +180,47 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
         }
     };
 
-    for (int p = static_cast<int>(threadIdx.x); p < npix;
+    const int cw = w + 1;
+    const int ch = h + 1;
+
+    if (static_cast<uint32_t>(cw) * static_cast<uint32_t>(ch) <= tile_capacity) {
+        // Fill the corner tile: one corner_is_foreground per corner, threads
+        // striding densely over the (w+1)×(h+1) grid.
+        const int num_corners = cw * ch;
+        for (int c = static_cast<int>(threadIdx.x); c < num_corners;
+             c += static_cast<int>(blockDim.x)) {
+            const int lcx = c % cw;
+            const int lcy = c / cw;
+            s_corner[c] = corner_fg(bbox.x_min + lcx, bbox.y_min + lcy) ? 1u : 0u;
+        }
+        __syncthreads();
+
+        // Read the tile: each pixel ORs its four corner bits.
+        for (int p = static_cast<int>(threadIdx.x); p < npix;
              p += static_cast<int>(blockDim.x)) {
+            const int lx = p % w;
+            const int ly = p / w;
+            const bool any_fg = s_corner[ly * cw + lx] | s_corner[ly * cw + lx + 1]
+                                | s_corner[(ly + 1) * cw + lx]
+                                | s_corner[(ly + 1) * cw + lx + 1];
+            accumulate(bbox.x_min + lx, bbox.y_min + ly, any_fg);
+        }
+    } else {
+        for (int p = static_cast<int>(threadIdx.x); p < npix;
+            p += static_cast<int>(blockDim.x)) {
             const int px = bbox.x_min + (p % w);
             const int py = bbox.y_min + (p / w);
             accumulate(
                 px,
                 py,
-                pixel_is_foreground(px, py, s0, s2_c,
+                pixel_is_foreground_ellipsoid(px, py, s0, s2c,
                     mubar,
                     d_matrix,
                     Sbar_inv,
                     wavelength,
                     det_params)
             );
+        }
     }
 }
 
@@ -243,8 +235,9 @@ void compute_ellipsoid_integrate(pixel_t *d_image,
                         const Vector3D s0,
                         const BoundingBoxExtents *d_bboxes,
                         const size_t *d_reflection_indices,
-                        const scalar_t *d_s2_vectors,
-                        const scalar_t *sigma_matices,
+                        const Vector3D *d_s2_vectors,
+                        const Vec2D *d_mubar,
+                        const Mat2D *d_sbar_inv,
                         size_t num_reflections_this_image,
                         const uint8_t *d_mask,
                         uint32_t max_corner_tile_corners,
@@ -306,12 +299,17 @@ void compute_ellipsoid_integrate(pixel_t *d_image,
         height,
         image_num,
         d_matrix,
+        wavelength,
+        det_params,
+        s0,
         d_bboxes,
         d_reflection_indices,
-        sigma_matices,
+        d_s2_vectors,
+        d_mubar,
+        d_sbar_inv,
         num_reflections_this_image,
         d_mask,
-        max_corner_tile_corners,
+        tile_capacity,
         d_foreground_sum,
         d_foreground_count,
         d_success);

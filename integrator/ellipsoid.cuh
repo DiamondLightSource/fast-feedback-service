@@ -13,6 +13,17 @@
 
 using namespace fastvec;
 
+struct Vec2D {
+    scalar_t x;
+    scalar_t y;
+};
+
+struct Mat2D {
+    scalar_t xx, xy;
+    scalar_t yx, yy;
+};
+
+
 constexpr uint32_t ELLIPSOID_THREADS = 128;
 
 void compute_ellipsoid_integrate(pixel_t *d_image,
@@ -27,7 +38,8 @@ void compute_ellipsoid_integrate(pixel_t *d_image,
                         const BoundingBoxExtents *d_bboxes,
                         const size_t *d_reflection_indices,
                         const Vector3D *d_s2_vectors,
-                        const scalar_t *sigma_matices,
+                        const Vec2D *d_mubar,
+                        const Mat2D *d_sbar_inv,
                         size_t num_reflections_this_image,
                         const uint8_t *d_mask,
                         uint32_t max_corner_tile_corners,

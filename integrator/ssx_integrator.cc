@@ -49,6 +49,7 @@
 #include "predictor/threadpool.hpp"
 
 using Eigen::Vector3d;
+using Eigen::Matrix3d;
 
 // Define a 2D mdspan type alias for convenience
 template <typename T>
@@ -507,7 +508,8 @@ int main(int argc, char **argv) {
     //    panel.get_d_matrix().cast<scalar_t>();
     std::vector<fastvec::Vector3D> s1_vectors_vec;
     std::vector<fastvec::Vector3D> s2_vectors_vec;
-    std::vector<std::array<double, 6>> sigma_matrices_vec;
+    std::vector<Vec2D> mubar_vec;
+    std::vector<Mat2D> Sbar_inv_vec;
     s1_vectors_vec.reserve(num_reflections);
     s2_vectors_vec.reserve(num_reflections);
     fastvec::Vector3D s0_vec = to_vector3d(s0);
@@ -519,7 +521,11 @@ int main(int argc, char **argv) {
     //}
 
     // Map is ordered by keys
+    double norm_s0 = 1.0/wavelength;
     for (const auto& [key, predictions] : *predictions_mapptr) {
+        Simple6MosaicityParameterisation& model = (*models_mapptr)[key];
+        Matrix3d sigma = model.sigma();
+        
         for (const auto& p: predictions){
             bboxes.emplace_back(p.bbox_extent);
             const auto &bbox = p.bbox_extent;
@@ -535,17 +541,32 @@ int main(int argc, char **argv) {
             predicted_miller_index.emplace_back(p.h[2]);
             s1_vectors_vec.push_back(to_vector3d(p.s1));
             s2_vectors_vec.push_back(to_vector3d(p.s2));
+
+            // Precalculate mubar and Sbar inv, as these are fixed for each reflection and we don't want
+            // to have to recalculate in a hot loop on the gpu.
+            const Eigen::Vector3d r = p.s2 - s0;
+            const Eigen::Matrix3d R = compute_change_of_basis_operation(s0, p.s2);
+            const Eigen::Matrix3d S = R * sigma * R.transpose();
+            const Eigen::Vector3d mu = R * p.s2;
+            double epsilon = norm_s0 - mu(2); 
+            const Eigen::Vector2d mu1 = mu.head<2>();
+            const Eigen::Matrix2d S11 = sigma.block<2, 2>(0, 0);
+            const Eigen::Vector2d S12 = sigma.block<2, 1>(0, 2);
+            const Eigen::RowVector2d S21 = sigma.block<1, 2>(2, 0);
+            double S22 = sigma(2,2);
+            const Eigen::Vector2d mubar = mu1 + S12 * (epsilon / S22);
+            const Eigen::Matrix2d Sbar = S11 - (S12 / S22) * S21;
+            const Eigen::Matrix2d Sbar_inv = Sbar.inverse();
+            mubar_vec.push_back({mubar(0), mubar(1)});
+            Mat2D Sbar_inv_mat;
+            Sbar_inv_mat.xx = Sbar_inv(0, 0);
+            Sbar_inv_mat.xy = Sbar_inv(0, 1);
+            Sbar_inv_mat.yx = Sbar_inv(1, 0);
+            Sbar_inv_mat.yy = Sbar_inv(1, 1);
+
+            Sbar_inv_vec.push_back(Sbar_inv_mat);
         }
-        Simple6MosaicityParameterisation& model = (*models_mapptr)[key];
-        Matrix3d sigma = model.sigma();
-        std::array<double, 6> values = {
-            sigma(0,0),
-            sigma(0,1),
-            sigma(0,2),
-            sigma(1,1),
-            sigma(1,2),
-            sigma(2,2)};
-        sigma_matrices_vec.push_back(values);
+        
         std::vector<uint64_t> refl_indices;
         refl_indices.reserve(predictions.size());
         for (uint64_t i=cumulative_index;i<cumulative_index+predictions.size();++i){
@@ -636,11 +657,15 @@ int main(int argc, char **argv) {
     DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
     DeviceBuffer<fastvec::Vector3D> d_s2_vectors(num_reflections);
     DeviceBuffer<BoundingBoxExtents> d_bboxes(num_reflections);
+    DeviceBuffer<Vec2D> d_mubar(num_reflections);
+    DeviceBuffer<Mat2D> d_sbar_inv(num_reflections);
     DeviceBuffer<uint8_t> d_success(num_reflections);
 
     d_d_matrix.assign(d_matrix_flat.data());
     d_s1_vectors.assign(s1_vectors_vec.data());
     d_s2_vectors.assign(s2_vectors_vec.data());
+    d_mubar.assign(mubar_vec.data());
+    d_sbar_inv.assign(Sbar_inv_vec.data());
     // Test case, let's just loop over bboxes summing all pixels.
     d_bboxes.assign(bboxes.data());
     std::vector<uint8_t> success_init(num_reflections, 1);
@@ -829,6 +854,11 @@ int main(int argc, char **argv) {
                             image_num,
                             num_refls_this_image);
                 // For test, just sum all pixels in bbox.
+
+
+                // If precompute Sbar_inv and mubar per refl on cpu....
+                // Then much easier.
+
                 compute_ellipsoid_integrate(device_image.get(),
                                     device_image.pitch_bytes(),
                                     width,
@@ -841,7 +871,8 @@ int main(int argc, char **argv) {
                                     d_bboxes.data(),
                                     d_reflection_indices.data(),
                                     d_s2_vectors.data(),
-                                    sigma_matrices_vec.data(),
+                                    d_mubar.data(),
+                                    d_sbar_inv.data(),
                                     num_refls_this_image,
                                     d_mask.data(),
                                     corner_tile_by_image.at(image_num),
