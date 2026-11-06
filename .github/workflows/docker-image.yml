@@ -155,8 +155,6 @@ jobs:
           build-args: |
             FFS_VERSION=${{ steps.prep.outputs.version }}
           outputs: ${{ steps.prep.outputs.build-output-service }}
-          cache-from: type=gha,scope=layers-${{ steps.prep.outputs.platform-pair }}
-          cache-to: type=gha,mode=max,scope=layers-${{ steps.prep.outputs.platform-pair }}
 
       - name: Build batch image
         id: build-batch
