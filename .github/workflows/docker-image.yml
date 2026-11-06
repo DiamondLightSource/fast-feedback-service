@@ -144,7 +144,7 @@ jobs:
             }
 
       # Both images are built in this one job, rather than on a matrix
-      # axis, so they can shared a compiled image
+      # axis, so they can share a compiled image
       - name: Build service image
         id: build-service
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
