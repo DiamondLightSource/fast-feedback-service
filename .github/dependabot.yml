@@ -1,0 +1,27 @@
+# The workflow actions and the micromamba image are pinned to fixed
+# references, which never move on their own; this keeps them current.
+# For an action, Dependabot reads the version from the trailing comment
+# on the pin and rewrites both together.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # A compromised release is usually caught and pulled within days, so
+    # hold off on proposing one until it has been out for a week.
+    cooldown:
+      default-days: 7
+    # One pull request per month rather than one per action
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    # Only the micromamba image; the CUDA base images are bumped by hand
+    allow:
+      - dependency-name: "mambaorg/micromamba"
