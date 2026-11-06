@@ -436,8 +436,25 @@ int main(int argc, char **argv) {
     bool save_to_h5 = parser.get<bool>("save-h5");
     bool output_for_index = parser.get<bool>("output-for-index");
 
+    // The masking kernel keeps a pixel when dmin <= d <= dmax, d being its
+    // d-spacing in Angstrom, and reads a limit of zero or below as no limit.
+    // An explicit limit is therefore only meaningful when positive. A range
+    // with dmin > dmax keeps no pixel, and dmin == dmax at most a single ring.
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
+    if (parser.is_used("--dmin") && dmin <= 0) {
+        logger.error("--dmin must be greater than zero, got {}", dmin);
+        return 1;
+    }
+    if (parser.is_used("--dmax") && dmax <= 0) {
+        logger.error("--dmax must be greater than zero, got {}", dmax);
+        return 1;
+    }
+    if (dmin > 0 && dmax > 0 && dmin >= dmax) {
+        logger.error(
+          "--dmin ({}) must be less than --dmax ({}), or no pixel is kept", dmin, dmax);
+        return 1;
+    }
 
     DispersionAlgorithm dispersion_algorithm(parser.get<std::string>("algorithm"));
     fmt::print("Algorithm: {}\n",
