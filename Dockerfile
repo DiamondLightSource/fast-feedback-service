@@ -64,7 +64,6 @@ RUN --mount=type=cache,target=/ccache \
         deps_args="$deps_args -DFETCHCONTENT_SOURCE_DIR_${name}=$src"; \
     done \
     && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*' \
-    CCACHE_LOGFILE=/tmp/ccache.log \
     SETUPTOOLS_SCM_PRETEND_VERSION_FOR_FFS="${FFS_VERSION}" \
     CMAKE_ARGS="-DCUDA_ARCH=all-supported \
                 -DHDF5_ROOT=/opt/ffs \
@@ -74,10 +73,7 @@ RUN --mount=type=cache,target=/ccache \
                 -DFETCHCONTENT_BASE_DIR=/deps \
                 ${deps_args}" \
     /opt/ffs/bin/pip3 install --no-build-isolation --root-user-action=ignore /opt/ffs_src \
-    && ccache --show-stats --verbose \
-    && { grep -i unsupported /tmp/ccache.log | sed 's/^\[[^]]*\] //' | sort | uniq -c; \
-         pid=$(grep -m1 -i unsupported /tmp/ccache.log | sed -E 's/^\[[^ ]+ ([0-9]+)\].*/\1/'); \
-         [ -n "$pid" ] && grep -m1 " $pid\] Command line" /tmp/ccache.log; true; }
+    && ccache --show-stats --verbose
 
 # The extension modules arrive with the wheel rather than with cmake, so
 # prove they import before the runtime stage copies the prefix
