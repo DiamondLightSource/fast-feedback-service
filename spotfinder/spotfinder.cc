@@ -631,17 +631,14 @@ int main(int argc, char **argv) {
       static_cast<unsigned int>(ceilf((float)width / gpu_thread_block_size.x)),
       static_cast<unsigned int>(ceilf((float)height / gpu_thread_block_size.y))};
     const int num_threads_per_block = gpu_thread_block_size.x * gpu_thread_block_size.y;
-    const int num_blocks = blocks_dims.x * blocks_dims.y * blocks_dims.z;
+    const int num_blocks = blocks_dims.x * blocks_dims.y;
     fmt::print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
     fmt::print("GPU Threads: {:4d} x {:<4d} = {}\n",
                gpu_thread_block_size.x,
                gpu_thread_block_size.y,
                num_threads_per_block);
-    fmt::print("Blocks:      {:4d} x {:<4d} x {:2d} = {}\n",
-               blocks_dims.x,
-               blocks_dims.y,
-               blocks_dims.z,
-               num_blocks);
+    fmt::print(
+      "Blocks:      {:4d} x {:<4d} = {}\n", blocks_dims.x, blocks_dims.y, num_blocks);
     fmt::print("Running with {} CPU threads\n", num_cpu_threads);
 
     auto mask = upload_mask(reader);

@@ -104,7 +104,6 @@ __device__ DispersionMoments calculate_dispersion_moments(PitchedArray2D<pixel_t
  * @brief The dispersion first pass, shared by both thresholding algorithms.
  *
  * Image dimensions, pitches and thresholds are read from kernel_constants.
- * blockIdx.z selects the image within a batch.
  *
  * @param image_ptr Pointer to the input image data.
  * @param mask_ptr Pointer to the mask data indicating valid pixels.
@@ -117,13 +116,6 @@ __device__ inline void dispersion_pass(pixel_t __restrict__ *image_ptr,
                                        uint8_t __restrict__ *mask_ptr,
                                        uint8_t __restrict__ *result_mask_ptr,
                                        bool require_signal) {
-    // Move pointers to the correct slice
-    image_ptr =
-      image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
-    result_mask_ptr =
-      result_mask_ptr
-      + (kernel_constants.mask_pitch * kernel_constants.height * blockIdx.z);
-
     // Create pitched arrays for data access
     PitchedArray2D<pixel_t> image(image_ptr, &kernel_constants.image_pitch);
     PitchedArray2D<uint8_t> mask(mask_ptr, &kernel_constants.mask_pitch);
@@ -229,7 +221,6 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
  * @brief Kernel for computing the final threshold after dispersion mask.
  *
  * Image dimensions, pitches and thresholds are read from kernel_constants.
- * blockIdx.z selects the image within a batch.
  *
  * @param image_ptr Pointer to the input image data.
  * @param mask_ptr Pointer to the mask data indicating valid pixels.
@@ -244,13 +235,6 @@ __global__ void dispersion_extended_second_pass(
   uint8_t __restrict__ *dispersion_mask_ptr,
   uint8_t __restrict__ *result_mask_ptr,
   size_t dispersion_mask_pitch) {
-    // Move pointers to the correct slice
-    image_ptr =
-      image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
-    result_mask_ptr =
-      result_mask_ptr
-      + (kernel_constants.result_pitch * kernel_constants.height * blockIdx.z);
-
     // Create pitched arrays for data access
     PitchedArray2D<pixel_t> image(image_ptr, &kernel_constants.image_pitch);
     PitchedArray2D<uint8_t> mask(mask_ptr, &kernel_constants.mask_pitch);
