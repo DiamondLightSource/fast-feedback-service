@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 ARG CUDA_VERSION=13.3.1
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
@@ -91,6 +91,12 @@ ENV INDEXER=/opt/ffs/bin/baseline_indexer
 ENV INTEGRATOR=/opt/ffs/bin/integrator
 ENV LD_LIBRARY_PATH=/opt/ffs/lib:$LD_LIBRARY_PATH
 # ENV ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
+
+# Run as an unprivileged UID with no passwd entry by default. It is
+# numeric so the kubelet can verify runAsNonRoot; a deployment sets the
+# real beamline UID over it. A later stage that installs packages needs
+# USER root first.
+USER 65532:65532
 
 # Batch image: run a pipeline over a single dataset, then exit. It
 # carries every batch entrypoint rather than one each, since they differ
