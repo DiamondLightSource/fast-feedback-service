@@ -20,13 +20,16 @@ COPY --from=micromamba /bin/micromamba /opt/bin/micromamba
 ENV PATH=/opt/ffs/bin:/opt/build_env/bin:/opt/bin:$PATH
 
 # Copy environment files
-COPY environment.yml runtime-environment.yml /opt/
+COPY conda/ /opt/environments/
 
-# Create build environment from environment.yml
-RUN micromamba create -y -f /opt/environment.yml -p /opt/build_env
+# Create the build environment
+RUN micromamba create -y -f /opt/environments/development/environment.yml -p /opt/build_env
 
-# Create the runtime environment from runtime-environment.yml
-RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
+# Create the runtime environment from the packages it ships, at the
+# development pins. The build environment supplies the python.
+RUN /opt/build_env/bin/python /opt/environments/derive.py \
+        --keep /opt/environments/runtime/packages && \
+    micromamba create -y -f /opt/environments/runtime/environment.yml -p /opt/ffs
 
 # Copy source
 COPY . /opt/ffs_src

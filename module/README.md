@@ -4,10 +4,10 @@
 modulefile pointing at it.
 
 It follows the same two-environment split as the `Dockerfile`:
-`environment.yml` creates the build environment and
-`runtime-environment.yml` creates the one that ships. Nothing compiles
-into the deployed tree, so no compiler, cmake or test framework ends up
-on a user's PATH.
+`conda/development/environment.yml` creates the build environment, and
+the one that ships is derived from it with only the packages listed in
+`conda/runtime/packages`. Nothing compiles into the deployed tree, so no
+compiler, cmake or test framework ends up on a user's PATH.
 
 ## Quick start
 

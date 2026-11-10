@@ -136,7 +136,7 @@ if [[ -d "$BUILD_ENV" ]]; then
     print_status "Build environment already present, reusing it"
 else
     print_status "Creating build environment"
-    mamba create -y -f "$SRC/environment.yml" -p "$BUILD_ENV" ninja
+    mamba create -y -f "$SRC/conda/development/environment.yml" -p "$BUILD_ENV" ninja
 fi
 
 # Resolve the version before anything is installed. A release name has to
@@ -167,7 +167,10 @@ if [[ -d "$PREFIX" ]]; then
     print_status "Runtime environment already present, reusing it"
 else
     print_status "Creating runtime environment"
-    mamba create -y -f "$SRC/runtime-environment.yml" -p "$PREFIX"
+    # The packages it ships, at the development pins
+    "$BUILD_ENV/bin/python" "$SRC/conda/derive.py" \
+        --keep "$SRC/conda/runtime/packages"
+    mamba create -y -f "$SRC/conda/runtime/environment.yml" -p "$PREFIX"
 fi
 
 if [[ ! -x "$BUILD_ENV/bin/patchelf" ]]; then

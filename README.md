@@ -46,10 +46,11 @@ images -> spotfinder (GPU) -> indexer -> integrator (GPU) -> intensities
 
 You need a machine with an NVIDIA GPU and the
 [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 13.3, with
-`nvcc` on `PATH`. Everything else comes from [`environment.yml`]:
+`nvcc` on `PATH`. Everything else comes from
+[`conda/development/environment.yml`]:
 
 ```bash
-mamba env create -f environment.yml -p ./ENV
+mamba env create -f conda/development/environment.yml -p ./ENV
 mamba activate ENV/
 ./build.sh
 ./build/bin/spotfinder image.h5
@@ -87,7 +88,7 @@ source, is published at
 [building]: docs/building.md
 [service]: docs/service.md
 [testing]: docs/testing.md
-[`environment.yml`]: environment.yml
+[`conda/development/environment.yml`]: conda/development/environment.yml
 [`spotfinder/`]: spotfinder/
 [`integrator/`]: integrator/
 [`baseline/`]: baseline/
