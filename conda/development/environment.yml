@@ -15,6 +15,7 @@ dependencies:
   - fmt=12.1.0
   - gemmi=0.7.3
   - gtest=1.17.0
+  - h5py=3.16.0
   - hdf5=1.14.6
   - hdf5-external-filter-plugins=0.1.0
   - lz4-c=1.10.0
@@ -23,10 +24,14 @@ dependencies:
   - ninja=1.13.2
   - nlohmann_json=3.12.0
   - numpy=2.3.4
+  - pip=26.2.2
   - pre-commit=4.3.0
   - pydantic=2.12.3
   - pytest=8.4.2
   - scikit-build-core=1.1.1
   - python=3.13.7
+  - rich=15.0.0
   - setuptools_scm=10.3.4
   - spdlog=1.17.0
+  - workflows=3.7
+  - zocalo=1.5.0
