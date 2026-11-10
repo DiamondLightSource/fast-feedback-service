@@ -11,8 +11,8 @@ Wildcard pins reach the solver unchanged, which makes them the way to
 hold a package back. A lower bound also admits development snapshots,
 which conda orders above the last release before them; when the solver
 picks one for a pinned package, the solve runs again with that package
-held at its current pin. Each change is printed as ``name old -> new``,
-and checking the result on other platforms is left to the caller.
+capped below it. Each change is printed as ``name old -> new``, and
+checking the result on other platforms is left to the caller.
 """
 
 from __future__ import annotations
@@ -38,23 +38,31 @@ EXACT = re.compile(
 PRERELEASE = re.compile(r"dev|rc|alpha|beta|pre|\d[ab]\d", re.IGNORECASE)
 
 
-def loosen(source: str, held: set[str]) -> str:
-    """Return the source with every exact pin not in ``held`` made a lower bound."""
+def loosen(source: str, ceilings: dict[str, str]) -> str:
+    """
+    Return the source with every exact pin made a lower bound.
+
+    A package in ``ceilings`` is also kept below the version it maps to.
+    """
     lines = []
     for line in source.splitlines():
-        # An exact pin becomes a floor the solver may move up from; wildcards,
-        # held pins and the header pass through as written. The trailing
-        # comment is dropped, as the solver never sees this file again.
+        # An exact pin becomes a floor the solver may move up from, capped
+        # below a snapshot it picked on an earlier pass; wildcards and the
+        # header pass through as written. The trailing comment is dropped,
+        # as the solver never sees this file again.
         match = EXACT.match(line)
-        if match is not None and match["name"] not in held:
+        if match is not None:
             line = f"  - {match['name']}>={match['version']}"
+            if match["name"] in ceilings:
+                line += f",<{ceilings[match['name']]}"
         lines.append(line)
     return "\n".join(lines) + "\n"
 
 
-def pinned(source: str) -> set[str]:
-    """Return the names of the exact pins in the source."""
-    return {m["name"] for line in source.splitlines() if (m := EXACT.match(line))}
+def pinned(source: str) -> dict[str, str]:
+    """Return the exact pins in the source, each name mapped to its version."""
+    pins = (EXACT.match(line) for line in source.splitlines())
+    return {m["name"]: m["version"] for m in pins if m is not None}
 
 
 def solve(environment: str, platform: str | None) -> dict[str, str]:
@@ -126,21 +134,26 @@ def main() -> None:
     args = parser.parse_args()
 
     source = SOURCE.read_text()
-    held: set[str] = set()
+    current = pinned(source)
+    ceilings: dict[str, str] = {}
     try:
-        # Solve with every unheld pin as a floor. A pinned package that lands
-        # on a pre-release is held at its current version and the solve runs
-        # again; each pass holds at least one more, so the loop ends.
+        # Solve with every pin as a floor. A pinned package the solver moved
+        # to a pre-release gets a ceiling just below it and the solve runs
+        # again. Each pass lowers at least one ceiling past a version, so the
+        # loop ends; a pin that is already a pre-release is left alone, as a
+        # ceiling at its own version could never be met.
         while True:
-            solved = solve(loosen(source, held), args.platform)
+            solved = solve(loosen(source, ceilings), args.platform)
             snapshots = {
-                name
-                for name in pinned(source) - held
-                if PRERELEASE.search(solved.get(name, ""))
+                name: solved[name]
+                for name, version in current.items()
+                if name in solved
+                and solved[name] != version
+                and PRERELEASE.search(solved[name])
             }
             if not snapshots:
                 break
-            held |= snapshots
+            ceilings |= snapshots
 
         # Write the final solution back as exact pins
         updated, changes = apply(source, solved)
