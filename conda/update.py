@@ -25,15 +25,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from derive import SOURCE, derive, read_names
+
+logger = logging.getLogger(__name__)
 
 # An exact pin, the only kind that moves; a trailing comment is kept
 EXACT = re.compile(
@@ -114,7 +118,9 @@ def solve(environment: str, platform: str) -> dict[str, str]:
         env = os.environ.copy()
         if platform.startswith("osx"):
             env["CONDA_OVERRIDE_OSX"] = MACOS_VERSION
+        started = time.monotonic()
         result = subprocess.run(command, capture_output=True, text=True, env=env)
+        logger.info("  %s solved in %.0fs", platform, time.monotonic() - started)
 
     # An unsatisfiable set fails here, with the solver's own explanation
     if result.returncode != 0:
@@ -166,14 +172,18 @@ def tighten(
     # A pinned package the solver moved to a pre-release, on any platform, is
     # capped just below it. A pin that is already a pre-release is left alone,
     # as a cap at its own version could never be met.
-    snapshots = {
-        (name, f"<{solution[name]}")
-        for solution in solutions.values()
-        for name, version in current.items()
-        if name in solution
-        and solution[name] != version
-        and PRERELEASE.search(solution[name])
-    }
+    snapshots = set()
+    for platform, solution in solutions.items():
+        for name, version in current.items():
+            chosen = solution.get(name, version)
+            if chosen != version and PRERELEASE.search(chosen):
+                logger.info(
+                    "  %s: %s chose pre-release %s, capping below it",
+                    name,
+                    platform,
+                    chosen,
+                )
+                snapshots.add((name, f"<{chosen}"))
     if snapshots:
         return snapshots
 
@@ -183,20 +193,34 @@ def tighten(
     # judged on the platforms that do.
     caps = set()
     for name in current:
-        chosen = {solution[name] for solution in solutions.values() if name in solution}
-        if len(chosen) > 1:
-            caps |= {(name, f"<={version}") for version in chosen}
+        versions = {p: s[name] for p, s in solutions.items() if name in s}
+        if len(set(versions.values())) > 1:
+            logger.info(
+                "  %s: platforms disagree (%s), capping at the lowest",
+                name,
+                ", ".join(f"{p} {v}" for p, v in versions.items()),
+            )
+            caps |= {(name, f"<={version}") for version in versions.values()}
     return caps
 
 
 def main() -> None:
     argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args()
 
+    # Progress goes to stderr, leaving stdout to the changes alone
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     source = SOURCE.read_text()
     current = pinned(source)
     bounds: dict[str, set[str]] = {}
+    rounds = 0
     try:
         while True:
+            rounds += 1
+            caps = sum(len(b) for b in bounds.values())
+            logger.info(
+                "Round %d: solving %d platforms, %d caps", rounds, len(PLATFORMS), caps
+            )
             # Solve every platform from the same loosened file, the macOS one
             # without the packages its list drops
             loosened = loosen(source, bounds)
@@ -225,6 +249,7 @@ def main() -> None:
         for solution in solutions.values():
             solved |= solution
         updated, changes = apply(source, solved)
+        logger.info("Agreed after %d rounds, %d pins changed", rounds, len(changes))
     except (RuntimeError, ValueError) as error:
         sys.exit(f"{SOURCE}: {error}")
 
