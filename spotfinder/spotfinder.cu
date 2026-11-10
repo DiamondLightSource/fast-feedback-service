@@ -19,6 +19,7 @@
 #include "kernels/erosion.cuh"
 #include "kernels/thresholding.cuh"
 #include "spotfinder.cuh"
+#include "spotfinder/launch_geometry.hpp"
 
 namespace cg = cooperative_groups;
 
@@ -63,33 +64,18 @@ void set_kernel_constants(cudaStream_t stream,
 }
 
 /**
- * @brief Calculate the shared memory required for the specified kernel.
- * 
- * This function calculates the shared memory required for the specified
- * kernel based on the number of types and the radius of the kernel.
- * 
- * @tparam Types The types of the data to be stored in shared memory. This is a variadic template
- * that allows multiple types to be specified at compile time.
- * @param threads The dimensions of the grid of threads within each block.
- * @param radius The radius of the kernel.
- * @return The size of the shared memory required in bytes.
+ * @brief The dynamic shared memory a launch requests, in bytes.
+ *
+ * A thin wrapper over shared_tile_buffer_bytes for callers holding a runtime dim3.
+ *
+ * @tparam Types One type per partition the kernel carves out of the buffer.
+ * @param threads The dimensions of the thread block.
+ * @param radius Halo depth on each side, in pixels.
+ * @return The size of the shared memory request, in bytes.
  */
 template <typename... Types>
 size_t calculate_shared_memory(dim3 threads, uint8_t radius) {
-    // Determine the x and y dimensions of the shared memory, including the halo region
-    uint shared_block_width = threads.x + (2 * radius);
-    uint shared_block_height = threads.y + (2 * radius);
-
-    /*
-    * This uses a C++ fold expression to calculate the total size of the shared memory.
-    * The fold expression expands out each type in the parameter pack separated by
-    * the `+` operator, resulting in a sum of the sizes of each type.
-    * 
-    * For example: calculate_sum_of_type_sizes<int, float, double>(10, 10)
-    * expands to: 
-    * shared_block_width * shared_block_height * (sizeof(int) + sizeof(float) + sizeof(double))
-    */
-    return shared_block_width * shared_block_height * (sizeof(Types) + ...);
+    return shared_tile_buffer_bytes<Types...>(threads.x, threads.y, radius);
 }
 
 /**

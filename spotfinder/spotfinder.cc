@@ -37,6 +37,7 @@
 #include "h5read.h"
 #include "kernels/masking.cuh"
 #include "shmread.hpp"
+#include "spotfinder/launch_geometry.hpp"
 #include "standalone.h"
 #include "thread_count.hpp"
 #include "version.hpp"
@@ -129,7 +130,7 @@ void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
                                 float dmax,
                                 cudaStream_t stream = 0) {
     // Define the block size and grid size for the kernel
-    dim3 threadsPerBlock(32, 32);
+    dim3 threadsPerBlock(RESOLUTION_MASK_BLOCK_X, RESOLUTION_MASK_BLOCK_Y);
     dim3 numBlocks((width + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (height + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
@@ -643,7 +644,7 @@ int main(int argc, char **argv) {
     std::signal(SIGINT, stop_processing);
 
     // Work out how many blocks this is
-    dim3 gpu_thread_block_size{32, 16};
+    dim3 gpu_thread_block_size{THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y};
     dim3 blocks_dims{
       static_cast<unsigned int>(ceilf((float)width / gpu_thread_block_size.x)),
       static_cast<unsigned int>(ceilf((float)height / gpu_thread_block_size.y))};

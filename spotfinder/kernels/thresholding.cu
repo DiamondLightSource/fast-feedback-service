@@ -21,9 +21,53 @@
 
 #include "cuda_common.hpp"
 #include "device_common.cuh"
+#include "spotfinder/launch_geometry.hpp"
 #include "thresholding.cuh"
 
 namespace cg = cooperative_groups;
+
+/*
+ * Shared memory layout of each pass, P being the pixel count of one tile:
+ *
+ *   first pass, r = 3     [ mask: P x uint8_t | image: P x pixel_t ]
+ *   second pass, r = 5    [ mask: P x uint8_t | dispersion mask: P x uint8_t
+ *                           | image: P x pixel_t ]
+ *
+ * The kernels find each tile's offset from blockDim at run time, and the host
+ * sizes the allocation from the block shape. These check that the two agree
+ * at the configured shape.
+ */
+static_assert(shared_tile_pixels(THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y, KERNEL_RADIUS)
+                  * (sizeof(uint8_t) + sizeof(pixel_t))
+                == shared_tile_buffer_bytes<pixel_t, uint8_t>(THRESHOLD_BLOCK_X,
+                                                              THRESHOLD_BLOCK_Y,
+                                                              KERNEL_RADIUS),
+              "The first pass partitions a different buffer than the launch asks for");
+static_assert(
+  shared_tile_pixels(THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y, KERNEL_RADIUS_EXTENDED)
+      * (2 * sizeof(uint8_t) + sizeof(pixel_t))
+    == shared_tile_buffer_bytes<pixel_t, uint8_t, uint8_t>(THRESHOLD_BLOCK_X,
+                                                           THRESHOLD_BLOCK_Y,
+                                                           KERNEL_RADIUS_EXTENDED),
+  "The second pass partitions a different buffer than the launch asks for");
+
+/*
+ * The image tile is read through a pixel_t pointer at byte offset P in the
+ * first pass and 2P in the second, so that offset must be a multiple of
+ * alignof(pixel_t). At 32x16, P = 38 x 22 = 836 = 4 x 209 in the first pass
+ * and 2P = 2 x 42 x 26 = 2184 = 4 x 546 in the second, so both suit a 32-bit
+ * pixel. A 32x15 block would put the first pass image at 38 x 21 = 798, and
+ * every load from it would be misaligned.
+ */
+static_assert(shared_tile_pixels(THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y, KERNEL_RADIUS)
+                  * sizeof(uint8_t) % alignof(pixel_t)
+                == 0,
+              "The first pass image tile would be misaligned");
+static_assert(
+  2 * shared_tile_pixels(THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y, KERNEL_RADIUS_EXTENDED)
+      * sizeof(uint8_t) % alignof(pixel_t)
+    == 0,
+  "The second pass image tile would be misaligned");
 
 #pragma region Global constants
 /*
