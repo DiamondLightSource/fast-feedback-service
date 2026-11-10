@@ -8,9 +8,9 @@ dependencies:
   - hdf5=1.14.6
   - hdf5-external-filter-plugins=0.1.0
   - lz4-c=1.10.0
-  - h5py
+  - h5py=3.16.0
   - python=3.13.7
-  - pip
+  - pip=26.2.2
   # pip drives the cmake build with --no-build-isolation, so the backend has to
   # be importable here rather than fetched into a throwaway environment
   - scikit-build-core=1.1.1
@@ -18,9 +18,9 @@ dependencies:
   # The extension build asks this interpreter where nanobind's cmake config
   # is, so it has to be importable here too
   - nanobind=2.8.0
-  - zocalo
-  - workflows
-  - pydantic
-  - rich
+  - zocalo=1.5.0
+  - workflows=3.7
+  - pydantic=2.12.3
+  - rich=15.0.0
   - spdlog=1.17.0
   - numpy=2.3.4
