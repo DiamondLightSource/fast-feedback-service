@@ -8,6 +8,8 @@ on:
     tags: ["v*", "!v*.dev*"]
   pull_request:
     branches: ["main"]
+  # Runs the build on the conda update bot's pull request; pushes nothing
+  workflow_dispatch: null
 
 # Read-only by default; the jobs that push to the registry widen it.
 permissions:
