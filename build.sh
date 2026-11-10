@@ -142,8 +142,9 @@ fi
 if [[ "$INSTALL" == "true" ]]; then
     [[ "$CPU" == "true" ]] || check_nvcc_works
     status "Installing (configures, compiles and installs into the environment)"
-    # Dependencies are resolved here, unlike the deployments: environment.yml
-    # carries what the C++ build needs, not the package's python requirements.
+    # Dependencies are resolved here, unlike the deployments: the development
+    # environment carries what the C++ build needs, not the package's python
+    # requirements.
     python -m pip install --no-build-isolation -e . \
         -Ccmake.define.FFS_ENABLE_CUDA="$ENABLE_CUDA"
 else

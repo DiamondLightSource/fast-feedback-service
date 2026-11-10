@@ -1,12 +1,12 @@
 # Building
 
 ## Dependencies
-Everything the build needs is in [`environment.yml`], which is the
-authoritative list: compilers, cmake, ninja, the HDF5 and Boost stack, and
-the `scikit-build-core` backend that pip builds through.
+Everything the build needs is in [`conda/development/environment.yml`],
+which is the authoritative list: compilers, cmake, ninja, the HDF5 and
+Boost stack, and the `scikit-build-core` backend that pip builds through.
 
 ```bash
-mamba env create -f environment.yml -p ./ENV
+mamba env create -f conda/development/environment.yml -p ./ENV
 ```
 
 The [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) is the
@@ -165,6 +165,6 @@ sphinx-build -b html docs docs/_build/html
 
 Then open `docs/_build/html/index.html`.
 
-[`environment.yml`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/environment.yml
+[`conda/development/environment.yml`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/conda/development/environment.yml
 [`Dockerfile`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/Dockerfile
 [`baseline/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/baseline

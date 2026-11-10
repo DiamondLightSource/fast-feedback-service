@@ -36,19 +36,20 @@ jobs:
     env:
       # Where dials.data downloads the test datasets, kept between runs
       DIALS_DATA: ${{ github.workspace }}/../dials_data
-      ENVIRONMENT_FILE: environment.yml
+      ENVIRONMENT_FILE: conda/development/environment.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history and tags, so setuptools_scm can resolve the version
           fetch-depth: 0
           submodules: recursive
-      # environment.yml pins the Linux gcc, which conda-forge does not build
-      # for macOS; the compilers metapackage supplies clang instead.
+      # The development environment pins the Linux gcc, which conda-forge
+      # does not build for macOS; the compilers metapackage supplies clang
+      # instead.
       - name: Derive the macOS environment
         if: runner.os == 'macOS'
         run: |
-          grep -vE '^[[:space:]]*- (gcc|gxx)=' environment.yml > environment-macos.yml
+          grep -vE '^[[:space:]]*- (gcc|gxx)=' conda/development/environment.yml > environment-macos.yml
           echo "ENVIRONMENT_FILE=environment-macos.yml" >> "$GITHUB_ENV"
       - uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
         with:
