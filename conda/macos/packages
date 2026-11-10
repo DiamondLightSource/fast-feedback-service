@@ -1,0 +1,4 @@
+# Removed from the development environment on macOS. conda-forge does not
+# build the Linux gcc for macOS; the compilers metapackage supplies clang.
+gcc
+gxx
