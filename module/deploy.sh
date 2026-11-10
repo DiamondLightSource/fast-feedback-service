@@ -167,13 +167,10 @@ if [[ -d "$PREFIX" ]]; then
     print_status "Runtime environment already present, reusing it"
 else
     print_status "Creating runtime environment"
-    # The packages it ships, at the development pins. mamba reads the file
-    # type from the extension, so the derived file needs a .yml suffix.
-    runtime_env=$(mktemp --suffix=.yml)
+    # The packages it ships, at the development pins
     "$BUILD_ENV/bin/python" "$SRC/conda/derive.py" \
-        --keep "$SRC/conda/runtime/packages" > "$runtime_env"
-    mamba create -y -f "$runtime_env" -p "$PREFIX"
-    rm -f "$runtime_env"
+        --keep "$SRC/conda/runtime/packages"
+    mamba create -y -f "$SRC/conda/runtime/environment.yml" -p "$PREFIX"
 fi
 
 if [[ ! -x "$BUILD_ENV/bin/patchelf" ]]; then

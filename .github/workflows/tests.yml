@@ -47,8 +47,8 @@ jobs:
       - name: Derive the macOS environment
         if: runner.os == 'macOS'
         run: |
-          python3 conda/derive.py --drop conda/macos/packages > environment-macos.yml
-          echo "ENVIRONMENT_FILE=environment-macos.yml" >> "$GITHUB_ENV"
+          python3 conda/derive.py --drop conda/macos/packages
+          echo "ENVIRONMENT_FILE=conda/macos/environment.yml" >> "$GITHUB_ENV"
       - uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
         with:
           environment-file: ${{ env.ENVIRONMENT_FILE }}

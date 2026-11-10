@@ -28,9 +28,8 @@ RUN micromamba create -y -f /opt/environments/development/environment.yml -p /op
 # Create the runtime environment from the packages it ships, at the
 # development pins. The build environment supplies the python.
 RUN /opt/build_env/bin/python /opt/environments/derive.py \
-        --keep /opt/environments/runtime/packages > /tmp/runtime.yml && \
-    micromamba create -y -f /tmp/runtime.yml -p /opt/ffs && \
-    rm /tmp/runtime.yml
+        --keep /opt/environments/runtime/packages && \
+    micromamba create -y -f /opt/environments/runtime/environment.yml -p /opt/ffs
 
 # Copy source
 COPY . /opt/ffs_src

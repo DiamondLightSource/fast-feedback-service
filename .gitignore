@@ -40,3 +40,6 @@ out/
 # Local scratch
 /notes/
 /scratchpad/
+# Written by conda/derive.py; only the development file is source
+conda/*/environment.yml
+!conda/development/environment.yml

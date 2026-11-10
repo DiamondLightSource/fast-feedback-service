@@ -2,8 +2,10 @@
 
 `development/environment.yml` is the only file here that carries
 versions. Every other environment is derived from it by `derive.py`,
-which keeps or drops the packages named in a list file, so a pin moves
-everywhere at once and the environments cannot drift apart.
+which keeps or drops the packages named in a list file and writes the
+result beside that list, so a pin moves everywhere at once and the
+environments cannot drift apart. The derived `environment.yml` files are
+ignored by git; edit the development file, never those.
 
 The layout exists so that Dependabot can keep the pins current. It only
 reads files named `environment.yml` and opens a separate pull request
@@ -27,8 +29,9 @@ name to `runtime/packages` if the service needs it at run time.
 `derive.py` fails on a listed name that the development file does not
 contain, so a typo or an upstream rename shows up at build time.
 
-To see what a derived environment resolves to:
+To see what a derived environment contains:
 
 ```bash
 python conda/derive.py --keep conda/runtime/packages
+cat conda/runtime/environment.yml
 ```
