@@ -1,6 +1,5 @@
-# The workflow actions, the micromamba image and the conda environments
-# are pinned to fixed versions, which never move on their own; this keeps
-# them current.
+# The workflow actions and the micromamba image are pinned to fixed
+# versions, which never move on their own; this keeps them current.
 # For an action, Dependabot reads the version from the trailing comment
 # on the pin and rewrites both together.
 version: 2
@@ -26,14 +25,3 @@ updates:
     # Only the micromamba image; the CUDA base images are bumped by hand
     allow:
       - dependency-name: "mambaorg/micromamba"
-  # Only the development environment carries versions; the others are
-  # derived from it, so one pull request moves them all
-  - package-ecosystem: conda
-    directory: /conda/development
-    schedule:
-      interval: monthly
-    cooldown:
-      default-days: 7
-    groups:
-      environments:
-        patterns: ["*"]

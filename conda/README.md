@@ -7,10 +7,11 @@ result beside that list, so a pin moves everywhere at once and the
 environments cannot drift apart. The derived `environment.yml` files are
 ignored by git; edit the development file, never those.
 
-The layout exists so that Dependabot can keep the pins current. It only
-reads files named `environment.yml` and opens a separate pull request
-for each one, so with every version in a single file each update is one
-pull request that moves all the environments together.
+`update.py` keeps the pins current. Once a month the Conda update
+workflow runs it to move every pin to the newest version that solves
+together on linux-64, linux-aarch64 and osx-arm64, and opens one pull
+request with the result. Run by hand, it rewrites the development file
+in place and prints each change.
 
 - `runtime/packages` keeps what the deployed service ships. The
   `Dockerfile` and `module/deploy.sh` derive the runtime environment
