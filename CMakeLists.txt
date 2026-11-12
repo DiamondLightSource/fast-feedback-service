@@ -45,6 +45,10 @@ endif()
 
 include_directories(include)
 
+# Packages come from the active environment alone. The user package registry
+# collects the build trees of other checkouts, which Eigen registers itself in.
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
+
 find_package(Python COMPONENTS Interpreter Development.Module NumPy REQUIRED)
 include(PythonSitePackages)
 
