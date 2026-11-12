@@ -58,6 +58,7 @@ function(add_serial_integrator_variant target)
     add_executable(${target}
         ssx_integrator.cc
         ellipsoid.cu
+        background.cu
         ${CMAKE_SOURCE_DIR}/src/integrator/extent.cc
         ../spotfinder/shmread.cc
         ../spotfinder/cbfread.cc

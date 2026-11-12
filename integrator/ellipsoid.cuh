@@ -7,6 +7,7 @@
 #include "h5read.h"
 #include "integrator.cuh"
 #include "integrator/background.hpp"
+#include "integrator/background_pool.hpp"
 #include "integrator/extent.hpp"
 #include "math/device_precision.cuh"
 #include "math/vector3d.cuh"
@@ -45,5 +46,7 @@ void compute_ellipsoid_integrate(pixel_t *d_image,
                         uint32_t max_corner_tile_corners,
                         accumulator_t *d_foreground_sum,
                         uint32_t *d_foreground_count,
+                        BackgroundPool background_pool,
+                        uint32_t *d_background_spill,
                         uint8_t *d_success,
                     cudaStream_t stream);

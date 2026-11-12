@@ -11,7 +11,7 @@
 #include "ffs_logger.hpp"
 #include "h5read.h"
 #include "integrator.cuh"
-//#include "integrator/background.cuh"
+#include "integrator/background.cuh"
 #include "integrator/extent.hpp"
 #include "ellipsoid.cuh"
 #include "kabsch.cuh"
@@ -120,6 +120,8 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
                         uint32_t tile_capacity,
                         accumulator_t *d_foreground_sum,
                         uint32_t *d_foreground_count,
+                        BackgroundPool background_pool,
+                        uint32_t *d_background_spill,
                         uint8_t *d_success){
     // One block per reflection shoebox on this image; blockIdx.x indexes the
     // image-level reflection list directly.
@@ -176,6 +178,16 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
                 const accumulator_t pixel_value = static_cast<accumulator_t>(raw_value);
                 atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
                 atomicAdd(&d_foreground_count[refl_idx], 1u);
+            }
+        } else {
+            if (pixel_in_image && mask_flag != 0) {
+                const int value = static_cast<int>(raw_value);
+                if (value >= 0) {
+                    background_accumulate(background_pool,
+                                          static_cast<uint32_t>(refl_idx),
+                                          &d_background_spill[refl_idx],
+                                          static_cast<uint32_t>(value));
+                }
             }
         }
     };
@@ -243,6 +255,8 @@ void compute_ellipsoid_integrate(pixel_t *d_image,
                         uint32_t max_corner_tile_corners,
                         accumulator_t *d_foreground_sum,
                         uint32_t *d_foreground_count,
+                        BackgroundPool background_pool,
+                        uint32_t *d_background_spill,
                         uint8_t *d_success,
                     cudaStream_t stream){
     if (num_reflections_this_image == 0) return;
@@ -312,6 +326,8 @@ void compute_ellipsoid_integrate(pixel_t *d_image,
         tile_capacity,
         d_foreground_sum,
         d_foreground_count,
+        background_pool,
+        d_background_spill,
         d_success);
     // Check for kernel launch errors
     cuda_check_launch("ellipsoid_transform");

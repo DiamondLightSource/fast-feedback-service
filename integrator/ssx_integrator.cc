@@ -30,8 +30,9 @@
 #include "cuda_common.hpp"
 #include "ffs_logger.hpp"
 #include "h5read.h"
-//#include "integrator/background.cuh"
-//#include "integrator/background.hpp"
+#include "integrator/background.cuh"
+#include "integrator/background.hpp"
+#include "integrator/background_pool.hpp"
 //#include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
 //#include "integrator/lp_correction.hpp"
@@ -59,6 +60,11 @@ using mdspan_type =
 // Global stop token for picking up user cancellation
 std::stop_source global_stop;
 
+static BackgroundModel parse_background_model(const std::string &name) {
+    if (name == "constant" || name == "tukey") return BackgroundModel::Constant;
+    if (name == "glm") return BackgroundModel::Glm;
+    throw std::runtime_error("Unknown background model: " + name);
+}
 
 // Function for passing to std::signal to register the stop request
 extern "C" void stop_processing(int sig) {
@@ -116,6 +122,19 @@ class SSXIntegratorArgumentParser : public CUDAArgumentParser {
           .default_value<uint32_t>(0)
           .metavar("NUM")
           .scan<'u', uint32_t>();
+        add_argument("--background.pool_entries_per_reflection")
+          .help(
+            "Size of the shared background pool, in entries per reflection on "
+            "average. Each entry holds one distinct background value of one "
+            "reflection; reflections share the pool, so a single one may use many.")
+          .metavar("N")
+          .default_value(kBackgroundPoolEntriesPerReflection)
+          .scan<'u', uint32_t>();
+        add_argument("--background")
+          .help(
+            "Background model - constant (Tukey/IQR outlier rejection) or "
+            "glm (robust-Poisson GLM constant background).")
+          .default_value<std::string>("glm");
     }
 };
 #pragma endregion Argument Parsing
@@ -174,16 +193,16 @@ int main(int argc, char **argv) {
         std::exit(1);
     }
 
-    // parse experiment list
-    /*size_t num_reflections;
-    mdspan_type<double> s1_vectors;
-    auto s1_vectors_opt = reflections.column<double>("s1");
-    if (!s1_vectors_opt) {
-        logger.error("Column 's1' not found in reflection data.");
+    const uint32_t background_pool_entries_per_reflection =
+      parser.get<uint32_t>("background.pool_entries_per_reflection");
+    if (background_pool_entries_per_reflection == 0) {
+        logger.error("--background.pool_entries_per_reflection must be at least 1");
         return 1;
     }
-    s1_vectors = *s1_vectors_opt;
-    num_reflections = s1_vectors.extent(0);*/
+
+    BackgroundModel background_model =
+      parse_background_model(parser.get<std::string>("background"));
+    logger.info("Background model: {}", parser.get<std::string>("background"));
 
     auto &beam = beam_ops::require_monochromatic(expt.beam());
     Eigen::Vector3d s0 = beam.get_s0();
@@ -191,8 +210,6 @@ int main(int argc, char **argv) {
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
     const Crystal &crystal = expt.crystal();
     Eigen::Matrix3d A = crystal.get_A_matrix();
-
-    // get set of unique ids, select out, loop over in parallel to refine and predict?
 
     // want a map of experiment identifier to image number
     std::unordered_map<std::string, int> identifier_to_image_number;
@@ -227,11 +244,7 @@ int main(int argc, char **argv) {
     std::mutex predictions_mutex;  // Mutex to protect the reflection intensities map
     std::unique_ptr<std::map<int, Simple6MosaicityParameterisation>> models_mapptr = std::make_unique<std::map<int, Simple6MosaicityParameterisation>>();
     std::mutex models_mutex;  // Mutex to protect the reflection intensities map
-
-    // FIXME make thread pool.
-    int nthreads = 28;
     
-
     auto max_it = std::max_element(
         ids.data_handle(),
         ids.data_handle() + ids.size()
@@ -240,11 +253,8 @@ int main(int argc, char **argv) {
     int max_value = *max_it;
     std::exception_ptr eptr = nullptr;
     std::mutex eptr_mtx;
-    //std::vector<std::jthread> threads;
-    //for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
-    //    threads.emplace_back([&, thread_id]() {
     {
-        ThreadPool pool(nthreads);
+        ThreadPool pool(num_cpu_threads);
 
         for (int index = 0; index < max_value; ++index) {
             pool.enqueue([&, index] {
@@ -321,10 +331,13 @@ int main(int argc, char **argv) {
                                                                 this_crystal.get_A_matrix());
                 std::vector<Prediction> predictions = predict_ssx(model, s0, panel, this_crystal.get_A_matrix());
                 logger.info("Predicted {} reflections on image {}", predictions.size(), image_no);
-                std::lock_guard<std::mutex> lock(predictions_mutex);
-                (*predictions_mapptr)[image_no] = std::move(predictions);
-                std::lock_guard<std::mutex> lock2(models_mutex);
-                (*models_mapptr)[image_no] = std::move(model);
+                if (predictions.size() > 0){
+                    std::lock_guard<std::mutex> lock(predictions_mutex);
+                    (*predictions_mapptr)[image_no] = std::move(predictions);
+                    std::lock_guard<std::mutex> lock2(models_mutex);
+                    (*models_mapptr)[image_no] = std::move(model);
+                }
+                
                 } catch (...) {
                     std::lock_guard<std::mutex> lk(eptr_mtx);
                     if (!eptr) eptr = std::current_exception();
@@ -334,153 +347,7 @@ int main(int argc, char **argv) {
     }
     if (eptr) std::rethrow_exception(eptr);
 
-    // Wait for all threads to finish
-    //for (auto &thread : threads) {
-    //    thread.join();
-    //}
 
-    /*for (auto &t : split_tables){
-        std::vector<std::string> identifiers = t.get_identifiers();
-        if (identifiers.size() != 1){
-            logger.error("Reflection table selection went wrong.");
-            return 1;
-        }
-        // now look up in experiment list to get image offset
-        int image_no = identifier_to_image_number[identifiers[0]];
-        reflections_in_image[image_no] = t.size();
-        num_reflections += t.size();
-    }*/
-
-    /*std::vector<double> xyzcal_px;
-    std::vector<double> xyzobs_px;
-    std::vector<double> covariances;
-    std::vector<int> miller_indices;
-    std::vector<double> intensities;
-    std::vector<double> mobs;
-    auto xyzcal_px_opt = reflections.column<double>("xyzcal.px");
-    if (!xyzcal_px_opt) {
-        logger.error("Column 'xyzcal.px' not found in reflection data.");
-        return 1;
-    }
-    xyzcal_px = std::vector<double>(
-        xyzcal_px_opt.value().data_handle(),
-        xyzcal_px_opt.value().data_handle() + xyzcal_px_opt.value().size());
-    auto xyzobs_px_opt = reflections.column<double>("xyzobs.px.value");
-    if (!xyzobs_px_opt) {
-        logger.error("Column 'xyzobs.px.value' not found in reflection data.");
-        return 1;
-    }
-    xyzobs_px = std::vector<double>(
-        xyzobs_px_opt.value().data_handle(),
-        xyzobs_px_opt.value().data_handle() + xyzobs_px_opt.value().size());
-    auto hkl_vectors_opt = reflections.column<int>("miller_index");
-    if (!hkl_vectors_opt) {
-        logger.error("Column 'miller_index' not found in reflection data.");
-        return 1;
-    }
-    miller_indices = std::vector<int>(
-        hkl_vectors_opt.value().data_handle(),
-        hkl_vectors_opt.value().data_handle() + hkl_vectors_opt.value().size());
-    auto covariances_opt = reflections.column<double>("spot_covariance_2d_packed");
-    if (!covariances_opt) {
-        logger.error("Column 'covariances' not found in reflection data.");
-        return 1;
-    }
-    covariances = std::vector<double>(
-        covariances_opt.value().data_handle(),
-        covariances_opt.value().data_handle() + covariances_opt.value().size());
-    auto intensities_opt = reflections.column<double>("intensity.sum.value");
-    if (!intensities_opt) {
-        logger.error("Column 'intensity.sum.value' not found in reflection data.");
-        return 1;
-    }
-    intensities = std::vector<double>(
-        intensities_opt.value().data_handle(),
-        intensities_opt.value().data_handle() + intensities_opt.value().size());
-    auto mobs_opt = reflections.column<double>("spot_mobs_2d");
-    if (!mobs_opt) {
-        logger.error("Column 'spot_mobs_2d' not found in reflection data.");
-        return 1;
-    }
-    mobs = std::vector<double>(
-        mobs_opt.value().data_handle(),
-        mobs_opt.value().data_handle() + mobs_opt.value().size());
-
-    std::vector<Vector3d> xyzcal_vec;
-    std::vector<Vector3d> xyzobs_vec;
-    std::vector<Vector3d> covars_vec;
-    std::vector<Vector3d> mobs_vec;
-    for (std::size_t i=0;i<xyzcal_px.size() / 3;i++){
-        xyzcal_vec.push_back({xyzcal_px[i], xyzcal_px[i+1], xyzcal_px[i+2]});
-    }
-    */
-    
-
-
-    /*const std::vector<Vector3d> &xyzcal_px,
-                   const std::vector<Vector3d> &xyzobs_px,
-                   const std::vector<Vector3d> &covariances,
-                   const std::vector<double> &intensities,
-                   const std::vector<Eigen::Vector3i> &miller_indices,
-                   const std::vector<Vector2d> &mobs,
-                   const Vector3d &s0,
-                   const Panel &panel,
-                   const Matrix3d &A) {*/
-    /*Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
-                                                              xyzobs_px,
-                                                              covariances,
-                                                              intensities,
-                                                              miller_indices,
-                                                              mobs,
-                                                              s0,
-                                                              panel,
-                                                              A);
-    std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);*?
-
-    /*mdspan_type<int> bbox_array;
-    auto bbox_opt = reflections.column<int>("bbox");
-    if (!bbox_opt) {
-        logger.error("Column 'bbox' not found in reflection data.");
-        return 1;
-    }
-    bbox_array = *bbox_opt;*/
-
-    
-    //for (std::size_t i=0;i<predictions.size();i++){
-        /*BoundingBoxExtents bbox;
-        bbox.x_min = bbox_array(i,0);
-        bbox.x_max = bbox_array(i,1);
-        bbox.y_min = bbox_array(i,2);
-        bbox.y_max = bbox_array(i,3);
-        bbox.z_min = bbox_array(i,4);
-        bbox.z_max = bbox_array(i,5);
-        bboxes.push_back(predictions[i].bbox_extent);
-    }
-
-    /*logger.info("Mapping reflections by image number (z layer)");
-    std::unordered_map<int, std::vector<size_t>> reflections_by_image;
-    // Per-image maximum (w+1)*(h+1) corner grid, which sizes the Kabsch
-    // kernel's dynamic shared-memory corner tile for that image's launch.
-    std::unordered_map<int, uint32_t> corner_tile_by_image;
-    // need to split input reflection table, and match to image number through experiment list
-
-    for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
-        const auto &bbox = bboxes[refl_id];
-
-        // The bbox is half-open in x and y, so w×h is exactly the pixel
-        // count and the corner grid is one larger on each axis.
-        const uint32_t corner_grid =
-          static_cast<uint32_t>(bbox.x_max - bbox.x_min + 1)
-          * static_cast<uint32_t>(bbox.y_max - bbox.y_min + 1);
-
-        // Add this reflection to all images it spans. The shoebox z
-        // range is half-open [z_min, z_max), so z_max is excluded.
-        for (int z = bbox.z_min; z < bbox.z_max; ++z) {
-            reflections_by_image[z].push_back(refl_id);
-            uint32_t &image_max = corner_tile_by_image[z];
-            image_max = std::max(image_max, corner_grid);
-        }
-    }*/
     std::size_t total_predictions = 0;
     for (const auto& [key, predictions] : *predictions_mapptr) {
         total_predictions += predictions.size();
@@ -488,6 +355,18 @@ int main(int argc, char **argv) {
     logger.info("{} reflections predicted across {} unique images",
                 total_predictions, reflections_in_image.size());
     num_reflections = total_predictions;
+
+    const uint64_t background_pool_capacity =
+    static_cast<uint64_t>(num_reflections) * background_pool_entries_per_reflection;
+    if (background_pool_capacity > static_cast<uint64_t>(UINT32_MAX)) {
+        logger.error(
+          "Background pool of {} entries exceeds the 32-bit index limit of {} "
+          "(--background.pool_entries_per_reflection times the reflection count)",
+          background_pool_capacity,
+          UINT32_MAX);
+        return 1;
+    }
+
 
     std::vector<BoundingBoxExtents> bboxes;
     std::vector<int> predicted_ids;
@@ -504,8 +383,6 @@ int main(int argc, char **argv) {
 
     Eigen::Matrix<scalar_t, 3, 3, Eigen::RowMajor> d_matrix_flat =
         panel.get_d_matrix().cast<scalar_t>();
-    //Eigen::Matrix<scalar_t, 3, 3, Eigen::RowMajor> sigma_flat =
-    //    panel.get_d_matrix().cast<scalar_t>();
     std::vector<fastvec::Vector3D> s1_vectors_vec;
     std::vector<fastvec::Vector3D> s2_vectors_vec;
     std::vector<Vec2D> mubar_vec;
@@ -515,10 +392,6 @@ int main(int argc, char **argv) {
     fastvec::Vector3D s0_vec = to_vector3d(s0);
     scalar_t wavelength_scalar = static_cast<scalar_t>(wavelength);
     DetectorParameters det_params = make_detector_params(panel);
-    //for (size_t i = 0; i < num_reflections; ++i) {
-    //    s1_vectors_vec[i] = to_vector3d(s1_vectors, i);
-    //    s2_vectors_vec[i] = to_vector3d(s2_vectors, i);
-    //}
 
     // Map is ordered by keys
     double norm_s0 = 1.0/wavelength;
@@ -671,6 +544,53 @@ int main(int argc, char **argv) {
     std::vector<uint8_t> success_init(num_reflections, 1);
     d_success.assign(success_init.data());
 
+    // Two copies of the pool must fit beside the image buffers, since the
+    // reduction sorts into a second one.
+    {
+        constexpr double kGiB = 1024.0 * 1024.0 * 1024.0;
+        constexpr size_t kOtherAllocationsMargin = size_t{256} << 20;
+        const size_t entry_bytes = sizeof(unsigned long long) + sizeof(uint32_t);
+        const size_t pool_bytes = 2 * background_pool_capacity * entry_bytes;
+        const size_t image_bytes =
+          static_cast<size_t>(num_cpu_threads) * width * height * sizeof(pixel_t);
+        size_t free_bytes = 0;
+        size_t total_bytes = 0;
+        cuda_check(cudaMemGetInfo(&free_bytes, &total_bytes));
+        const size_t other_bytes = image_bytes + kOtherAllocationsMargin;
+        if (pool_bytes + other_bytes > free_bytes) {
+            const size_t room = free_bytes > other_bytes ? free_bytes - other_bytes : 0;
+            const size_t fits =
+              room / (2 * entry_bytes * std::max<size_t>(num_reflections, 1));
+            logger.error(
+              "The background pool needs {:.1f} GiB but {:.1f} GiB is free; set "
+              "--background.pool_entries_per_reflection to {} or lower",
+              pool_bytes / kGiB,
+              room / kGiB,
+              fits);
+            return 1;
+        }
+    }
+    DeviceBuffer<unsigned long long> d_background_pool_keys(background_pool_capacity);
+    DeviceBuffer<uint32_t> d_background_pool_counts(background_pool_capacity);
+    BackgroundPool background_pool;
+    background_pool.keys = d_background_pool_keys.data();
+    background_pool.counts = d_background_pool_counts.data();
+    background_pool.capacity = static_cast<uint32_t>(background_pool_capacity);
+    DeviceBuffer<uint32_t> d_background_spill(num_reflections);
+    logger.info("Background pool: {} entries ({} per reflection), {:.1f} MiB",
+                background_pool_capacity,
+                background_pool_entries_per_reflection,
+                background_pool_capacity
+                  * (sizeof(unsigned long long) + sizeof(uint32_t))
+                  / (1024.0 * 1024.0));
+    // Reduced background estimates (written by compute_background()).
+    DeviceBuffer<double> d_background_mean(num_reflections);
+    DeviceBuffer<double> d_background_sum_value(num_reflections);
+    DeviceBuffer<uint32_t> d_background_count(num_reflections);
+    DeviceBuffer<uint8_t> d_background_success(num_reflections);
+
+    
+
     // Upload the detector mask once (constant across all images).
     // non-zero = valid, 0 = masked. If the reader provides no mask,
     // treat every pixel as valid. Stored flat (width*height), indexed
@@ -698,9 +618,18 @@ int main(int argc, char **argv) {
     DeviceBuffer<accumulator_t> d_foreground_sum(num_reflections);
     DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
 
-
-    cuda_check(cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
-    cuda_check(cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(
+      cudaMemset(d_foreground_sum.data(), 0, num_reflections * sizeof(accumulator_t)));
+    cuda_check(
+      cudaMemset(d_foreground_count.data(), 0, num_reflections * sizeof(uint32_t)));
+    // An all-ones byte fill makes every key BG_POOL_EMPTY_KEY.
+    cuda_check(cudaMemset(d_background_pool_keys.data(),
+                          0xFF,
+                          background_pool_capacity * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_background_pool_counts.data(), 0, background_pool_capacity * sizeof(uint32_t)));
+    cuda_check(
+      cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t)));
 
     // assume already calculated corrections (LP, qe)
     #pragma endregion Prep GPU Data Buffers
@@ -878,6 +807,8 @@ int main(int argc, char **argv) {
                                     corner_tile_by_image.at(image_num),
                                     d_foreground_sum.data(),
                                     d_foreground_count.data(),
+                                    background_pool,
+                                    d_background_spill.data(),
                                     d_success.data(),
                                     stream);
 
@@ -908,30 +839,186 @@ int main(int argc, char **argv) {
     }
     cuda_check(cudaDeviceSynchronize());
 
+    logger.info("Reducing background histograms for {} reflections", num_reflections);
+    const uint32_t background_pool_occupied =
+      compute_background(background_model,
+                         background_pool,
+                         d_background_spill.data(),
+                         num_reflections,
+                         d_background_mean.data(),
+                         d_background_sum_value.data(),
+                         d_background_count.data(),
+                         d_background_success.data(),
+                         0);
+    // How full the pool got is the margin before it would start to spill.
+    logger.info("Background pool: {} of {} entries used ({:.1f}%)",
+                background_pool_occupied,
+                background_pool_capacity,
+                100.0 * background_pool_occupied / background_pool_capacity);
+    cuda_check(cudaDeviceSynchronize());
+
     logger.info("Finalizing integration for {} reflections", num_reflections);
     // Allocate host buffers for results
     std::vector<accumulator_t> h_foreground_sum(num_reflections);
     std::vector<uint32_t> h_foreground_count(num_reflections);
+    std::vector<double> h_background_mean(num_reflections);
+    std::vector<double> h_background_sum_value(num_reflections);
+    std::vector<uint32_t> h_background_count(num_reflections);
+    std::vector<uint32_t> h_background_spill(num_reflections);
+    std::vector<uint8_t> h_background_success(num_reflections);
+    std::vector<uint8_t> h_success(num_reflections);
     // Copy results from device to host
     d_foreground_sum.extract(h_foreground_sum.data());
     d_foreground_count.extract(h_foreground_count.data());
+    d_background_mean.extract(h_background_mean.data());
+    d_background_sum_value.extract(h_background_sum_value.data());
+    d_background_count.extract(h_background_count.data());
+    d_background_spill.extract(h_background_spill.data());
+    d_background_success.extract(h_background_success.data());
+    d_success.extract(h_success.data());
+
+    {
+        size_t spilling = 0;
+        for (size_t i = 0; i < num_reflections; ++i) {
+            if (h_background_spill[i] > 0) {
+                spilling++;
+            }
+        }
+        if (spilling > 0) {
+            logger.warn(
+              "{} of {} reflection(s) lost background pixels to a full pool; set "
+              "--background.pool_entries_per_reflection above {}",
+              spilling,
+              num_reflections,
+              background_pool_entries_per_reflection);
+        }
+    }
 
     // Compute final intensities for each reflection
     std::vector<double> intensities(num_reflections);
+    std::vector<double> variances(num_reflections);
+    std::vector<double> sigmas(num_reflections);       // σ(I) = √Var(I)
+    std::vector<double> backgrounds(num_reflections);  // b̄  (background mean per pixel)
+    std::vector<double> background_sigmas(num_reflections);  // σ(b̄)
+    std::vector<uint8_t> success_final(num_reflections, 0);
+
+    size_t valid_reflections = 0;
+    size_t background_failures = 0;  // fg present but background estimate rejected
     for (size_t i = 0; i < num_reflections; ++i) {
+        uint32_t fg_count = h_foreground_count[i];
+        uint32_t bg_count = h_background_count[i];
+
+        if (fg_count == 0) {
+            // No foreground pixels - reflection not measured
+            intensities[i] = 0.0;
+            variances[i] = -1.0;  // Flag as invalid
+            sigmas[i] = -1.0;
+            backgrounds[i] = 0.0;
+            background_sigmas[i] = -1.0;
+            continue;
+        }
+
         double fg_sum = h_foreground_sum[i];
-        intensities[i] = fg_sum;
+
+        // Tally rejected estimates (no inlier pixels, too few pixels for the
+        // GLM, or pixels lost to a full pool) for the warning below.
+        if (!h_background_success[i]) {
+            ++background_failures;
+        }
+
+        // Background mean b̄ from the device-side background reduction (the
+        // selected model). When the estimate failed the model contributes nothing.
+        double bg_mean = h_background_success[i] ? h_background_mean[i] : 0.0;
+
+        // Subtract background:  I = Σcᵢ(fg) − n_fg · b̄
+        double background_total = bg_mean * fg_count;
+        double intensity = fg_sum - background_total;
+
+        // Variance estimation
+        //
+        //   I = Σcᵢ(fg) - B,  where B = n_fg · b̄  (total background under foreground)
+        //
+        //   Var(I) = |I| + |B| · (1 + n_fg / n_bg)
+        //
+        // The |I| term is the Poisson variance of the net signal.
+        // The |B| term accounts for the Poisson variance of the background,
+        // with the (1 + n_fg/n_bg) factor propagating the uncertainty in
+        // the background estimate from n_bg pixels to n_fg pixels.
+        //
+        double fg_bg_ratio =
+          (bg_count > 0) ? static_cast<double>(fg_count) / bg_count : 0.0;
+        double variance =
+          std::abs(intensity) + std::abs(background_total) * (1.0 + fg_bg_ratio);
+        double bg_variance = std::abs(background_total) * (1.0 + fg_bg_ratio);
+
+        intensities[i] = intensity;
+        variances[i] = variance;
+        sigmas[i] = (variance > 0.0) ? std::sqrt(variance) : 0.0;
+        backgrounds[i] = bg_mean;
+        background_sigmas[i] = (bg_variance > 0.0) ? std::sqrt(bg_variance) : 0.0;
+
+        const bool ok = h_success[i] && h_background_success[i];
+        success_final[i] = ok ? 1 : 0;
+        if (ok) {
+            valid_reflections++;
+        }
+    }
+
+    logger.info("Summation integration complete: {} valid reflections out of {}",
+                valid_reflections,
+                num_reflections);
+
+    if (background_failures > 0) {
+        logger.warn(
+          "Background estimate rejected for {} of {} reflections with "
+          "foreground pixels; any that lost pixels to a full pool are counted above",
+          background_failures,
+          num_reflections);
     }
     logger.info("Building output reflection table");
     // Build output reflection table.
+    std::vector<int> nfg_out(num_reflections);
+    std::vector<int> nbg_out(num_reflections);
+    std::vector<double> bg_sum_out(num_reflections);
+    std::vector<double> bg_mean_out(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i) {
+        nfg_out[i] = static_cast<int>(h_foreground_count[i]);
+        nbg_out[i] = static_cast<int>(h_background_count[i]);
+        // background.sum.value is the modelled background summed over the
+        // background pixels; background.mean is the per-pixel level. For the
+        // constant model these are the Tukey inlier sum and mean; for the GLM
+        // model the robust-Poisson sum (mean*N) and mean. Both come from the
+        // device reduction.
+        bg_sum_out[i] = h_background_success[i] ? h_background_sum_value[i] : 0.0;
+        bg_mean_out[i] = h_background_success[i] ? h_background_mean[i] : 0.0;
+
+    }
+
     std::vector<std::string> final_identifiers = reflections.get_identifiers();
     std::vector<uint64_t> ids_in = reflections.get_experiment_ids();
     ReflectionTable integrated_data(ids_in, final_identifiers);
     integrated_data.add_column("intensity.sum.value", num_reflections, 1, intensities);
+    integrated_data.add_column(
+      "intensity.sum.variance", num_reflections, 1, variances);
     integrated_data.add_column("id", num_reflections, 1, predicted_ids);
     integrated_data.add_column("partiality", num_reflections, 1, predicted_partialities);
     integrated_data.add_column("miller_index", num_reflections, 3, predicted_miller_index);
-    integrated_data.write("integrated.refl");
+    integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_out);
+    integrated_data.add_column("num_pixels.foreground", num_reflections, 1, nfg_out);
+    integrated_data.add_column("background.sum.value", num_reflections, 1, bg_sum_out);
+    integrated_data.add_column("background.mean", num_reflections, 1, bg_mean_out);
+    constexpr size_t IntegratedSum = (1 << 8);
+    std::vector<std::size_t> final_flags(num_reflections, IntegratedSum);
+    integrated_data.add_column("flags", num_reflections, 1, final_flags);
+
+    std::vector<bool> success_bool(num_reflections);
+    for (size_t i = 0; i < num_reflections; ++i)
+        success_bool[i] = success_final[i] != 0;
+    ReflectionTable success_data = integrated_data.select(success_bool);
+    int n_integrated =
+      success_data.column<double>("intensity.sum.value").value().extent(0);
+    logger.info("Writing {} integrated reflections to {}", n_integrated, "integrated.refl");
+    success_data.write("integrated.refl");
 
     // Add profile models to an integrated.expt list.
 
