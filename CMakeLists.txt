@@ -45,6 +45,10 @@ endif()
 
 include_directories(include)
 
+# Packages come from the active environment alone. The user package registry
+# collects the build trees of other checkouts, which Eigen registers itself in.
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
+
 find_package(Python COMPONENTS Interpreter Development.Module NumPy REQUIRED)
 include(PythonSitePackages)
 
@@ -142,11 +146,13 @@ endif()
 
 # Dependency fetching
 # Find packages that are in conda environment
+# No versions: the conda pins choose them, and these version files reject a
+# request from an older major, so a minimum here breaks at each new major
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
-find_package(nlohmann_json 3.11.3 REQUIRED)
-find_package(Eigen3 3.4 REQUIRED)
-find_package(mdspan 0.6 REQUIRED)
+find_package(nlohmann_json REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(mdspan REQUIRED)
 
 # Dependencies taken from git, or from the environment when it has them
 include(Dependencies)

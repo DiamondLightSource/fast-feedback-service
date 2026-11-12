@@ -43,11 +43,14 @@ FetchContent_Declare(
 # Twelve commits past v1.1.3, and conda-forge builds it for x86_64 only. The
 # indexer links the Eigen3::Eigen already found in the conda environment, so
 # its only submodule, Eigen on gitlab.com, is never compiled and is skipped.
+# The patch lets its Eigen lookups accept Eigen 5. A source passed in through
+# FETCHCONTENT_SOURCE_DIR_FFBIDX skips the patch step and must already carry it.
 FetchContent_Declare(
     ffbidx
     GIT_REPOSITORY https://github.com/paulscherrerinstitute/fast-feedback-indexer.git
     GIT_TAG 6f6e3c78d847dce6fdebf0a93dcd4440af0737f4
     GIT_SUBMODULES ""
+    PATCH_COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_LIST_DIR}/PatchFfbidxEigen.cmake
 )
 
 # lodepng publishes no releases, and the conda-forge build dates from 2022.
