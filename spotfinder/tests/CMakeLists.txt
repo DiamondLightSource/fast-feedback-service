@@ -21,3 +21,11 @@ target_link_libraries(test_connected_components PRIVATE
 )
 
 gtest_discover_tests(test_connected_components PROPERTIES LABELS "spotfinder-tests")
+
+add_executable(test_dispersion test_dispersion.cc)
+target_include_directories(test_dispersion PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_dispersion PRIVATE
+    GTest::gtest_main
+)
+
+gtest_discover_tests(test_dispersion PROPERTIES LABELS "spotfinder-tests")
