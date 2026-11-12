@@ -6,6 +6,41 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import pytest
+
+# Far below any physical difference, in Å for the cell and basis vectors,
+# and far above the 1e-14 to 2e-11 that a change in Eigen's arithmetic order
+# moves the refined cells by
+TOLERANCE = 1e-9
+
+
+def _assert_equal_to_rounding(actual: object, expected: object, path: str) -> None:
+    """
+    Compare indexer JSON output against a reference, numbers to TOLERANCE.
+
+    Walks the expected structure, so a missing or extra key, a changed
+    length or a changed string fails exactly; only floating-point values
+    are allowed to differ, and the failure names the key that did.
+    """
+    # Containers must match in shape before their contents are compared
+    if isinstance(expected, dict):
+        assert isinstance(actual, dict), f"{path}: expected a dict, got {actual!r}"
+        assert actual.keys() == expected.keys(), f"{path}: keys differ"
+        for key in expected:
+            _assert_equal_to_rounding(actual[key], expected[key], f"{path}/{key}")
+    elif isinstance(expected, list):
+        assert isinstance(actual, list), f"{path}: expected a list, got {actual!r}"
+        assert len(actual) == len(expected), f"{path}: lengths differ"
+        for index, (a, e) in enumerate(zip(actual, expected)):
+            _assert_equal_to_rounding(a, e, f"{path}[{index}]")
+
+    # Numbers within the tolerance; strings and anything else exactly
+    elif isinstance(expected, (int, float)) and not isinstance(expected, bool):
+        assert actual == pytest.approx(expected, abs=TOLERANCE), (
+            f"{path}: {actual!r} differs from {expected!r}"
+        )
+    else:
+        assert actual == expected, f"{path}: {actual!r} differs from {expected!r}"
 
 
 def test_baseline_indexer(tmp_path, dials_data):
@@ -49,7 +84,9 @@ def test_baseline_indexer(tmp_path, dials_data):
         "09": [0.0, 1.809999942779541, -9.954999685287476],
         "10": [1.809999942779541, 26.244999170303345, 36.19999885559082],
     }
-    assert candidate_vectors == expected_output
+    _assert_equal_to_rounding(
+        candidate_vectors, expected_output, "candidate_vectors.json"
+    )
 
     with open(tmp_path / "candidate_crystals.json", "r") as f:
         candidate_crystals = json.load(f)
@@ -195,7 +232,9 @@ def test_baseline_indexer(tmp_path, dials_data):
             "volume_score": 3.1854537194351167,
         },
     }
-    assert candidate_crystals == expected_crystals_output
+    _assert_equal_to_rounding(
+        candidate_crystals, expected_crystals_output, "candidate_crystals.json"
+    )
 
     assert (tmp_path / "indexed.refl").is_file()
     assert (tmp_path / "indexed.expt").is_file()
@@ -379,7 +418,9 @@ def test_baseline_indexer_c2sum(tmp_path, dials_data):
             "volume_score": 0.000774447243351517,
         },
     }
-    assert candidate_crystals == expected_crystals_output
+    _assert_equal_to_rounding(
+        candidate_crystals, expected_crystals_output, "candidate_crystals.json"
+    )
 
     with h5py.File(tmp_path / "indexed.refl") as f:
         flags = f["/dials/processing/group_0/flags"]
