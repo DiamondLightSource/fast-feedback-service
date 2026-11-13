@@ -21,6 +21,7 @@
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/experiment.hpp>
+#include <dx2/experiment_list.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
 #include <filesystem>
@@ -105,7 +106,8 @@ TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
     // Extract detector panel, scan, and beam parameters from the experiment
     std::ifstream f(expt_file);
     auto elist_json = nlohmann::json::parse(f);
-    Experiment expt(elist_json);
+    ExperimentList elist(elist_json);
+    Experiment expt = elist[0];
     const Panel &panel = expt.detector().panels()[0];
     const Scan &scan = expt.scan();
     const auto &beam = beam_ops::require_monochromatic(expt.beam());

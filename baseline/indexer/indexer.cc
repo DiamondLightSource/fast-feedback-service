@@ -155,7 +155,7 @@ int main(int argc, char **argv) {
         logger.error("Unable to create experimentlist: {}", ex.what());
         std::exit(1);
     }
-    Experiment expt = elist[0];
+    Experiment& expt = elist[0];
     Scan scan = expt.scan();
     auto &beam = beam_ops::require_monochromatic(expt.beam());
     Goniometer gonio = expt.goniometer();
@@ -459,7 +459,7 @@ int main(int argc, char **argv) {
     }
 
     // Save the indexed experiment list.
-    json elist_out = expt.to_json();
+    json elist_out = elist.to_json();
     std::string efile_name = "indexed.expt";
     std::ofstream efile(efile_name);
     efile << elist_out.dump(4);
