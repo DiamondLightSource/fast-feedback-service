@@ -38,7 +38,7 @@ jobs:
       DIALS_DATA: ${{ github.workspace }}/../dials_data
       ENVIRONMENT_FILE: conda/development/environment.yml
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           # Full history and tags, so setuptools_scm can resolve the version
           fetch-depth: 0
@@ -49,13 +49,13 @@ jobs:
         run: |
           python3 conda/derive.py --drop conda/macos/packages
           echo "ENVIRONMENT_FILE=conda/macos/environment.yml" >> "$GITHUB_ENV"
-      - uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
+      - uses: mamba-org/setup-micromamba@v3.2.1
         with:
           environment-file: ${{ env.ENVIRONMENT_FILE }}
           environment-name: ffs
           cache-environment: true
       - name: Restore test datasets
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: ${{ env.DIALS_DATA }}
           key: dials-data-${{ runner.os }}-${{ hashFiles('h5read/tests/CMakeLists.txt') }}
