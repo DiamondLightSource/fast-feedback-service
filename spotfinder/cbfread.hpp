@@ -1,167 +1,155 @@
 #pragma once
 
-#include <cuda_runtime.h>
-#include <fmt/core.h>
-
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "h5read.h"
 
-typedef union {
-    char b[2];
-    short s;
-} union_short;
-
-typedef union {
-    char b[4];
-    int i;
-} union_int;
-
-inline void byte_swap_short(char *b) {
-    char c;
-    c = b[0];
-    b[0] = b[1];
-    b[1] = c;
-    return;
-}
-
-inline void byte_swap_int(char *b) {
-    char c;
-    c = b[0];
-    b[0] = b[3];
-    b[3] = c;
-    c = b[1];
-    b[1] = b[2];
-    b[2] = c;
-    return;
-}
-
-inline bool little_endian() {
-    int i = 0x1;
-    char b = ((union_int *)&i)[0].b[0];
-    if (b == 0) {
-        return false;
-    } else {
-        return true;
-    }
-}
-
+/// Decompress CBF "byte_offset" packed data into an output array.
+///
+/// Values are accumulated as signed 32-bit and then converted to Tout,
+/// so negative (masked) pixels wrap when Tout is unsigned. Callers rely
+/// on the reader mask, not the pixel values, to exclude these.
+///
+/// @returns The number of values written.
 template <typename Tout>
-unsigned int cbf_decompress(const char *packed,
-                            std::size_t packed_sz,
-                            Tout *values,
-                            std::size_t values_sz) {
-    int current = 0;
-    Tout *original = values;
-    unsigned int j = 0;
-    short s;
-    char c;
-    int i;
-    bool le = little_endian();
+size_t cbf_decompress(const uint8_t *packed,
+                      std::size_t packed_sz,
+                      Tout *values,
+                      std::size_t values_sz) {
+    int32_t current = 0;
+    size_t j = 0;
+    size_t n = 0;
 
-    while ((j < packed_sz) && ((values - original) < values_sz)) {
-        c = packed[j];
+    // The format is little-endian, irrespective of host
+    auto read_le16 = [&](size_t at) -> int16_t {
+        return static_cast<int16_t>(packed[at] | (packed[at + 1] << 8));
+    };
+    auto read_le32 = [&](size_t at) -> int32_t {
+        return static_cast<int32_t>(static_cast<uint32_t>(packed[at])
+                                    | (static_cast<uint32_t>(packed[at + 1]) << 8)
+                                    | (static_cast<uint32_t>(packed[at + 2]) << 16)
+                                    | (static_cast<uint32_t>(packed[at + 3]) << 24));
+    };
+
+    while (j < packed_sz && n < values_sz) {
+        int8_t delta8 = static_cast<int8_t>(packed[j]);
         j += 1;
-
-        if (c != -0x80) {
-            current += c;
-            *values = current;
-            values++;
-            continue;
+        if (delta8 != -0x80) {
+            current += delta8;
+        } else {
+            if (j + 2 > packed_sz) break;
+            int16_t delta16 = read_le16(j);
+            j += 2;
+            if (delta16 != -0x8000) {
+                current += delta16;
+            } else {
+                if (j + 4 > packed_sz) break;
+                current += read_le32(j);
+                j += 4;
+            }
         }
-
-        assert(j + 1 < packed_sz);
-        ((union_short *)&s)[0].b[0] = packed[j];
-        ((union_short *)&s)[0].b[1] = packed[j + 1];
-        j += 2;
-
-        if (!le) {
-            byte_swap_short((char *)&s);
-        }
-
-        if (s != -0x8000) {
-            current += s;
-            *values = current;
-            values++;
-            continue;
-        }
-
-        assert(j + 3 < packed_sz);
-        ((union_int *)&i)[0].b[0] = packed[j];
-        ((union_int *)&i)[0].b[1] = packed[j + 1];
-        ((union_int *)&i)[0].b[2] = packed[j + 2];
-        ((union_int *)&i)[0].b[3] = packed[j + 3];
-        j += 4;
-
-        if (!le) {
-            byte_swap_int((char *)&i);
-        }
-
-        current += i;
-        *values = current;
-        values++;
+        values[n++] = static_cast<Tout>(current);
     }
-
-    return values - original;
+    return n;
 }
 
 template <typename Tout>
 void decompress_byte_offset(const std::span<uint8_t> in, std::span<Tout> out) {
-    cbf_decompress(reinterpret_cast<const char *>(in.data()),
-                   in.size_bytes(),
-                   out.data(),
-                   out.size());
+    size_t written = cbf_decompress(in.data(), in.size_bytes(), out.data(), out.size());
+    if (written != out.size()) {
+        throw std::runtime_error(
+          "CBF byte_offset data decompressed to fewer pixels than expected");
+    }
 }
 
+/// Reader for (PILATUS-style, "miniCBF") byte-offset compressed CBF images.
+///
+/// The path is either:
+///   - A single CBF file. This reader then has exactly one image, and
+///     every image index refers to that file.
+///   - A template, with a run of '#' characters standing for the image
+///     number, e.g. "image_#####.cbf". Image index N reads the file whose
+///     number is N (the caller applies any start offset).
+///
+/// Metadata (shape, wavelength, geometry, mask) is read from the first
+/// image. Pixels with negative values in that image (module gaps, bad
+/// pixels) are masked, as DIALS does for PILATUS detectors.
 class CBFRead : public Reader {
   private:
+    const std::string _path;
+    const bool _is_template;
     size_t _num_images;
-    size_t _first_index;
     std::array<size_t, 2> _image_shape;
-    const std::string _template_path;
     std::vector<uint8_t> _mask;
+    int64_t _count_cutoff = std::numeric_limits<int32_t>::max();
+    std::optional<float> _wavelength;
+    std::optional<std::array<float, 2>> _pixel_size;
+    std::optional<std::array<float, 2>> _beam_center;
+    std::optional<float> _distance;
 
   public:
-    CBFRead(const std::string &templatestr, size_t num_images, size_t first_index);
+    /// @param path        A CBF filename, or a '#' template
+    /// @param num_images  Number of images (ignored for a single file)
+    /// @param first_index File number of the first image (template only)
+    CBFRead(const std::string &path, size_t num_images, size_t first_index);
 
-    h5read_dtype get_dtype() const {
-        return H5READ_DTYPE_UINT16;
+    /// Whether a path names a '#' template rather than a single file
+    static bool is_template(const std::string &path) {
+        return path.find('#') != std::string::npos;
     }
-    bool is_image_available(size_t index);
+    /// The filename that holds a specific image index, for a file or template
+    static std::string filename_for(const std::string &path, size_t index);
+    /// The filename that holds a specific image index
+    std::string filename_for(size_t index) const {
+        return filename_for(_path, index);
+    }
 
-    std::span<uint8_t> get_raw_chunk(size_t index, std::span<uint8_t> destination);
+    h5read_dtype get_dtype() const override {
+        // CBF data is natively 32-bit, so must use the 32-bit spotfinder
+        return H5READ_DTYPE_UINT32;
+    }
+    bool is_image_available(size_t index) override;
 
-    ChunkCompression get_raw_chunk_compression() {
+    std::span<uint8_t> get_raw_chunk(size_t index,
+                                     std::span<uint8_t> destination) override;
+
+    ChunkCompression get_raw_chunk_compression() override {
         return Reader::ChunkCompression::BYTE_OFFSET_32;
     }
-    size_t get_number_of_images() const {
+    size_t get_number_of_images() const override {
         return _num_images;
     }
-    std::array<size_t, 2> image_shape() const {
+    std::array<size_t, 2> image_shape() const override {
         return _image_shape;
     };
-    std::optional<std::span<const uint8_t>> get_mask() const {
+    std::optional<std::span<const uint8_t>> get_mask() const override {
         return {{_mask.data(), _mask.size()}};
     }
-    virtual std::array<int64_t, 2> get_trusted_range() const {
-        return {0, std::numeric_limits<image_t_type>::max()};
+    std::array<int64_t, 2> get_trusted_range() const override {
+        return {0, _count_cutoff};
     }
-    virtual std::optional<float> get_wavelength() const {
-        return std::nullopt;
+    std::optional<float> get_wavelength() const override {
+        return _wavelength;
     }
-    virtual std::optional<std::array<float, 2>> get_pixel_size() const {
-        return std::nullopt;
+    std::optional<std::array<float, 2>> get_pixel_size() const override {
+        return _pixel_size;
     };
-    virtual std::optional<std::array<float, 2>> get_beam_center() const {
-        return std::nullopt;
+    std::optional<std::array<float, 2>> get_beam_center() const override {
+        return _beam_center;
     };
-    virtual std::optional<float> get_detector_distance() const {
-        return std::nullopt;
+    std::optional<float> get_detector_distance() const override {
+        return _distance;
     };
-    virtual std::array<float, 2> get_oscillation() const {
+    std::array<float, 2> get_oscillation() const override {
+        // Treated as stills
         return {0, 0};
     };
 };
-
-template <typename Tout>
-void decompress_byte_offset(const std::span<uint8_t> in, std::span<Tout> out);
