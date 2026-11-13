@@ -32,6 +32,7 @@ option(USE_REDUCED_PRECISION "Use reduced (single) precision for CUDA calculatio
 
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
+include(CheckCondaPins)
 
 # Use ccache when it is installed. Set before the dependencies are fetched so
 # their compiles are cached too.
