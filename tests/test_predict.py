@@ -21,6 +21,7 @@ expt_json = {
             "goniometer": 0,
             "scan": 0,
             "crystal": 0,
+            "imageset": 0,
         }
     ],
     "imageset": [

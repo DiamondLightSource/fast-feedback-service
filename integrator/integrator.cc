@@ -24,6 +24,7 @@
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/experiment.hpp>
+#include <dx2/experiment_list.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
 #include <dx2/reflection.hpp>
@@ -345,14 +346,16 @@ int main(int argc, char **argv) {
     }
 
     // Construct Experiment object and extract components
-    Experiment expt;
+    ExperimentList elist;
     try {
-        expt = Experiment(elist_json_obj);
-    } catch (const std::invalid_argument &ex) {
-        logger.error(
-          "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
+        elist = ExperimentList(elist_json_obj);
+    } catch (std::invalid_argument const &ex) {
+        logger.error("Failed to construct ExperimentList from '{}': {}",
+                     experiment_file,
+                     ex.what());
         return 1;
     }
+    Experiment expt = elist[0];
 
     // Extract experimental components
     auto &beam = beam_ops::require_monochromatic(expt.beam());

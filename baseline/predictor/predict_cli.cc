@@ -19,6 +19,7 @@
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
+#include <dx2/experiment_list.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/reflection.hpp>
 #include <dx2/scan.hpp>
@@ -131,13 +132,14 @@ int main(int argc, char **argv) {
                      ex.byte);
         std::exit(1);
     }
-    Experiment expt;
+    ExperimentList elist;
     try {
-        expt = Experiment(elist_json_obj);
+        elist = ExperimentList(elist_json_obj);
     } catch (std::invalid_argument const &ex) {
-        logger.error("Unable to create experiment: {}", ex.what());
+        logger.error("Unable to create experimentlist: {}", ex.what());
         std::exit(1);
     }
+    Experiment expt = elist[0];
 
     Scan scan = expt.scan();
     if (buffer_size > 0) {
