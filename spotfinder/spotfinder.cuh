@@ -6,6 +6,8 @@
 #include "cuda_common.hpp"
 #include "h5read.h"
 
+void check_launch_geometry(dim3 threads);
+
 void call_do_spotfinding_dispersion(dim3 blocks,
                                     dim3 threads,
                                     cudaStream_t stream,

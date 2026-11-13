@@ -37,6 +37,7 @@
 #include "h5read.h"
 #include "kernels/masking.cuh"
 #include "shmread.hpp"
+#include "spotfinder/launch_geometry.hpp"
 #include "standalone.h"
 #include "thread_count.hpp"
 #include "version.hpp"
@@ -129,7 +130,7 @@ void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
                                 float dmax,
                                 cudaStream_t stream = 0) {
     // Define the block size and grid size for the kernel
-    dim3 threadsPerBlock(32, 32);
+    dim3 threadsPerBlock(RESOLUTION_MASK_BLOCK_X, RESOLUTION_MASK_BLOCK_Y);
     dim3 numBlocks((width + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (height + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
@@ -437,8 +438,25 @@ int main(int argc, char **argv) {
     bool save_to_h5 = parser.get<bool>("save-h5");
     bool output_for_index = parser.get<bool>("output-for-index");
 
+    // The masking kernel keeps a pixel when dmin <= d <= dmax, d being its
+    // d-spacing in Angstrom, and reads a limit of zero or below as no limit.
+    // An explicit limit is therefore only meaningful when positive. A range
+    // with dmin > dmax keeps no pixel, and dmin == dmax at most a single ring.
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
+    if (parser.is_used("--dmin") && dmin <= 0) {
+        logger.error("--dmin must be greater than zero, got {}", dmin);
+        return 1;
+    }
+    if (parser.is_used("--dmax") && dmax <= 0) {
+        logger.error("--dmax must be greater than zero, got {}", dmax);
+        return 1;
+    }
+    if (dmin > 0 && dmax > 0 && dmin >= dmax) {
+        logger.error(
+          "--dmin ({}) must be less than --dmax ({}), or no pixel is kept", dmin, dmax);
+        return 1;
+    }
 
     DispersionAlgorithm dispersion_algorithm(parser.get<std::string>("algorithm"));
     fmt::print("Algorithm: {}\n",
@@ -643,22 +661,20 @@ int main(int argc, char **argv) {
     std::signal(SIGINT, stop_processing);
 
     // Work out how many blocks this is
-    dim3 gpu_thread_block_size{32, 16};
+    dim3 gpu_thread_block_size{THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y};
     dim3 blocks_dims{
       static_cast<unsigned int>(ceilf((float)width / gpu_thread_block_size.x)),
       static_cast<unsigned int>(ceilf((float)height / gpu_thread_block_size.y))};
+    check_launch_geometry(gpu_thread_block_size);
     const int num_threads_per_block = gpu_thread_block_size.x * gpu_thread_block_size.y;
-    const int num_blocks = blocks_dims.x * blocks_dims.y * blocks_dims.z;
+    const int num_blocks = blocks_dims.x * blocks_dims.y;
     fmt::print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
     fmt::print("GPU Threads: {:4d} x {:<4d} = {}\n",
                gpu_thread_block_size.x,
                gpu_thread_block_size.y,
                num_threads_per_block);
-    fmt::print("Blocks:      {:4d} x {:<4d} x {:2d} = {}\n",
-               blocks_dims.x,
-               blocks_dims.y,
-               blocks_dims.z,
-               num_blocks);
+    fmt::print(
+      "Blocks:      {:4d} x {:<4d} = {}\n", blocks_dims.x, blocks_dims.y, num_blocks);
     fmt::print("Running with {} CPU threads\n", num_cpu_threads);
 
     auto mask = upload_mask(reader);
