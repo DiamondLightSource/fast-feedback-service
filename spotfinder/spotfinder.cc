@@ -356,7 +356,8 @@ class SpotfinderArgumentParser : public CUDAArgumentParser {
 
         add_argument("--start-index")
           .help(
-            "Index of first image. Only used for CBF reading, and can only be 0 or 1.")
+            "Index of first image. For a CBF template, this is the number of the "
+            "first file.")
           .metavar("N")
           .default_value<uint32_t>(0)
           .scan<'u', uint32_t>();
@@ -458,22 +459,38 @@ int main(int argc, char **argv) {
 
     // Wait for read-readiness
     // Firstly: That the path exists at all
-    if (!std::filesystem::exists(file)) {
+    if (file.ends_with(".cbf")) {
+        // Either a single file, or a template for a sequence of files
+        auto start_index = parser.get<uint32_t>("start-index");
+        if (CBFRead::is_template(file)) {
+            if (!parser.is_used("images")) {
+                fmt::print("Error: CBF template reading must specify --images\n");
+                std::exit(1);
+            }
+        } else if (parser.is_used("images") && parser.get<uint32_t>("images") != 1) {
+            fmt::print("Error: A single CBF file can only be read as one image\n");
+            std::exit(1);
+        }
+        auto num_images = parser.is_used("images") ? parser.get<uint32_t>("images") : 1;
+        auto first_file = CBFRead::filename_for(file, start_index);
+        if (!std::filesystem::exists(first_file)) {
+            wait_for_ready_for_read(
+              first_file,
+              [](const std::string &s) { return std::filesystem::exists(s); },
+              wait_timeout);
+        }
+        reader_ptr = std::make_unique<CBFRead>(file, num_images, start_index);
+    } else if (!std::filesystem::exists(file)) {
         wait_for_ready_for_read(
           file,
           [](const std::string &s) { return std::filesystem::exists(s); },
           wait_timeout);
     }
-    if (std::filesystem::is_directory(file)) {
+    if (reader_ptr) {
+        // Already created (CBF)
+    } else if (std::filesystem::is_directory(file)) {
         wait_for_ready_for_read(file, is_ready_for_read<SHMRead>, wait_timeout);
         reader_ptr = std::make_unique<SHMRead>(file);
-    } else if (file.ends_with(".cbf")) {
-        if (!parser.is_used("images")) {
-            fmt::print("Error: CBF reading must specify --images\n");
-            std::exit(1);
-        }
-        reader_ptr = std::make_unique<CBFRead>(
-          file, parser.get<uint32_t>("images"), parser.get<uint32_t>("start-index"));
     } else {
         wait_for_ready_for_read(file, is_ready_for_read<H5Read>, wait_timeout);
         reader_ptr =

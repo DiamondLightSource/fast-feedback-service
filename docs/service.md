@@ -25,5 +25,21 @@ Then launch the service through Zocalo:
 zocalo.service -s GPUPerImageAnalysis
 ```
 
+## CBF requests
+As well as NeXus/HDF5 (and `/dev/shm` streams), a request `filename` may be a
+single `.cbf` image. CBF requests are handled one image per request:
+
+- The image is spotfound with the 32-bit spotfinder, and indexed in the same
+  way as HDF5 data when `unit_cell` and a wavelength are available.
+- Detector type, pixel size, image size and sensor are read from the CBF
+  header (`detector` in the request overrides only the type). A missing
+  `wavelength` falls back to the header value. Beam centre and distance still
+  come from the request.
+- The result `file-number` is `start_frame_index + 1`, so set
+  `start_frame_index` to the zero-based position of the image in the
+  collection.
+- Message ordering and the "too old" check are skipped; templates
+  (`image_#####.cbf`) are rejected.
+
 [`src/ffs/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/src/ffs
 [`spotfinder/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/spotfinder
