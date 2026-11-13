@@ -155,7 +155,7 @@ int main(int argc, char **argv) {
         logger.error("Unable to create experimentlist: {}", ex.what());
         std::exit(1);
     }
-    Experiment& expt = elist[0];
+    Experiment &expt = elist[0];
     Scan scan = expt.scan();
     auto &beam = beam_ops::require_monochromatic(expt.beam());
     Goniometer gonio = expt.goniometer();
