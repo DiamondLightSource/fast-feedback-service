@@ -41,6 +41,10 @@ provider = "scikit_build_core.metadata.setuptools_scm"
 # The one place the version scheme is configured. cmake, the docs, CI and
 # deploy.sh all run setuptools_scm against this rather than resolving their own.
 [tool.setuptools_scm]
+# Releases are tagged vYYYY.MM. A dev build reads as a post-release of the
+# last tag rather than a guess at the next, so its version never names a
+# month that has not happened yet.
+version_scheme = "no-guess-dev"
 
 # The default describe command with --first-parent, so the dev number counts
 # the merges into main rather than every commit on the merged branches

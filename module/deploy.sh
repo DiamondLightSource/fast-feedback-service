@@ -46,6 +46,8 @@ OPTIONS:
     -v, --version NAME     Release name; names the install directory and
                            the module, and must equal the version the
                            source resolves to. dev takes any version.
+                           Releases are YYYY.MM, without the month's
+                           leading zero: v2027.01 resolves to 2027.1.
                            (default: $VERSION)
     -p, --prefix PATH      Install prefix, overriding
                            <install-root>/<version>
@@ -69,10 +71,10 @@ build visible to everyone on the machine. The latest symlink is what an
 unversioned recipe resolves to, so moving it is a second deliberate step.
 
 EXAMPLES:
-    $0                                       # build .../ffs/dev, no module
-    $0 --modulefile                          # ... and publish it as dev
-    $0 --version 1.0.0 --modulefile          # a release
-    $0 --version 1.0.0 --modulefile --latest # ... that recipes pick up
+    $0                                         # build .../ffs/dev, no module
+    $0 --modulefile                            # ... and publish it as dev
+    $0 --version 2026.11 --modulefile          # a release
+    $0 --version 2026.11 --modulefile --latest # ... that recipes pick up
     $0 --prefix /scratch/ffs --module-root /scratch/modules --modulefile
 EOF
 }
