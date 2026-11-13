@@ -5,10 +5,14 @@ import pytest
 pytest.importorskip("workflows")
 pytest.importorskip("ffs.index")
 
+from pathlib import Path  # noqa: E402
+
 from ffs.service import (  # noqa: E402
     DetectorGeometry,
     Material,
     PiaRequest,
+    expand_cbf_template,
+    find_first_cbf_number,
     read_cbf_header,
 )
 
@@ -47,10 +51,15 @@ def test_read_cbf_header_rejects_non_cbf(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "filename, is_cbf",
-    [("/data/x_00001.cbf", True), ("/data/x.CBF", True), ("/data/x.nxs", False)],
+    "filename, is_cbf, is_template",
+    [
+        ("/data/x_00001.cbf", True, False),
+        ("/data/x.CBF", True, False),
+        ("/data/x_#####.cbf", True, True),
+        ("/data/x.nxs", False, False),
+    ],
 )
-def test_request_is_cbf(filename, is_cbf):
+def test_request_is_cbf(filename, is_cbf, is_template):
     request = PiaRequest(
         dcid=1,
         dcgid=1,
@@ -63,3 +72,27 @@ def test_request_is_cbf(filename, is_cbf):
         detector_distance=100,
     )
     assert request.is_cbf == is_cbf
+    assert request.is_cbf_template == is_template
+
+
+def test_expand_cbf_template():
+    assert expand_cbf_template(Path("/d/x_####.cbf"), 12) == Path("/d/x_0012.cbf")
+    assert expand_cbf_template(Path("/d/x1_##.cbf"), 7) == Path("/d/x1_07.cbf")
+
+
+def test_find_first_cbf_number(tmp_path):
+    template = tmp_path / "x_####.cbf"
+    assert find_first_cbf_number(template) is None
+    for name in [
+        "x_0003.cbf",
+        "x_0004.cbf",
+        # None of these match the template
+        "x_00001.cbf",
+        "x_001.cbf",
+        "x_0001_old.cbf",
+        "y_0001.cbf",
+        "x_0001.cbf.tmp",
+    ]:
+        (tmp_path / name).touch()
+    assert find_first_cbf_number(template) == 3
+    assert find_first_cbf_number(tmp_path / "missing" / "x_####.cbf") is None

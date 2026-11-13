@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 logger.level = logging.DEBUG
 
 DEFAULT_QUEUE_NAME = os.getenv("FFS_QUEUE", "per_image_analysis.gpu")
+# How long to wait for the first file of a CBF template to appear, in seconds
+CBF_FIRST_FILE_TIMEOUT = 60.0
 
 
 class PiaRequest(BaseModel):
@@ -53,10 +55,17 @@ class PiaRequest(BaseModel):
     unit_cell: tuple[float, float, float, float, float, float] | None = None
     # If unset, inferred from the file header for CBF, otherwise Eiger16M
     detector: str | None = None
+    # For a CBF template: the number of the first file in the collection.
+    # If unset, guessed as the lowest numbered matching file on disk.
+    first_image_number: int | None = None
 
     @property
     def is_cbf(self) -> bool:
         return self.filename.suffix.lower() == ".cbf"
+
+    @property
+    def is_cbf_template(self) -> bool:
+        return self.is_cbf and "#" in self.filename.name
 
     @pydantic.validator("unit_cell", pre=True)
     def check_unit_cell(cls, v):
@@ -237,6 +246,41 @@ def read_cbf_header(path: Path) -> CBFHeader:
     return header
 
 
+def expand_cbf_template(template: Path, number: int) -> Path:
+    """Fill the run of '#' in a CBF filename template with an image number"""
+    first = template.name.index("#")
+    last = template.name.rindex("#")
+    width = last - first + 1
+    return template.with_name(
+        f"{template.name[:first]}{number:0{width}d}{template.name[last + 1 :]}"
+    )
+
+
+def find_first_cbf_number(template: Path) -> int | None:
+    """
+    Find the lowest image number on disk matching a CBF filename template.
+
+    The number of digits must match the template exactly, so that e.g.
+    "x_#####.cbf" does not pick up "x_123456.cbf" or "x_00001_old.cbf".
+
+    Returns:
+        The lowest matching image number, or None if no files match.
+    """
+    first = template.name.index("#")
+    last = template.name.rindex("#")
+    pattern = re.compile(
+        re.escape(template.name[:first])
+        + f"([0-9]{{{last - first + 1}}})"
+        + re.escape(template.name[last + 1 :])
+    )
+    try:
+        names = os.listdir(template.parent)
+    except FileNotFoundError:
+        return None
+    numbers = [int(m.group(1)) for name in names if (m := pattern.fullmatch(name))]
+    return min(numbers, default=None)
+
+
 def _find_spotfinder() -> tuple[Path, Path]:
     """
     Finds and sets the path to the spotfinder executable
@@ -346,6 +390,17 @@ class GPUPerImageAnalysis(CommonService):
                 "ffbidx not found, has the fast-feedback-indexer module been built and sourced?"
             )
 
+    def _wait_for_first_cbf_number(
+        self, template: Path, timeout: float = CBF_FIRST_FILE_TIMEOUT
+    ) -> int | None:
+        """Guess the first image number of a CBF template, waiting for a file"""
+        deadline = time.monotonic() + timeout
+        while (number := find_first_cbf_number(template)) is None:
+            if time.monotonic() > deadline:
+                return None
+            time.sleep(1)
+        return number
+
     def gpu_per_image_analysis(
         self,
         rw: workflows.recipe.RecipeWrapper,
@@ -365,25 +420,39 @@ class GPUPerImageAnalysis(CommonService):
             f"{parameters.dcgid}/{parameters.message_index}({parameters.dcid})"
         )
 
-        # CBF files are handled one image per request. Detector metadata
-        # comes from the file header, unless overridden by the request.
+        # CBF is either a single file, or a '#' template for a sequence.
+        # Detector metadata comes from the file header, unless overridden by
+        # the request.
         cbf_header: CBFHeader | None = None
-        if parameters.is_cbf:
-            if "#" in str(parameters.filename):
-                self.log.warning(
-                    f"Rejecting PIA request for {request_name}: CBF templates are not supported, send one request per CBF file"
+        first_image_number = 0
+        if parameters.is_cbf_template:
+            if parameters.first_image_number is not None:
+                first_image_number = parameters.first_image_number
+            else:
+                guessed = self._wait_for_first_cbf_number(parameters.filename)
+                if guessed is None:
+                    self.log.warning(
+                        f"Rejecting PIA request for {request_name}: No files matching {parameters.filename} appeared"
+                    )
+                    rw.transport.nack(header, requeue=False)
+                    return
+                first_image_number = guessed
+                self.log.info(
+                    f"Guessed first image number {first_image_number} for {parameters.filename} from files on disk"
                 )
-                rw.transport.nack(header, requeue=False)
-                return
+            header_file = expand_cbf_template(parameters.filename, first_image_number)
+        else:
+            header_file = parameters.filename
+        if parameters.is_cbf:
             try:
-                cbf_header = read_cbf_header(parameters.filename)
+                cbf_header = read_cbf_header(header_file)
             except (OSError, ValueError) as e:
                 self.log.warning(
                     f"Rejecting PIA request for {request_name}: Could not read CBF header: {e}"
                 )
                 rw.transport.nack(header, requeue=False)
                 return
-            if parameters.number_of_frames != 1:
+            if not parameters.is_cbf_template and parameters.number_of_frames != 1:
                 self.log.warning(
                     f"CBF request {request_name} has number_of_frames={parameters.number_of_frames}; only the single file {parameters.filename} will be analysed"
                 )
@@ -447,8 +516,9 @@ class GPUPerImageAnalysis(CommonService):
         )
 
         # Single CBF images are independent, so there is no ordering to
-        # enforce, and they are already on disk (no /dev/shm or age checks).
-        if not parameters.is_cbf and not self._order_resolver.should_handle_now(
+        # enforce. CBF are never in /dev/shm, so skip the age check below.
+        needs_ordering = parameters.is_cbf_template or not parameters.is_cbf
+        if needs_ordering and not self._order_resolver.should_handle_now(
             parameters, header
         ):
             rw.transport.ack(header)
@@ -495,9 +565,16 @@ class GPUPerImageAnalysis(CommonService):
         # Now run the spotfinder
         if parameters.is_cbf:
             # CBF is natively 32-bit, so go straight to the 32-bit spotfinder.
-            # The spotfinder reports the single image as index 0, so place it
-            # in the collection with the start index of the request.
+            # The spotfinder reports images from index 0, so place them in
+            # the collection with the start index of the request.
             command = [str(self._spotfinder_executable[1]), str(data_path)]
+            if parameters.is_cbf_template:
+                command += [
+                    "--images",
+                    str(parameters.number_of_frames),
+                    "--start-index",
+                    str(first_image_number + parameters.start_frame_index),
+                ]
             file_number_offset = parameters.start_frame_index
         else:
             command = [
@@ -561,6 +638,16 @@ class GPUPerImageAnalysis(CommonService):
             for line in pipe_output(read_fd):
                 data = json.loads(line)
                 data["file-seen-at"] = time.time()
+                if parameters.is_cbf_template:
+                    # Report the actual file, rather than the template
+                    data["file"] = str(
+                        expand_cbf_template(
+                            parameters.filename,
+                            first_image_number
+                            + parameters.start_frame_index
+                            + data["file-number"],
+                        )
+                    )
                 # XRC has one-based-indexing
                 data["file-number"] += 1 + file_number_offset
                 ## Do indexing
