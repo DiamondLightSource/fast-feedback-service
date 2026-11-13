@@ -351,7 +351,7 @@ int main(int argc, char **argv) {
         elist = ExperimentList(elist_json_obj);
     } catch (std::invalid_argument const &ex) {
         logger.error(
-          "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
+          "Failed to construct ExperimentList from '{}': {}", experiment_file, ex.what());
         return 1;
     }
     Experiment expt = elist[0];
