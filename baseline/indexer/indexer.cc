@@ -15,6 +15,7 @@
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
+#include <dx2/experiment_list.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
 #include <dx2/reflection.hpp>
@@ -147,13 +148,14 @@ int main(int argc, char **argv) {
                      ex.byte);
         std::exit(1);
     }
-    Experiment expt;
+    ExperimentList elist;
     try {
-        expt = Experiment(elist_json_obj);
+        elist = ExperimentList(elist_json_obj);
     } catch (std::invalid_argument const &ex) {
-        logger.error("Unable to create experiment: {}", ex.what());
+        logger.error("Unable to create experimentlist: {}", ex.what());
         std::exit(1);
     }
+    Experiment expt = elist[0];
     Scan scan = expt.scan();
     auto &beam = beam_ops::require_monochromatic(expt.beam());
     Goniometer gonio = expt.goniometer();
@@ -404,7 +406,7 @@ int main(int argc, char **argv) {
 
     // Update the experiment list models.
     expt.set_crystal(best_xtal);
-    expt.set_beam(best_beam);
+    beam.update(best_beam);
     expt.detector().update(best_panel.get_d_matrix());
 
     // Now do macrocycles of refinement
