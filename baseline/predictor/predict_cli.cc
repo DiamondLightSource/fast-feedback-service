@@ -6,16 +6,20 @@
  *
  */
 
+#include <unistd.h>
+
 #include <Eigen/Dense>
 #include <argparse/argparse.hpp>
 #include <chrono>
 #include <cmath>
 #include <common.hpp>
+#include <cstdio>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/crystal.hpp>
 #include <dx2/detector.hpp>
 #include <dx2/experiment.hpp>
+#include <dx2/experiment_list.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/reflection.hpp>
 #include <dx2/scan.hpp>
@@ -27,8 +31,10 @@
 #include <thread>
 #include <vector>
 
+#include "banner.hpp"
 #include "ffs_logger.hpp"
 #include "predictor/predict.hpp"
+#include "version.hpp"
 
 using json = nlohmann::json;
 
@@ -83,7 +89,13 @@ void verify_arguments(const argparse::ArgumentParser &parser) {
 
 int main(int argc, char **argv) {
     auto t1 = std::chrono::system_clock::now();
-    auto parser = argparse::ArgumentParser();
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("baseline_predictor");
+    }
+    logger.info("baseline_predictor {}", ffs_version());
+    auto parser =
+      argparse::ArgumentParser("baseline_predictor", std::string(ffs_version()));
     configure_parser(parser);
 
     // Parse the command-line input against the defined parser
@@ -120,13 +132,14 @@ int main(int argc, char **argv) {
                      ex.byte);
         std::exit(1);
     }
-    Experiment expt;
+    ExperimentList elist;
     try {
-        expt = Experiment(elist_json_obj);
+        elist = ExperimentList(elist_json_obj);
     } catch (std::invalid_argument const &ex) {
-        logger.error("Unable to create experiment: {}", ex.what());
+        logger.error("Unable to create experimentlist: {}", ex.what());
         std::exit(1);
     }
+    Experiment &expt = elist[0];
 
     Scan scan = expt.scan();
     if (buffer_size > 0) {

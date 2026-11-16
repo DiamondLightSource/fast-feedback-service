@@ -7,7 +7,6 @@
 #include <lodepng.h>
 
 #include <algorithm>
-#include <argparse/argparse.hpp>
 #include <cinttypes>
 #include <filesystem>
 #include <fstream>

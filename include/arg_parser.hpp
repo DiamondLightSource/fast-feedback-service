@@ -45,7 +45,11 @@ struct FFSArguments {
  */
 class FFSArgumentParser : public argparse::ArgumentParser {
   public:
-    explicit FFSArgumentParser(std::string version = "0.1.0");
+    /**
+     * @brief Sets up the arguments every FFS program shares, with --version
+     * reporting ffs_version().
+     */
+    FFSArgumentParser();
     virtual ~FFSArgumentParser() = default;
 
     /**

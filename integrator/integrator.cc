@@ -9,6 +9,7 @@
 #include "integrator.cuh"
 
 #include <bitshuffle.h>
+#include <unistd.h>
 
 #include <Eigen/Dense>
 #include <algorithm>
@@ -18,10 +19,12 @@
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/experiment.hpp>
+#include <dx2/experiment_list.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
 #include <dx2/reflection.hpp>
@@ -36,6 +39,7 @@
 
 #include "../spotfinder/cbfread.hpp"
 #include "../spotfinder/shmread.hpp"
+#include "banner.hpp"
 #include "common.hpp"
 #include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
@@ -194,7 +198,7 @@ extern "C" void stop_processing(int sig) {
 #pragma region Argument Parsing
 class IntegratorArgumentParser : public CUDAArgumentParser {
   public:
-    IntegratorArgumentParser(std::string version) : CUDAArgumentParser(version) {
+    IntegratorArgumentParser() : CUDAArgumentParser() {
         add_h5read_arguments();      // Override to use refl + expt
         add_integrator_arguments();  // Add integrator-specific args
     }
@@ -300,10 +304,14 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
 
 #pragma region Application Entry
 int main(int argc, char **argv) {
-    logger.info("Version: {}", FFS_VERSION);
+    // Banner for interactive runs only
+    if (isatty(fileno(stdout))) {
+        print_banner("integrator");
+    }
+    logger.info("integrator {}", ffs_version());
 
     // Parse arguments
-    auto parser = IntegratorArgumentParser(FFS_VERSION);
+    auto parser = IntegratorArgumentParser();
     auto args = parser.parse_args(argc, argv);
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();
@@ -338,14 +346,16 @@ int main(int argc, char **argv) {
     }
 
     // Construct Experiment object and extract components
-    Experiment expt;
+    ExperimentList elist;
     try {
-        expt = Experiment(elist_json_obj);
-    } catch (const std::invalid_argument &ex) {
-        logger.error(
-          "Failed to construct Experiment from '{}': {}", experiment_file, ex.what());
+        elist = ExperimentList(elist_json_obj);
+    } catch (std::invalid_argument const &ex) {
+        logger.error("Failed to construct ExperimentList from '{}': {}",
+                     experiment_file,
+                     ex.what());
         return 1;
     }
+    Experiment &expt = elist[0];
 
     // Extract experimental components
     auto &beam = beam_ops::require_monochromatic(expt.beam());
@@ -437,7 +447,7 @@ int main(int argc, char **argv) {
 #pragma region Predict or extract predictions
     // Determine if the data are predicted based on the reflection flags
     // If data are not predicted, run predict code.
-    auto flags_column_opt = reflections.column<size_t>("flags");
+    auto flags_column_opt = reflections.column<uint64_t>("flags");
     if (!flags_column_opt) {
         logger.error("Column 'flags' not found.");
         return 1;
@@ -1414,7 +1424,7 @@ int main(int argc, char **argv) {
     std::vector<double> s1_out(s1_vectors.data_handle(),
                                s1_vectors.data_handle() + s1_vectors.size());
     std::vector<int> id_col(num_reflections, 0);
-    std::vector<std::size_t> final_flags(num_reflections, IntegratedSum);
+    std::vector<uint64_t> final_flags(num_reflections, IntegratedSum);
 
     integrated_data.add_column("intensity.sum.value", num_reflections, 1, intensities);
     integrated_data.add_column(

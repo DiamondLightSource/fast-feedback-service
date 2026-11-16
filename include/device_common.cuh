@@ -12,7 +12,10 @@
 
 #include <cstdint>
 #include <cuda/std/tuple>
+#include <limits>
 #include <type_traits>
+
+#include "spotfinder/dispersion.hpp"
 
 /* 
  * Kernel radii 🔳
@@ -26,6 +29,12 @@
 */
 constexpr uint8_t KERNEL_RADIUS = 3;           // 7x7 kernel
 constexpr uint8_t KERNEL_RADIUS_EXTENDED = 5;  // 11x11 kernel
+
+// The valid-pixel count of a window is tallied in the 8 bits of
+// DispersionMoments::n, which a radius above 7 overruns: (2*8+1)² = 289.
+static_assert((2 * KERNEL_RADIUS_EXTENDED + 1) * (2 * KERNEL_RADIUS_EXTENDED + 1)
+                <= std::numeric_limits<decltype(DispersionMoments::n)>::max(),
+              "the extended kernel window no longer fits the neighbour counter");
 
 /**
  * @brief Struct to act as a global container for constant values

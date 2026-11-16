@@ -1,4 +1,4 @@
-project(indexer CXX)
+project(refiner CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 

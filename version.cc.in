@@ -1,2 +1,5 @@
 #include "version.hpp"
-const char *FFS_VERSION = "@FFS_VERSION_FULL@";
+
+std::string_view ffs_version() {
+    return "@FFS_VERSION_FULL@";
+}

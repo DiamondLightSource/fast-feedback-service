@@ -17,8 +17,7 @@ type: application
 # Versions are expected to follow Semantic Versioning (https://semver.org/)
 version: 0.1.0
 
-# This is the version number of the application being deployed. This version number should be
-# incremented each time you make changes to the application. Versions are not expected to
-# follow Semantic Versioning. They should reflect the version the application is using.
-# It is recommended to use it with quotes.
-appVersion: "1.16.0"
+# The version of the service the chart deploys. A placeholder: the version is
+# resolved from git by setuptools_scm, so it is set when the chart is packaged
+# (helm package --app-version) rather than kept by hand here.
+appVersion: "0.0.0"

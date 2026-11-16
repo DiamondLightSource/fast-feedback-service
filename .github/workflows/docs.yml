@@ -1,10 +1,12 @@
 name: Docs
-on: [push, pull_request]
-# Allow the deploy job to publish to GitHub Pages.
+on:
+  push:
+    branches: ["main"]
+  pull_request: null
+  workflow_dispatch: null
+# Read-only by default; only the deploy job can publish.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 # Cancel superseded runs on the same ref.
 concurrency:
   group: docs-${{ github.ref }}
@@ -13,18 +15,28 @@ jobs:
   build:
     name: Build docs
     runs-on: ubuntu-latest
+    # A login shell, so each step runs inside the micromamba environment
+    defaults:
+      run:
+        shell: bash -el {0}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           # Full history and tags, so setuptools_scm can resolve the version
           fetch-depth: 0
       # Doxygen only parses the source, so no CUDA toolkit or the
-      # HDF5/Boost dependencies are needed here.
-      - name: Install Doxygen and Graphviz
-        run: sudo apt-get update && sudo apt-get install -y doxygen graphviz
-      - uses: actions/setup-python@v6
+      # HDF5/Boost dependencies are needed here. Doxygen comes from
+      # conda-forge, as the local instructions install it, and is pinned
+      # so the API pages only change when this line does.
+      - uses: mamba-org/setup-micromamba@v3.2.1
         with:
-          python-version: "3.12"
+          environment-name: docs
+          create-args: >-
+            -c conda-forge
+            python=3.13
+            doxygen=1.18.0
+            graphviz
+          cache-environment: true
       - name: Install Python dependencies
         run: pip install -r docs/requirements.txt
       - name: Build HTML
@@ -33,13 +45,13 @@ jobs:
       # artifact so reviewers can preview the docs without building.
       - name: Upload preview artifact
         if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: docs-html
           path: docs/_build/html
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: docs/_build/html
   deploy:
@@ -48,10 +60,14 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
+    # Publishing to Pages authenticates with an OIDC token
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@v5.0.1

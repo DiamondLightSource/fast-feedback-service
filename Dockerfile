@@ -1,27 +1,35 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 ARG CUDA_VERSION=13.3.1
+
+# Source of the micromamba binary. The image is multi-arch, so each
+# platform build takes its own binary from it.
+FROM mambaorg/micromamba:2.10.0@sha256:e1476182cd40eb1f7c0cfae4adec9bfd78f3d7f05c61368306abfdc8939c1198 AS micromamba
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
 
 # Install dependencies
 RUN DEBIAN_FRONTEND=noninteractive \
     apt-get update && \
-    apt-get install -y --no-install-recommends git ca-certificates curl
+    apt-get install -y --no-install-recommends git ca-certificates
 
-# Install micromamba. Prefer install script so we don't have to determine platform here
-RUN curl -sL micro.mamba.pm/install.sh | BIN_FOLDER=/opt/bin INIT_YES=no bash
+# Install micromamba. It is statically linked, so it runs on the CUDA
+# base unchanged.
+COPY --from=micromamba /bin/micromamba /opt/bin/micromamba
 
 # Setup paths we use
 ENV PATH=/opt/ffs/bin:/opt/build_env/bin:/opt/bin:$PATH
 
 # Copy environment files
-COPY environment.yml runtime-environment.yml /opt/
+COPY conda/ /opt/environments/
 
-# Create build environment from environment.yml
-RUN micromamba create -y -f /opt/environment.yml -p /opt/build_env ninja
+# Create the build environment
+RUN micromamba create -y -f /opt/environments/development/environment.yml -p /opt/build_env
 
-# Create the runtime environment from runtime-environment.yml
-RUN micromamba create -y -f /opt/runtime-environment.yml -p /opt/ffs
+# Create the runtime environment from the packages it ships, at the
+# development pins. The build environment supplies the python.
+RUN /opt/build_env/bin/python /opt/environments/derive.py \
+        --keep /opt/environments/runtime/packages && \
+    micromamba create -y -f /opt/environments/runtime/environment.yml -p /opt/ffs
 
 # Copy source
 COPY . /opt/ffs_src
@@ -91,6 +99,12 @@ ENV INDEXER=/opt/ffs/bin/baseline_indexer
 ENV INTEGRATOR=/opt/ffs/bin/integrator
 ENV LD_LIBRARY_PATH=/opt/ffs/lib:$LD_LIBRARY_PATH
 # ENV ZOCALO_CONFIG=/dls_sw/apps/zocalo/live/configuration.yaml
+
+# Run as an unprivileged UID with no passwd entry by default. It is
+# numeric so the kubelet can verify runAsNonRoot; a deployment sets the
+# real beamline UID over it. A later stage that installs packages needs
+# USER root first.
+USER 65532:65532
 
 # Batch image: run a pipeline over a single dataset, then exit. It
 # carries every batch entrypoint rather than one each, since they differ

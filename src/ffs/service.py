@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import threading
 import time
@@ -33,6 +34,8 @@ logger = logging.getLogger(__name__)
 logger.level = logging.DEBUG
 
 DEFAULT_QUEUE_NAME = os.getenv("FFS_QUEUE", "per_image_analysis.gpu")
+# How long to wait for the first file of a CBF template to appear, in seconds
+CBF_FIRST_FILE_TIMEOUT = 60.0
 
 
 class PiaRequest(BaseModel):
@@ -50,7 +53,19 @@ class PiaRequest(BaseModel):
     d_min: float | None = None
     d_max: float | None = None
     unit_cell: tuple[float, float, float, float, float, float] | None = None
-    detector: str = "Eiger16M"
+    # If unset, inferred from the file header for CBF, otherwise Eiger16M
+    detector: str | None = None
+    # For a CBF template: the number of the first file in the collection.
+    # If unset, guessed as the lowest numbered matching file on disk.
+    first_image_number: int | None = None
+
+    @property
+    def is_cbf(self) -> bool:
+        return self.filename.suffix.lower() == ".cbf"
+
+    @property
+    def is_cbf_template(self) -> bool:
+        return self.is_cbf and "#" in self.filename.name
 
     @pydantic.validator("unit_cell", pre=True)
     def check_unit_cell(cls, v):
@@ -142,11 +157,21 @@ class Eiger9MCdTe(DetectorParameters):
     image_size_y: int = 3262
 
 
+class Pilatus6M(DetectorParameters):
+    detector_type: Literal["Pilatus6M"]
+    thickness: float = 0.45
+    material: Material = Material.Si
+    pixel_size_x: float = 0.172
+    pixel_size_y: float = 0.172
+    image_size_x: int = 2463
+    image_size_y: int = 2527
+
+
 class DetectorGeometry(BaseModel):
     distance: float
     beam_center_x: float
     beam_center_y: float
-    detector: Union[Eiger9MCdTe, Eiger16M, Eiger4M] = Field(
+    detector: Union[Eiger9MCdTe, Eiger16M, Eiger4M, Pilatus6M] = Field(
         ..., discriminator="detector_type"
     )
 
@@ -154,6 +179,106 @@ class DetectorGeometry(BaseModel):
         d = self.dict()
         d.update(self.detector.dict())
         return json.dumps(d, indent=4)
+
+
+class CBFHeader(BaseModel):
+    """The detector metadata in a (PILATUS-convention, "mini") CBF header"""
+
+    detector_type: str | None = None
+    wavelength: float | None = None  # Å
+    detector_parameters: dict = Field(default_factory=dict)  # DetectorParameters
+
+
+# The marker at the start of the binary section of a CBF file
+_CBF_BINARY_MARKER = b"\x0c\x1a\x04\xd5"
+
+# Map the "Detector:" header line onto our detector types. Checked in order.
+_CBF_DETECTOR_PATTERNS = [
+    (re.compile(r"PILATUS\S*\s+6M", re.I), "Pilatus6M"),
+    (re.compile(r"EIGER\S*\s+CdTe\s+9M", re.I), "Eiger9MCdTe"),
+    (re.compile(r"EIGER\S*\s+(Si\s+)?16M", re.I), "Eiger16M"),
+    (re.compile(r"EIGER\S*\s+(Si\s+)?4M", re.I), "Eiger4M"),
+]
+
+
+def read_cbf_header(path: Path) -> CBFHeader:
+    """
+    Read the detector metadata out of a CBF file's text header.
+
+    Raises:
+        ValueError: The file does not look like a CBF image.
+    """
+    with open(path, "rb") as f:
+        raw = b""
+        while _CBF_BINARY_MARKER not in raw:
+            chunk = f.read(16384)
+            if not chunk or len(raw) > 1024 * 1024:
+                raise ValueError(f"Could not find CBF binary section in {path}")
+            raw += chunk
+    text = raw[: raw.index(_CBF_BINARY_MARKER)].decode("ascii", errors="replace")
+
+    def find(pattern: str) -> re.Match | None:
+        return re.search(pattern, text)
+
+    header = CBFHeader()
+    params = header.detector_parameters
+    if m := find(r"#\s*Detector:\s*([^\r\n]*)"):
+        for pattern, detector_type in _CBF_DETECTOR_PATTERNS:
+            if pattern.search(m.group(1)):
+                header.detector_type = detector_type
+                break
+    if m := find(r"#\s*Wavelength\s+([-0-9.eE+]+)\s*A"):
+        header.wavelength = float(m.group(1))
+    if m := find(r"#\s*Pixel_size\s+([-0-9.eE+]+)\s*m\s*x\s*([-0-9.eE+]+)\s*m"):
+        params["pixel_size_x"] = float(m.group(1)) * 1000
+        params["pixel_size_y"] = float(m.group(2)) * 1000
+    if m := find(r"#\s*(\w+)\s+sensor,\s*thickness\s+([-0-9.eE+]+)\s*m"):
+        material = {"silicon": Material.Si, "cdte": Material.CdTe}.get(
+            m.group(1).lower()
+        )
+        if material:
+            params["material"] = material
+        params["thickness"] = float(m.group(2)) * 1000
+    if m := find(r"X-Binary-Size-Fastest-Dimension:\s*([0-9]+)"):
+        params["image_size_x"] = int(m.group(1))
+    if m := find(r"X-Binary-Size-Second-Dimension:\s*([0-9]+)"):
+        params["image_size_y"] = int(m.group(1))
+    return header
+
+
+def expand_cbf_template(template: Path, number: int) -> Path:
+    """Fill the run of '#' in a CBF filename template with an image number"""
+    first = template.name.index("#")
+    last = template.name.rindex("#")
+    width = last - first + 1
+    return template.with_name(
+        f"{template.name[:first]}{number:0{width}d}{template.name[last + 1 :]}"
+    )
+
+
+def find_first_cbf_number(template: Path) -> int | None:
+    """
+    Find the lowest image number on disk matching a CBF filename template.
+
+    The number of digits must match the template exactly, so that e.g.
+    "x_#####.cbf" does not pick up "x_123456.cbf" or "x_00001_old.cbf".
+
+    Returns:
+        The lowest matching image number, or None if no files match.
+    """
+    first = template.name.index("#")
+    last = template.name.rindex("#")
+    pattern = re.compile(
+        re.escape(template.name[:first])
+        + f"([0-9]{{{last - first + 1}}})"
+        + re.escape(template.name[last + 1 :])
+    )
+    try:
+        names = os.listdir(template.parent)
+    except FileNotFoundError:
+        return None
+    numbers = [int(m.group(1)) for name in names if (m := pattern.fullmatch(name))]
+    return min(numbers, default=None)
 
 
 def _find_spotfinder() -> tuple[Path, Path]:
@@ -265,6 +390,17 @@ class GPUPerImageAnalysis(CommonService):
                 "ffbidx not found, has the fast-feedback-indexer module been built and sourced?"
             )
 
+    def _wait_for_first_cbf_number(
+        self, template: Path, timeout: float = CBF_FIRST_FILE_TIMEOUT
+    ) -> int | None:
+        """Guess the first image number of a CBF template, waiting for a file"""
+        deadline = time.monotonic() + timeout
+        while (number := find_first_cbf_number(template)) is None:
+            if time.monotonic() > deadline:
+                return None
+            time.sleep(1)
+        return number
+
     def gpu_per_image_analysis(
         self,
         rw: workflows.recipe.RecipeWrapper,
@@ -280,21 +416,74 @@ class GPUPerImageAnalysis(CommonService):
             self.log.debug(f"Contents: {rw.recipe_step['parameters']!r}")
             rw.transport.nack(header, requeue=False)
             return
+        request_name = (
+            f"{parameters.dcgid}/{parameters.message_index}({parameters.dcid})"
+        )
+
+        # CBF is either a single file, or a '#' template for a sequence.
+        # Detector metadata comes from the file header, unless overridden by
+        # the request.
+        cbf_header: CBFHeader | None = None
+        first_image_number = 0
+        if parameters.is_cbf_template:
+            if parameters.first_image_number is not None:
+                first_image_number = parameters.first_image_number
+            else:
+                guessed = self._wait_for_first_cbf_number(parameters.filename)
+                if guessed is None:
+                    self.log.warning(
+                        f"Rejecting PIA request for {request_name}: No files matching {parameters.filename} appeared"
+                    )
+                    rw.transport.nack(header, requeue=False)
+                    return
+                first_image_number = guessed
+                self.log.info(
+                    f"Guessed first image number {first_image_number} for {parameters.filename} from files on disk"
+                )
+            header_file = expand_cbf_template(parameters.filename, first_image_number)
+        else:
+            header_file = parameters.filename
+        if parameters.is_cbf:
+            try:
+                cbf_header = read_cbf_header(header_file)
+            except (OSError, ValueError) as e:
+                self.log.warning(
+                    f"Rejecting PIA request for {request_name}: Could not read CBF header: {e}"
+                )
+                rw.transport.nack(header, requeue=False)
+                return
+            if not parameters.is_cbf_template and parameters.number_of_frames != 1:
+                self.log.warning(
+                    f"CBF request {request_name} has number_of_frames={parameters.number_of_frames}; only the single file {parameters.filename} will be analysed"
+                )
+
+        detector_type = parameters.detector or (
+            cbf_header.detector_type if cbf_header else "Eiger16M"
+        )
+        wavelength = parameters.wavelength or (
+            cbf_header.wavelength if cbf_header else None
+        )
         try:
             # Create a detector geometry object
             detector_geometry = DetectorGeometry(
                 distance=parameters.detector_distance,
                 beam_center_x=parameters.xBeam,
                 beam_center_y=parameters.yBeam,
-                detector={"detector_type": parameters.detector},
+                detector={
+                    "detector_type": detector_type,
+                    # The header describes the actual file, so takes precedence
+                    **(cbf_header.detector_parameters if cbf_header else {}),
+                },
             )
-            self.log.debug("{detector_geometry.to_json()=}")
+            self.log.debug(f"{detector_geometry.to_json()=}")
         except ValidationError as e:
             self.log.warning(
-                f"Rejecting PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): Invalid detector parameters \n{e}"
+                f"Rejecting PIA request for {request_name}: Invalid detector parameters \n{e}"
             )
+            rw.transport.nack(header, requeue=False)
+            return
 
-        if self.indexer and parameters.unit_cell and parameters.wavelength:
+        if self.indexer and parameters.unit_cell and wavelength:
             ## We have all we need to index, so make up to date models.
             cell = gemmi.UnitCell(*parameters.unit_cell)
             self.indexer.cell = np.reshape(
@@ -303,7 +492,7 @@ class GPUPerImageAnalysis(CommonService):
             ## convert beam centre to correct units (given in mm, want in px).
             px_size_x = detector_geometry.detector.pixel_size_x
             px_size_y = detector_geometry.detector.pixel_size_y
-            mu = detector_geometry.detector.calculate_mu(parameters.wavelength)
+            mu = detector_geometry.detector.calculate_mu(wavelength)
             self.indexer.panel = ffs.index.make_panel(
                 detector_geometry.distance,
                 detector_geometry.beam_center_x / px_size_x,
@@ -315,7 +504,7 @@ class GPUPerImageAnalysis(CommonService):
                 detector_geometry.detector.thickness,
                 mu,
             )
-            self.indexer.wavelength = parameters.wavelength
+            self.indexer.wavelength = wavelength
             self.output_for_index = (
                 True  # The indexer has been configured, so can run the spotfinder
             )
@@ -326,14 +515,21 @@ class GPUPerImageAnalysis(CommonService):
             f"Gotten PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): {parameters.filename}/:{parameters.start_frame_index}-{parameters.start_frame_index + parameters.number_of_frames}"
         )
 
-        if not self._order_resolver.should_handle_now(parameters, header):
+        # Single CBF images are independent, so there is no ordering to
+        # enforce. CBF are never in /dev/shm, so skip the age check below.
+        needs_ordering = parameters.is_cbf_template or not parameters.is_cbf
+        if needs_ordering and not self._order_resolver.should_handle_now(
+            parameters, header
+        ):
             rw.transport.ack(header)
             # Requeue the message with a checkpoint to reorder it
             # TODO: Should we add transactions to ack here? IIRC the AMQP transaction semantics wouldn't cover this?
             rw.checkpoint(message, header=header, delay=5)
             return
 
-        if parameters.filename.is_absolute():
+        if parameters.is_cbf:
+            data_path = parameters.filename
+        elif parameters.filename.is_absolute():
             data_path = parameters.filename
         else:
             # If we have a base path directory (e.g., /dev/shm mode), use it
@@ -351,7 +547,7 @@ class GPUPerImageAnalysis(CommonService):
         # should help avoid sitting spending hours running through all messages (meaning
         # that a manual purge is required).
         # Only apply this check for /dev/shm directories (not for H5 files)
-        if parameters.startTime and Path(base_path).is_dir():
+        if parameters.startTime and Path(base_path).is_dir() and not parameters.is_cbf:
             age_seconds = (datetime.now() - parameters.startTime).total_seconds()
             if age_seconds > 60 and not data_path.is_dir():
                 self.log.warning(
@@ -367,13 +563,30 @@ class GPUPerImageAnalysis(CommonService):
         read_fd, write_fd = os.pipe()
 
         # Now run the spotfinder
-        command = [
-            str(self._spotfinder_executable[0]),
-            str(data_path),
-            "--images",
-            str(parameters.number_of_frames),
-            "--start-index",
-            str(parameters.start_frame_index),
+        if parameters.is_cbf:
+            # CBF is natively 32-bit, so go straight to the 32-bit spotfinder.
+            # The spotfinder reports images from index 0, so place them in
+            # the collection with the start index of the request.
+            command = [str(self._spotfinder_executable[1]), str(data_path)]
+            if parameters.is_cbf_template:
+                command += [
+                    "--images",
+                    str(parameters.number_of_frames),
+                    "--start-index",
+                    str(first_image_number + parameters.start_frame_index),
+                ]
+            file_number_offset = parameters.start_frame_index
+        else:
+            command = [
+                str(self._spotfinder_executable[0]),
+                str(data_path),
+                "--images",
+                str(parameters.number_of_frames),
+                "--start-index",
+                str(parameters.start_frame_index),
+            ]
+            file_number_offset = 0
+        command += [
             "--threads",
             str(40),
             "--pipe_fd",
@@ -381,8 +594,8 @@ class GPUPerImageAnalysis(CommonService):
             "--detector",
             detector_geometry.to_json(),
         ]
-        if parameters.wavelength is not None:
-            command.extend(["--wavelength", str(parameters.wavelength)])
+        if wavelength is not None:
+            command.extend(["--wavelength", str(wavelength)])
         if parameters.d_min:
             command.extend(["--dmin", str(parameters.d_min)])
         if parameters.d_max:
@@ -425,8 +638,18 @@ class GPUPerImageAnalysis(CommonService):
             for line in pipe_output(read_fd):
                 data = json.loads(line)
                 data["file-seen-at"] = time.time()
+                if parameters.is_cbf_template:
+                    # Report the actual file, rather than the template
+                    data["file"] = str(
+                        expand_cbf_template(
+                            parameters.filename,
+                            first_image_number
+                            + parameters.start_frame_index
+                            + data["file-number"],
+                        )
+                    )
                 # XRC has one-based-indexing
-                data["file-number"] += 1
+                data["file-number"] += 1 + file_number_offset
                 ## Do indexing
                 if self.output_for_index:
                     xyzobs_px = np.array(data["spot_centers"])

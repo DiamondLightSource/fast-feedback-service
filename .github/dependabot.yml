@@ -1,0 +1,28 @@
+# The workflow actions name exact releases and the micromamba image is
+# pinned by digest, so neither moves to a newer version on its own; this
+# keeps them current. Each action release is locked to its commit in
+# .github/workflows/actions.lock, and Dependabot regenerates the matching
+# entry in the same pull request.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # A compromised release is usually caught and pulled within days, so
+    # hold off on proposing one until it has been out for a week.
+    cooldown:
+      default-days: 7
+    # One pull request per month rather than one per action
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    # Only the micromamba image; the CUDA base images are bumped by hand
+    allow:
+      - dependency-name: "mambaorg/micromamba"

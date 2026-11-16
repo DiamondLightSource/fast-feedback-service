@@ -51,7 +51,7 @@ void refine_crystal(Crystal &crystal,
     double xyrmsd = refine_indexing_candidate(crystal, gonio, beam, panel, sel_obs);
     std::chrono::duration<double> elapsed_time_refine =
       std::chrono::system_clock::now() - t4;
-    auto flags_ = sel_obs.column<std::size_t>("flags");
+    auto flags_ = sel_obs.column<uint64_t>("flags");
     int n_refl = flags_.value().extent(0);
     logger.debug("Time for refinement: {:.5f}s", elapsed_time_refine.count());
     logger.info("rmsd_xy {:.5f} on {} reflections", xyrmsd, n_refl);

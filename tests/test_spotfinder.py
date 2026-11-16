@@ -8,6 +8,7 @@ dials.import $(dials.data get -q thaumatin_i03_rotation)/thau_2_1.nxs image_rang
 dials.find_spots imported.expt algorithm=dispersion d_min=3.0 disable_parallax_correction=True
 """
 
+import json
 import os
 import re
 import subprocess
@@ -496,3 +497,78 @@ def test_dispersion_extended_32bit(dials_data, tmp_path):
         assert minimum.tolist() == pytest.approx([46.67, 344.61, 0.50], abs=5e-3)
         assert maximum.tolist() == pytest.approx([2788.09, 3005.04, 0.50], abs=5e-3)
         assert mean.tolist() == pytest.approx([1596.73, 1710.75, 0.50], abs=5e-3)
+
+
+# Strong pixels per image for the first five cunir_serial CBF images
+# (PILATUS3 6M stills), from:
+#   dials.import merlin0047_1700[0-4].cbf
+#   dials.find_spots imported.expt min_spot_size=1 max_separation=1000
+CBF_STRONG_PIXELS_DISPERSION_EXTENDED = [636, 466, 1452, 330, 326]
+
+
+def _run_spotfinder_pipe(args: list, cwd: Path) -> list[dict]:
+    """Run the 32-bit spotfinder, returning the per-image JSON output"""
+    spotfinder_path = os.getenv("SPOTFINDER_32BIT")
+    assert spotfinder_path
+    read_fd, write_fd = os.pipe()
+    proc = subprocess.run(
+        [spotfinder_path, *args, "--pipe_fd", str(write_fd)],
+        capture_output=True,
+        cwd=cwd,
+        pass_fds=[write_fd],
+    )
+    os.close(write_fd)
+    with os.fdopen(read_fd) as f:
+        output = [json.loads(line) for line in f if line.strip()]
+    assert proc.returncode == 0, proc.stdout.decode() + proc.stderr.decode()
+    return output
+
+
+@pytest.mark.parametrize("image", range(5))
+def test_cbf_single_file(dials_data, tmp_path, image):
+    d = dials_data("cunir_serial", pathlib=True)
+    output = _run_spotfinder_pipe(
+        [
+            d / f"merlin0047_1700{image}.cbf",
+            "--algorithm",
+            "dispersion_extended",
+            "--threads",
+            "4",
+        ],
+        tmp_path,
+    )
+    assert len(output) == 1
+    assert output[0]["file-number"] == 0
+    assert (
+        output[0]["num_strong_pixels"] == CBF_STRONG_PIXELS_DISPERSION_EXTENDED[image]
+    )
+
+
+def test_cbf_template(dials_data, tmp_path):
+    d = dials_data("cunir_serial", pathlib=True)
+    output = _run_spotfinder_pipe(
+        [
+            d / "merlin0047_17###.cbf",
+            "--images",
+            "4",
+            "--start-index",
+            "1",
+            "--algorithm",
+            "dispersion_extended",
+            "--threads",
+            "4",
+        ],
+        tmp_path,
+    )
+    strong = {x["file-number"]: x["num_strong_pixels"] for x in output}
+    assert strong == dict(enumerate(CBF_STRONG_PIXELS_DISPERSION_EXTENDED[1:]))
+
+
+def test_cbf_16bit_spotfinder_requests_32bit(dials_data, tmp_path):
+    spotfinder_path = os.getenv("SPOTFINDER")
+    assert spotfinder_path
+    d = dials_data("cunir_serial", pathlib=True)
+    proc = subprocess.run(
+        [spotfinder_path, d / "merlin0047_17000.cbf"], capture_output=True, cwd=tmp_path
+    )
+    assert proc.returncode == 32

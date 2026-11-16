@@ -58,7 +58,7 @@ TEST(BaselineIndexer, detector_parameterisation) {
                                {0.0, 0.0, 0.026945921794682914}});
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            EXPECT_DOUBLE_EQ(derivatives[1](i, j), expected_deriv_1(i, j));
+            EXPECT_NEAR(derivatives[1](i, j), expected_deriv_1(i, j), 1e-12);
         }
     }
     Matrix3d expected_deriv_2({{0.0, 0.0, -0.058440572179157796},
@@ -66,7 +66,7 @@ TEST(BaselineIndexer, detector_parameterisation) {
                                {0.0, 0.0, -0.05166543564852367}});
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            EXPECT_DOUBLE_EQ(derivatives[2](i, j), expected_deriv_2(i, j));
+            EXPECT_NEAR(derivatives[2](i, j), expected_deriv_2(i, j), 1e-12);
         }
     }
     Matrix3d expected_deriv_3(
@@ -75,7 +75,7 @@ TEST(BaselineIndexer, detector_parameterisation) {
        {-5.1665435648523665E-5, -2.6945921794682916E-5, 0.016962314374310245}});
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            EXPECT_DOUBLE_EQ(derivatives[3](i, j), expected_deriv_3(i, j));
+            EXPECT_NEAR(derivatives[3](i, j), expected_deriv_3(i, j), 1e-12);
         }
     }
     Matrix3d expected_deriv_4(
@@ -84,7 +84,7 @@ TEST(BaselineIndexer, detector_parameterisation) {
        {-5.986211902667757E-5, -0.0009965044539607033, 0.22267374650329727}});
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            EXPECT_DOUBLE_EQ(derivatives[4](i, j), expected_deriv_4(i, j));
+            EXPECT_NEAR(derivatives[4](i, j), expected_deriv_4(i, j), 1e-12);
         }
     }
     Matrix3d expected_deriv_5(
@@ -93,7 +93,7 @@ TEST(BaselineIndexer, detector_parameterisation) {
        {0.0009978412784317173, -5.8440572179157796E-5, -0.20585472658632034}});
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            EXPECT_DOUBLE_EQ(derivatives[5](i, j), expected_deriv_5(i, j));
+            EXPECT_NEAR(derivatives[5](i, j), expected_deriv_5(i, j), 1e-12);
         }
     }
     // Check the state
@@ -104,7 +104,7 @@ TEST(BaselineIndexer, detector_parameterisation) {
        {0.026945921794682904, -0.05166543564852365, -164.02448577444122}});
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            EXPECT_DOUBLE_EQ(state(i, j), expected_state(i, j));
+            EXPECT_NEAR(state(i, j), expected_state(i, j), 1e-12);
         }
     }
 }

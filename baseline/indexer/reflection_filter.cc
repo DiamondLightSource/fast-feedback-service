@@ -129,7 +129,7 @@ std::vector<size_t> simple_tukey(std::vector<double> xresid,
  */
 ReflectionTable outlier_filter(ReflectionTable &reflections) {
     // First make sure the reflections have the predicted flag.
-    auto flags_ = reflections.column<std::size_t>("flags");
+    auto flags_ = reflections.column<uint64_t>("flags");
     auto &flags = flags_.value();
     auto xyzobs_ = reflections.column<double>("xyzobs.mm.value");
     const auto &xyzobs_mm = xyzobs_.value();
@@ -177,7 +177,7 @@ ReflectionTable outlier_filter(ReflectionTable &reflections) {
     // Do the selection and update the flags.
     ReflectionTable subrefls = reflections.select(final_sel);
 
-    auto subflags_ = subrefls.column<std::size_t>("flags");
+    auto subflags_ = subrefls.column<uint64_t>("flags");
     auto &subflags = subflags_.value();
 
     for (int i = 0; i < subflags.extent(0); ++i) {
@@ -202,7 +202,7 @@ ReflectionTable initial_filter(const ReflectionTable &reflections,
                                const Goniometer gonio,
                                const MonochromaticBeam beam,
                                const double close_to_spindle_cutoff) {
-    auto flags_ = reflections.column<std::size_t>("flags");
+    auto flags_ = reflections.column<uint64_t>("flags");
     const auto &flags = flags_.value();
     auto s1_ = reflections.column<double>("s1");
     const auto &s1 = s1_.value();
@@ -239,7 +239,7 @@ ReflectionTable initial_filter(const ReflectionTable &reflections,
         }
     }
     subrefls.add_column("miller_index", filtered_hkl.size() / 3, 3, filtered_hkl);
-    auto subflags_ = subrefls.column<std::size_t>("flags");
+    auto subflags_ = subrefls.column<uint64_t>("flags");
     auto &subflags = subflags_.value();
     for (int i = 0; i < subflags.extent(0); ++i) {
         subflags(i, 0) &= ~used_in_refinement_value;  //unset the flag
@@ -262,7 +262,7 @@ std::optional<ReflectionTable> select_sample(ReflectionTable &obs,
                                              double scan_width_degrees,
                                              int min_sample_size,
                                              int max_sample_size) {
-    auto flags_ = obs.column<std::size_t>("flags");
+    auto flags_ = obs.column<uint64_t>("flags");
     auto &flags = flags_.value();
     int nrefs = flags.size();
     int sample_size =

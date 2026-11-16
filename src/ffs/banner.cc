@@ -1,0 +1,294 @@
+/**
+ * @file banner.cc
+ * @brief Startup banner: "FAST" drawn as a diffraction pattern, the letters
+ *        made of Bragg spots.
+ *
+ * Spots are coloured by intensity, with the colour map picked at random each run.
+ *
+ * The art was generated once by rendering "FAST" with pyfiglet and replacing
+ * each filled cell of the lettering with a spot of random brightness, then
+ * tidied by hand.
+ *
+ * FFS_BANNER_PALETTE pins the colour map by its index in bike_shed, and
+ * `ffs_banner --preview` shows every palette with its index.
+ */
+#include "banner.hpp"
+
+#include <fmt/color.h>
+#include <fmt/core.h>
+
+#include <array>
+#include <charconv>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <random>
+
+#include "version.hpp"
+
+// File-local, so names like Background can't clash elsewhere in the project.
+namespace {
+
+// Spot art
+constexpr std::string_view banner_art = R"(
+            ·
+• ● ∙ • ● ● ●     • ● ● ● ●     ● • ∙ • ∙ • ●   ● ● • • ● • • ●
+• ∙             • ●       ● •   ● ∙                   • ●
+● • • • •       • ● ● ∙ ● ● ●   • ● • • ● • ●         ● ●
+• ●             • ●       ● •             ● •         • •
+● •             ● ●       ● ●   ● ∙ ● ● ∙ • ∙         • •
+                        ·
+)";
+
+// Spot glyphs
+constexpr std::array<std::string_view, 4> spot_glyphs{"●", "•", "∙", "·"};
+
+/**
+ * @brief One intensity ramp, brightest spot to background spot.
+ */
+struct Ramp {
+    std::array<fmt::rgb, 4> truecolor;         ///< 24-bit colours
+    std::array<fmt::terminal_color, 4> basic;  ///< Nearest 16-colour stand-ins
+};
+
+/**
+ * @brief A colour map as two ramps, one per terminal background.
+ *
+ * On a dark background the strongest spot is the lightest colour; on a light
+ * background it is the darkest.
+ */
+struct Palette {
+    Ramp dark;   ///< Ramp for a dark terminal background
+    Ramp light;  ///< Ramp for a light terminal background
+};
+
+// Candidate colour maps, one picked at random per run.
+constexpr std::array<Palette, 5> bike_shed{{
+  // Ice: white-hot core fading through cyan to deep blue; navy core on light
+  {{{fmt::rgb(0xFFFFFF), fmt::rgb(0x5FD7FF), fmt::rgb(0x1F6FBF), fmt::rgb(0x3A4A5A)},
+    {fmt::terminal_color::bright_white,
+     fmt::terminal_color::bright_cyan,
+     fmt::terminal_color::blue,
+     fmt::terminal_color::bright_black}},
+   {{fmt::rgb(0x08306B), fmt::rgb(0x1F78B4), fmt::rgb(0x6BAED6), fmt::rgb(0xC6DBEF)},
+    {fmt::terminal_color::blue,
+     fmt::terminal_color::cyan,
+     fmt::terminal_color::bright_cyan,
+     fmt::terminal_color::bright_black}}},
+  // Heat: pale yellow through orange to deep red, as in the DIALS image viewer
+  {{{fmt::rgb(0xFFF6C8), fmt::rgb(0xFF9A1F), fmt::rgb(0xC8261E), fmt::rgb(0x5A2A1A)},
+    {fmt::terminal_color::bright_yellow,
+     fmt::terminal_color::yellow,
+     fmt::terminal_color::red,
+     fmt::terminal_color::bright_black}},
+   {{fmt::rgb(0x7F0000), fmt::rgb(0xD7301F), fmt::rgb(0xFC8D59), fmt::rgb(0xF5D5C0)},
+    {fmt::terminal_color::red,
+     fmt::terminal_color::bright_red,
+     fmt::terminal_color::yellow,
+     fmt::terminal_color::bright_black}}},
+  // Greyscale: a raw detector frame
+  {{{fmt::rgb(0xFFFFFF), fmt::rgb(0xB0B0B0), fmt::rgb(0x6A6A6A), fmt::rgb(0x3A3A3A)},
+    {fmt::terminal_color::bright_white,
+     fmt::terminal_color::white,
+     fmt::terminal_color::bright_black,
+     fmt::terminal_color::bright_black}},
+   {{fmt::rgb(0x000000), fmt::rgb(0x4A4A4A), fmt::rgb(0x8A8A8A), fmt::rgb(0xC8C8C8)},
+    {fmt::terminal_color::black,
+     fmt::terminal_color::bright_black,
+     fmt::terminal_color::bright_black,
+     fmt::terminal_color::white}}},
+  // Phosphor: green CRT
+  {{{fmt::rgb(0xC8FFC8), fmt::rgb(0x39FF14), fmt::rgb(0x1A8F1A), fmt::rgb(0x1F3F1F)},
+    {fmt::terminal_color::bright_white,
+     fmt::terminal_color::bright_green,
+     fmt::terminal_color::green,
+     fmt::terminal_color::bright_black}},
+   {{fmt::rgb(0x00441B), fmt::rgb(0x238B45), fmt::rgb(0x74C476), fmt::rgb(0xC7E9C0)},
+    {fmt::terminal_color::green,
+     fmt::terminal_color::bright_green,
+     fmt::terminal_color::bright_green,
+     fmt::terminal_color::bright_black}}},
+  // X-ray blue: a single hue at falling intensity
+  {{{fmt::rgb(0xE8F4FF), fmt::rgb(0x7FB8FF), fmt::rgb(0x3A6FD8), fmt::rgb(0x2A3A5A)},
+    {fmt::terminal_color::bright_white,
+     fmt::terminal_color::bright_blue,
+     fmt::terminal_color::blue,
+     fmt::terminal_color::bright_black}},
+   {{fmt::rgb(0x0B1F5C), fmt::rgb(0x2B5CC8), fmt::rgb(0x7FA8E8), fmt::rgb(0xC8DAF5)},
+    {fmt::terminal_color::blue,
+     fmt::terminal_color::bright_blue,
+     fmt::terminal_color::bright_blue,
+     fmt::terminal_color::bright_black}}},
+}};
+
+/**
+ * @brief How much colour the terminal can take.
+ */
+enum class ColourMode : uint8_t { None, Basic, Truecolor };
+
+/**
+ * @brief Read the colour support from NO_COLOR and COLORTERM.
+ *
+ * @return None if NO_COLOR is set, Truecolor if COLORTERM advertises 24-bit
+ *         support, Basic otherwise
+ */
+ColourMode detect_colour_mode() {
+    // NO_COLOR disables colour whenever it is set and non-empty
+    const char *no_colour = std::getenv("NO_COLOR");
+    if (no_colour != nullptr && no_colour[0] != '\0') {
+        return ColourMode::None;
+    }
+    // COLORTERM is the de facto advertisement of 24-bit support
+    const char *colorterm = std::getenv("COLORTERM");
+    if (colorterm != nullptr) {
+        std::string_view value{colorterm};
+        if (value == "truecolor" || value == "24bit") {
+            return ColourMode::Truecolor;
+        }
+    }
+    return ColourMode::Basic;
+}
+
+/**
+ * @brief Whether the terminal background is dark or light.
+ */
+enum class Background : uint8_t { Dark, Light };
+
+/**
+ * @brief Read the terminal background from COLORFGBG.
+ *
+ * COLORFGBG is "fg;bg" or "fg;default;bg", and only rxvt, Konsole and a few
+ * others set it. Following vim, background colours 0-6 and 8 are dark and the
+ * rest light.
+ *
+ * @return Light if COLORFGBG names a light background, Dark otherwise,
+ *         including when it is unset
+ */
+Background detect_background() {
+    const char *colorfgbg = std::getenv("COLORFGBG");
+    if (colorfgbg == nullptr) {
+        return Background::Dark;
+    }
+    // The background is the last field
+    std::string_view value{colorfgbg};
+    const auto sep = value.rfind(';');
+    if (sep == std::string_view::npos) {
+        return Background::Dark;
+    }
+    const std::string_view bg = value.substr(sep + 1);
+    const bool dark = (bg.size() == 1 && bg[0] >= '0' && bg[0] <= '6') || bg == "8";
+    return dark || bg.empty() || bg == "default" ? Background::Dark : Background::Light;
+}
+
+/**
+ * @brief Resolve one text style per spot glyph from a ramp.
+ *
+ * @param ramp Colours to draw the spots in
+ * @param mode Colour support of the terminal; None yields empty styles, which
+ *             emit no escape codes
+ * @return Styles indexed in the same order as spot_glyphs
+ */
+std::array<fmt::text_style, spot_glyphs.size()> resolve_styles(const Ramp &ramp,
+                                                               ColourMode mode) {
+    std::array<fmt::text_style, spot_glyphs.size()> styles{};
+    if (mode == ColourMode::None) {
+        return styles;
+    }
+    for (size_t i = 0; i < styles.size(); ++i) {
+        styles[i] = mode == ColourMode::Truecolor ? fmt::fg(ramp.truecolor[i])
+                                                  : fmt::fg(ramp.basic[i]);
+    }
+    return styles;
+}
+
+/**
+ * @brief Draw the art and the program name line in the given styles.
+ *
+ * @param program Name shown under the art
+ * @param version Version shown after the name
+ * @param styles One style per spot glyph, as from resolve_styles()
+ * @param mode Colour support of the terminal, deciding whether FAST is bold
+ */
+void print_art(std::string_view program,
+               std::string_view version,
+               const std::array<fmt::text_style, spot_glyphs.size()> &styles,
+               ColourMode mode) {
+    // Walk the art, colouring each spot glyph and passing everything else
+    // through. Glyphs are multi-byte UTF-8, so match by prefix, not by char.
+    std::string_view art = banner_art.substr(1);
+    while (!art.empty()) {
+        size_t match = 0;
+        while (match < spot_glyphs.size() && !art.starts_with(spot_glyphs[match])) {
+            ++match;
+        }
+        if (match == spot_glyphs.size()) {
+            std::fputc(art.front(), stdout);
+            art.remove_prefix(1);
+            continue;
+        }
+        fmt::print(styles[match], "{}", spot_glyphs[match]);
+        art.remove_prefix(spot_glyphs[match].size());
+    }
+
+    // Program name under the art in the palette's medium-intensity colour,
+    // then the version unstyled
+    const fmt::text_style bold =
+      mode == ColourMode::None ? fmt::text_style{} : fmt::emphasis::bold;
+    fmt::print("{} · {} · {}\n\n",
+               fmt::styled("FAST", bold),
+               fmt::styled(program, styles[1]),
+               version);
+}
+
+/**
+ * @brief Choose this run's colour map.
+ *
+ * @return The palette FFS_BANNER_PALETTE names by index, or a random one if it
+ *         is unset, malformed or out of range
+ */
+const Palette &pick_palette() {
+    // An override must parse in full and index into the table
+    const char *pinned = std::getenv("FFS_BANNER_PALETTE");
+    if (pinned != nullptr) {
+        const std::string_view value{pinned};
+        size_t index = 0;
+        const auto [end, error] =
+          std::from_chars(value.data(), value.data() + value.size(), index);
+        if (error == std::errc{} && end == value.data() + value.size()
+            && index < bike_shed.size()) {
+            return bike_shed[index];
+        }
+    }
+    std::random_device entropy;
+    std::uniform_int_distribution<size_t> pick(0, bike_shed.size() - 1);
+    return bike_shed[pick(entropy)];
+}
+
+}  // namespace
+
+void print_banner(std::string_view program) {
+    // Pick this run's colour map and the ramp for the terminal background
+    const Palette &palette = pick_palette();
+    const Ramp &ramp =
+      detect_background() == Background::Light ? palette.light : palette.dark;
+
+    const ColourMode mode = detect_colour_mode();
+    print_art(program, ffs_version(), resolve_styles(ramp, mode), mode);
+    std::fflush(stdout);
+}
+
+void print_banner_preview(std::string_view program) {
+    // Walk the table in order, so each label is the index FFS_BANNER_PALETTE
+    // takes to pin that colour map
+    const ColourMode mode = detect_colour_mode();
+    for (size_t index = 0; index < bike_shed.size(); ++index) {
+        for (const Background background : {Background::Dark, Background::Light}) {
+            const bool light = background == Background::Light;
+            const Ramp &ramp = light ? bike_shed[index].light : bike_shed[index].dark;
+            fmt::print("palette {}, {} background\n", index, light ? "light" : "dark");
+            print_art(program, ffs_version(), resolve_styles(ramp, mode), mode);
+        }
+    }
+    std::fflush(stdout);
+}

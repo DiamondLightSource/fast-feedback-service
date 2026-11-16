@@ -30,3 +30,10 @@ conflict fast-feedback-service
 prepend-path PATH $prefix/bin
 prepend-path LD_LIBRARY_PATH $prefix/lib
 prepend-path LD_LIBRARY_PATH $prefix/lib64
+
+# The banner on an interactive load. A modulefile's stdout is evaluated by
+# the shell, so the program writes to stderr instead; it prints nothing
+# when that is not a terminal, and a failure never stops the load.
+if { [module-info mode load] } {
+  catch { exec $prefix/bin/ffs_banner >@stderr }
+}

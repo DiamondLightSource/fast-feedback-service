@@ -22,6 +22,9 @@ drives the compiled programs is not documented here yet.
    :caption: Getting started
 
    readme
+   building
+   service
+   testing
 
 .. toctree::
    :maxdepth: 2
