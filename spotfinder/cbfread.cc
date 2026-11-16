@@ -1,130 +1,152 @@
-
 #include "cbfread.hpp"
 
 #include <fmt/core.h>
 
-#include <cassert>
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
+#include <regex>
+#include <stdexcept>
 #include <string_view>
 
-#include "bitshuffle.h"
 #include "common.hpp"
 
-// const std::string BINARY_MARKER = "--CIF-BINARY-FORMAT-SECTION--";
-const std::string BINARY_MARKER = "\x0c\x1a\x04\xd5";
+namespace {
 
+/// Marks the start of the binary data section in a CBF file
+constexpr std::array<uint8_t, 4> BINARY_MARKER = {0x0c, 0x1a, 0x04, 0xd5};
+
+/// Read an entire file into a byte array
+auto read_file(const std::string &filename) -> std::vector<uint8_t> {
+    std::ifstream f(filename, std::ios::in | std::ios::binary);
+    if (!f) {
+        throw std::runtime_error(fmt::format("Could not open CBF file {}", filename));
+    }
+    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+}
+
+/// Find the binary data section, or throw.
+///
+/// Uses the X-Binary-Size MIME header, if present, to bound the length.
+auto find_binary_data(std::vector<uint8_t> &data, const std::string &filename)
+  -> std::span<uint8_t> {
+    auto it =
+      std::search(data.begin(), data.end(), BINARY_MARKER.begin(), BINARY_MARKER.end());
+    if (it == data.end()) {
+        throw std::runtime_error(
+          fmt::format("Could not find binary section in CBF file {}", filename));
+    }
+    size_t start = std::distance(data.begin(), it) + BINARY_MARKER.size();
+    size_t size = data.size() - start;
+
+    static const std::regex re_size(R"(X-Binary-Size:\s*([0-9]+))");
+    std::string header(data.begin(), it);
+    std::smatch m;
+    if (std::regex_search(header, m, re_size)) {
+        size = std::min<size_t>(size, std::stoull(m[1]));
+    }
+    return {data.data() + start, size};
+}
+
+/// Expand a '#' template to a specific image number
 auto expand_template(const std::string &template_path, size_t index) -> std::string {
-    std::string prefix = template_path.substr(0, template_path.find("#"));
-    std::string suffix = template_path.substr(template_path.rfind("#") + 1);
-    int template_length = template_path.length() - prefix.length() - suffix.length();
-
-    return fmt::format("{}{:0{}d}{}", prefix, index, template_length, suffix);
+    auto first = template_path.find('#');
+    auto last = template_path.rfind('#');
+    return fmt::format("{}{:0{}d}{}",
+                       template_path.substr(0, first),
+                       index,
+                       last - first + 1,
+                       template_path.substr(last + 1));
 }
 
-// template <>
-// void decompress_byte_offset(const std::span<uint8_t> in, std::span<uint16_t> out);
-
-/// Splits a header line by middle-space and returns the second value
-auto get_value_contents(const std::string &input) -> std::string {
-    auto start = input.find_first_not_of(" #");
-    auto end = input.find_last_not_of(" #\r");
-    auto strimmed = input.substr(start, end - start + 1);
-
-    return strimmed.substr(strimmed.find(" ") + 1);
+auto parse_float(const std::string &s) -> float {
+    return std::stof(s);
 }
 
-CBFRead::CBFRead(const std::string &templatestr, size_t num_images, size_t first_index)
-    : _num_images(num_images), _first_index(first_index), _template_path(templatestr) {
-    if (first_index > 1) {
-        fmt::print("Error: Can only handle CBF start index of 0 or 1\n");
-        std::exit(1);
-    }
-    // We must have our first file, as we read this for mask and metadata
-    assert(std::filesystem::exists(expand_template(templatestr, _first_index)));
+}  // namespace
 
-    {
-        std::ifstream f(expand_template(templatestr, first_index), std::ios::in);
-        std::string line;
-        // Fast-forward to the binary section
-        int read_values = 0;
-        while (read_values < 2) {
-            std::getline(f, line);
-            if (line.starts_with("X-Binary-Size-Fastest-Dimension")) {
-                _image_shape[1] = std::stoi(get_value_contents(line));
-                read_values += 1;
-            } else if (line.starts_with("X-Binary-Size-Second-Dimension")) {
-                _image_shape[0] = std::stoi(get_value_contents(line));
-                read_values += 1;
-            }
-        }
+std::string CBFRead::filename_for(const std::string &path, size_t index) {
+    return is_template(path) ? expand_template(path, index) : path;
+}
+
+CBFRead::CBFRead(const std::string &path, size_t num_images, size_t first_index)
+    : _path(path),
+      _is_template(is_template(path)),
+      _num_images(_is_template ? num_images : 1) {
+    auto first_filename = filename_for(first_index);
+    auto file_data = read_file(first_filename);
+    auto binary_data = find_binary_data(file_data, first_filename);
+
+    // Parse the text header. This is the (mini)CBF header, and the MIME
+    // header immediately before the binary section.
+    std::string header(file_data.data(), binary_data.data());
+    std::optional<size_t> fast, slow;
+
+    // Matches e.g. "# Beam_xy (1263.40, 1318.60) pixels"
+    const std::regex re_beam_xy(
+      R"(Beam_xy\s*\(\s*([-0-9.eE+]+)\s*,\s*([-0-9.eE+]+)\s*\))");
+    const std::regex re_pixel_size(
+      R"(Pixel_size\s+([-0-9.eE+]+)\s*m\s*x\s*([-0-9.eE+]+)\s*m)");
+    const std::regex re_wavelength(R"(Wavelength\s+([-0-9.eE+]+)\s*A)");
+    const std::regex re_distance(R"(Detector_distance\s+([-0-9.eE+]+)\s*m)");
+    const std::regex re_cutoff(R"(Count_cutoff\s+([0-9]+))");
+    const std::regex re_fast(R"(X-Binary-Size-Fastest-Dimension:\s*([0-9]+))");
+    const std::regex re_slow(R"(X-Binary-Size-Second-Dimension:\s*([0-9]+))");
+
+    std::smatch m;
+    if (std::regex_search(header, m, re_fast)) fast = std::stoul(m[1]);
+    if (std::regex_search(header, m, re_slow)) slow = std::stoul(m[1]);
+    if (!fast || !slow) {
+        throw std::runtime_error(
+          fmt::format("Could not read image dimensions from CBF {}", first_filename));
     }
-    // Read the data for the first image to generate a mask
+    _image_shape = {*slow, *fast};
+
+    if (std::regex_search(header, m, re_wavelength)) {
+        _wavelength = parse_float(m[1]);
+    }
+    if (std::regex_search(header, m, re_distance)) {
+        _distance = parse_float(m[1]);
+    }
+    if (std::regex_search(header, m, re_pixel_size)) {
+        // Header is (x, y); the reader interface is (y, x)
+        _pixel_size = {{parse_float(m[2]), parse_float(m[1])}};
+    }
+    if (std::regex_search(header, m, re_beam_xy)) {
+        _beam_center = {{parse_float(m[2]), parse_float(m[1])}};
+    }
+    if (std::regex_search(header, m, re_cutoff)) {
+        _count_cutoff = std::stoll(m[1]);
+    }
+
+    // Generate the mask from the first image: Negative pixels are invalid
     const size_t num_pixels = _image_shape[0] * _image_shape[1];
-    // CBF files are compressed 32-bit, so need more storage
-    auto compressed_data_buffer = std::make_unique<uint8_t[]>(num_pixels * 4);
-    get_raw_chunk(0, {compressed_data_buffer.get(), num_pixels * 4});
-    for (int i = 0; i < 32; ++i) {
-        fmt::print("{:02x} ", compressed_data_buffer[i]);
-    }
-    fmt::print("\n");
-    // auto compressed_data =
-    //   get_raw_chunk(0, {compressed_data_buffer.get(), 4 * num_pixels});
-    auto image_data = std::make_unique<int16_t[]>(num_pixels);
-
-    decompress_byte_offset<decltype(image_data)::element_type>(
-      {compressed_data_buffer.get(), num_pixels * 4}, {image_data.get(), num_pixels});
-    _mask.reserve(num_pixels);
+    std::vector<int32_t> image_data(num_pixels);
+    decompress_byte_offset<int32_t>(binary_data, {image_data.data(), num_pixels});
+    _mask.resize(num_pixels);
     for (size_t px = 0; px < num_pixels; ++px) {
-        _mask.push_back(image_data[px] < 0);
+        _mask[px] = image_data[px] >= 0;
     }
-    // Go through entire image, using mask of "Everything negative"
-    draw_image_data(image_data.get(), 0, 190, 30, 30, _image_shape[1], _image_shape[0]);
-    draw_image_data(_mask.data(), 0, 190, 30, 30, _image_shape[1], _image_shape[0]);
 }
 
 bool CBFRead::is_image_available(size_t index) {
-    return std::filesystem::exists(
-      expand_template(_template_path, index + _first_index));
+    return std::filesystem::exists(filename_for(index));
 }
 
 std::span<uint8_t> CBFRead::get_raw_chunk(size_t index,
                                           std::span<uint8_t> destination) {
-    auto filename = expand_template(_template_path, index + _first_index);
+    auto filename = filename_for(index);
+    auto file_data = read_file(filename);
+    auto binary_data = find_binary_data(file_data, filename);
 
-    // std::vector<char> file_data;
-    std::string file_data;
-    file_data.reserve(std::filesystem::file_size(filename));
-    // file_data.reserve);
-
-    auto f = std::ifstream(filename, std::ios::in | std::ios::binary);
-    std::array<char, 4096> read_buffer;
-
-    // Read until we find the binary marker
-    do {
-        f.read(read_buffer.data(), read_buffer.size());
-        file_data.append(read_buffer.data(), f.gcount());
-    } while (f.gcount());
-    size_t data_start = file_data.find(BINARY_MARKER) + BINARY_MARKER.length();
-    // auto byte_data = std::string_view
-
-    //   reinterpret_cast<uint8_t *>(file_data.data()) + data_start,
-    //   file_data.length() - data_start};
-
-    assert(destination.size_bytes() >= (file_data.length() - data_start));
-    // auto resized_span =
-    //   std::span<uint8_t>(destination.begin(), file_data.length() - data_start);
-    std::copy(file_data.begin() + data_start, file_data.end(), destination.begin());
-
-    for (size_t i = data_start; i < file_data.length(); ++i) {
-        destination[i - data_start] = file_data[i];
+    if (binary_data.size() > destination.size_bytes()) {
+        throw std::runtime_error(fmt::format(
+          "CBF {} compressed data ({} B) is larger than the destination buffer ({} B)",
+          filename,
+          binary_data.size(),
+          destination.size_bytes()));
     }
-
-    return {destination.data(), file_data.length() - data_start};
-}
-
-template <>
-bool is_ready_for_read<CBFRead>(const std::string &path) {
-    // Wait for the first (or second if starting from 0) image to exists
-    return std::filesystem::exists(expand_template(path, 1));
+    std::copy(binary_data.begin(), binary_data.end(), destination.begin());
+    return {destination.data(), binary_data.size()};
 }

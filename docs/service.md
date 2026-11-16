@@ -25,5 +25,30 @@ Then launch the service through Zocalo:
 zocalo.service -s GPUPerImageAnalysis
 ```
 
+## CBF requests
+As well as NeXus/HDF5 (and `/dev/shm` streams), a request `filename` may be
+CBF: either a single `.cbf` image, or a template with a run of `#` standing
+for the image number (e.g. `image_#####.cbf`).
+
+- Images are spotfound with the 32-bit spotfinder, and indexed in the same
+  way as HDF5 data when `unit_cell` and a wavelength are available.
+- Detector type, pixel size, image size and sensor are read from the CBF
+  header (`detector` in the request overrides only the type). A missing
+  `wavelength` falls back to the header value. Beam centre and distance still
+  come from the request.
+- The result `file-number` is `start_frame_index + 1` for the first image of
+  the request, so `start_frame_index` is the zero-based position in the
+  collection. For templates, `file` in the result is the actual image file.
+- A single file is always one image; `number_of_frames` is ignored.
+  Message ordering is skipped for single files, and the "too old" check is
+  skipped for all CBF.
+- For a template, the file number of the first image of the collection is
+  `first_image_number`. If this isn't given, it is guessed as the lowest
+  numbered file on disk matching the template (with the same number of
+  digits), waiting up to 60 s for one to appear. Image `start_frame_index`
+  of the request is then file `first_image_number + start_frame_index`.
+  The guess is wrong if early files are missing, so pass
+  `first_image_number` when it is known.
+
 [`src/ffs/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/src/ffs
 [`spotfinder/`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/spotfinder

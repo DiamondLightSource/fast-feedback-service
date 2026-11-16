@@ -29,13 +29,13 @@ jobs:
       BRANCH: conda-update
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       # With no environment named, only the micromamba binary is installed;
       # the script runs its own dry-run solves
-      - uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
+      - uses: mamba-org/setup-micromamba@v3.2.1
 
       # Progress goes to the log and the list of changes to a file, for the
       # pull request body
