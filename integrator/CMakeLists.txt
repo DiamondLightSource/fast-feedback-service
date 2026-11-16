@@ -87,8 +87,9 @@ function(add_serial_integrator_variant target)
         spdlog::spdlog
         dx2
         Eigen3::Eigen
-        version
+        ffs_version
         ffs_common
+        ffs_cli
         cuda_parser
     )
 

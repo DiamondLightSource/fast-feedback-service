@@ -11,6 +11,7 @@
 #include <dx2/beam.hpp>
 #include <dx2/beam_ops.hpp>
 #include <dx2/experiment.hpp>
+#include <dx2/experiment_list.hpp>
 #include <dx2/goniometer.hpp>
 #include <dx2/h5/h5read_processed.hpp>
 #include <dx2/reflection.hpp>
@@ -22,6 +23,7 @@
 #include <stop_token>
 #include <string>
 #include <thread>
+#include <fstream>
 
 #include "../spotfinder/cbfread.hpp"
 #include "../spotfinder/shmread.hpp"
@@ -86,7 +88,7 @@ inline fastvec::Vector3D to_vector3d(const Eigen::Vector3d &v) {
 #pragma region Argument Parsing
 class SSXIntegratorArgumentParser : public CUDAArgumentParser {
   public:
-    SSXIntegratorArgumentParser(std::string version) : CUDAArgumentParser(version) {
+    SSXIntegratorArgumentParser() : CUDAArgumentParser() {
         add_h5read_arguments();      // Override to use refl + expt
         add_integrator_arguments();  // Add integrator-specific args
     }
@@ -141,10 +143,10 @@ class SSXIntegratorArgumentParser : public CUDAArgumentParser {
 
 #pragma region Application Entry
 int main(int argc, char **argv) {
-    logger.info("Version: {}", FFS_VERSION);
+    logger.info("ssx_integrator {}", ffs_version());
 
     // Parse arguments
-    auto parser = SSXIntegratorArgumentParser(FFS_VERSION);
+    auto parser = SSXIntegratorArgumentParser();
     auto args = parser.parse_args(argc, argv);
     const auto reflection_file = parser.reflections();
     const auto experiment_file = parser.experiment();
@@ -185,13 +187,14 @@ int main(int argc, char **argv) {
                      ex.what());
         return 1;
     }
-    Experiment expt;
+    ExperimentList elist;
     try {
-        expt = Experiment(elist_json_obj);
+        elist = ExperimentList(elist_json_obj);
     } catch (std::invalid_argument const &ex) {
         logger.error("Unable to create experiment: {}", ex.what());
         std::exit(1);
     }
+    Experiment& expt = elist[0];
 
     const uint32_t background_pool_entries_per_reflection =
       parser.get<uint32_t>("background.pool_entries_per_reflection");
@@ -208,23 +211,31 @@ int main(int argc, char **argv) {
     Eigen::Vector3d s0 = beam.get_s0();
     double wavelength = beam.get_wavelength();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
-    const Crystal &crystal = expt.crystal();
-    Eigen::Matrix3d A = crystal.get_A_matrix();
+    //const Crystal &crystal = expt.crystal();
+    //Eigen::Matrix3d A = crystal.get_A_matrix();
 
     // want a map of experiment identifier to image number
     std::unordered_map<std::string, int> identifier_to_image_number;
+    std::unordered_map<int, std::string> image_number_to_identifier;
     std::unordered_map<std::string, Crystal> identifier_to_crystal_model;
-    auto scans = elist_json_obj["scan"];
-    for (auto expt: elist_json_obj["experiment"]){
-        std::string identifier = expt["identifier"];
-        int crystal_id = expt["crystal"];
-        json crystal_json =  elist_json_obj["crystal"][crystal_id];
-        Crystal this_crystal(crystal_json);
-        int scan_id = expt["scan"];
-        int image_no = scans[scan_id]["image_range"][0];
+    //auto scans = elist_json_obj["scan"];
+    for (auto& expt: elist){
+        if (!expt.has_crystal()){
+            continue;
+        }
+        std::string identifier = expt.identifier();
+        //int crystal_id = expt["crystal"];
+        //json crystal_json =  elist_json_obj["crystal"][crystal_id];
+        Crystal this_crystal = expt.crystal();//(crystal_json);
+        //int scan_id = expt["scan"];
+        //int image_no = scans[scan_id]["image_range"][0];
+        int image_no = expt.scan().get_image_range()[0];
         identifier_to_image_number[identifier] = image_no;
+        image_number_to_identifier[image_no] = identifier;
         identifier_to_crystal_model[identifier] = this_crystal;
     }
+
+    logger.info("{} indexed crystals loaded", identifier_to_image_number.size());
 
     auto id_col = reflections.column<int>("id");
     if (!id_col){
@@ -256,7 +267,7 @@ int main(int argc, char **argv) {
     {
         ThreadPool pool(num_cpu_threads);
 
-        for (int index = 0; index < max_value; ++index) {
+        for (int index = 0; index < max_value+1; ++index) {
             pool.enqueue([&, index] {
             try {
                 // get the data from the table
@@ -372,12 +383,16 @@ int main(int argc, char **argv) {
     std::vector<int> predicted_ids;
     std::vector<int> predicted_miller_index;
     std::vector<double> predicted_partialities;
+    std::vector<double> predicted_partiality_variances;
+    std::vector<double> predicted_d_values;
     std::unordered_map<int, std::vector<size_t>> reflections_by_image;
     std::unordered_map<int, uint32_t> corner_tile_by_image;
     bboxes.reserve(num_reflections);
     predicted_ids.reserve(num_reflections);
     predicted_partialities.reserve(num_reflections);
+    predicted_partiality_variances.reserve(num_reflections);
     predicted_miller_index.reserve(num_reflections*3);
+    predicted_d_values.reserve(num_reflections);
     uint64_t cumulative_index = 0;
     int current_id = 0;
 
@@ -398,6 +413,8 @@ int main(int argc, char **argv) {
     for (const auto& [key, predictions] : *predictions_mapptr) {
         Simple6MosaicityParameterisation& model = (*models_mapptr)[key];
         Matrix3d sigma = model.sigma();
+        Crystal& this_crystal = identifier_to_crystal_model[image_number_to_identifier[key]];
+        gemmi::UnitCell cell = this_crystal.get_unit_cell();
         
         for (const auto& p: predictions){
             bboxes.emplace_back(p.bbox_extent);
@@ -409,11 +426,14 @@ int main(int argc, char **argv) {
             image_max = std::max(image_max, corner_grid);
             predicted_ids.emplace_back(current_id);
             predicted_partialities.emplace_back(p.partiality);
+            predicted_partiality_variances.emplace_back(p.partiality_variance);
             predicted_miller_index.emplace_back(p.h[0]);
             predicted_miller_index.emplace_back(p.h[1]);
             predicted_miller_index.emplace_back(p.h[2]);
             s1_vectors_vec.push_back(to_vector3d(p.s1));
             s2_vectors_vec.push_back(to_vector3d(p.s2));
+            std::array<int, 3> hkl_this = {p.h[0], p.h[1], p.h[2]};
+            predicted_d_values.emplace_back(cell.calculate_d(hkl_this));
 
             // Precalculate mubar and Sbar inv, as these are fixed for each reflection and we don't want
             // to have to recalculate in a hot loop on the gpu.
@@ -1002,7 +1022,9 @@ int main(int argc, char **argv) {
       "intensity.sum.variance", num_reflections, 1, variances);
     integrated_data.add_column("id", num_reflections, 1, predicted_ids);
     integrated_data.add_column("partiality", num_reflections, 1, predicted_partialities);
+    integrated_data.add_column("partiality_variance", num_reflections, 1, predicted_partiality_variances);
     integrated_data.add_column("miller_index", num_reflections, 3, predicted_miller_index);
+    integrated_data.add_column("d", num_reflections, 3, predicted_d_values);
     integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_out);
     integrated_data.add_column("num_pixels.foreground", num_reflections, 1, nfg_out);
     integrated_data.add_column("background.sum.value", num_reflections, 1, bg_sum_out);
@@ -1021,6 +1043,12 @@ int main(int argc, char **argv) {
     success_data.write("integrated.refl");
 
     // Add profile models to an integrated.expt list.
+    ExperimentList integrated_expts = elist.select(identifiers);
+    json integrated_elist_json = integrated_expts.to_json();
+    std::string efile_name = "integrated.expt";
+    std::ofstream efile(efile_name);
+    efile << integrated_elist_json.dump(4);
+    logger.info("Saved integrated experiment list to {}", efile_name);
 
     return 0;
 }
