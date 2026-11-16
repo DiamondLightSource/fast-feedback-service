@@ -107,7 +107,7 @@ TEST_F(ExtentTest, ComputeKabschBoundingBoxes) {
     std::ifstream f(expt_file);
     auto elist_json = nlohmann::json::parse(f);
     ExperimentList elist(elist_json);
-    Experiment& expt = elist[0];
+    Experiment &expt = elist[0];
     const Panel &panel = expt.detector().panels()[0];
     const Scan &scan = expt.scan();
     const auto &beam = beam_ops::require_monochromatic(expt.beam());
