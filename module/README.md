@@ -25,6 +25,8 @@ OPTIONS:
     -v, --version NAME     Release name; names the install directory and
                            the module, and must equal the version the
                            source resolves to. dev takes any version.
+                           Releases are YYYY.MM, without the month's
+                           leading zero: v2027.01 resolves to 2027.1.
                            (default: dev)
     -p, --prefix PATH      Install prefix, overriding
                            <install-root>/<version>
@@ -48,13 +50,13 @@ OPTIONS:
 ## Naming
 
 `--version` sets both the install directory and the module name, so
-`--version 1.0.0` installs to `<install-root>/1.0.0` and publishes
-`fast-feedback-service/1.0.0`.
+`--version 2026.11` installs to `<install-root>/2026.11` and publishes
+`fast-feedback-service/2026.11`.
 
 A release name is checked against the version setuptools_scm resolves
 from the source before anything is installed, and again against the
-installed package afterwards. `--version 1.0.0` therefore only deploys
-from a clean checkout of the `v1.0.0` tag; anything else stops with the
+installed package afterwards. `--version 2026.11` therefore only deploys
+from a clean checkout of the `v2026.11` tag; anything else stops with the
 version the source actually resolves to. `dev` is the rolling name and
 takes whatever the source resolves to, which the modulefile's
 `module-whatis` then records.
