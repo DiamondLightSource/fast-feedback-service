@@ -35,15 +35,11 @@
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
 #include "integrator/background_pool.hpp"
-//#include "integrator/coordinate_system.hpp"
 #include "integrator/extent.hpp"
-//#include "integrator/lp_correction.hpp"
-//#include "integrator/sigma_estimation.hpp"
 #include "ellipsoid.cuh"
 #include "math/device_precision.cuh"
 #include "math/math_utils.cuh"
 #include "math/vector3d.cuh"
-//#include "predictor/predict.hpp"
 #include "thread_count.hpp"
 #include "version.hpp"
 #include "ssx/ssx_integrate.hpp"
@@ -211,24 +207,18 @@ int main(int argc, char **argv) {
     Eigen::Vector3d s0 = beam.get_s0();
     double wavelength = beam.get_wavelength();
     const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
-    //const Crystal &crystal = expt.crystal();
-    //Eigen::Matrix3d A = crystal.get_A_matrix();
 
     // want a map of experiment identifier to image number
     std::unordered_map<std::string, int> identifier_to_image_number;
     std::unordered_map<int, std::string> image_number_to_identifier;
     std::unordered_map<std::string, Crystal> identifier_to_crystal_model;
-    //auto scans = elist_json_obj["scan"];
+
     for (auto& expt: elist){
         if (!expt.has_crystal()){
             continue;
         }
         std::string identifier = expt.identifier();
-        //int crystal_id = expt["crystal"];
-        //json crystal_json =  elist_json_obj["crystal"][crystal_id];
-        Crystal this_crystal = expt.crystal();//(crystal_json);
-        //int scan_id = expt["scan"];
-        //int image_no = scans[scan_id]["image_range"][0];
+        Crystal this_crystal = expt.crystal();
         int image_no = expt.scan().get_image_range()[0];
         identifier_to_image_number[identifier] = image_no;
         image_number_to_identifier[image_no] = identifier;
@@ -470,28 +460,8 @@ int main(int argc, char **argv) {
         reflections_by_image[key] = std::move(refl_indices);
     }
 
-    /*for (size_t refl_id = 0; refl_id < num_reflections; ++refl_id) {
-        const auto &bbox = bboxes[refl_id];
-
-        // The bbox is half-open in x and y, so w×h is exactly the pixel
-        // count and the corner grid is one larger on each axis.
-        const uint32_t corner_grid =
-          static_cast<uint32_t>(bbox.x_max - bbox.x_min + 1)
-          * static_cast<uint32_t>(bbox.y_max - bbox.y_min + 1);
-
-        // Add this reflection to all images it spans. The shoebox z
-        // range is half-open [z_min, z_max), so z_max is excluded.
-        for (int z = bbox.z_min; z < bbox.z_max; ++z) {
-            reflections_by_image[z].push_back(refl_id);
-            uint32_t &image_max = corner_tile_by_image[z];
-            image_max = std::max(image_max, corner_grid);
-        }
-    }*/
-
-    //
-    //file is nexus file extracted from elist
     std::unique_ptr<Reader> reader_ptr;
-    std::string file = "/scratch/whi10850/ssx_mx36015-64-axcp_idris_2492/idris_2492.nxs"; //FIXME
+    std::string file = expt.imagesequence().filename(); 
     reader_ptr = std::make_unique<H5Read>(file);
     Reader &reader = *reader_ptr;
     auto reader_mutex = std::mutex{};
@@ -504,7 +474,7 @@ int main(int argc, char **argv) {
             bytes_per_pixel * 8);
         std::exit(bytes_per_pixel * 8);
     }
-    uint32_t num_images = 3000;//reader.get_number_of_images();
+    uint32_t num_images = 3000;//reader.get_number_of_images(); FIXME
     uint32_t height = reader.image_shape()[0];
     uint32_t width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
@@ -609,13 +579,6 @@ int main(int argc, char **argv) {
     DeviceBuffer<uint32_t> d_background_count(num_reflections);
     DeviceBuffer<uint8_t> d_background_success(num_reflections);
 
-    
-
-    // Upload the detector mask once (constant across all images).
-    // non-zero = valid, 0 = masked. If the reader provides no mask,
-    // treat every pixel as valid. Stored flat (width*height), indexed
-    // `gy * width + gx`.
-
 
     // What do we need: s1, s2, s0, panel for pixel lab coord, sigma,
     // Could precompute pixel to lab coords?
@@ -630,10 +593,6 @@ int main(int argc, char **argv) {
     }
     DeviceBuffer<uint8_t> d_mask(static_cast<size_t>(width) * height);
     d_mask.assign(h_mask.data());
-
-    //DetectorParameters det_params = make_detector_params(panel);
-
-    //fastvec::Vector3D s0_vec = to_vector3d(s0);
 
     DeviceBuffer<accumulator_t> d_foreground_sum(num_reflections);
     DeviceBuffer<uint32_t> d_foreground_count(num_reflections);
@@ -1024,7 +983,7 @@ int main(int argc, char **argv) {
     integrated_data.add_column("partiality", num_reflections, 1, predicted_partialities);
     integrated_data.add_column("partiality_variance", num_reflections, 1, predicted_partiality_variances);
     integrated_data.add_column("miller_index", num_reflections, 3, predicted_miller_index);
-    integrated_data.add_column("d", num_reflections, 3, predicted_d_values);
+    integrated_data.add_column("d", num_reflections, 1, predicted_d_values);
     integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_out);
     integrated_data.add_column("num_pixels.foreground", num_reflections, 1, nfg_out);
     integrated_data.add_column("background.sum.value", num_reflections, 1, bg_sum_out);
