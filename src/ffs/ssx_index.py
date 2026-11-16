@@ -19,6 +19,11 @@ from pydantic import BaseModel, NonNegativeInt
 
 import ffs.index
 
+# Root attributes DIALS (>= 3.31) requires before it will read a reflection
+# file; the same values dx2 writes (dials/util/table_as_hdf5_file.py).
+DIALS_FILE_TYPE = "dials_processed_data"
+DIALS_FILE_VERSION = 1
+
 
 @dataclass(slots=True)
 class InputArrays:
@@ -236,6 +241,8 @@ class OutputAggregator:
 
     def write_table(self, filename):
         with h5py.File(Path.cwd() / filename, "w") as output_refl:
+            output_refl.attrs["file_type"] = DIALS_FILE_TYPE
+            output_refl.attrs["file_version"] = DIALS_FILE_VERSION
             group = output_refl.create_group("dials/processing/group_0")
             ids_array = np.concatenate(self.ids_output)
             group["id"] = ids_array
