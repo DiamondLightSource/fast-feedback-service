@@ -355,7 +355,7 @@ int main(int argc, char **argv) {
                      ex.what());
         return 1;
     }
-    Experiment expt = elist[0];
+    Experiment& expt = elist[0];
 
     // Extract experimental components
     auto &beam = beam_ops::require_monochromatic(expt.beam());

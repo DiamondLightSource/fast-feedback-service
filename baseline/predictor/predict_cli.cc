@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
         logger.error("Unable to create experimentlist: {}", ex.what());
         std::exit(1);
     }
-    Experiment expt = elist[0];
+    Experiment& expt = elist[0];
 
     Scan scan = expt.scan();
     if (buffer_size > 0) {
