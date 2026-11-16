@@ -93,6 +93,27 @@ is actually loaded rather than the word latest. Nothing sorts version
 names: latest means the last one deployed with the flag, so publishing
 an older release with `--latest` moves the pointer backwards.
 
+## Releasing a version
+
+A release has to deploy from a clean checkout of its tag. Any checkout
+will do; the suggested method is a worktree beside the main checkout:
+
+```bash
+git fetch origin
+git tag -a v2026.11 -m "fast-feedback-service 2026.11" origin/main
+git worktree add ../ffs-2026.11 v2026.11
+git -C ../ffs-2026.11 submodule update --init --recursive
+../ffs-2026.11/module/deploy.sh --version 2026.11 --modulefile --latest
+git push origin v2026.11
+git worktree remove --force ../ffs-2026.11
+```
+
+`git worktree add` leaves submodules empty, and the build needs dx2.
+The tag is pushed once the module works, since pushing it publishes the
+container image. The installed prefix does not depend on the worktree;
+removing it needs `--force` because it holds a submodule and the
+untracked build directory.
+
 ## The modulefile
 
 `module/modulefile` is a template. `deploy.sh` substitutes the `@...@`
