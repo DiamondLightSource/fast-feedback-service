@@ -1,10 +1,12 @@
 # Deploying to the module system
 
-`deploy.sh` builds the service into a conda prefix and publishes a
-modulefile pointing at it.
+[`deploy.sh`] builds the service into a conda prefix and publishes a
+modulefile pointing at it. It targets Diamond's install tree under
+`/dls_sw` and its module system; elsewhere, run the container or
+[build from source](building.md).
 
-It follows the same two-environment split as the `Dockerfile`:
-`conda/development/environment.yml` creates the build environment, and
+It follows the same two-environment split as the [`Dockerfile`]:
+[`conda/development/environment.yml`] creates the build environment, and
 the one that ships is derived from it with only the packages listed in
 `conda/runtime/packages`. Nothing compiles into the deployed tree, so no
 compiler, cmake or test framework ends up on a user's PATH.
@@ -72,12 +74,12 @@ is how to stage a build somewhere private before publishing:
 The modulefile is only written with `--modulefile`, since that is the
 step that makes a build visible to everyone on the machine.
 
-## latest
+## The latest pointer
 
 `--latest` points `fast-feedback-service/latest` at the module just
 published, so a recipe can say
 
-```
+```bash
 module load fast-feedback-service/latest
 ```
 
@@ -116,7 +118,7 @@ untracked build directory.
 
 ## The modulefile
 
-`module/modulefile` is a template. `deploy.sh` substitutes the `@...@`
+[`module/modulefile`] is a template. `deploy.sh` substitutes the `@...@`
 placeholders and refuses to publish if any survive.
 
 It sets PATH and `LD_LIBRARY_PATH`, requires the CUDA module it was
@@ -128,3 +130,8 @@ It deliberately does not set `SPOTFINDER`, `INDEXER` or `INTEGRATOR`.
 build can be used without reordering PATH, and a module that sets them
 takes that away. The container sets them because it has no module
 system to lean on.
+
+[`deploy.sh`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/module/deploy.sh
+[`Dockerfile`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/Dockerfile
+[`conda/development/environment.yml`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/conda/development/environment.yml
+[`module/modulefile`]: https://github.com/DiamondLightSource/fast-feedback-service/tree/main/module/modulefile
