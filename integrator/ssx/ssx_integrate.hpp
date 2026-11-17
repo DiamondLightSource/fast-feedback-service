@@ -19,7 +19,7 @@ Simple6MosaicityParameterisation refine_mosaicity(
   mdspan_type<const double> &xyzcal_px,
   mdspan_type<const double> &xyzobs_px,
   mdspan_type<const double> &covariances,
-  mdspan_type<const int> &intensities,
+  mdspan_type<const double> &intensities,
   mdspan_type<const int> &miller_indices,
   mdspan_type<const double> &mobs,
   const Eigen::Vector3d &s0,

@@ -304,7 +304,19 @@ int main(int argc, char **argv) {
                     logger.error("Column 'intensity.sum.value' not found in reflection data.");
                     return;
                 }
-                mdspan_type<const int> strong_intensities = intensities_opt.value();
+                mdspan_type<const int> strong_intensities_int = intensities_opt.value();
+                std::vector<double> strong_intensities_double;
+                strong_intensities_double.reserve(
+                    strong_intensities_int.extent(0) * strong_intensities_int.extent(1));
+
+                for (std::size_t i = 0; i < strong_intensities_int.extent(0); ++i) {
+                    for (std::size_t j = 0; j < strong_intensities_int.extent(1); ++j) {
+                        strong_intensities_double.push_back(
+                            static_cast<double>(strong_intensities_int(i, j)));
+                    }
+                }
+                mdspan_type<const double> strong_intensities = mdspan_type<const double>(
+                    strong_intensities_double.data(), strong_intensities_double.size(), 1);
 
                 auto miller_indices_opt = table.column<int>("miller_index");
                 if (!miller_indices_opt) {
