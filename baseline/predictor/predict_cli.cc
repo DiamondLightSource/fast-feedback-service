@@ -174,10 +174,12 @@ int main(int argc, char **argv) {
     // Check if the minimum resolution paramenter (dmin) was passed in by the user,
     // if yes, check if it is a valid value; if not, assign a default.
     const auto &beam = beam_ops::require_monochromatic(expt.beam());
+    Eigen::Vector3d s0 = beam.get_s0();
+    const Panel &panel = expt.detector().panels()[0];  // Assuming single panel detector
+    double dmin_default = panel.get_max_resolution_at_corners(s0);
+
     double wavelength = beam.get_wavelength();
     double dmin_min = 0.5 * wavelength;
-    // FIXME: Need a better dmin_default from .expt file (like in DIALS)
-    double dmin_default = dmin_min;
     if (!parser.is_used("dmin")) {
         param_dmin = dmin_default;
     } else if (param_dmin < dmin_min) {
