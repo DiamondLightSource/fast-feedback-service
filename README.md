@@ -66,6 +66,8 @@ source, is published at
   choosing a GPU architecture.
 - [Running the service][service]: environment variables and launching
   under Zocalo.
+- [Deploying][deploying]: installing a release on the Diamond module
+  system with `module/deploy.sh`.
 - [Testing][testing]: the pytest suite and the regression data.
 
 <!-- PERFORMANCE: a measured throughput table (detector, GPU, images/s) goes here -->
@@ -87,6 +89,7 @@ source, is published at
 [banner_svg]: scripts/banner_svg.py
 [building]: docs/building.md
 [service]: docs/service.md
+[deploying]: docs/deploying.md
 [testing]: docs/testing.md
 [`conda/development/environment.yml`]: conda/development/environment.yml
 [`spotfinder/`]: spotfinder/
