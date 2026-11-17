@@ -60,7 +60,7 @@ class SpotfindIndexIntegrateRequest(PipelineRequest):
     data: Path
 
     # Spotfinder tuning
-    spotfinder_algorithm: Optional[str] = None
+    spotfinder_algorithm: str = "dispersion_extended"
     spotfinder_threads: Optional[int] = None
     spotfinder_timeout: Optional[float] = None
     images: Optional[int] = None

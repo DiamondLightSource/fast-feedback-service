@@ -274,9 +274,9 @@ class IntegratorArgumentParser : public CUDAArgumentParser {
 
         add_argument("--background")
           .help(
-            "Background model - constant (Tukey/IQR outlier rejection) or "
-            "glm (robust-Poisson GLM constant background).")
-          .default_value<std::string>("constant");
+            "Background model - glm (robust-Poisson GLM constant background) "
+            "or constant (Tukey/IQR outlier rejection).")
+          .default_value<std::string>("glm");
 
         add_argument("--background.pool_entries_per_reflection")
           .help(
