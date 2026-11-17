@@ -281,7 +281,7 @@ class ReekeIndexGenerator {
           -a2_len * s0_2_len - s0_2_dot_a2, a2_len * s0_2_len - s0_2_dot_a2};
 
         // Calculate resolution limits
-        std::pair<double, double> h_limits_resolution_1 =
+        /*std::pair<double, double> h_limits_resolution_1 =
           calc_h_limits_resolution(a1, s0_1);
         std::pair<double, double> h_limits_resolution_2 =
           calc_h_limits_resolution(a2, s0_2);
@@ -300,7 +300,7 @@ class ReekeIndexGenerator {
             h_limits_2->first = h_limits_resolution_2.first;
         if (2 * (s0_2_len * s0_2_len - std::abs(s0_2_len * s0_2_dot_a2) / a2_len)
             > 1 / (dmin * dmin))
-            h_limits_2->second = h_limits_resolution_2.second;
+            h_limits_2->second = h_limits_resolution_2.second;*/
 
         // Verify that the combined start and end limits are in the correct order
         if (h_limits_1->first > h_limits_1->second) h_limits_1 = std::nullopt;
