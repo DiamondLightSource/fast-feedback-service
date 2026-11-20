@@ -219,7 +219,7 @@ int main(int argc, char **argv) {
         }
         std::string identifier = expt.identifier();
         Crystal this_crystal = expt.crystal();
-        int image_no = expt.scan().get_image_range()[0];
+        int image_no = expt.scan().get_image_range()[0] - 1;
         identifier_to_image_number[identifier] = image_no;
         image_number_to_identifier[image_no] = identifier;
         identifier_to_crystal_model[identifier] = this_crystal;
@@ -636,7 +636,9 @@ int main(int argc, char **argv) {
     for (int thread_id = 0; thread_id < num_cpu_threads; ++thread_id) {
         threads.emplace_back([&, thread_id]() {
             auto stop_token = global_stop.get_token();
+            bool arrived_at_barrier = false;
             CudaStream stream;
+            CudaEvent copy_done;
 
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
             //auto host_results = make_cuda_pinned_malloc<uint8_t>(width * height);
@@ -653,6 +655,7 @@ int main(int argc, char **argv) {
 
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
+            arrived_at_barrier = true;
             //CudaEvent start, copy, post, postcopy, end;
 
             // Get the time the lastimage was received to avoid waiting for too long
@@ -735,6 +738,7 @@ int main(int argc, char **argv) {
                 // We do this here rather than in the reader, because we
                 // anticipate that we will want to eventually offload
                 // the decompression
+                copy_done.synchronize();
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4:
                     bshuf_decompress_lz4(buffer.data() + 12,
@@ -762,6 +766,7 @@ int main(int argc, char **argv) {
                                                 cudaMemcpyHostToDevice,
                                                 stream));
                 //copy.record(stream);
+                copy_done.record(stream);
     #pragma endregion Decompression
                 // Get reflection indices for this image and copy to device
                 const auto &refl_indices = reflections_by_image[image_num];
