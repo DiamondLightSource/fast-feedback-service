@@ -212,7 +212,7 @@ int main(int argc, char **argv) {
     std::unordered_map<std::string, int> identifier_to_image_number;
     std::unordered_map<int, std::string> image_number_to_identifier;
     std::unordered_map<std::string, Crystal> identifier_to_crystal_model;
-
+    int max_img_no = 0;
     for (auto& expt: elist){
         if (!expt.has_crystal()){
             continue;
@@ -220,6 +220,7 @@ int main(int argc, char **argv) {
         std::string identifier = expt.identifier();
         Crystal this_crystal = expt.crystal();
         int image_no = expt.scan().get_image_range()[0] - 1;
+        max_img_no = std::max(max_img_no, image_no);
         identifier_to_image_number[identifier] = image_no;
         image_number_to_identifier[image_no] = identifier;
         identifier_to_crystal_model[identifier] = this_crystal;
@@ -431,7 +432,7 @@ int main(int argc, char **argv) {
     fastvec::Vector3D s0_vec = to_vector3d(s0);
     scalar_t wavelength_scalar = static_cast<scalar_t>(wavelength);
     DetectorParameters det_params = make_detector_params(panel);
-
+    std::size_t max_n_refls_in_image = 0;
     // Map is ordered by keys
     double norm_s0 = 1.0/wavelength;
     for (const auto& [key, predictions] : *predictions_mapptr) {
@@ -497,7 +498,9 @@ int main(int argc, char **argv) {
         }
         cumulative_index += predictions.size();
         current_id += 1;
+        max_n_refls_in_image = std::max(max_n_refls_in_image, refl_indices.size());
         reflections_by_image[key] = std::move(refl_indices);
+        
     }
 
     std::unique_ptr<Reader> reader_ptr;
@@ -514,7 +517,7 @@ int main(int argc, char **argv) {
             bytes_per_pixel * 8);
         std::exit(bytes_per_pixel * 8);
     }
-    uint32_t num_images = 3000;//reader.get_number_of_images(); FIXME
+    uint32_t num_images = max_img_no+1;
     uint32_t height = reader.image_shape()[0];
     uint32_t width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
@@ -675,6 +678,8 @@ int main(int argc, char **argv) {
             CudaStream stream;
             CudaEvent copy_done;
 
+            DeviceBuffer<size_t> d_reflection_indices(max_n_refls_in_image);
+
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
             //auto host_results = make_cuda_pinned_malloc<uint8_t>(width * height);
             auto device_image = PitchedMalloc<pixel_t>(width, height);
@@ -808,8 +813,7 @@ int main(int argc, char **argv) {
                 size_t num_refls_this_image = refl_indices.size();
 
                 // Allocate per-image device buffer for reflection indices
-                DeviceBuffer<size_t> d_reflection_indices(num_refls_this_image);
-                d_reflection_indices.assign(refl_indices.data());
+                d_reflection_indices.assign(refl_indices.data(), refl_indices.size());
                 logger.info("Launching GPU kernel for image {} with {} reflections",
                             image_num,
                             num_refls_this_image);

@@ -292,6 +292,15 @@ class DeviceBuffer {
                      fmt::format(device_color, "device"));
     }
 
+    void assign(const T *host_data, size_t n)
+    {
+        cudaMemcpy(
+            device_ptr_,
+            host_data,
+            n * sizeof(T),
+            cudaMemcpyHostToDevice);
+    }
+
     /**
    * @brief Copy data from device buffer to host memory
    *
