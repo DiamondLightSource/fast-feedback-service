@@ -255,4 +255,33 @@ TEST(SSXIntegrator, ssx_predict) {
     Simple6MosaicityParameterisation model(params);
     std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);
     EXPECT_EQ(predictions.size(), 239);  // Verified calculations.
+    std::vector<double> expected_s1_x = {0.5735814237076354, 0.5405138987177266, 0.5107643048009851, 0.5418410179643699, 0.5946808307140123};
+    std::vector<double> expected_s1_y = {0.6549081604409703, 0.6168017182540431, 0.6195296548460687, 0.5361595633555538, 0.3919093395783672};
+    std::vector<double> expected_s1_z = {-1.3580853619236188, -1.389135185702847, -1.3991422480267468, -1.4217023008983198, -1.4474315105173028};
+    std::vector<double> expected_s2_x = {0.573633160991718, 0.5404540364314417, 0.5107654649160652, 0.5417924967859332, 0.5947338283952723};
+    std::vector<double> expected_s2_y = {0.6551620049459753, 0.6165092840826513, 0.6195353880829441, 0.5359315829276203, 0.3921295649069444};
+    std::vector<double> expected_s2_z = {-1.3580737950108848, -1.3891481268620438, -1.399141995229468, -1.4217116757044412, -1.4474242015687317};
+    std::vector<double> expected_xzycal_x = {3090.0181790176534, 2974.749565629461, 2891.372645477735, 2947.0873705585022, 3050.188342404517};
+    std::vector<double> expected_xzycal_y = {129.70554852433497, 262.19236400678204, 266.4408934633297, 494.13977197009785, 862.9550027718394};
+    for (int i=0;i<5;i++){
+      EXPECT_NEAR(predictions[i].s1[0], expected_s1_x[i], 1e-9);
+      EXPECT_NEAR(predictions[i].s1[1], expected_s1_y[i], 1e-9);
+      EXPECT_NEAR(predictions[i].s1[2], expected_s1_z[i], 1e-9);
+      EXPECT_NEAR(predictions[i].s2[0], expected_s2_x[i], 1e-9);
+      EXPECT_NEAR(predictions[i].s2[1], expected_s2_y[i], 1e-9);
+      EXPECT_NEAR(predictions[i].s2[2], expected_s2_z[i], 1e-9);
+      EXPECT_NEAR(predictions[i].xyzcal_px[0], expected_xzycal_x[i], 1e-9);
+      EXPECT_NEAR(predictions[i].xyzcal_px[1], expected_xzycal_y[i], 1e-9);
+    }
+    // Test expected bboxes
+    std::vector<int> bbox_x0 = {3084, 2969, 2886, 2941, 3044};
+    std::vector<int> bbox_x1 = {3096, 2980, 2897, 2953, 3056};
+    std::vector<int> bbox_y0 = {124, 257, 261, 488, 857};
+    std::vector<int> bbox_y1 = {135, 268, 272, 500, 869};
+    for (int i=0;i<5;i++){
+      EXPECT_EQ(predictions[i].bbox_extent.x_min,bbox_x0[i]);
+      EXPECT_EQ(predictions[i].bbox_extent.x_max,bbox_x1[i]);
+      EXPECT_EQ(predictions[i].bbox_extent.y_min,bbox_y0[i]);
+      EXPECT_EQ(predictions[i].bbox_extent.y_max,bbox_y1[i]);
+    }
 }

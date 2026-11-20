@@ -299,13 +299,13 @@ int main(int argc, char **argv) {
                 }
                 mdspan_type<const double> covariances = covariances_opt.value();
 
-                auto intensities_opt = table.column<int>("intensity.sum.value");
+                auto intensities_opt = table.column<double>("intensity.sum.value");
                 if (!intensities_opt) {
                     logger.error("Column 'intensity.sum.value' not found in reflection data.");
                     return;
                 }
-                mdspan_type<const int> strong_intensities_int = intensities_opt.value();
-                std::vector<double> strong_intensities_double;
+                mdspan_type<const double> strong_intensities = intensities_opt.value();
+                /*std::vector<double> strong_intensities_double;
                 strong_intensities_double.reserve(
                     strong_intensities_int.extent(0) * strong_intensities_int.extent(1));
 
@@ -316,7 +316,7 @@ int main(int argc, char **argv) {
                     }
                 }
                 mdspan_type<const double> strong_intensities = mdspan_type<const double>(
-                    strong_intensities_double.data(), strong_intensities_double.size(), 1);
+                    strong_intensities_double.data(), strong_intensities_double.size(), 1);*/
 
                 auto miller_indices_opt = table.column<int>("miller_index");
                 if (!miller_indices_opt) {
@@ -445,10 +445,10 @@ int main(int argc, char **argv) {
             const Eigen::Vector3d mu = R * p.s2;
             double epsilon = norm_s0 - mu(2); 
             const Eigen::Vector2d mu1 = mu.head<2>();
-            const Eigen::Matrix2d S11 = sigma.block<2, 2>(0, 0);
-            const Eigen::Vector2d S12 = sigma.block<2, 1>(0, 2);
-            const Eigen::RowVector2d S21 = sigma.block<1, 2>(2, 0);
-            double S22 = sigma(2,2);
+            const Eigen::Matrix2d S11 = S.block<2, 2>(0, 0);
+            const Eigen::Vector2d S12 = S.block<2, 1>(0, 2);
+            const Eigen::RowVector2d S21 = S.block<1, 2>(2, 0);
+            double S22 = S(2,2);
             const Eigen::Vector2d mubar = mu1 + S12 * (epsilon / S22);
             const Eigen::Matrix2d Sbar = S11 - (S12 / S22) * S21;
             const Eigen::Matrix2d Sbar_inv = Sbar.inverse();
