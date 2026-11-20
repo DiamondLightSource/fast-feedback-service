@@ -293,6 +293,7 @@ std::vector<Prediction> SSXPredictor::predict(
   const Eigen::Matrix3d &A,
   const Detector &detector,
   const double mosaicity_min,
+  const int nobs,
   const int bbox_border) const {
     const double quantile = 14.1563;  //chisq_quantile(3, probability_);
     const double D = 11.8292;         //chisq_quantile(2, probability_);
@@ -395,14 +396,9 @@ std::vector<Prediction> SSXPredictor::predict(
         double S00 = std::pow(mosaicity_min, 2);
         p.partiality = exp(-0.5 * e2 / S22) * sqrt(S00 / S22);
         // will need to divide partiality_variance by n_obs to finalize.
-        p.partiality_variance = e2 * exp(e2 / S22) / S00;
+        p.partiality_variance = e2 * exp(e2 / S22) / (nobs * S00);
         predictions.push_back(std::move(p));
         
-    }
-    // finalise partiality variance by dividing by nobs
-    int n_obs = predictions.size();
-    for (auto &p : predictions) {
-        p.partiality_variance /= n_obs;
     }
 
     return predictions;

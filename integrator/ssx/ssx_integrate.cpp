@@ -106,7 +106,8 @@ Simple6MosaicityParameterisation refine_mosaicity(
 std::vector<Prediction> predict_ssx(const Simple6MosaicityParameterisation &model,
                                     const Vector3d &s0,
                                     const Panel &panel,
-                                    const Matrix3d &A) {
+                                    const Matrix3d &A,
+                                    const int nobs) {
     gemmi::SpaceGroup space_group = *gemmi::find_spacegroup_by_name("P1");
     gemmi::GroupOps crystal_symmetry_operations = space_group.operations();
 
@@ -127,7 +128,7 @@ std::vector<Prediction> predict_ssx(const Simple6MosaicityParameterisation &mode
     std::vector<Eigen::Vector3i> pred_miller_indices = idxgen.to_array();
     SSXPredictor predictor(model.sigma());
     std::vector<Prediction> predictions =
-      predictor.predict(pred_miller_indices, s0, A, detector, mosaicity.min);
+      predictor.predict(pred_miller_indices, s0, A, detector, mosaicity.min, nobs);
     return predictions;
 }
 

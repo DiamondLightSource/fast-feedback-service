@@ -253,7 +253,7 @@ TEST(SSXIntegrator, ssx_predict) {
 
     Eigen::Matrix<double, 6, 1> params{1e-4, 2e-4, 3e-4, 1e-5, 2e-5, 3e-5};
     Simple6MosaicityParameterisation model(params);
-    std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A);
+    std::vector<Prediction> predictions = predict_ssx(model, s0, panel, A, 10);
     EXPECT_EQ(predictions.size(), 239);  // Verified calculations.
     std::vector<double> expected_s1_x = {0.5735814237076354, 0.5405138987177266, 0.5107643048009851, 0.5418410179643699, 0.5946808307140123};
     std::vector<double> expected_s1_y = {0.6549081604409703, 0.6168017182540431, 0.6195296548460687, 0.5361595633555538, 0.3919093395783672};

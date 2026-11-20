@@ -29,7 +29,8 @@ Simple6MosaicityParameterisation refine_mosaicity(
 std::vector<Prediction> predict_ssx(const Simple6MosaicityParameterisation &model,
                                     const Vector3d &s0,
                                     const Panel &panel,
-                                    const Matrix3d &A);
+                                    const Matrix3d &A,
+                                    const int nobs);
 /*void ssx_integrate(mdspan_type<const double> &xyzcal_px,
                    mdspan_type<const double> &xyzobs_px,
                    mdspan_type<const double> &covariances,

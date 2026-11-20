@@ -299,12 +299,30 @@ int main(int argc, char **argv) {
                 }
                 mdspan_type<const double> covariances = covariances_opt.value();
 
+                // FIXME - dials data comes in as double, ffs as int
+                mdspan_type<const double> strong_intensities;
                 auto intensities_opt = table.column<double>("intensity.sum.value");
                 if (!intensities_opt) {
-                    logger.error("Column 'intensity.sum.value' not found in reflection data.");
-                    return;
+                    auto intensities_opt_int = table.column<int>("intensity.sum.value");
+                    if (!intensities_opt_int){
+                        logger.error("Column 'intensity.sum.value' not found in reflection data.");
+                        return;
+                    }
+                    mdspan_type<const int> strong_intensities_int = intensities_opt_int.value();
+                    std::vector<double> strong_intensities_double;
+                    strong_intensities_double.reserve(
+                        strong_intensities_int.extent(0) * strong_intensities_int.extent(1));
+
+                    for (std::size_t i = 0; i < strong_intensities_int.extent(0); ++i) {
+                        strong_intensities_double.push_back(
+                            static_cast<double>(strong_intensities_int(i, 0)));
+                    }
+                    strong_intensities = mdspan_type<const double>(
+                        strong_intensities_double.data(), strong_intensities_double.size(), 1);
                 }
-                mdspan_type<const double> strong_intensities = intensities_opt.value();
+                else {
+                    strong_intensities = intensities_opt.value();
+                }
                 /*std::vector<double> strong_intensities_double;
                 strong_intensities_double.reserve(
                     strong_intensities_int.extent(0) * strong_intensities_int.extent(1));
@@ -342,7 +360,7 @@ int main(int argc, char **argv) {
                                                                 s0,
                                                                 panel,
                                                                 this_crystal.get_A_matrix());
-                std::vector<Prediction> predictions = predict_ssx(model, s0, panel, this_crystal.get_A_matrix());
+                std::vector<Prediction> predictions = predict_ssx(model, s0, panel, this_crystal.get_A_matrix(), xyzcal_px.extent(0));
                 logger.info("Predicted {} reflections on image {}", predictions.size(), image_no);
                 if (predictions.size() > 0){
                     std::lock_guard<std::mutex> lock(predictions_mutex);
@@ -387,6 +405,8 @@ int main(int argc, char **argv) {
     std::vector<double> predicted_partialities;
     std::vector<double> predicted_partiality_variances;
     std::vector<double> predicted_d_values;
+    std::vector<double> xyzcal_mm_out;
+    std::vector<double> xyzcal_px_out;
     std::unordered_map<int, std::vector<size_t>> reflections_by_image;
     std::unordered_map<int, uint32_t> corner_tile_by_image;
     bboxes.reserve(num_reflections);
@@ -394,6 +414,8 @@ int main(int argc, char **argv) {
     predicted_partialities.reserve(num_reflections);
     predicted_partiality_variances.reserve(num_reflections);
     predicted_miller_index.reserve(num_reflections*3);
+    xyzcal_mm_out.reserve(num_reflections*3);
+    xyzcal_px_out.reserve(num_reflections*3);
     predicted_d_values.reserve(num_reflections);
     uint64_t cumulative_index = 0;
     int current_id = 0;
@@ -434,6 +456,12 @@ int main(int argc, char **argv) {
             predicted_miller_index.emplace_back(p.h[2]);
             s1_vectors_vec.push_back(to_vector3d(p.s1));
             s2_vectors_vec.push_back(to_vector3d(p.s2));
+            xyzcal_mm_out.push_back(p.xyzcal_mm[0]);
+            xyzcal_mm_out.push_back(p.xyzcal_mm[1]);
+            xyzcal_mm_out.push_back(p.xyzcal_mm[2]);
+            xyzcal_px_out.push_back(p.xyzcal_px[0]);
+            xyzcal_px_out.push_back(p.xyzcal_px[1]);
+            xyzcal_px_out.push_back(p.xyzcal_px[2]);
             std::array<int, 3> hkl_this = {p.h[0], p.h[1], p.h[2]};
             predicted_d_values.emplace_back(cell.calculate_d(hkl_this));
 
@@ -591,6 +619,9 @@ int main(int argc, char **argv) {
     DeviceBuffer<uint32_t> d_background_count(num_reflections);
     DeviceBuffer<uint8_t> d_background_success(num_reflections);
 
+    DeviceBuffer<unsigned long long> d_intensity_times_x(num_reflections);
+    DeviceBuffer<unsigned long long> d_intensity_times_y(num_reflections);
+
 
     // What do we need: s1, s2, s0, panel for pixel lab coord, sigma,
     // Could precompute pixel to lab coords?
@@ -621,6 +652,10 @@ int main(int argc, char **argv) {
       d_background_pool_counts.data(), 0, background_pool_capacity * sizeof(uint32_t)));
     cuda_check(
       cudaMemset(d_background_spill.data(), 0, num_reflections * sizeof(uint32_t)));
+    cuda_check(cudaMemset(
+      d_intensity_times_x.data(), 0, num_reflections * sizeof(unsigned long long)));
+    cuda_check(cudaMemset(
+      d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long)));
 
     // assume already calculated corrections (LP, qe)
     #pragma endregion Prep GPU Data Buffers
@@ -805,6 +840,8 @@ int main(int argc, char **argv) {
                                     d_foreground_count.data(),
                                     background_pool,
                                     d_background_spill.data(),
+                                    d_intensity_times_x.data(),
+                                    d_intensity_times_y.data(),
                                     d_success.data(),
                                     stream);
 
@@ -862,6 +899,8 @@ int main(int argc, char **argv) {
     std::vector<uint32_t> h_background_count(num_reflections);
     std::vector<uint32_t> h_background_spill(num_reflections);
     std::vector<uint8_t> h_background_success(num_reflections);
+    std::vector<unsigned long long> h_intensity_times_x(num_reflections);
+    std::vector<unsigned long long> h_intensity_times_y(num_reflections);
     std::vector<uint8_t> h_success(num_reflections);
     // Copy results from device to host
     d_foreground_sum.extract(h_foreground_sum.data());
@@ -871,6 +910,8 @@ int main(int argc, char **argv) {
     d_background_count.extract(h_background_count.data());
     d_background_spill.extract(h_background_spill.data());
     d_background_success.extract(h_background_success.data());
+    d_intensity_times_x.extract(h_intensity_times_x.data());
+    d_intensity_times_y.extract(h_intensity_times_y.data());
     d_success.extract(h_success.data());
 
     {
@@ -973,6 +1014,7 @@ int main(int argc, char **argv) {
     }
     logger.info("Building output reflection table");
     // Build output reflection table.
+    std::vector<double> xyzobs_px_out(num_reflections * 3);
     std::vector<int> nfg_out(num_reflections);
     std::vector<int> nbg_out(num_reflections);
     std::vector<double> bg_sum_out(num_reflections);
@@ -988,6 +1030,22 @@ int main(int argc, char **argv) {
         bg_sum_out[i] = h_background_success[i] ? h_background_sum_value[i] : 0.0;
         bg_mean_out[i] = h_background_success[i] ? h_background_mean[i] : 0.0;
 
+        // Centre-of-mass: kernel accumulated intensity·(2k+1), so divide by 2·I.
+        double fg_sum_d = static_cast<double>(h_foreground_sum[i]);
+        if (h_foreground_count[i] > 0 && fg_sum_d > 0.0) {
+            xyzobs_px_out[i * 3 + 0] =
+              static_cast<double>(h_intensity_times_x[i]) / (2.0 * fg_sum_d);
+            xyzobs_px_out[i * 3 + 1] =
+              static_cast<double>(h_intensity_times_y[i]) / (2.0 * fg_sum_d);
+            xyzobs_px_out[i * 3 + 2] = 0.5;
+        } else {
+            // Fallback to bbox centre (DIALS convention from centroid/simple/algorithm.h)
+            const auto &bb = bboxes[i];
+            xyzobs_px_out[i * 3 + 0] = 0.5 * (bb.x_min + bb.x_max);
+            xyzobs_px_out[i * 3 + 1] = 0.5 * (bb.y_min + bb.y_max);
+            xyzobs_px_out[i * 3 + 2] = 0.5 * (bb.z_min + bb.z_max);
+        }
+
     }
 
     std::vector<std::string> final_identifiers = reflections.get_identifiers();
@@ -998,7 +1056,10 @@ int main(int argc, char **argv) {
       "intensity.sum.variance", num_reflections, 1, variances);
     integrated_data.add_column("id", num_reflections, 1, predicted_ids);
     integrated_data.add_column("partiality", num_reflections, 1, predicted_partialities);
-    integrated_data.add_column("partiality_variance", num_reflections, 1, predicted_partiality_variances);
+    integrated_data.add_column("partiality.inv.variance", num_reflections, 1, predicted_partiality_variances);
+    integrated_data.add_column("xyzobs.px.value", num_reflections, 3, xyzobs_px_out);
+    integrated_data.add_column("xyzcal.px", num_reflections, 3, xyzcal_px_out);
+    integrated_data.add_column("xyzcal.mm", num_reflections, 3, xyzcal_mm_out);
     integrated_data.add_column("miller_index", num_reflections, 3, predicted_miller_index);
     integrated_data.add_column("d", num_reflections, 1, predicted_d_values);
     integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_out);

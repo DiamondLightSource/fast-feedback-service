@@ -122,6 +122,8 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
                         uint32_t *d_foreground_count,
                         BackgroundPool background_pool,
                         uint32_t *d_background_spill,
+                        unsigned long long *d_intensity_times_x,
+                        unsigned long long *d_intensity_times_y,
                         uint8_t *d_success){
     // One block per reflection shoebox on this image; blockIdx.x indexes the
     // image-level reflection list directly.
@@ -178,6 +180,16 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
                 const accumulator_t pixel_value = static_cast<accumulator_t>(raw_value);
                 atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
                 atomicAdd(&d_foreground_count[refl_idx], 1u);
+                // Accumulate intensity·coord for centre-of-mass (xyzobs.px).
+                // Baseline uses (x+0.5, y+0.5, 0.5); we approximate the
+                // half-pixel offset by multiplying by 2x+1 etc. and dividing
+                // by 2 in finalisation to stay in integer atomics.
+                const unsigned long long pv64 =
+                  static_cast<unsigned long long>(pixel_value);
+                atomicAdd(&d_intensity_times_x[refl_idx],
+                          pv64 * static_cast<unsigned long long>(2 * px + 1));
+                atomicAdd(&d_intensity_times_y[refl_idx],
+                          pv64 * static_cast<unsigned long long>(2 * py + 1));
             }
         } else {
             if (pixel_in_image && mask_flag != 0) {
@@ -257,6 +269,8 @@ void compute_ellipsoid_integrate(pixel_t *d_image,
                         uint32_t *d_foreground_count,
                         BackgroundPool background_pool,
                         uint32_t *d_background_spill,
+                        unsigned long long *d_intensity_times_x,
+                        unsigned long long *d_intensity_times_y,
                         uint8_t *d_success,
                     cudaStream_t stream){
     if (num_reflections_this_image == 0) return;
@@ -328,6 +342,8 @@ void compute_ellipsoid_integrate(pixel_t *d_image,
         d_foreground_count,
         background_pool,
         d_background_spill,
+        d_intensity_times_x,
+        d_intensity_times_y,
         d_success);
     // Check for kernel launch errors
     cuda_check_launch("ellipsoid_transform");
