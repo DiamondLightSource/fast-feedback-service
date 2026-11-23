@@ -99,7 +99,6 @@ Simple6MosaicityParameterisation refine_mosaicity(
       FisherScoringMaximumLikelihood(model, target);
     scorer.solve();
     Matrix3d sigma = model.sigma();
-    //model.print_mosaicity();
     return model;
 }
 

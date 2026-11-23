@@ -31,6 +31,7 @@ std::vector<Prediction> predict_ssx(const Simple6MosaicityParameterisation &mode
                                     const Panel &panel,
                                     const Matrix3d &A,
                                     const int nobs);
+
 /*void ssx_integrate(mdspan_type<const double> &xyzcal_px,
                    mdspan_type<const double> &xyzobs_px,
                    mdspan_type<const double> &covariances,

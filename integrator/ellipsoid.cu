@@ -25,7 +25,7 @@ constexpr scalar_t ellipsoid_quantile_D = 11.8292; //double D = chisq_quantile(2
 __device__ __forceinline__ bool is_foreground_ellipsoid(
     const Vec2D& eps,
     const Vec2D& mubar,
-    const Mat2D& Sbar_inv, // 4 values in order (2x2 matrix)
+    const Mat2D& Sbar_inv,
     const scalar_t wavelength) {
     // Calculation is d = AT_B_A(x1 - mubar, Sbar_inv);
     scalar_t x0 = eps.x / wavelength;
@@ -181,7 +181,7 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
                 atomicAdd(&d_foreground_sum[refl_idx], pixel_value);
                 atomicAdd(&d_foreground_count[refl_idx], 1u);
                 // Accumulate intensity·coord for centre-of-mass (xyzobs.px).
-                // Baseline uses (x+0.5, y+0.5, 0.5); we approximate the
+                // Baseline uses (x+0.5, y+0.5, 0); we approximate the
                 // half-pixel offset by multiplying by 2x+1 etc. and dividing
                 // by 2 in finalisation to stay in integer atomics.
                 const unsigned long long pv64 =

@@ -54,7 +54,7 @@ function(add_integrator_variant target)
     install(TARGETS ${target} RUNTIME DESTINATION ${FFS_INSTALL_BINDIR} COMPONENT ffs)
 endfunction()
 
-function(add_serial_integrator_variant target)
+function(add_ssx_integrator_variant target)
 
     add_executable(${target}
         ssx_integrator.cc
@@ -106,7 +106,7 @@ endfunction()
 add_integrator_variant(integrator)
 add_integrator_variant(integrator32 PIXEL_DATA_32BIT)
 
-add_serial_integrator_variant(serial_integrator PIXEL_DATA_32BIT)
+add_ssx_integrator_variant(ssx_integrate PIXEL_DATA_32BIT)
 
 add_subdirectory(ssx)
 add_subdirectory(tests)

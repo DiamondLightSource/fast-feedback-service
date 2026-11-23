@@ -339,9 +339,6 @@ def run(args=None):
             experiment_ids = processing_group.attrs["experiment_ids"]
             identifiers = processing_group.attrs["identifiers"]
             identifiers_map = dict(zip(experiment_ids, identifiers))
-            '''intensities = None
-            covariances = None
-            bboxes = None'''
             #if "intensity.sum.value" in processing_group:
             intensities = processing_group["intensity.sum.value"][:]
             #if "spot_covariance_2d_packed" in processing_group:
