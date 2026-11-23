@@ -32,6 +32,7 @@ def set_env_vars():
     os.environ["PREDICTOR"] = os.fspath(ROOT_DIR / "build/bin/baseline_predictor")
     os.environ["SPOTFINDER_32BIT"] = os.fspath(ROOT_DIR / "build/bin/spotfinder32")
     os.environ["INTEGRATOR"] = os.fspath(ROOT_DIR / "build/bin/integrator")
+    os.environ["SSX_INTEGRATOR"] = os.fspath(ROOT_DIR / "build/bin/serial_integrator")
     os.environ["BASELINE_INTEGRATOR"] = os.fspath(
         ROOT_DIR / "build/bin/baseline_integrator"
     )
