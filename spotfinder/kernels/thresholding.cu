@@ -21,9 +21,53 @@
 
 #include "cuda_common.hpp"
 #include "device_common.cuh"
+#include "spotfinder/launch_geometry.hpp"
 #include "thresholding.cuh"
 
 namespace cg = cooperative_groups;
+
+/*
+ * Shared memory layout of each pass, P being the pixel count of one tile:
+ *
+ *   first pass, r = 3     [ mask: P x uint8_t | image: P x pixel_t ]
+ *   second pass, r = 5    [ mask: P x uint8_t | dispersion mask: P x uint8_t
+ *                           | image: P x pixel_t ]
+ *
+ * The kernels find each tile's offset from blockDim at run time, and the host
+ * sizes the allocation from the block shape. These check that the two agree
+ * at the configured shape.
+ */
+static_assert(shared_tile_pixels(THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y, KERNEL_RADIUS)
+                  * (sizeof(uint8_t) + sizeof(pixel_t))
+                == shared_tile_buffer_bytes<pixel_t, uint8_t>(THRESHOLD_BLOCK_X,
+                                                              THRESHOLD_BLOCK_Y,
+                                                              KERNEL_RADIUS),
+              "The first pass partitions a different buffer than the launch asks for");
+static_assert(
+  shared_tile_pixels(THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y, KERNEL_RADIUS_EXTENDED)
+      * (2 * sizeof(uint8_t) + sizeof(pixel_t))
+    == shared_tile_buffer_bytes<pixel_t, uint8_t, uint8_t>(THRESHOLD_BLOCK_X,
+                                                           THRESHOLD_BLOCK_Y,
+                                                           KERNEL_RADIUS_EXTENDED),
+  "The second pass partitions a different buffer than the launch asks for");
+
+/*
+ * The image tile is read through a pixel_t pointer at byte offset P in the
+ * first pass and 2P in the second, so that offset must be a multiple of
+ * alignof(pixel_t). At 32x16, P = 38 x 22 = 836 = 4 x 209 in the first pass
+ * and 2P = 2 x 42 x 26 = 2184 = 4 x 546 in the second, so both suit a 32-bit
+ * pixel. A 32x15 block would put the first pass image at 38 x 21 = 798, and
+ * every load from it would be misaligned.
+ */
+static_assert(shared_tile_pixels(THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y, KERNEL_RADIUS)
+                  * sizeof(uint8_t) % alignof(pixel_t)
+                == 0,
+              "The first pass image tile would be misaligned");
+static_assert(
+  2 * shared_tile_pixels(THRESHOLD_BLOCK_X, THRESHOLD_BLOCK_Y, KERNEL_RADIUS_EXTENDED)
+      * sizeof(uint8_t) % alignof(pixel_t)
+    == 0,
+  "The second pass image tile would be misaligned");
 
 #pragma region Global constants
 /*
@@ -104,7 +148,6 @@ __device__ DispersionMoments calculate_dispersion_moments(PitchedArray2D<pixel_t
  * @brief The dispersion first pass, shared by both thresholding algorithms.
  *
  * Image dimensions, pitches and thresholds are read from kernel_constants.
- * blockIdx.z selects the image within a batch.
  *
  * @param image_ptr Pointer to the input image data.
  * @param mask_ptr Pointer to the mask data indicating valid pixels.
@@ -117,13 +160,6 @@ __device__ inline void dispersion_pass(pixel_t __restrict__ *image_ptr,
                                        uint8_t __restrict__ *mask_ptr,
                                        uint8_t __restrict__ *result_mask_ptr,
                                        bool require_signal) {
-    // Move pointers to the correct slice
-    image_ptr =
-      image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
-    result_mask_ptr =
-      result_mask_ptr
-      + (kernel_constants.mask_pitch * kernel_constants.height * blockIdx.z);
-
     // Create pitched arrays for data access
     PitchedArray2D<pixel_t> image(image_ptr, &kernel_constants.image_pitch);
     PitchedArray2D<uint8_t> mask(mask_ptr, &kernel_constants.mask_pitch);
@@ -229,7 +265,6 @@ __global__ void dispersion_extended_first_pass(pixel_t __restrict__ *image_ptr,
  * @brief Kernel for computing the final threshold after dispersion mask.
  *
  * Image dimensions, pitches and thresholds are read from kernel_constants.
- * blockIdx.z selects the image within a batch.
  *
  * @param image_ptr Pointer to the input image data.
  * @param mask_ptr Pointer to the mask data indicating valid pixels.
@@ -244,13 +279,6 @@ __global__ void dispersion_extended_second_pass(
   uint8_t __restrict__ *dispersion_mask_ptr,
   uint8_t __restrict__ *result_mask_ptr,
   size_t dispersion_mask_pitch) {
-    // Move pointers to the correct slice
-    image_ptr =
-      image_ptr + (kernel_constants.image_pitch * kernel_constants.height * blockIdx.z);
-    result_mask_ptr =
-      result_mask_ptr
-      + (kernel_constants.result_pitch * kernel_constants.height * blockIdx.z);
-
     // Create pitched arrays for data access
     PitchedArray2D<pixel_t> image(image_ptr, &kernel_constants.image_pitch);
     PitchedArray2D<uint8_t> mask(mask_ptr, &kernel_constants.mask_pitch);

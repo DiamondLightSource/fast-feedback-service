@@ -24,6 +24,7 @@ drives the compiled programs is not documented here yet.
    readme
    building
    service
+   deploying
    testing
 
 .. toctree::

@@ -15,6 +15,8 @@ from typing import Optional
 
 from pydantic import BaseModel, computed_field
 
+from ffs import __version__
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,6 +32,7 @@ class StageResult(BaseModel):
 class PipelineResult(BaseModel):
     """Summary of the whole job, written to the working directory."""
 
+    version: str = __version__
     dcid: Optional[int] = None
     working_directory: Path
     stages: list[StageResult]

@@ -11,11 +11,15 @@
 // #include <bitshuffle.h>
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+#include <fmt/core.h>
+
+#include <stdexcept>
 
 #include "device_common.cuh"
 #include "kernels/erosion.cuh"
 #include "kernels/thresholding.cuh"
 #include "spotfinder.cuh"
+#include "spotfinder/launch_geometry.hpp"
 
 namespace cg = cooperative_groups;
 
@@ -60,33 +64,68 @@ void set_kernel_constants(cudaStream_t stream,
 }
 
 /**
- * @brief Calculate the shared memory required for the specified kernel.
- * 
- * This function calculates the shared memory required for the specified
- * kernel based on the number of types and the radius of the kernel.
- * 
- * @tparam Types The types of the data to be stored in shared memory. This is a variadic template
- * that allows multiple types to be specified at compile time.
- * @param threads The dimensions of the grid of threads within each block.
- * @param radius The radius of the kernel.
- * @return The size of the shared memory required in bytes.
+ * @brief The dynamic shared memory a launch requests, in bytes.
+ *
+ * A thin wrapper over shared_tile_buffer_bytes for callers holding a runtime dim3.
+ *
+ * @tparam Types One type per partition the kernel carves out of the buffer.
+ * @param threads The dimensions of the thread block.
+ * @param radius Halo depth on each side, in pixels.
+ * @return The size of the shared memory request, in bytes.
  */
 template <typename... Types>
 size_t calculate_shared_memory(dim3 threads, uint8_t radius) {
-    // Determine the x and y dimensions of the shared memory, including the halo region
-    uint shared_block_width = threads.x + (2 * radius);
-    uint shared_block_height = threads.y + (2 * radius);
+    return shared_tile_buffer_bytes<Types...>(threads.x, threads.y, radius);
+}
 
-    /*
-    * This uses a C++ fold expression to calculate the total size of the shared memory.
-    * The fold expression expands out each type in the parameter pack separated by
-    * the `+` operator, resulting in a sum of the sizes of each type.
-    * 
-    * For example: calculate_sum_of_type_sizes<int, float, double>(10, 10)
-    * expands to: 
-    * shared_block_width * shared_block_height * (sizeof(int) + sizeof(float) + sizeof(double))
-    */
-    return shared_block_width * shared_block_height * (sizeof(Types) + ...);
+/**
+ * @brief Reject a thread block the thresholding kernels cannot run.
+ *
+ * load_halo fills the halo with the block's own threads. Each of the r
+ * threads with the lowest x index copies one column of the left halo, each of
+ * the r with the highest x copies one column of the right, and the same holds
+ * in y for the top and bottom rows; a thread in both sets also copies one
+ * corner pixel. A block with fewer than r threads in either dimension leaves
+ * part of the halo unwritten, so both extents must be at least the largest
+ * radius, r = 5.
+ *
+ * The largest shared memory request is the extended second pass, which
+ * stages two 8-bit mask tiles and the image over r = 5. At 32x16 in the
+ * 16-bit build that is 42 x 26 x (1 + 1 + 2) = 4368 bytes, against the
+ * 48 KiB per-block limit current devices report.
+ *
+ * @param threads The thread block the kernels will be launched with.
+ * @throws std::invalid_argument If the block is smaller than the halo radius,
+ *         or its shared memory exceeds the device's per-block limit.
+ */
+void check_launch_geometry(dim3 threads) {
+    if (threads.x < KERNEL_RADIUS_EXTENDED || threads.y < KERNEL_RADIUS_EXTENDED) {
+        throw std::invalid_argument(
+          fmt::format("Thread block {}x{} is smaller than the halo radius of {} in at "
+                      "least one dimension",
+                      threads.x,
+                      threads.y,
+                      KERNEL_RADIUS_EXTENDED));
+    }
+
+    size_t largest_request = calculate_shared_memory<pixel_t, uint8_t, uint8_t>(
+      threads, KERNEL_RADIUS_EXTENDED);
+
+    int device = 0;
+    cuda_check(cudaGetDevice(&device));
+    int shared_memory_limit = 0;
+    cuda_check(cudaDeviceGetAttribute(
+      &shared_memory_limit, cudaDevAttrMaxSharedMemoryPerBlock, device));
+
+    if (largest_request > static_cast<size_t>(shared_memory_limit)) {
+        throw std::invalid_argument(
+          fmt::format("Thread block {}x{} needs {} bytes of shared memory, above the "
+                      "device limit of {} bytes per block",
+                      threads.x,
+                      threads.y,
+                      largest_request,
+                      shared_memory_limit));
+    }
 }
 
 /**
@@ -258,11 +297,6 @@ void call_do_spotfinding_extended(dim3 blocks,
     );
     cuda_check_launch("dispersion_extended_first_pass");
 
-    // Calculate the shared memory required for the erosion pass
-    // This is before the stream synchronization to overlap the kernel execution
-    shared_memory = calculate_shared_memory<uint8_t>(
-      threads, KERNEL_RADIUS);  // Required shared memory
-
     // Synchronize the CUDA stream to ensure the first pass is complete
     cuda_check(cudaStreamSynchronize(stream));
 
@@ -287,13 +321,13 @@ void call_do_spotfinding_extended(dim3 blocks,
     */
 
     // Perform erosion
-    erosion<<<blocks, threads, shared_memory, stream>>>(d_dispersion_mask.get(),
-                                                        d_erosion_mask.get(),
-                                                        mask.get(),
-                                                        d_dispersion_mask.pitch,
-                                                        d_erosion_mask.pitch,
-                                                        mask.pitch,
-                                                        KERNEL_RADIUS);
+    erosion<<<blocks, threads, 0, stream>>>(d_dispersion_mask.get(),
+                                            d_erosion_mask.get(),
+                                            mask.get(),
+                                            d_dispersion_mask.pitch,
+                                            d_erosion_mask.pitch,
+                                            mask.pitch,
+                                            KERNEL_RADIUS);
     cuda_check_launch("erosion");
 
     // Calculate the shared memory required for the second pass
