@@ -995,9 +995,6 @@ int main(int argc, char **argv) {
                       connected_components_2d->get_num_strong_pixels_filtered();
 
                     std::vector<float> centers_of_mass;
-                    std::vector<int> spot_intensities;
-                    std::vector<double> spot_covariances;
-                    std::vector<double> mobs;
                     // If this is a rotation dataset, store the connected component slice
                     if (oscillation_width) {
                         // Lock the mutex to protect the map
@@ -1014,23 +1011,31 @@ int main(int argc, char **argv) {
                             centers_of_mass.push_back(x);
                             centers_of_mass.push_back(y);
                             centers_of_mass.push_back(z);
-                            spot_intensities.push_back(r.total_intensity());
-                            // Note; spot covariances are needed for ssx integration
-                            // and will need to pass through live indexing if want
-                            // live integration.
-                            auto [xmm, ymm] = panel.px_to_mm(x, y);
-                            Vector3d s1 = panel.get_lab_coord(xmm, ymm);
-                            auto [xbar_0, xbar_1, varx, vary, varxy] = r.mobs_and_covariance_2D(s1, s0, panel);
-                            spot_covariances.push_back(varx);
-                            spot_covariances.push_back(vary);
-                            spot_covariances.push_back(varxy);
-                            mobs.push_back(xbar_0);
-                            mobs.push_back(xbar_1);
                         }
                         if (save_to_h5) {
+                            // if we want live integration, these will need moving up a section.
+                            std::vector<int> spot_intensities;
+                            std::vector<double> spot_covariances;
+                            std::vector<double> mobs;
                             std::vector<int> bboxes_xyz;
                             bboxes_xyz.reserve(reflections.size()*6);
+                            mobs.reserve(reflections.size()*2);
+                            spot_covariances.reserve(reflections.size()*3);
+                            spot_intensities.reserve(reflections.size());
                             for (const auto &r : reflections) {
+                                spot_intensities.push_back(r.total_intensity());
+                                // Note; spot covariances are needed for ssx integration
+                                // and will need to pass through live indexing if want
+                                // live integration.
+                                auto [x, y, z] = r.center_of_mass();
+                                auto [xmm, ymm] = panel.px_to_mm(x, y);
+                                Vector3d s1 = panel.get_lab_coord(xmm, ymm);
+                                auto [xbar_0, xbar_1, varx, vary, varxy] = r.mobs_and_covariance_2D(s1, s0, panel);
+                                spot_covariances.push_back(varx);
+                                spot_covariances.push_back(vary);
+                                spot_covariances.push_back(varxy);
+                                mobs.push_back(xbar_0);
+                                mobs.push_back(xbar_1);
                                 bboxes_xyz.push_back(r.get_x_min());
                                 bboxes_xyz.push_back(r.get_x_max()+1);
                                 bboxes_xyz.push_back(r.get_y_min());
