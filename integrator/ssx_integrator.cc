@@ -324,18 +324,6 @@ int main(int argc, char **argv) {
                 else {
                     strong_intensities = intensities_opt.value();
                 }
-                /*std::vector<double> strong_intensities_double;
-                strong_intensities_double.reserve(
-                    strong_intensities_int.extent(0) * strong_intensities_int.extent(1));
-
-                for (std::size_t i = 0; i < strong_intensities_int.extent(0); ++i) {
-                    for (std::size_t j = 0; j < strong_intensities_int.extent(1); ++j) {
-                        strong_intensities_double.push_back(
-                            static_cast<double>(strong_intensities_int(i, j)));
-                    }
-                }
-                mdspan_type<const double> strong_intensities = mdspan_type<const double>(
-                    strong_intensities_double.data(), strong_intensities_double.size(), 1);*/
 
                 auto miller_indices_opt = table.column<int>("miller_index");
                 if (!miller_indices_opt) {
@@ -551,11 +539,7 @@ int main(int argc, char **argv) {
     double time_waiting_for_images = 0.0;
 
     #pragma region Prep GPU Data Buffers
-    // What info do we have that we need:
-    // bbox
     // assumed panel_id = 0 i.e. single panel
-    // computing mask - need s1, s2 from refl table
-    //                - need s0, covariance matrix, panel
 
     
     // Allocate and copy GPU buffers (shared across all threads)
@@ -664,10 +648,6 @@ int main(int argc, char **argv) {
     #pragma endregion Prep GPU Data Buffers
 
     #pragma region Thread launch
-    // We are going to iterate through the images,
-    // doing refine, predict and then integrate on gpu
-    // The result we will store is the reflection table (and mosaicity models?).
-    // For testing, assume we have already refined and predicted.
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
@@ -681,13 +661,7 @@ int main(int argc, char **argv) {
             DeviceBuffer<size_t> d_reflection_indices(max_n_refls_in_image);
 
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
-            //auto host_results = make_cuda_pinned_malloc<uint8_t>(width * height);
             auto device_image = PitchedMalloc<pixel_t>(width, height);
-            /*auto device_results =
-                PitchedMalloc<uint8_t>(make_cuda_malloc<uint8_t[]>(mask.pitch * height),
-                                        width,
-                                        height,
-                                        mask.pitch);*/
 
             // Buffer for reading compressed chunk data in
             auto raw_chunk_buffer =
@@ -696,7 +670,6 @@ int main(int argc, char **argv) {
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
             arrived_at_barrier = true;
-            //CudaEvent start, copy, post, postcopy, end;
 
             // Get the time the lastimage was received to avoid waiting for too long
             auto last_image_received = std::chrono::high_resolution_clock::now();
@@ -734,9 +707,6 @@ int main(int argc, char **argv) {
                             global_stop.request_stop();
                             break;
                         }
-
-                        // Sleep for a bit to avoid busy-waiting
-                        //std::this_thread::sleep_for(100ms);
                     }
 
                     if (stop_token.stop_requested()) {
@@ -767,7 +737,6 @@ int main(int argc, char **argv) {
                             "\033[1mRace Condition?!?? Got buffer size 0 for image "
                             "{}. Sleeping.\033[0m",
                             image_num);
-                        //std::this_thread::sleep_for(100ms);
                         continue;
                     }
                     break;
@@ -795,7 +764,6 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                //start.record(stream);
                 // Copy the image to GPU
                 cuda_check(cudaMemcpy2DAsync(device_image.get(),
                                                 device_image.pitch_bytes(),
@@ -805,7 +773,6 @@ int main(int argc, char **argv) {
                                                 height,
                                                 cudaMemcpyHostToDevice,
                                                 stream));
-                //copy.record(stream);
                 copy_done.record(stream);
     #pragma endregion Decompression
                 // Get reflection indices for this image and copy to device
@@ -817,11 +784,6 @@ int main(int argc, char **argv) {
                 logger.info("Launching GPU kernel for image {} with {} reflections",
                             image_num,
                             num_refls_this_image);
-                // For test, just sum all pixels in bbox.
-
-
-                // If precompute Sbar_inv and mubar per refl on cpu....
-                // Then much easier.
 
                 compute_ellipsoid_integrate(device_image.get(),
                                     device_image.pitch_bytes(),
@@ -1083,7 +1045,7 @@ int main(int argc, char **argv) {
     logger.info("Writing {} integrated reflections to {}", n_integrated, "integrated.refl");
     success_data.write("integrated.refl");
 
-    // Add profile models to an integrated.expt list.
+    // Need to add profile models to an integrated.expt list.
     ExperimentList integrated_expts = elist.select(identifiers);
     json integrated_elist_json = integrated_expts.to_json();
     std::string efile_name = "integrated.expt";
