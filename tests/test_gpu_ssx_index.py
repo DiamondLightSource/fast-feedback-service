@@ -61,16 +61,19 @@ expected_output_crystals = [
 
 
 def make_imported_expt(dials_data, tmp_path):
-    data = {"__id__" : "ExperimentList"}
-    data["experiment"] = [{
-      "__id__": "Experiment",
-      "identifier": f"{i}",
-      "beam": 0,
-      "detector": 0,
-      "goniometer": 0,
-      "scan": i,
-      "imageset": 0
-    } for i in range(0,20)]
+    data = {"__id__": "ExperimentList"}
+    data["experiment"] = [
+        {
+            "__id__": "Experiment",
+            "identifier": f"{i}",
+            "beam": 0,
+            "detector": 0,
+            "goniometer": 0,
+            "scan": i,
+            "imageset": 0,
+        }
+        for i in range(0, 20)
+    ]
     data["scan"] = [
         {
             "image_range": [i, i],
@@ -79,25 +82,25 @@ def make_imported_expt(dials_data, tmp_path):
                 "epochs": [0.0],
                 "exposure_time": [0.0],
                 "oscillation": [0.0],
-                "oscillation_width": [0.0]
+                "oscillation_width": [0.0],
             },
-            "valid_image_ranges": {}
-        } for i in range(1,21)
-    ]
-    data["imageset"] = [{
-        "__id__": "ImageSequence",
-        "template": str(dials_data("lysozyme_ssx_25keV") / "lysozyme_25keV.nxs"),
-        "single_file_indices": list(range(0,20)),
-        "mask": "",
-        "gain": "",
-        "pedestal": "",
-        "dx": "",
-        "dy": "",
-        "params": {
-            "dynamic_shadowing": "Auto",
-            "multi_panel": False
+            "valid_image_ranges": {},
         }
-    }]
+        for i in range(1, 21)
+    ]
+    data["imageset"] = [
+        {
+            "__id__": "ImageSequence",
+            "template": str(dials_data("lysozyme_ssx_25keV") / "lysozyme_25keV.nxs"),
+            "single_file_indices": list(range(0, 20)),
+            "mask": "",
+            "gain": "",
+            "pedestal": "",
+            "dx": "",
+            "dy": "",
+            "params": {"dynamic_shadowing": "Auto", "multi_panel": False},
+        }
+    ]
     data["beam"] = [
         {
             "__id__": "monochromatic",
@@ -110,7 +113,7 @@ def make_imported_expt(dials_data, tmp_path):
             "flux": 0.0,
             "transmission": 1.0,
             "probe": "x-ray",
-            "sample_to_source_distance": 0.0
+            "sample_to_source_distance": 0.0,
         }
     ]
     data["detector"] = [
@@ -133,9 +136,7 @@ def make_imported_expt(dials_data, tmp_path):
                     "mask": [],
                     "gain": 1.0,
                     "pedestal": 0.0,
-                    "px_mm_strategy": {
-                        "type": "ParallaxCorrectedPxMmStrategy"
-                    }
+                    "px_mm_strategy": {"type": "ParallaxCorrectedPxMmStrategy"},
                 }
             ],
             "hierarchy": {
@@ -143,11 +144,7 @@ def make_imported_expt(dials_data, tmp_path):
                 "type": "",
                 "fast_axis": [1.0, 0.0, 0.0],
                 "slow_axis": [0.0, 1.0, 0.0],
-                "origin": [
-                    -0.20550000000000068,
-                    0.030750000000011823,
-                    0.0
-                ],
+                "origin": [-0.20550000000000068, 0.030750000000011823, 0.0],
                 "raw_image_offset": [0, 0],
                 "image_size": [0, 0],
                 "pixel_size": [0.0, 0.0],
@@ -159,42 +156,16 @@ def make_imported_expt(dials_data, tmp_path):
                 "mask": [],
                 "gain": 1.0,
                 "pedestal": 0.0,
-                "px_mm_strategy": {
-                "type": "SimplePxMmStrategy"
-                },
-                "children": [
-                    {
-                        "panel": 0
-                    }
-                ]
-            }
+                "px_mm_strategy": {"type": "SimplePxMmStrategy"},
+                "children": [{"panel": 0}],
+            },
         }
     ]
     data["goniometer"] = [
         {
-        "rotation_axis": [1.0, 0.0, 0.0],
-        "fixed_rotation": [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0
-        ],
-        "setting_rotation": [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0
-        ]
+            "rotation_axis": [1.0, 0.0, 0.0],
+            "fixed_rotation": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            "setting_rotation": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         }
     ]
     data["crystal"] = []
@@ -226,7 +197,7 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
     make_imported_expt(dials_data, tmp_path)
     imported_expt = tmp_path / "imported.expt"
     assert imported_expt.exists()
-    
+
     # First do spotfinding
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER_32BIT")
     ssx_index = Path(os.getenv("FFS_ROOT_DIR")) / "src" / "ffs" / "ssx_index.py"
@@ -349,4 +320,4 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
 
     with h5py.File(tmp_path / "integrated.refl", "r") as file:
         ids = file["/dials/processing/group_0/id"]
-        assert set(ids) == set(range(0, 7)) # 7 indexed images are all integrated.
+        assert set(ids) == set(range(0, 7))  # 7 indexed images are all integrated.

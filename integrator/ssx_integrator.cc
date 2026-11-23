@@ -16,6 +16,7 @@
 #include <dx2/h5/h5read_processed.hpp>
 #include <dx2/reflection.hpp>
 #include <experimental/mdspan>
+#include <fstream>
 #include <gemmi/unitcell.hpp>
 #include <iostream>
 #include <memory>
@@ -23,32 +24,31 @@
 #include <stop_token>
 #include <string>
 #include <thread>
-#include <fstream>
 
 #include "../spotfinder/cbfread.hpp"
 #include "../spotfinder/shmread.hpp"
 #include "common.hpp"
 #include "cuda_arg_parser.hpp"
 #include "cuda_common.hpp"
+#include "ellipsoid.cuh"
 #include "ffs_logger.hpp"
 #include "h5read.h"
 #include "integrator/background.cuh"
 #include "integrator/background.hpp"
 #include "integrator/background_pool.hpp"
 #include "integrator/extent.hpp"
-#include "ellipsoid.cuh"
 #include "math/device_precision.cuh"
 #include "math/math_utils.cuh"
 #include "math/vector3d.cuh"
-#include "thread_count.hpp"
-#include "version.hpp"
-#include "ssx/ssx_integrate.hpp"
-#include "ssx/mosaicity_parameterisation.hpp"
 #include "predictor/predict.hpp"
 #include "predictor/threadpool.hpp"
+#include "ssx/mosaicity_parameterisation.hpp"
+#include "ssx/ssx_integrate.hpp"
+#include "thread_count.hpp"
+#include "version.hpp"
 
-using Eigen::Vector3d;
 using Eigen::Matrix3d;
+using Eigen::Vector3d;
 
 // Define a 2D mdspan type alias for convenience
 template <typename T>
@@ -190,7 +190,7 @@ int main(int argc, char **argv) {
         logger.error("Unable to create experiment: {}", ex.what());
         std::exit(1);
     }
-    Experiment& expt = elist[0];
+    Experiment &expt = elist[0];
 
     const uint32_t background_pool_entries_per_reflection =
       parser.get<uint32_t>("background.pool_entries_per_reflection");
@@ -213,8 +213,8 @@ int main(int argc, char **argv) {
     std::unordered_map<int, std::string> image_number_to_identifier;
     std::unordered_map<std::string, Crystal> identifier_to_crystal_model;
     int max_img_no = 0;
-    for (auto& expt: elist){
-        if (!expt.has_crystal()){
+    for (auto &expt : elist) {
+        if (!expt.has_crystal()) {
             continue;
         }
         std::string identifier = expt.identifier();
@@ -229,7 +229,7 @@ int main(int argc, char **argv) {
     logger.info("{} indexed crystals loaded", identifier_to_image_number.size());
 
     auto id_col = reflections.column<int>("id");
-    if (!id_col){
+    if (!id_col) {
         logger.error("Column 'id' not found in reflection data.");
         return 1;
     }
@@ -238,19 +238,18 @@ int main(int argc, char **argv) {
 
     std::unordered_map<int, size_t> reflections_in_image;
 
-    const std::vector<std::string>& identifiers = reflections.get_identifiers();
-    const std::vector<uint64_t>& expt_ids = reflections.get_experiment_ids();
+    const std::vector<std::string> &identifiers = reflections.get_identifiers();
+    const std::vector<uint64_t> &expt_ids = reflections.get_experiment_ids();
 
     // Ordered by keys i.e. image no
-    std::unique_ptr<std::map<int, std::vector<Prediction>>> predictions_mapptr = std::make_unique<std::map<int, std::vector<Prediction>>>();
+    std::unique_ptr<std::map<int, std::vector<Prediction>>> predictions_mapptr =
+      std::make_unique<std::map<int, std::vector<Prediction>>>();
     std::mutex predictions_mutex;  // Mutex to protect the reflection intensities map
-    std::unique_ptr<std::map<int, Simple6MosaicityParameterisation>> models_mapptr = std::make_unique<std::map<int, Simple6MosaicityParameterisation>>();
+    std::unique_ptr<std::map<int, Simple6MosaicityParameterisation>> models_mapptr =
+      std::make_unique<std::map<int, Simple6MosaicityParameterisation>>();
     std::mutex models_mutex;  // Mutex to protect the reflection intensities map
-    
-    auto max_it = std::max_element(
-        ids.data_handle(),
-        ids.data_handle() + ids.size()
-    );
+
+    auto max_it = std::max_element(ids.data_handle(), ids.data_handle() + ids.size());
 
     int max_value = *max_it;
     std::exception_ptr eptr = nullptr;
@@ -258,106 +257,125 @@ int main(int argc, char **argv) {
     {
         ThreadPool pool(num_cpu_threads);
 
-        for (int index = 0; index < max_value+1; ++index) {
+        for (int index = 0; index < max_value + 1; ++index) {
             pool.enqueue([&, index] {
-            try {
-                // get the data from the table
+                try {
+                    // get the data from the table
 
-                std::vector<size_t> sel;
-                for (int j=0;j<reflections.size();j++){
-                    if (ids(j,0) == index){
-                        sel.push_back(j);
+                    std::vector<size_t> sel;
+                    for (int j = 0; j < reflections.size(); j++) {
+                        if (ids(j, 0) == index) {
+                            sel.push_back(j);
+                        }
                     }
-                }
-                ReflectionTable table = reflections.select(sel);
-                std::string identifier = identifiers[index];
-                
+                    ReflectionTable table = reflections.select(sel);
+                    std::string identifier = identifiers[index];
 
-                std::vector<std::string> identifiers = table.get_identifiers();
-                int image_no = identifier_to_image_number[identifier];
-                reflections_in_image[image_no] = table.size();
-                num_reflections += table.size();
-                Crystal this_crystal = identifier_to_crystal_model[identifier];
-                // make mdspans of data
-                auto xyzobs_px_ = table.column<double>("xyzobs.px.value");
-                if (!xyzobs_px_.has_value()) {
-                    throw std::runtime_error(
-                    "No xyzobs.px.value column found in input reflection table.");
-                }
-                mdspan_type<const double> xyzobs_px = xyzobs_px_.value();
-                
-                auto xyzcal_px_ = table.column<double>("xyzcal.px");
-                if (!xyzcal_px_.has_value()) {
-                    throw std::runtime_error(
-                    "No xyzcal.px column found in input reflection table.");
-                }
-                mdspan_type<const double> xyzcal_px = xyzcal_px_.value();
+                    std::vector<std::string> identifiers = table.get_identifiers();
+                    int image_no = identifier_to_image_number[identifier];
+                    reflections_in_image[image_no] = table.size();
+                    num_reflections += table.size();
+                    Crystal this_crystal = identifier_to_crystal_model[identifier];
+                    // make mdspans of data
+                    auto xyzobs_px_ = table.column<double>("xyzobs.px.value");
+                    if (!xyzobs_px_.has_value()) {
+                        throw std::runtime_error(
+                          "No xyzobs.px.value column found in input reflection table.");
+                    }
+                    mdspan_type<const double> xyzobs_px = xyzobs_px_.value();
 
-                auto covariances_opt = table.column<double>("spot_covariance_2d_packed");
-                if (!covariances_opt) {
-                    logger.error("Column 'spot_covariance_2d_packed' not found in reflection data.");
-                    return;
-                }
-                mdspan_type<const double> covariances = covariances_opt.value();
+                    auto xyzcal_px_ = table.column<double>("xyzcal.px");
+                    if (!xyzcal_px_.has_value()) {
+                        throw std::runtime_error(
+                          "No xyzcal.px column found in input reflection table.");
+                    }
+                    mdspan_type<const double> xyzcal_px = xyzcal_px_.value();
 
-                // FIXME - dials data comes in as double, ffs as int
-                mdspan_type<const double> strong_intensities;
-                auto intensities_opt = table.column<double>("intensity.sum.value");
-                if (!intensities_opt) {
-                    auto intensities_opt_int = table.column<int>("intensity.sum.value");
-                    if (!intensities_opt_int){
-                        logger.error("Column 'intensity.sum.value' not found in reflection data.");
+                    auto covariances_opt =
+                      table.column<double>("spot_covariance_2d_packed");
+                    if (!covariances_opt) {
+                        logger.error(
+                          "Column 'spot_covariance_2d_packed' not found in reflection "
+                          "data.");
                         return;
                     }
-                    mdspan_type<const int> strong_intensities_int = intensities_opt_int.value();
-                    std::vector<double> strong_intensities_double;
-                    strong_intensities_double.reserve(
-                        strong_intensities_int.extent(0) * strong_intensities_int.extent(1));
+                    mdspan_type<const double> covariances = covariances_opt.value();
 
-                    for (std::size_t i = 0; i < strong_intensities_int.extent(0); ++i) {
-                        strong_intensities_double.push_back(
-                            static_cast<double>(strong_intensities_int(i, 0)));
+                    // FIXME - dials data comes in as double, ffs as int
+                    mdspan_type<const double> strong_intensities;
+                    auto intensities_opt = table.column<double>("intensity.sum.value");
+                    if (!intensities_opt) {
+                        auto intensities_opt_int =
+                          table.column<int>("intensity.sum.value");
+                        if (!intensities_opt_int) {
+                            logger.error(
+                              "Column 'intensity.sum.value' not found in reflection "
+                              "data.");
+                            return;
+                        }
+                        mdspan_type<const int> strong_intensities_int =
+                          intensities_opt_int.value();
+                        std::vector<double> strong_intensities_double;
+                        strong_intensities_double.reserve(
+                          strong_intensities_int.extent(0)
+                          * strong_intensities_int.extent(1));
+
+                        for (std::size_t i = 0; i < strong_intensities_int.extent(0);
+                             ++i) {
+                            strong_intensities_double.push_back(
+                              static_cast<double>(strong_intensities_int(i, 0)));
+                        }
+                        strong_intensities =
+                          mdspan_type<const double>(strong_intensities_double.data(),
+                                                    strong_intensities_double.size(),
+                                                    1);
+                    } else {
+                        strong_intensities = intensities_opt.value();
                     }
-                    strong_intensities = mdspan_type<const double>(
-                        strong_intensities_double.data(), strong_intensities_double.size(), 1);
-                }
-                else {
-                    strong_intensities = intensities_opt.value();
-                }
 
-                auto miller_indices_opt = table.column<int>("miller_index");
-                if (!miller_indices_opt) {
-                    logger.error("Column 'miller_index' not found in reflection data.");
-                    return;
-                }
-                mdspan_type<const int> miller_indices = miller_indices_opt.value();
+                    auto miller_indices_opt = table.column<int>("miller_index");
+                    if (!miller_indices_opt) {
+                        logger.error(
+                          "Column 'miller_index' not found in reflection data.");
+                        return;
+                    }
+                    mdspan_type<const int> miller_indices = miller_indices_opt.value();
 
-                auto mobs_opt = table.column<double>("spot_mobs_2d");
-                if (!mobs_opt) {
-                    logger.error("Column 'spot_mobs_2d' not found in reflection data.");
-                    return;
-                }
-                mdspan_type<const double> mobs = mobs_opt.value();
+                    auto mobs_opt = table.column<double>("spot_mobs_2d");
+                    if (!mobs_opt) {
+                        logger.error(
+                          "Column 'spot_mobs_2d' not found in reflection data.");
+                        return;
+                    }
+                    mdspan_type<const double> mobs = mobs_opt.value();
 
-                // refine predict
-                Simple6MosaicityParameterisation model = refine_mosaicity(xyzcal_px,
-                                                                xyzobs_px,
-                                                                covariances,
-                                                                strong_intensities,
-                                                                miller_indices,
-                                                                mobs,
-                                                                s0,
-                                                                panel,
-                                                                this_crystal.get_A_matrix());
-                std::vector<Prediction> predictions = predict_ssx(model, s0, panel, this_crystal.get_A_matrix(), xyzcal_px.extent(0));
-                logger.info("Predicted {} reflections on image {}", predictions.size(), image_no);
-                if (predictions.size() > 0){
-                    std::lock_guard<std::mutex> lock(predictions_mutex);
-                    (*predictions_mapptr)[image_no] = std::move(predictions);
-                    std::lock_guard<std::mutex> lock2(models_mutex);
-                    (*models_mapptr)[image_no] = std::move(model);
-                }
-                
+                    // refine predict
+                    Simple6MosaicityParameterisation model =
+                      refine_mosaicity(xyzcal_px,
+                                       xyzobs_px,
+                                       covariances,
+                                       strong_intensities,
+                                       miller_indices,
+                                       mobs,
+                                       s0,
+                                       panel,
+                                       this_crystal.get_A_matrix());
+                    std::vector<Prediction> predictions =
+                      predict_ssx(model,
+                                  s0,
+                                  panel,
+                                  this_crystal.get_A_matrix(),
+                                  xyzcal_px.extent(0));
+                    logger.info("Predicted {} reflections on image {}",
+                                predictions.size(),
+                                image_no);
+                    if (predictions.size() > 0) {
+                        std::lock_guard<std::mutex> lock(predictions_mutex);
+                        (*predictions_mapptr)[image_no] = std::move(predictions);
+                        std::lock_guard<std::mutex> lock2(models_mutex);
+                        (*models_mapptr)[image_no] = std::move(model);
+                    }
+
                 } catch (...) {
                     std::lock_guard<std::mutex> lk(eptr_mtx);
                     if (!eptr) eptr = std::current_exception();
@@ -367,17 +385,17 @@ int main(int argc, char **argv) {
     }
     if (eptr) std::rethrow_exception(eptr);
 
-
     std::size_t total_predictions = 0;
-    for (const auto& [key, predictions] : *predictions_mapptr) {
+    for (const auto &[key, predictions] : *predictions_mapptr) {
         total_predictions += predictions.size();
     }
     logger.info("{} reflections predicted across {} unique images",
-                total_predictions, reflections_in_image.size());
+                total_predictions,
+                reflections_in_image.size());
     num_reflections = total_predictions;
 
     const uint64_t background_pool_capacity =
-    static_cast<uint64_t>(num_reflections) * background_pool_entries_per_reflection;
+      static_cast<uint64_t>(num_reflections) * background_pool_entries_per_reflection;
     if (background_pool_capacity > static_cast<uint64_t>(UINT32_MAX)) {
         logger.error(
           "Background pool of {} entries exceeds the 32-bit index limit of {} "
@@ -386,7 +404,6 @@ int main(int argc, char **argv) {
           UINT32_MAX);
         return 1;
     }
-
 
     std::vector<BoundingBoxExtents> bboxes;
     std::vector<int> predicted_ids;
@@ -402,15 +419,15 @@ int main(int argc, char **argv) {
     predicted_ids.reserve(num_reflections);
     predicted_partialities.reserve(num_reflections);
     predicted_partiality_variances.reserve(num_reflections);
-    predicted_miller_index.reserve(num_reflections*3);
-    xyzcal_mm_out.reserve(num_reflections*3);
-    xyzcal_px_out.reserve(num_reflections*3);
+    predicted_miller_index.reserve(num_reflections * 3);
+    xyzcal_mm_out.reserve(num_reflections * 3);
+    xyzcal_px_out.reserve(num_reflections * 3);
     predicted_d_values.reserve(num_reflections);
     uint64_t cumulative_index = 0;
     int current_id = 0;
 
     Eigen::Matrix<scalar_t, 3, 3, Eigen::RowMajor> d_matrix_flat =
-        panel.get_d_matrix().cast<scalar_t>();
+      panel.get_d_matrix().cast<scalar_t>();
     std::vector<fastvec::Vector3D> s1_vectors_vec;
     std::vector<fastvec::Vector3D> s2_vectors_vec;
     std::vector<Vec2D> mubar_vec;
@@ -422,19 +439,20 @@ int main(int argc, char **argv) {
     DetectorParameters det_params = make_detector_params(panel);
     std::size_t max_n_refls_in_image = 0;
     // Map is ordered by keys
-    double norm_s0 = 1.0/wavelength;
-    for (const auto& [key, predictions] : *predictions_mapptr) {
-        Simple6MosaicityParameterisation& model = (*models_mapptr)[key];
+    double norm_s0 = 1.0 / wavelength;
+    for (const auto &[key, predictions] : *predictions_mapptr) {
+        Simple6MosaicityParameterisation &model = (*models_mapptr)[key];
         Matrix3d sigma = model.sigma();
-        Crystal& this_crystal = identifier_to_crystal_model[image_number_to_identifier[key]];
+        Crystal &this_crystal =
+          identifier_to_crystal_model[image_number_to_identifier[key]];
         gemmi::UnitCell cell = this_crystal.get_unit_cell();
-        
-        for (const auto& p: predictions){
+
+        for (const auto &p : predictions) {
             bboxes.emplace_back(p.bbox_extent);
             const auto &bbox = p.bbox_extent;
             const uint32_t corner_grid =
-                static_cast<uint32_t>(bbox.x_max - bbox.x_min + 1)
-                * static_cast<uint32_t>(bbox.y_max - bbox.y_min + 1);
+              static_cast<uint32_t>(bbox.x_max - bbox.x_min + 1)
+              * static_cast<uint32_t>(bbox.y_max - bbox.y_min + 1);
             uint32_t &image_max = corner_tile_by_image[key];
             image_max = std::max(image_max, corner_grid);
             predicted_ids.emplace_back(current_id);
@@ -460,12 +478,12 @@ int main(int argc, char **argv) {
             const Eigen::Matrix3d R = compute_change_of_basis_operation(s0, p.s2);
             const Eigen::Matrix3d S = R * sigma * R.transpose();
             const Eigen::Vector3d mu = R * p.s2;
-            double epsilon = norm_s0 - mu(2); 
+            double epsilon = norm_s0 - mu(2);
             const Eigen::Vector2d mu1 = mu.head<2>();
             const Eigen::Matrix2d S11 = S.block<2, 2>(0, 0);
             const Eigen::Vector2d S12 = S.block<2, 1>(0, 2);
             const Eigen::RowVector2d S21 = S.block<1, 2>(2, 0);
-            double S22 = S(2,2);
+            double S22 = S(2, 2);
             const Eigen::Vector2d mubar = mu1 + S12 * (epsilon / S22);
             const Eigen::Matrix2d Sbar = S11 - (S12 / S22) * S21;
             const Eigen::Matrix2d Sbar_inv = Sbar.inverse();
@@ -478,21 +496,21 @@ int main(int argc, char **argv) {
 
             Sbar_inv_vec.push_back(Sbar_inv_mat);
         }
-        
+
         std::vector<uint64_t> refl_indices;
         refl_indices.reserve(predictions.size());
-        for (uint64_t i=cumulative_index;i<cumulative_index+predictions.size();++i){
+        for (uint64_t i = cumulative_index; i < cumulative_index + predictions.size();
+             ++i) {
             refl_indices.emplace_back(i);
         }
         cumulative_index += predictions.size();
         current_id += 1;
         max_n_refls_in_image = std::max(max_n_refls_in_image, refl_indices.size());
         reflections_by_image[key] = std::move(refl_indices);
-        
     }
 
     std::unique_ptr<Reader> reader_ptr;
-    std::string file = expt.imagesequence().filename(); 
+    std::string file = expt.imagesequence().filename();
     reader_ptr = std::make_unique<H5Read>(file);
     Reader &reader = *reader_ptr;
     auto reader_mutex = std::mutex{};
@@ -500,12 +518,12 @@ int main(int argc, char **argv) {
     // Ensure this matches what we expect
     if (bytes_per_pixel != sizeof(pixel_t)) {
         fmt::print(
-            "Error: Data type mismatch; This executable only accepts {} bit != {}\n",
-            sizeof(pixel_t) * 8,
-            bytes_per_pixel * 8);
+          "Error: Data type mismatch; This executable only accepts {} bit != {}\n",
+          sizeof(pixel_t) * 8,
+          bytes_per_pixel * 8);
         std::exit(bytes_per_pixel * 8);
     }
-    uint32_t num_images = max_img_no+1;
+    uint32_t num_images = max_img_no + 1;
     uint32_t height = reader.image_shape()[0];
     uint32_t width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
@@ -513,22 +531,21 @@ int main(int argc, char **argv) {
     // Work out how many blocks this is
     dim3 gpu_thread_block_size{32, 16};
     dim3 blocks_dims{
-        static_cast<unsigned int>(ceilf((float)width / gpu_thread_block_size.x)),
-        static_cast<unsigned int>(ceilf((float)height / gpu_thread_block_size.y))};
+      static_cast<unsigned int>(ceilf((float)width / gpu_thread_block_size.x)),
+      static_cast<unsigned int>(ceilf((float)height / gpu_thread_block_size.y))};
     const int num_threads_per_block = gpu_thread_block_size.x * gpu_thread_block_size.y;
     const int num_blocks = blocks_dims.x * blocks_dims.y * blocks_dims.z;
     fmt::print("Image:       {:4d} x {:4d} = {} px\n", width, height, width * height);
     fmt::print("GPU Threads: {:4d} x {:<4d} = {}\n",
-                gpu_thread_block_size.x,
-                gpu_thread_block_size.y,
-                num_threads_per_block);
+               gpu_thread_block_size.x,
+               gpu_thread_block_size.y,
+               num_threads_per_block);
     fmt::print("Blocks:      {:4d} x {:<4d} x {:2d} = {}\n",
-                blocks_dims.x,
-                blocks_dims.y,
-                blocks_dims.z,
-                num_blocks);
+               blocks_dims.x,
+               blocks_dims.y,
+               blocks_dims.z,
+               num_blocks);
     fmt::print("Running with {} CPU threads\n", num_cpu_threads);
-
 
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
 
@@ -538,10 +555,9 @@ int main(int argc, char **argv) {
     auto cpu_sync = std::barrier{num_cpu_threads};
     double time_waiting_for_images = 0.0;
 
-    #pragma region Prep GPU Data Buffers
+#pragma region Prep GPU Data Buffers
     // assumed panel_id = 0 i.e. single panel
 
-    
     // Allocate and copy GPU buffers (shared across all threads)
     DeviceBuffer<scalar_t> d_d_matrix(9);
     DeviceBuffer<fastvec::Vector3D> d_s1_vectors(num_reflections);
@@ -609,7 +625,6 @@ int main(int argc, char **argv) {
     DeviceBuffer<unsigned long long> d_intensity_times_x(num_reflections);
     DeviceBuffer<unsigned long long> d_intensity_times_y(num_reflections);
 
-
     // What do we need: s1, s2, s0, panel for pixel lab coord, sigma,
     // Could precompute pixel to lab coords?
 
@@ -644,10 +659,10 @@ int main(int argc, char **argv) {
     cuda_check(cudaMemset(
       d_intensity_times_y.data(), 0, num_reflections * sizeof(unsigned long long)));
 
-    // assume already calculated corrections (LP, qe)
-    #pragma endregion Prep GPU Data Buffers
+// assume already calculated corrections (LP, qe)
+#pragma endregion Prep GPU Data Buffers
 
-    #pragma region Thread launch
+#pragma region Thread launch
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
@@ -665,7 +680,7 @@ int main(int argc, char **argv) {
 
             // Buffer for reading compressed chunk data in
             auto raw_chunk_buffer =
-                std::vector<uint8_t>(width * height * sizeof(pixel_t));
+              std::vector<uint8_t>(width * height * sizeof(pixel_t));
 
             // Let all threads do setup tasks before reading starts
             cpu_sync.arrive_and_wait();
@@ -690,20 +705,19 @@ int main(int argc, char **argv) {
                     // Do we really need the wait check in integration?
                     std::scoped_lock lock(reader_mutex);
                     auto swmr_wait_start_time =
-                        std::chrono::high_resolution_clock::now();
+                      std::chrono::high_resolution_clock::now();
 
                     // Check that our image is available and wait if not
                     while (!reader.is_image_available(image_num)
-                            && !stop_token.stop_requested()) {
+                           && !stop_token.stop_requested()) {
                         auto current_time = std::chrono::high_resolution_clock::now();
                         auto elapsed_wait_time =
-                            std::chrono::duration_cast<std::chrono::duration<double>>(
+                          std::chrono::duration_cast<std::chrono::duration<double>>(
                             current_time - last_image_received)
                             .count();
 
                         if (elapsed_wait_time > wait_timeout) {
-                            logger.warn("Timeout waiting for image {}",
-                                        image_num);
+                            logger.warn("Timeout waiting for image {}", image_num);
                             global_stop.request_stop();
                             break;
                         }
@@ -717,7 +731,7 @@ int main(int argc, char **argv) {
                     last_image_received = std::chrono::high_resolution_clock::now();
 
                     time_waiting_for_images +=
-                        std::chrono::duration_cast<std::chrono::duration<double>>(
+                      std::chrono::duration_cast<std::chrono::duration<double>>(
                         std::chrono::high_resolution_clock::now()
                         - swmr_wait_start_time)
                         .count();
@@ -728,21 +742,20 @@ int main(int argc, char **argv) {
                 while (true) {
                     {
                         std::scoped_lock lock(reader_mutex);
-                        buffer =
-                            reader.get_raw_chunk(image_num, raw_chunk_buffer);
+                        buffer = reader.get_raw_chunk(image_num, raw_chunk_buffer);
                     }
                     // /dev/shm we might not have an atomic write
                     if (buffer.size() == 0) {
                         logger.warn(
-                            "\033[1mRace Condition?!?? Got buffer size 0 for image "
-                            "{}. Sleeping.\033[0m",
-                            image_num);
+                          "\033[1mRace Condition?!?? Got buffer size 0 for image "
+                          "{}. Sleeping.\033[0m",
+                          image_num);
                         continue;
                     }
                     break;
                 }
 
-    #pragma region Decompression
+#pragma region Decompression
                 // Decompress this data, outside of the mutex.
                 // We do this here rather than in the reader, because we
                 // anticipate that we will want to eventually offload
@@ -751,30 +764,30 @@ int main(int argc, char **argv) {
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4:
                     bshuf_decompress_lz4(buffer.data() + 12,
-                                            host_image.get(),
-                                            width * height,
-                                            sizeof(pixel_t),
-                                            0);
+                                         host_image.get(),
+                                         width * height,
+                                         sizeof(pixel_t),
+                                         0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
                     decompress_byte_offset<pixel_t>(
-                        buffer,
-                        {host_image.get(),
-                        static_cast<std::span<pixel_t>::size_type>(width * height)});
+                      buffer,
+                      {host_image.get(),
+                       static_cast<std::span<pixel_t>::size_type>(width * height)});
                     break;
                 }
 
                 // Copy the image to GPU
                 cuda_check(cudaMemcpy2DAsync(device_image.get(),
-                                                device_image.pitch_bytes(),
-                                                host_image.get(),
-                                                width * sizeof(pixel_t),
-                                                width * sizeof(pixel_t),
-                                                height,
-                                                cudaMemcpyHostToDevice,
-                                                stream));
+                                             device_image.pitch_bytes(),
+                                             host_image.get(),
+                                             width * sizeof(pixel_t),
+                                             width * sizeof(pixel_t),
+                                             height,
+                                             cudaMemcpyHostToDevice,
+                                             stream));
                 copy_done.record(stream);
-    #pragma endregion Decompression
+#pragma endregion Decompression
                 // Get reflection indices for this image and copy to device
                 const auto &refl_indices = reflections_by_image[image_num];
                 size_t num_refls_this_image = refl_indices.size();
@@ -786,30 +799,30 @@ int main(int argc, char **argv) {
                             num_refls_this_image);
 
                 compute_ellipsoid_integrate(device_image.get(),
-                                    device_image.pitch_bytes(),
-                                    width,
-                                    height,
-                                    image_num,
-                                    d_d_matrix.data(),
-                                    wavelength_scalar,
-                                    det_params,
-                                    s0_vec,
-                                    d_bboxes.data(),
-                                    d_reflection_indices.data(),
-                                    d_s2_vectors.data(),
-                                    d_mubar.data(),
-                                    d_sbar_inv.data(),
-                                    num_refls_this_image,
-                                    d_mask.data(),
-                                    corner_tile_by_image.at(image_num),
-                                    d_foreground_sum.data(),
-                                    d_foreground_count.data(),
-                                    background_pool,
-                                    d_background_spill.data(),
-                                    d_intensity_times_x.data(),
-                                    d_intensity_times_y.data(),
-                                    d_success.data(),
-                                    stream);
+                                            device_image.pitch_bytes(),
+                                            width,
+                                            height,
+                                            image_num,
+                                            d_d_matrix.data(),
+                                            wavelength_scalar,
+                                            det_params,
+                                            s0_vec,
+                                            d_bboxes.data(),
+                                            d_reflection_indices.data(),
+                                            d_s2_vectors.data(),
+                                            d_mubar.data(),
+                                            d_sbar_inv.data(),
+                                            num_refls_this_image,
+                                            d_mask.data(),
+                                            corner_tile_by_image.at(image_num),
+                                            d_foreground_sum.data(),
+                                            d_foreground_count.data(),
+                                            background_pool,
+                                            d_background_spill.data(),
+                                            d_intensity_times_x.data(),
+                                            d_intensity_times_y.data(),
+                                            d_success.data(),
+                                            stream);
 
                 logger.trace("Thread {} loaded image {}", thread_id, image_num);
                 completed_images += 1;
@@ -822,7 +835,7 @@ int main(int argc, char **argv) {
     }
 
     float total_time =
-        std::chrono::duration_cast<std::chrono::duration<double>>(
+      std::chrono::duration_cast<std::chrono::duration<double>>(
         std::chrono::high_resolution_clock::now() - all_images_start_time)
         .count();
     int n_integrated_images = reflections_by_image.size();
@@ -1011,22 +1024,23 @@ int main(int argc, char **argv) {
             xyzobs_px_out[i * 3 + 1] = 0.5 * (bb.y_min + bb.y_max);
             xyzobs_px_out[i * 3 + 2] = 0.5 * (bb.z_min + bb.z_max);
         }
-
     }
 
     std::vector<std::string> final_identifiers = reflections.get_identifiers();
     std::vector<uint64_t> ids_in = reflections.get_experiment_ids();
     ReflectionTable integrated_data(ids_in, final_identifiers);
     integrated_data.add_column("intensity.sum.value", num_reflections, 1, intensities);
-    integrated_data.add_column(
-      "intensity.sum.variance", num_reflections, 1, variances);
+    integrated_data.add_column("intensity.sum.variance", num_reflections, 1, variances);
     integrated_data.add_column("id", num_reflections, 1, predicted_ids);
-    integrated_data.add_column("partiality", num_reflections, 1, predicted_partialities);
-    integrated_data.add_column("partiality.inv.variance", num_reflections, 1, predicted_partiality_variances);
+    integrated_data.add_column(
+      "partiality", num_reflections, 1, predicted_partialities);
+    integrated_data.add_column(
+      "partiality.inv.variance", num_reflections, 1, predicted_partiality_variances);
     integrated_data.add_column("xyzobs.px.value", num_reflections, 3, xyzobs_px_out);
     integrated_data.add_column("xyzcal.px", num_reflections, 3, xyzcal_px_out);
     integrated_data.add_column("xyzcal.mm", num_reflections, 3, xyzcal_mm_out);
-    integrated_data.add_column("miller_index", num_reflections, 3, predicted_miller_index);
+    integrated_data.add_column(
+      "miller_index", num_reflections, 3, predicted_miller_index);
     integrated_data.add_column("d", num_reflections, 1, predicted_d_values);
     integrated_data.add_column("num_pixels.background", num_reflections, 1, nbg_out);
     integrated_data.add_column("num_pixels.foreground", num_reflections, 1, nfg_out);
@@ -1042,7 +1056,8 @@ int main(int argc, char **argv) {
     ReflectionTable success_data = integrated_data.select(success_bool);
     int n_integrated =
       success_data.column<double>("intensity.sum.value").value().extent(0);
-    logger.info("Writing {} integrated reflections to {}", n_integrated, "integrated.refl");
+    logger.info(
+      "Writing {} integrated reflections to {}", n_integrated, "integrated.refl");
     success_data.write("integrated.refl");
 
     // Need to add profile models to an integrated.expt list.

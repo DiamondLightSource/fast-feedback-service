@@ -8,52 +8,46 @@
 
 #include "cuda_common.hpp"
 #include "device_common.cuh"
+#include "ellipsoid.cuh"
 #include "ffs_logger.hpp"
 #include "h5read.h"
 #include "integrator.cuh"
 #include "integrator/background.cuh"
 #include "integrator/extent.hpp"
-#include "ellipsoid.cuh"
 #include "kabsch.cuh"
 #include "math/math_utils.cuh"
 
 using namespace fastvec;
 
-constexpr scalar_t ellipsoid_quantile_D = 11.8292; //double D = chisq_quantile(2, probability_);
+constexpr scalar_t ellipsoid_quantile_D =
+  11.8292;  //double D = chisq_quantile(2, probability_);
 
-
-__device__ __forceinline__ bool is_foreground_ellipsoid(
-    const Vec2D& eps,
-    const Vec2D& mubar,
-    const Mat2D& Sbar_inv,
-    const scalar_t wavelength) {
+__device__ __forceinline__ bool is_foreground_ellipsoid(const Vec2D &eps,
+                                                        const Vec2D &mubar,
+                                                        const Mat2D &Sbar_inv,
+                                                        const scalar_t wavelength) {
     // Calculation is d = AT_B_A(x1 - mubar, Sbar_inv);
     scalar_t x0 = eps.x / wavelength;
     scalar_t x1 = eps.y / wavelength;
     scalar_t d0 = x0 - mubar.x;
     scalar_t d1 = x1 - mubar.y;
-    scalar_t d =
-       d0 * d0 * Sbar_inv.xx +
-       d0 * d1 * Sbar_inv.xy +
-       d0 * d1 * Sbar_inv.yx +
-       d1 * d1 * Sbar_inv.yy;                                         
- 
+    scalar_t d = d0 * d0 * Sbar_inv.xx + d0 * d1 * Sbar_inv.xy + d0 * d1 * Sbar_inv.yx
+                 + d1 * d1 * Sbar_inv.yy;
+
     return d < ellipsoid_quantile_D;
 }
 
-
 __device__ Vec2D pixel_to_kabsch_ellipsoid(const Vector3D &s0,
-                                    const Vector3D &s1_c,
-                                    const Vector3D &s_pixel) {
+                                           const Vector3D &s1_c,
+                                           const Vector3D &s_pixel) {
     Vector3D e1 = normalized(cross(s1_c, s0));
     Vector3D e2 = normalized(cross(s1_c, e1));
     scalar_t s1_len = norm(s1_c);
     Vector3D deltaS = s_pixel - s1_c;
     scalar_t eps1 = dot(e1, deltaS) / s1_len;
-    scalar_t eps2 = dot(e2, deltaS) / s1_len;  
-    return {eps1, eps2};                            
+    scalar_t eps2 = dot(e2, deltaS) / s1_len;
+    return {eps1, eps2};
 }
-
 
 __device__ __forceinline__ bool corner_is_foreground_ellipsoid(
   int cx,
@@ -62,7 +56,7 @@ __device__ __forceinline__ bool corner_is_foreground_ellipsoid(
   const Vector3D &s2c,
   const Vec2D &mubar,
   const scalar_t *d_matrix,
-  const Mat2D& Sbar_inv,
+  const Mat2D &Sbar_inv,
   scalar_t wavelength,
   const DetectorParameters &det_params) {
     const Vector3D s_pixel = corner_s_pixel(cx, cy, d_matrix, wavelength, det_params);
@@ -70,15 +64,14 @@ __device__ __forceinline__ bool corner_is_foreground_ellipsoid(
     return is_foreground_ellipsoid(eps, mubar, Sbar_inv, wavelength);
 }
 
-
 __device__ __forceinline__ bool pixel_is_foreground_ellipsoid(
   int px,
   int py,
   const Vector3D &s0,
   const Vector3D &s2c,
-  const Vec2D& mubar,
+  const Vec2D &mubar,
   const scalar_t *d_matrix,
-  const Mat2D& Sbar_inv,
+  const Mat2D &Sbar_inv,
   scalar_t wavelength,
   const DetectorParameters &det_params) {
 #pragma unroll
@@ -86,14 +79,14 @@ __device__ __forceinline__ bool pixel_is_foreground_ellipsoid(
 #pragma unroll
         for (int dx = 0; dx <= 1; ++dx) {
             if (corner_is_foreground_ellipsoid(px + dx,
-                                    py + dy,
-                                           s0,
-                                           s2c,
-                                           mubar,
-                                           d_matrix,
-                                           Sbar_inv,
-                                           wavelength,
-                                           det_params)) {
+                                               py + dy,
+                                               s0,
+                                               s2c,
+                                               mubar,
+                                               d_matrix,
+                                               Sbar_inv,
+                                               wavelength,
+                                               det_params)) {
                 return true;
             }
         }
@@ -102,29 +95,29 @@ __device__ __forceinline__ bool pixel_is_foreground_ellipsoid(
 }
 
 __global__ void ellipsoid_integrate(pixel_t *d_image,
-                        size_t image_pitch,
-                        uint32_t width,
-                        uint32_t height,
-                        int image_num,
-                        const scalar_t *d_matrix,
-                        const scalar_t wavelength,
-                        const DetectorParameters det_params,
-                        const Vector3D s0,
-                        const BoundingBoxExtents *d_bboxes,
-                        const size_t *d_reflection_indices,
-                        const Vector3D *d_s2_vectors,
-                        const Vec2D *d_mubar,
-                        const Mat2D *d_sbar_inv,
-                        size_t num_reflections_this_image,
-                        const uint8_t *d_mask,
-                        uint32_t tile_capacity,
-                        accumulator_t *d_foreground_sum,
-                        uint32_t *d_foreground_count,
-                        BackgroundPool background_pool,
-                        uint32_t *d_background_spill,
-                        unsigned long long *d_intensity_times_x,
-                        unsigned long long *d_intensity_times_y,
-                        uint8_t *d_success){
+                                    size_t image_pitch,
+                                    uint32_t width,
+                                    uint32_t height,
+                                    int image_num,
+                                    const scalar_t *d_matrix,
+                                    const scalar_t wavelength,
+                                    const DetectorParameters det_params,
+                                    const Vector3D s0,
+                                    const BoundingBoxExtents *d_bboxes,
+                                    const size_t *d_reflection_indices,
+                                    const Vector3D *d_s2_vectors,
+                                    const Vec2D *d_mubar,
+                                    const Mat2D *d_sbar_inv,
+                                    size_t num_reflections_this_image,
+                                    const uint8_t *d_mask,
+                                    uint32_t tile_capacity,
+                                    accumulator_t *d_foreground_sum,
+                                    uint32_t *d_foreground_count,
+                                    BackgroundPool background_pool,
+                                    uint32_t *d_background_spill,
+                                    unsigned long long *d_intensity_times_x,
+                                    unsigned long long *d_intensity_times_y,
+                                    uint8_t *d_success) {
     // One block per reflection shoebox on this image; blockIdx.x indexes the
     // image-level reflection list directly.
     const size_t block_refl = blockIdx.x;
@@ -134,7 +127,7 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
     const BoundingBoxExtents bbox = d_bboxes[refl_idx];
     const Vec2D mubar = d_mubar[refl_idx];
     const Mat2D Sbar_inv = d_sbar_inv[refl_idx];
-    
+
     // Pitched image accessor
     size_t elem_pitch = image_pitch / sizeof(pixel_t);
     PitchedArray2D<pixel_t> image(d_image, &elem_pitch);
@@ -146,8 +139,7 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
 
     auto corner_fg = [&](int cx, int cy) -> bool {
         return corner_is_foreground_ellipsoid(
-            cx, cy, s0, s2c, mubar, d_matrix, Sbar_inv, wavelength, det_params
-        );
+          cx, cy, s0, s2c, mubar, d_matrix, Sbar_inv, wavelength, det_params);
     };
 
     // Classify + accumulate one shoebox pixel. Shared by the tile and fallback
@@ -231,48 +223,43 @@ __global__ void ellipsoid_integrate(pixel_t *d_image,
         }
     } else {
         for (int p = static_cast<int>(threadIdx.x); p < npix;
-            p += static_cast<int>(blockDim.x)) {
+             p += static_cast<int>(blockDim.x)) {
             const int px = bbox.x_min + (p % w);
             const int py = bbox.y_min + (p / w);
             accumulate(
-                px,
-                py,
-                pixel_is_foreground_ellipsoid(px, py, s0, s2c,
-                    mubar,
-                    d_matrix,
-                    Sbar_inv,
-                    wavelength,
-                    det_params)
-            );
+              px,
+              py,
+              pixel_is_foreground_ellipsoid(
+                px, py, s0, s2c, mubar, d_matrix, Sbar_inv, wavelength, det_params));
         }
     }
 }
 
 void compute_ellipsoid_integrate(pixel_t *d_image,
-                        size_t image_pitch,
-                        uint32_t width,
-                        uint32_t height,
-                        int image_num,
-                        const scalar_t *d_matrix,
-                        const scalar_t wavelength,
-                        const DetectorParameters det_params,
-                        const Vector3D s0,
-                        const BoundingBoxExtents *d_bboxes,
-                        const size_t *d_reflection_indices,
-                        const Vector3D *d_s2_vectors,
-                        const Vec2D *d_mubar,
-                        const Mat2D *d_sbar_inv,
-                        size_t num_reflections_this_image,
-                        const uint8_t *d_mask,
-                        uint32_t max_corner_tile_corners,
-                        accumulator_t *d_foreground_sum,
-                        uint32_t *d_foreground_count,
-                        BackgroundPool background_pool,
-                        uint32_t *d_background_spill,
-                        unsigned long long *d_intensity_times_x,
-                        unsigned long long *d_intensity_times_y,
-                        uint8_t *d_success,
-                    cudaStream_t stream){
+                                 size_t image_pitch,
+                                 uint32_t width,
+                                 uint32_t height,
+                                 int image_num,
+                                 const scalar_t *d_matrix,
+                                 const scalar_t wavelength,
+                                 const DetectorParameters det_params,
+                                 const Vector3D s0,
+                                 const BoundingBoxExtents *d_bboxes,
+                                 const size_t *d_reflection_indices,
+                                 const Vector3D *d_s2_vectors,
+                                 const Vec2D *d_mubar,
+                                 const Mat2D *d_sbar_inv,
+                                 size_t num_reflections_this_image,
+                                 const uint8_t *d_mask,
+                                 uint32_t max_corner_tile_corners,
+                                 accumulator_t *d_foreground_sum,
+                                 uint32_t *d_foreground_count,
+                                 BackgroundPool background_pool,
+                                 uint32_t *d_background_spill,
+                                 unsigned long long *d_intensity_times_x,
+                                 unsigned long long *d_intensity_times_y,
+                                 uint8_t *d_success,
+                                 cudaStream_t stream) {
     if (num_reflections_this_image == 0) return;
 
     // Configure kernel launch parameters.
@@ -292,59 +279,56 @@ void compute_ellipsoid_integrate(pixel_t *d_image,
     static std::atomic<uint32_t> smem_high_water{0};
     uint32_t prev_high = smem_high_water.load(std::memory_order_relaxed);
     if (smem_bytes > prev_high
-        && smem_high_water.compare_exchange_strong(
-            prev_high, static_cast<uint32_t>(smem_bytes))) {
+        && smem_high_water.compare_exchange_strong(prev_high,
+                                                   static_cast<uint32_t>(smem_bytes))) {
         int blocks_no_smem = 0;
         int blocks_with_smem = 0;
         cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-            &blocks_no_smem,
-            ellipsoid_integrate,
-            static_cast<int>(ELLIPSOID_THREADS),
-            0);
+          &blocks_no_smem, ellipsoid_integrate, static_cast<int>(ELLIPSOID_THREADS), 0);
         cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-            &blocks_with_smem,
-            ellipsoid_integrate,
-            static_cast<int>(ELLIPSOID_THREADS),
-            smem_bytes);
+          &blocks_with_smem,
+          ellipsoid_integrate,
+          static_cast<int>(ELLIPSOID_THREADS),
+          smem_bytes);
         if (blocks_with_smem < blocks_no_smem) {
             static std::once_flag occupancy_warning_flag;
             std::call_once(occupancy_warning_flag, [&] {
                 logger.warn(
-                    "Kabsch corner tile of {} B (largest shoebox on image {}) "
-                    "reduces occupancy from {} to {} blocks/SM; further "
-                    "occurrences are not reported",
-                    smem_bytes,
-                    image_num,
-                    blocks_no_smem,
-                    blocks_with_smem);
+                  "Kabsch corner tile of {} B (largest shoebox on image {}) "
+                  "reduces occupancy from {} to {} blocks/SM; further "
+                  "occurrences are not reported",
+                  smem_bytes,
+                  image_num,
+                  blocks_no_smem,
+                  blocks_with_smem);
             });
         }
     }
     ellipsoid_integrate<<<gridDim, blockDim, smem_bytes, stream>>>(
-        d_image,
-        image_pitch,
-        width,
-        height,
-        image_num,
-        d_matrix,
-        wavelength,
-        det_params,
-        s0,
-        d_bboxes,
-        d_reflection_indices,
-        d_s2_vectors,
-        d_mubar,
-        d_sbar_inv,
-        num_reflections_this_image,
-        d_mask,
-        tile_capacity,
-        d_foreground_sum,
-        d_foreground_count,
-        background_pool,
-        d_background_spill,
-        d_intensity_times_x,
-        d_intensity_times_y,
-        d_success);
+      d_image,
+      image_pitch,
+      width,
+      height,
+      image_num,
+      d_matrix,
+      wavelength,
+      det_params,
+      s0,
+      d_bboxes,
+      d_reflection_indices,
+      d_s2_vectors,
+      d_mubar,
+      d_sbar_inv,
+      num_reflections_this_image,
+      d_mask,
+      tile_capacity,
+      d_foreground_sum,
+      d_foreground_count,
+      background_pool,
+      d_background_spill,
+      d_intensity_times_x,
+      d_intensity_times_y,
+      d_success);
     // Check for kernel launch errors
     cuda_check_launch("ellipsoid_transform");
 }

@@ -159,8 +159,6 @@ __device__ Vector3D pixel_to_kabsch(const Vector3D &s0,
     return make_vector3d(eps1, eps2, eps3);
 }
 
-
-
 /**
  * @brief Classify a single detector corner as inside the reflection profile.
  *

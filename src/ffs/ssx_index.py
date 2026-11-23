@@ -346,11 +346,11 @@ def run(args=None):
             experiment_ids = processing_group.attrs["experiment_ids"]
             identifiers = processing_group.attrs["identifiers"]
             identifiers_map = dict(zip(experiment_ids, identifiers))
-            #if "intensity.sum.value" in processing_group:
+            # if "intensity.sum.value" in processing_group:
             intensities = processing_group["intensity.sum.value"][:]
-            #if "spot_covariance_2d_packed" in processing_group:
+            # if "spot_covariance_2d_packed" in processing_group:
             covariances = processing_group["spot_covariance_2d_packed"][:]
-            #if "bbox" in processing_group:
+            # if "bbox" in processing_group:
             bboxes = processing_group["bbox"][:]
             spot_mobs = processing_group["spot_mobs_2d"][:]
     except Exception as e:
@@ -389,11 +389,14 @@ def run(args=None):
         if xyzs_this.any():
             input_data_arrays.append(
                 InputArrays(
-                    id_value=id_, xyz=xyzs_this,
+                    id_value=id_,
+                    xyz=xyzs_this,
                     intensity=intensities[start:end],
                     covariance=covariances[start:end],
                     bbox=bboxes[start:end],
-                    mobs=spot_mobs[start:end]))
+                    mobs=spot_mobs[start:end],
+                )
+            )
 
     ## Initialise the GPU indexer.
     try:

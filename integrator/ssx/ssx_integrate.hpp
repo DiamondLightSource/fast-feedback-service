@@ -1,8 +1,9 @@
 #pragma once
 #include <Eigen/Dense>
 #include <dx2/detector.hpp>
-#include <vector>
 #include <experimental/mdspan>
+#include <vector>
+
 #include "mosaicity_parameterisation.hpp"
 #include "predictor/predict.hpp"
 
@@ -12,8 +13,6 @@ using Vector2d = Eigen::Vector2d;
 template <typename T>
 using mdspan_type =
   std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
-
-
 
 Simple6MosaicityParameterisation refine_mosaicity(
   mdspan_type<const double> &xyzcal_px,

@@ -215,7 +215,7 @@ std::tuple<double, double, double, double, double> Reflection3D::mobs_and_covari
         xbar_1 += local_coord[1] * signal.intensity;
         varx += signal.intensity * eps1 * eps1;
         vary += signal.intensity * eps2 * eps2;
-        varxy += signal.intensity * eps1 * eps2; // Covariance term, needed for SSX
+        varxy += signal.intensity * eps1 * eps2;  // Covariance term, needed for SSX
         total_intensity += signal.intensity;
     }
     varx = varx / total_intensity;

@@ -398,7 +398,6 @@ std::vector<Prediction> SSXPredictor::predict(
         // will need to divide partiality_variance by n_obs to finalize.
         p.partiality_variance = e2 * exp(e2 / S22) / (nobs * S00);
         predictions.push_back(std::move(p));
-        
     }
 
     return predictions;

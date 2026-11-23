@@ -104,7 +104,7 @@ class Reflection3D {
     }
 
     int total_intensity() const {
-        if (com_cached_){
+        if (com_cached_) {
             return total_intensity_cache_;
         }
         int total_intensity = 0;
@@ -237,9 +237,10 @@ class Reflection3D {
                                                               const Scan &scan,
                                                               const double phi) const;
 
-    std::tuple<double, double, double, double, double> mobs_and_covariance_2D(const Vector3d &s1,
-                                                     const Vector3d &s0,
-                                                     const Panel &panel) const;
+    std::tuple<double, double, double, double, double> mobs_and_covariance_2D(
+      const Vector3d &s1,
+      const Vector3d &s0,
+      const Panel &panel) const;
 
     // Getters for bounding box
     inline uint32_t get_x_min() const {

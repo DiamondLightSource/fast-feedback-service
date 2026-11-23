@@ -292,13 +292,8 @@ class DeviceBuffer {
                      fmt::format(device_color, "device"));
     }
 
-    void assign(const T *host_data, size_t n)
-    {
-        cudaMemcpy(
-            device_ptr_,
-            host_data,
-            n * sizeof(T),
-            cudaMemcpyHostToDevice);
+    void assign(const T *host_data, size_t n) {
+        cudaMemcpy(device_ptr_, host_data, n * sizeof(T), cudaMemcpyHostToDevice);
     }
 
     /**

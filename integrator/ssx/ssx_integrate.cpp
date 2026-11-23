@@ -1,6 +1,7 @@
 #include "ssx_integrate.hpp"
 
 #include <cmath>
+#include <experimental/mdspan>
 #include <math/math_utils.cuh>
 #include <vector>
 
@@ -8,7 +9,6 @@
 #include "integrator/extent.hpp"
 #include "integrator/sigma_estimation.hpp"
 #include "max_likelihood_target.hpp"
-#include <experimental/mdspan>
 #include "predictor/index_generators.hpp"
 #include "reflection_likelihood.hpp"
 
@@ -22,21 +22,21 @@ The input vectors are typically short (<100 values),
 as they are the data for successfully indexed spots.
 */
 Simple6MosaicityParameterisation refine_mosaicity(
-    mdspan_type<const double> &xyzcal_px,
-    mdspan_type<const double> &xyzobs_px,
-    mdspan_type<const double> &covariances,
-    mdspan_type<const double> &intensities,
-    mdspan_type<const int> &miller_indices,
-    mdspan_type<const double> &mobs,
-    const Eigen::Vector3d &s0,
-    const Panel &panel,
-    const Eigen::Matrix3d &A) {
+  mdspan_type<const double> &xyzcal_px,
+  mdspan_type<const double> &xyzobs_px,
+  mdspan_type<const double> &covariances,
+  mdspan_type<const double> &intensities,
+  mdspan_type<const int> &miller_indices,
+  mdspan_type<const double> &mobs,
+  const Eigen::Vector3d &s0,
+  const Panel &panel,
+  const Eigen::Matrix3d &A) {
     double max_separation = 2.0;
     // perform max separation filter
     std::vector<std::size_t> keep;
     for (std::size_t i = 0; i < xyzcal_px.extent(0); i++) {
-        if (std::pow(std::pow(xyzcal_px(i,0) - xyzobs_px(i,0), 2)
-                       + std::pow(xyzcal_px(i,1) - xyzobs_px(i,1), 2),
+        if (std::pow(std::pow(xyzcal_px(i, 0) - xyzobs_px(i, 0), 2)
+                       + std::pow(xyzcal_px(i, 1) - xyzobs_px(i, 1), 2),
                      0.5)
             < max_separation) {
             keep.push_back(i);
@@ -58,12 +58,14 @@ Simple6MosaicityParameterisation refine_mosaicity(
     mobs_f.reserve(keep.size());
 
     for (auto i : keep) {
-        intensities_f.push_back(static_cast<double>(intensities(i,0)));
-        covariances_f.push_back({covariances(i,0), covariances(i,1), covariances(i,2)});
-        xyzobs_f.push_back({xyzobs_px(i,0), xyzobs_px(i,1), xyzobs_px(i,2)});
-        xyzcal_f.push_back({xyzcal_px(i,0), xyzcal_px(i,1), xyzcal_px(i,2)});
-        miller_indices_f.push_back({miller_indices(i,0), miller_indices(i,1), miller_indices(i,2)});
-        mobs_f.push_back({mobs(i,0), mobs(i,1)});
+        intensities_f.push_back(static_cast<double>(intensities(i, 0)));
+        covariances_f.push_back(
+          {covariances(i, 0), covariances(i, 1), covariances(i, 2)});
+        xyzobs_f.push_back({xyzobs_px(i, 0), xyzobs_px(i, 1), xyzobs_px(i, 2)});
+        xyzcal_f.push_back({xyzcal_px(i, 0), xyzcal_px(i, 1), xyzcal_px(i, 2)});
+        miller_indices_f.push_back(
+          {miller_indices(i, 0), miller_indices(i, 1), miller_indices(i, 2)});
+        mobs_f.push_back({mobs(i, 0), mobs(i, 1)});
     }
     // End of filtering section.
 

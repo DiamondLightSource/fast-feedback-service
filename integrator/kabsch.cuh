@@ -31,8 +31,8 @@
 #include "integrator/background_pool.hpp"
 #include "integrator/extent.hpp"
 #include "math/device_precision.cuh"
-#include "math/vector3d.cuh"
 #include "math/math_utils.cuh"
+#include "math/vector3d.cuh"
 
 /// CUDA block width (threads per block) for the shoebox-parallel Kabsch kernel.
 /// Each block strides this many threads over its shoebox's pixels, so it makes
@@ -146,7 +146,6 @@ corner_s_pixel(int cx,
                     d_matrix[6] * cx_mm + d_matrix[7] * cy_mm + d_matrix[8]);
     return normalized(lab_coord) / wavelength;
 }
-
 
 /**
  * @brief Host wrapper function for image-based Kabsch computation
