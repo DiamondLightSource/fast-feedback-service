@@ -292,8 +292,37 @@ class DeviceBuffer {
                      fmt::format(device_color, "device"));
     }
 
-    void assign(const T *host_data, size_t n) {
+    /**
+    * @brief Copy a specified number of elements from host memory to device buffer
+    *
+    * Performs synchronous memory copy from host to device and logs the
+    * transfer. The host data array must contain at least n elements but
+    * not more than count_ elements.
+    *
+    * @param host_data Pointer to host memory containing data to copy
+    * @param n Number of elements to copy
+    * @param location The site to attribute a failure to.
+    * @throws cuda_error If cudaMemcpy fails
+    */
+    void assign(const T *host_data,
+                size_t n,
+                const std::source_location location =
+                std::source_location::current()) {
+        auto err =
         cudaMemcpy(device_ptr_, host_data, n * sizeof(T), cudaMemcpyHostToDevice);
+
+        if (err != cudaSuccess) {
+            logger.error("cudaMemcpy (host to device) failed for {} elements: {}",
+                        n,
+                        cuda_error_string(err));
+            cuda_check(err, location);
+        }
+
+        logger.debug("Copied {} bytes: {} {} {}",
+                    n * sizeof(T),
+                    fmt::format(host_color, "host"),
+                    fmt::format(host_to_device, "━━▶"),
+                    fmt::format(device_color, "device"));
     }
 
     /**
