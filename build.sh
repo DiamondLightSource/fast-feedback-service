@@ -10,7 +10,7 @@
 #   ./build.sh --install    force the install, refreshing the environment
 #
 # A compile updates the build directory only. If you changed C++ that goes into
-# `ffs.index` or `ffs.integrate`, use --install, because site-packages is the
+# `ffs.index`, use --install, because site-packages is the
 # only place python can read an extension module from.
 #   ./build.sh --clean      discard the build directory and start over
 #   ./build.sh -j N         limit parallelism

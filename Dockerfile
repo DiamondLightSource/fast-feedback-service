@@ -80,7 +80,7 @@ RUN --mount=type=cache,target=/ccache \
 
 # The extension modules arrive with the wheel rather than with cmake, so
 # prove they import before the runtime stage copies the prefix
-RUN /opt/ffs/bin/python3 -c "import ffs.index, ffs.integrate, ffs.pipeline, ffs.ssx_index"
+RUN /opt/ffs/bin/python3 -c "import ffs.index, ffs.pipeline, ffs.ssx_index"
 
 # Now copy this into an isolated runtime container. Both published
 # images derive from this stage, so the build above runs once.
