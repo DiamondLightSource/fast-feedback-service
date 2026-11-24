@@ -286,10 +286,14 @@ def run(args=None):
     parser.add_argument(
         "--min-spots", type=int, default=10, help="Only attempt indexing on"
     )
+    parser.add_argument(
+        "--output-summary", action="store_true", help="Save a json summary output to results_summary.json"
+    )
     parser.add_argument("--test", action="store_true", help="Run in test mode")
 
     parsed = parser.parse_args(args)
     min_spots = parsed.min_spots
+    output_summary = parsed.output_summary
     if not parsed.experiments:
         print("No imported experiment list provided.")
         return
@@ -353,6 +357,16 @@ def run(args=None):
             f"Unable to compose a detector panel model from the detector json.\n Error: {e}"
         )
         return
+    results_summary = {}
+    if output_summary:
+        results_summary = {
+            i: [{
+                "Image": i+1,
+                "n_indexed": 0,
+                "n_strong": 0,
+            }] for i in range(len(expts["experiment"]))
+        }  # create to give results in order
+        # each entry is a list as dials allows multi-lattice indexing
 
     output_aggregator = OutputAggregator(identifiers_map)
     input_data_arrays: list[InputArrays] = []
@@ -393,7 +407,11 @@ def run(args=None):
     t1 = time.time()
 
     for data_arrays in input_data_arrays:
-        if data_arrays.xyz.shape[0] < min_spots:
+        n_spots = data_arrays.xyz.shape[0]
+        if output_summary:
+            summary_this = results_summary[data_arrays.id_value][0]
+            summary_this["n_strong"] = n_spots
+        if n_spots < min_spots:
             continue
         n_considered += 1
         xyz_data = data_arrays.xyz.flatten()
@@ -407,10 +425,15 @@ def run(args=None):
             rmsdx, rmsdy, rmsd_psi = lattice.rmsds
             cell_str = ", ".join(f"{i:.3f}" for i in lattice.unit_cell)
             print(
-                f"Indexed {(lattice.n_indexed)}/{int(xyz_data.size / 3)} spots on image {data_arrays.id_value + 1}:\n"
+                f"Indexed {(lattice.n_indexed)}/{int(n_spots)} spots on image {data_arrays.id_value + 1}:\n"
                 + f"  cell: {cell_str}\n"
                 + f"  RMSDs: (x(px), y(px), psi(rad)): {rmsdx:.3f}, {rmsdy:.3f}, {rmsd_psi:.5f}"
             )
+            if output_summary:
+                summary_this["n_indexed"] = lattice.n_indexed
+                summary_this["RMSD_X"] = rmsdx
+                summary_this["RMSD_Y"] = rmsdy
+                summary_this["RMSD_dPsi"] = rmsd_psi
         else:
             print(f"No indexing solution for image {data_arrays.id_value + 1}")
 
@@ -442,6 +465,10 @@ def run(args=None):
             expts["experiment"][i]["identifier"] = identifier
         with open("indexed.expt", "w") as f:
             json.dump(expts, f, indent=2)
+
+    if output_summary:
+        with open("results_summary.json", "w") as f:
+            json.dump(results_summary, f, indent=2)
 
     # output in standard dials format so that can be understood by dials.
     if not output_aggregator.ids_output:

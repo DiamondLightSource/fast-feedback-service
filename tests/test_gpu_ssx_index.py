@@ -152,6 +152,7 @@ def test_gpu_ssx_index(dials_data, tmp_path):
             "90",
             "90",
             "90",
+            "--output-summary",
         ],
         capture_output=True,
         cwd=tmp_path,
