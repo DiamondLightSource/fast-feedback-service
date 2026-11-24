@@ -306,23 +306,22 @@ class DeviceBuffer {
     */
     void assign(const T *host_data,
                 size_t n,
-                const std::source_location location =
-                std::source_location::current()) {
+                const std::source_location location = std::source_location::current()) {
         auto err =
-        cudaMemcpy(device_ptr_, host_data, n * sizeof(T), cudaMemcpyHostToDevice);
+          cudaMemcpy(device_ptr_, host_data, n * sizeof(T), cudaMemcpyHostToDevice);
 
         if (err != cudaSuccess) {
             logger.error("cudaMemcpy (host to device) failed for {} elements: {}",
-                        n,
-                        cuda_error_string(err));
+                         n,
+                         cuda_error_string(err));
             cuda_check(err, location);
         }
 
         logger.debug("Copied {} bytes: {} {} {}",
-                    n * sizeof(T),
-                    fmt::format(host_color, "host"),
-                    fmt::format(host_to_device, "━━▶"),
-                    fmt::format(device_color, "device"));
+                     n * sizeof(T),
+                     fmt::format(host_color, "host"),
+                     fmt::format(host_to_device, "━━▶"),
+                     fmt::format(device_color, "device"));
     }
 
     /**
