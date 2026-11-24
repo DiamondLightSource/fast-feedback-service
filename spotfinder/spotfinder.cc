@@ -999,7 +999,7 @@ int main(int argc, char **argv) {
                             auto [x, y, z] = r.center_of_mass();
                             centers_of_mass.push_back(x);
                             centers_of_mass.push_back(y);
-                            centers_of_mass.push_back(z+offset_image_num);
+                            centers_of_mass.push_back(z + offset_image_num);
                         }
                         if (save_to_h5) {
                             std::lock_guard<std::mutex> lock(
