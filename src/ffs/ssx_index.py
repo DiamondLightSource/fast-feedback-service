@@ -287,7 +287,9 @@ def run(args=None):
         "--min-spots", type=int, default=10, help="Only attempt indexing on"
     )
     parser.add_argument(
-        "--output-summary", action="store_true", help="Save a json summary output to results_summary.json"
+        "--output-summary",
+        action="store_true",
+        help="Save a json summary output to results_summary.json",
     )
     parser.add_argument("--test", action="store_true", help="Run in test mode")
 
@@ -360,11 +362,14 @@ def run(args=None):
     results_summary = {}
     if output_summary:
         results_summary = {
-            i: [{
-                "Image": i+1,
-                "n_indexed": 0,
-                "n_strong": 0,
-            }] for i in range(len(expts["experiment"]))
+            i: [
+                {
+                    "Image": i + 1,
+                    "n_indexed": 0,
+                    "n_strong": 0,
+                }
+            ]
+            for i in range(len(expts["experiment"]))
         }  # create to give results in order
         # each entry is a list as dials allows multi-lattice indexing
 
