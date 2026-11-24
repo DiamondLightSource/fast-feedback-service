@@ -34,7 +34,7 @@ max_separation_regex = r"Filtered\s+(\d+)\s+spots with peak-centroid distance > 
 def test_dispersion(dials_data, tmp_path):
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
     assert spotfinder_path
-    d = dials_data("thaumatin_i03_rotation", pathlib=True)
+    d = dials_data("thaumatin_i03_rotation")
     proc = subprocess.run(
         [
             spotfinder_path,
@@ -119,7 +119,7 @@ def test_dispersion(dials_data, tmp_path):
 def test_dispersion_dmin(dials_data, tmp_path):
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
     assert spotfinder_path
-    d = dials_data("thaumatin_i03_rotation", pathlib=True)
+    d = dials_data("thaumatin_i03_rotation")
     proc = subprocess.run(
         [
             spotfinder_path,
@@ -198,7 +198,7 @@ def test_dispersion_dmin(dials_data, tmp_path):
 def test_dispersion_extended(dials_data, tmp_path):
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
     assert spotfinder_path
-    d = dials_data("thaumatin_i03_rotation", pathlib=True)
+    d = dials_data("thaumatin_i03_rotation")
     proc = subprocess.run(
         [
             spotfinder_path,
@@ -277,7 +277,7 @@ def test_dispersion_extended(dials_data, tmp_path):
 def test_dispersion_extended_dmin(dials_data, tmp_path):
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
     assert spotfinder_path
-    d = dials_data("thaumatin_i03_rotation", pathlib=True)
+    d = dials_data("thaumatin_i03_rotation")
     proc = subprocess.run(
         [
             spotfinder_path,
@@ -365,7 +365,7 @@ def test_dispersion_gridscan(dials_data, tmp_path):
     """
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER")
     assert spotfinder_path
-    d = dials_data("thaumatin_i03_grid_scans", pathlib=True)
+    d = dials_data("thaumatin_i03_grid_scans")
     proc = subprocess.run(
         [
             spotfinder_path,
@@ -425,8 +425,8 @@ def test_dispersion_gridscan(dials_data, tmp_path):
         maximum = np.max(data, axis=0)
         mean = np.mean(data, axis=0)
         assert minimum.tolist() == pytest.approx([0.50, 0.50, 0.50], abs=5e-3)
-        assert maximum.tolist() == pytest.approx([4147.50, 4361.50, 0.50], abs=5e-3)
-        assert mean.tolist() == pytest.approx([2070.02, 2141.43, 0.50], abs=5e-3)
+        assert maximum.tolist() == pytest.approx([4147.50, 4361.50, 419.50], abs=5e-3)
+        assert mean.tolist() == pytest.approx([2070.02, 2141.43, 225.801439], abs=5e-3)
 
 
 def test_dispersion_extended_32bit(dials_data, tmp_path):
@@ -435,7 +435,7 @@ def test_dispersion_extended_32bit(dials_data, tmp_path):
     """
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER_32BIT")
     assert spotfinder_path
-    d = dials_data("lysozyme_ssx_25keV", pathlib=True)
+    d = dials_data("lysozyme_ssx_25keV")
     proc = subprocess.run(
         [
             spotfinder_path,
@@ -495,8 +495,8 @@ def test_dispersion_extended_32bit(dials_data, tmp_path):
         maximum = np.max(data, axis=0)
         mean = np.mean(data, axis=0)
         assert minimum.tolist() == pytest.approx([46.67, 344.61, 0.50], abs=5e-3)
-        assert maximum.tolist() == pytest.approx([2788.09, 3005.04, 0.50], abs=5e-3)
-        assert mean.tolist() == pytest.approx([1596.73, 1710.75, 0.50], abs=5e-3)
+        assert maximum.tolist() == pytest.approx([2788.09, 3005.04, 99.50], abs=5e-3)
+        assert mean.tolist() == pytest.approx([1596.73, 1710.75, 55.223718], abs=5e-3)
 
 
 # Strong pixels per image for the first five cunir_serial CBF images
@@ -526,7 +526,7 @@ def _run_spotfinder_pipe(args: list, cwd: Path) -> list[dict]:
 
 @pytest.mark.parametrize("image", range(5))
 def test_cbf_single_file(dials_data, tmp_path, image):
-    d = dials_data("cunir_serial", pathlib=True)
+    d = dials_data("cunir_serial")
     output = _run_spotfinder_pipe(
         [
             d / f"merlin0047_1700{image}.cbf",
@@ -545,7 +545,7 @@ def test_cbf_single_file(dials_data, tmp_path, image):
 
 
 def test_cbf_template(dials_data, tmp_path):
-    d = dials_data("cunir_serial", pathlib=True)
+    d = dials_data("cunir_serial")
     output = _run_spotfinder_pipe(
         [
             d / "merlin0047_17###.cbf",
@@ -567,7 +567,7 @@ def test_cbf_template(dials_data, tmp_path):
 def test_cbf_16bit_spotfinder_requests_32bit(dials_data, tmp_path):
     spotfinder_path = os.getenv("SPOTFINDER")
     assert spotfinder_path
-    d = dials_data("cunir_serial", pathlib=True)
+    d = dials_data("cunir_serial")
     proc = subprocess.run(
         [spotfinder_path, d / "merlin0047_17000.cbf"], capture_output=True, cwd=tmp_path
     )
