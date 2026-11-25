@@ -291,7 +291,6 @@ def run(args=None):
         action="store_true",
         help="Save a json summary output to results_summary.json",
     )
-    parser.add_argument("--test", action="store_true", help="Run in test mode")
 
     parsed = parser.parse_args(args)
     min_spots = parsed.min_spots
@@ -450,26 +449,22 @@ def run(args=None):
 
     # ideally would generate an indexed.expt type file...
     # ok say we have in imported.expt, need to add crystals to indexed images
-    if parsed.test:
-        with open("indexed_crystals.json", "w") as f:
-            json.dump(output_aggregator.output_crystals_list, f, indent=2)
-    else:
-        expts["crystal"] = output_aggregator.output_crystals_list
-        for i, id_ in enumerate(output_aggregator.output_crystals_id_nos):
-            expts["experiment"][id_]["crystal"] = i
-        expts_to_remove = []
-        for i, expt in enumerate(expts["experiment"]):
-            if "crystal" not in expt:
-                expts_to_remove.append(i)
-        for i in expts_to_remove[::-1]:
-            del expts["experiment"][i]
-        # now set the identifiers correctly - we need to match things up as the imported experimentlist
-        # from dials and spotfinding from ffs will not have matching identifiers.
-        output_aggregator.set_output_identifiers()
-        for i, identifier in enumerate(output_aggregator.output_experiment_identifiers):
-            expts["experiment"][i]["identifier"] = identifier
-        with open("indexed.expt", "w") as f:
-            json.dump(expts, f, indent=2)
+    expts["crystal"] = output_aggregator.output_crystals_list
+    for i, id_ in enumerate(output_aggregator.output_crystals_id_nos):
+        expts["experiment"][id_]["crystal"] = i
+    expts_to_remove = []
+    for i, expt in enumerate(expts["experiment"]):
+        if "crystal" not in expt:
+            expts_to_remove.append(i)
+    for i in expts_to_remove[::-1]:
+        del expts["experiment"][i]
+    # now set the identifiers correctly - we need to match things up as the imported experimentlist
+    # from dials and spotfinding from ffs will not have matching identifiers.
+    output_aggregator.set_output_identifiers()
+    for i, identifier in enumerate(output_aggregator.output_experiment_identifiers):
+        expts["experiment"][i]["identifier"] = identifier
+    with open("indexed.expt", "w") as f:
+        json.dump(expts, f, indent=2)
 
     if output_summary:
         with open("results_summary.json", "w") as f:

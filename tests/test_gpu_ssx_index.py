@@ -59,6 +59,120 @@ expected_output_crystals = [
     },
 ]
 
+def make_imported_expt(dials_data, tmp_path):
+    data = {"__id__": "ExperimentList"}
+    data["experiment"] = [
+        {
+            "__id__": "Experiment",
+            "identifier": f"{i}",
+            "beam": 0,
+            "detector": 0,
+            "goniometer": 0,
+            "scan": i,
+            "imageset": 0,
+        }
+        for i in range(0, 20)
+    ]
+    data["scan"] = [
+        {
+            "image_range": [i, i],
+            "batch_offset": 0,
+            "properties": {
+                "epochs": [0.0],
+                "exposure_time": [0.0],
+                "oscillation": [0.0],
+                "oscillation_width": [0.0],
+            },
+            "valid_image_ranges": {},
+        }
+        for i in range(1, 21)
+    ]
+    data["imageset"] = [
+        {
+            "__id__": "ImageSequence",
+            "template": str(dials_data("lysozyme_ssx_25keV") / "lysozyme_25keV.nxs"),
+            "single_file_indices": list(range(0, 20)),
+            "mask": "",
+            "gain": "",
+            "pedestal": "",
+            "dx": "",
+            "dy": "",
+            "params": {"dynamic_shadowing": "Auto", "multi_panel": False},
+        }
+    ]
+    data["beam"] = [
+        {
+            "__id__": "monochromatic",
+            "direction": [0.0, 0.0, 1.0],
+            "wavelength": 0.4959,
+            "divergence": 0.0,
+            "sigma_divergence": 0.0,
+            "polarization_normal": [0.0, 1.0, 0.0],
+            "polarization_fraction": 0.999,
+            "flux": 0.0,
+            "transmission": 1.0,
+            "probe": "x-ray",
+            "sample_to_source_distance": 0.0,
+        }
+    ]
+    data["detector"] = [
+        {
+            "panels": [
+                {
+                    "name": "/entry/instrument/detector/module",
+                    "type": "SENSOR_PAD",
+                    "fast_axis": [1.0, 0.0, 0.0],
+                    "slow_axis": [0.0, -1.0, 0.0],
+                    "origin": [-119.625, 126.90, -420.33],
+                    "raw_image_offset": [0, 0],
+                    "image_size": [3108, 3262],
+                    "pixel_size": [0.075, 0.075],
+                    "trusted_range": [-1.0, 50649.0],
+                    "thickness": 0.75,
+                    "material": "CdTe",
+                    "mu": 7.285849919020173,
+                    "identifier": "",
+                    "mask": [],
+                    "gain": 1.0,
+                    "pedestal": 0.0,
+                    "px_mm_strategy": {"type": "ParallaxCorrectedPxMmStrategy"},
+                }
+            ],
+            "hierarchy": {
+                "name": "",
+                "type": "",
+                "fast_axis": [1.0, 0.0, 0.0],
+                "slow_axis": [0.0, 1.0, 0.0],
+                "origin": [-0.20550000000000068, 0.030750000000011823, 0.0],
+                "raw_image_offset": [0, 0],
+                "image_size": [0, 0],
+                "pixel_size": [0.0, 0.0],
+                "trusted_range": [0.0, 0.0],
+                "thickness": 0.0,
+                "material": "",
+                "mu": 0.0,
+                "identifier": "",
+                "mask": [],
+                "gain": 1.0,
+                "pedestal": 0.0,
+                "px_mm_strategy": {"type": "SimplePxMmStrategy"},
+                "children": [{"panel": 0}],
+            },
+        }
+    ]
+    data["goniometer"] = [
+        {
+            "rotation_axis": [1.0, 0.0, 0.0],
+            "fixed_rotation": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            "setting_rotation": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        }
+    ]
+    data["crystal"] = []
+    data["profile"] = []
+    data["scaling_model"] = []
+    with open(tmp_path / "imported.expt", "w") as f:
+        json.dump(data, f)
+
 
 def test_gpu_ssx_index(dials_data, tmp_path):
     """
@@ -77,38 +191,18 @@ def test_gpu_ssx_index(dials_data, tmp_path):
     except RuntimeError:
         pytest.skip("ffbidx installed but not functional on this system")
 
-    # FIXME need to generate imported.expt for ssx_index
-    # The relevant parts needed from an imported.expt generated from
     # dials.import $(dials.data get -q lysozyme_ssx_25keV)/lysozyme_25keV.nxs \
-    #   distance=420.33 fast_slow_beam_centre=1597.74,1692.41
-    imported_expt_stub = {
-        "beam": [{"wavelength": 0.4959}],
-        "detector": [
-            {
-                "panels": [
-                    {
-                        "origin": [-119.625, 126.90, -420.33],
-                        "image_size": [3108, 3262],
-                        "pixel_size": [0.075, 0.075],
-                        "thickness": 0.75,
-                        "mu": 7.285849919020163,
-                    }
-                ],
-                "hierarchy": {
-                    "origin": [-0.2055, 0.03075, 0.0],
-                },
-            }
-        ],
-    }
-    with open(tmp_path / "tmp.expt", "w") as f:
-        json.dump(imported_expt_stub, f)
+    #   distance=420.33 fast_slow_beam_centre=1597.74,1692.41 image_range=1,20
+    make_imported_expt(dials_data, tmp_path)
+    imported_expt = tmp_path / "imported.expt"
+    assert imported_expt.exists()
 
     # First do spotfinding
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER_32BIT")
     ssx_index = Path(os.getenv("FFS_ROOT_DIR")) / "src" / "ffs" / "ssx_index.py"
 
     assert spotfinder_path
-    d = dials_data("lysozyme_ssx_25keV", pathlib=True)
+    d = dials_data("lysozyme_ssx_25keV")
     proc = subprocess.run(
         [
             spotfinder_path,
@@ -143,8 +237,7 @@ def test_gpu_ssx_index(dials_data, tmp_path):
             "-r",
             "results_ffs.h5",
             "-e",
-            tmp_path / "tmp.expt",
-            "--test",  # can't output correct indexed.expt from non-real input imported.expt
+            "imported.expt",
             "-c",
             "79",
             "79",
@@ -159,9 +252,9 @@ def test_gpu_ssx_index(dials_data, tmp_path):
     )
     assert not proc.stderr
     assert (tmp_path / "indexed.refl").exists()
-    assert (tmp_path / "indexed_crystals.json").exists()
-    with open(tmp_path / "indexed_crystals.json", "r") as f:
-        crystals = json.load(f)
+    with open(tmp_path / "indexed.expt", "r") as f:
+        expts = json.load(f)
+        crystals = expts["crystal"]
         for i, (crystal, expected) in enumerate(
             zip(crystals, expected_output_crystals)
         ):
