@@ -253,6 +253,7 @@ def test_gpu_ssx_index(dials_data, tmp_path):
     )
     assert not proc.stderr
     assert (tmp_path / "indexed.refl").exists()
+    assert (tmp_path / "indexed.expt").exists()
     with open(tmp_path / "indexed.expt", "r") as f:
         expts = json.load(f)
         crystals = expts["crystal"]
@@ -269,6 +270,10 @@ def test_gpu_ssx_index(dials_data, tmp_path):
             assert crystal["real_space_c"] == pytest.approx(
                 expected["real_space_c"], abs=1e-9
             )
+    assert (tmp_path / "results_summary.json").exists()
+    with open(tmp_path / "results_summary.json", "r") as f:
+        results_summary = json.load(f)
+        assert len(results_summary) == 20
 
     with h5py.File(tmp_path / "indexed.refl", "r") as file:
         ids = file["/dials/processing/group_0/id"]
