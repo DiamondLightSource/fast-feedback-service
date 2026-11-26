@@ -7,6 +7,6 @@
 
 #include "ssx_integrate.hpp"
 
-NB_MODULE(integrate, m) {
+/*NB_MODULE(integrate, m) {
     m.def("ssx_integrate", &ssx_integrate, "ssx integrate");
-}
+}*/

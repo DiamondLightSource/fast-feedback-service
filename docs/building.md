@@ -61,11 +61,11 @@ and then installs the python package and the compiled programs into the
 environment. After that a plain `ninja -C build` is enough for a C++
 change, which is what `build.sh` does on later runs.
 
-One thing a compile does not cover: `import ffs.index` and
-`import ffs.integrate` read from the environment's site-packages, not from
-the build directory, because that is the only place python looks for a
-submodule of an installed package. If you change the C++ behind either
-extension module, use `./build.sh --install` to refresh them.
+One thing a compile does not cover: `import ffs.index` read from the
+environment's site-packages, not from the build directory, because that
+is the only place python looks for a submodule of an installed package.
+If you change the C++ behind the extension module, use `./build.sh --install`
+to refresh it.
 
 **Options:**
 

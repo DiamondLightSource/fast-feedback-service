@@ -124,6 +124,7 @@ class SSXPredictor {
                                     const Eigen::Matrix3d &A,
                                     const Detector &detector,
                                     const double mosaicity_min,
+                                    const int nobs,
                                     const int bbox_border = 4) const;
 
   private:

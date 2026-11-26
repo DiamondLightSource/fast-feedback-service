@@ -38,7 +38,8 @@ class Reflection3D {
           z_min_(std::numeric_limits<int>::max()),
           z_max_(std::numeric_limits<int>::min()),
           num_pixels_(0),
-          com_cached_(false) {}
+          com_cached_(false),
+          total_intensity_cache_(0) {}
 
     void add_signal(const Signal &signal) {
         signals_.push_back(signal);
@@ -97,9 +98,21 @@ class Reflection3D {
         com_cache_ = {weighted_sum_x / total_intensity,
                       weighted_sum_y / total_intensity,
                       weighted_sum_z / total_intensity};
-
+        total_intensity_cache_ = total_intensity;
         com_cached_ = true;  // Mark cache as valid
         return com_cache_;
+    }
+
+    int total_intensity() const {
+        if (com_cached_) {
+            return total_intensity_cache_;
+        }
+        int total_intensity = 0;
+        for (const auto &signal : signals_) {
+            total_intensity += signal.intensity;
+        }
+        total_intensity_cache_ = total_intensity;
+        return total_intensity_cache_;
     }
 
     /**
@@ -224,6 +237,11 @@ class Reflection3D {
                                                               const Scan &scan,
                                                               const double phi) const;
 
+    std::tuple<double, double, double, double, double> mobs_and_covariance_2D(
+      const Vector3d &s1,
+      const Vector3d &s0,
+      const Panel &panel) const;
+
     // Getters for bounding box
     inline uint32_t get_x_min() const {
         return x_min_;
@@ -257,6 +275,7 @@ class Reflection3D {
     // com cache for lazy evaluation
     mutable bool com_cached_;
     mutable std::tuple<float, float, float> com_cache_;
+    mutable int total_intensity_cache_;
 
     /**
      * @brief Determines if the first signal

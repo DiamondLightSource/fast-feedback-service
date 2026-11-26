@@ -737,6 +737,13 @@ int main(int argc, char **argv) {
     }
 #pragma endregion Resolution Filtering
 
+    std::array<int, 2> image_size = {static_cast<int>(width), static_cast<int>(height)};
+    Panel panel(detector.distance * 1000,
+                {detector.beam_center_x, detector.beam_center_y},
+                {detector.pixel_size_x * 1000, detector.pixel_size_y * 1000},
+                image_size);
+    Vector3d s0 = {0.0, 0.0, -1.0 / wavelength};
+
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
 
     auto next_image = std::atomic<int>(0);
@@ -765,6 +772,18 @@ int main(int argc, char **argv) {
     std::unique_ptr<std::map<int, std::vector<float>>> reflection_centers_2d = nullptr;
     std::mutex
       reflection_centers_2d_mutex;  // Mutex to protect the reflection centers 2d map
+    std::unique_ptr<std::map<int, std::vector<int>>> reflection_bbox_2d = nullptr;
+    std::mutex reflection_bbox_2d_mutex;  // Mutex to protect the reflection bbox 2d map
+    std::unique_ptr<std::map<int, std::vector<int>>> reflection_intensities_mapptr =
+      nullptr;
+    std::mutex
+      reflection_intensities_mutex;  // Mutex to protect the reflection intensities map
+    std::unique_ptr<std::map<int, std::vector<double>>> reflection_covariances_2d =
+      nullptr;
+    std::mutex
+      reflection_covariances_2d_mutex;  // Mutex to protect the reflection covariances map
+    std::unique_ptr<std::map<int, std::vector<double>>> mobs_mapptr = nullptr;
+    std::mutex mobs_mutex;  // Mutex to protect the reflection intensities map
 
     if (oscillation_width > 0) {
         // If oscillation information is available then this is a rotation dataset
@@ -777,6 +796,12 @@ int main(int argc, char **argv) {
             // A map we will use to save results as we go.
             reflection_centers_2d =
               std::make_unique<std::map<int, std::vector<float>>>();
+            reflection_bbox_2d = std::make_unique<std::map<int, std::vector<int>>>();
+            reflection_intensities_mapptr =
+              std::make_unique<std::map<int, std::vector<int>>>();
+            reflection_covariances_2d =
+              std::make_unique<std::map<int, std::vector<double>>>();
+            mobs_mapptr = std::make_unique<std::map<int, std::vector<double>>>();
         }
     }
 
@@ -991,7 +1016,7 @@ int main(int argc, char **argv) {
                         // Store the connected components slice in the map
                         (*rotation_slices)[offset_image_num] =
                           std::move(connected_components_2d);
-                    } else if (save_to_h5 || output_for_index) {
+                    } else if (save_to_h5 | output_for_index) {
                         std::vector<Reflection3D> reflections =
                           connected_components_2d->find_2d_components(
                             min_spot_size, max_peak_centroid_separation);
@@ -1002,10 +1027,53 @@ int main(int argc, char **argv) {
                             centers_of_mass.push_back(z);
                         }
                         if (save_to_h5) {
+                            // if we want live integration, these will need moving up a section.
+                            std::vector<int> spot_intensities;
+                            std::vector<double> spot_covariances;
+                            std::vector<double> mobs;
+                            std::vector<int> bboxes_xyz;
+                            bboxes_xyz.reserve(reflections.size() * 6);
+                            mobs.reserve(reflections.size() * 2);
+                            spot_covariances.reserve(reflections.size() * 3);
+                            spot_intensities.reserve(reflections.size());
+                            for (const auto &r : reflections) {
+                                spot_intensities.push_back(r.total_intensity());
+                                // Note; spot covariances are needed for ssx integration
+                                // and will need to pass through live indexing if want
+                                // live integration.
+                                auto [x, y, z] = r.center_of_mass();
+                                auto [xmm, ymm] = panel.px_to_mm(x, y);
+                                Vector3d s1 = panel.get_lab_coord(xmm, ymm);
+                                auto [xbar_0, xbar_1, varx, vary, varxy] =
+                                  r.mobs_and_covariance_2D(s1, s0, panel);
+                                spot_covariances.push_back(varx);
+                                spot_covariances.push_back(vary);
+                                spot_covariances.push_back(varxy);
+                                mobs.push_back(xbar_0);
+                                mobs.push_back(xbar_1);
+                                bboxes_xyz.push_back(r.get_x_min());
+                                bboxes_xyz.push_back(r.get_x_max() + 1);
+                                bboxes_xyz.push_back(r.get_y_min());
+                                bboxes_xyz.push_back(r.get_y_max() + 1);
+                                bboxes_xyz.push_back(r.get_z_min());
+                                bboxes_xyz.push_back(r.get_z_max() + 1);
+                            }
                             std::lock_guard<std::mutex> lock(
                               reflection_centers_2d_mutex);
                             (*reflection_centers_2d)[offset_image_num] =
                               centers_of_mass;
+                            std::lock_guard<std::mutex> lock2(reflection_bbox_2d_mutex);
+                            (*reflection_bbox_2d)[offset_image_num] = bboxes_xyz;
+                            std::lock_guard<std::mutex> lock3(
+                              reflection_intensities_mutex);
+                            (*reflection_intensities_mapptr)[offset_image_num] =
+                              spot_intensities;
+                            std::lock_guard<std::mutex> lock4(
+                              reflection_covariances_2d_mutex);
+                            (*reflection_covariances_2d)[offset_image_num] =
+                              spot_covariances;
+                            std::lock_guard<std::mutex> lock5(mobs_mutex);
+                            (*mobs_mapptr)[offset_image_num] = mobs;
                         }
                     }
 
@@ -1267,13 +1335,7 @@ int main(int argc, char **argv) {
         // integration without needing to reload data.
         // Key new metadata needed
         //  - rotation axis (default +x?)
-        std::array<int, 2> image_size = {static_cast<int>(width),
-                                         static_cast<int>(height)};
-        Panel panel(detector.distance * 1000,
-                    {detector.beam_center_x, detector.beam_center_y},
-                    {detector.pixel_size_x * 1000, detector.pixel_size_y * 1000},
-                    image_size);
-        Vector3d s0 = {0.0, 0.0, -1.0 / wavelength};
+
         Scan scan({1, static_cast<int>(num_images)},
                   {oscillation_start, oscillation_width});
         int image_range_0 = scan.get_image_range()[0];
@@ -1284,6 +1346,7 @@ int main(int argc, char **argv) {
         // Data vectors for output.
         std::vector<double> sigma_b_variances;
         std::vector<double> sigma_m_variances;
+        std::vector<double> spot_covariances;
         std::vector<int> bbox_depths;
         sigma_b_variances.reserve(reflections_3d.size());
         sigma_m_variances.reserve(reflections_3d.size());
@@ -1376,6 +1439,10 @@ int main(int argc, char **argv) {
         try {
             std::vector<double> flat_coms;
             std::vector<int> ids;
+            std::vector<int> bboxes;
+            std::vector<int> spot_intensities;
+            std::vector<double> flat_covariances;
+            std::vector<double> flat_mobs;
             std::vector<int> centers_map_keys;
             for (const auto &pair : *reflection_centers_2d) {
                 centers_map_keys.push_back(pair.first);
@@ -1390,6 +1457,24 @@ int main(int argc, char **argv) {
                 }
                 for (int i = 0; i < n_refls; ++i) {
                     ids.push_back(id);
+                }
+                std::vector<double> mobs_this = (*mobs_mapptr)[imageno];
+                for (auto m : mobs_this) {
+                    flat_mobs.push_back(m);
+                }
+                std::vector<int> spot_intensities_this =
+                  (*reflection_intensities_mapptr)[imageno];
+                for (auto intensity : spot_intensities_this) {
+                    spot_intensities.push_back(intensity);
+                }
+                std::vector<int> bboxes_this = (*reflection_bbox_2d)[imageno];
+                for (auto bbox : bboxes_this) {
+                    bboxes.push_back(bbox);
+                }
+                std::vector<double> flat_covariances_this =
+                  (*reflection_covariances_2d)[imageno];
+                for (auto cov : flat_covariances_this) {
+                    flat_covariances.push_back(cov);
                 }
                 id += 1;
             }
@@ -1407,6 +1492,14 @@ int main(int argc, char **argv) {
             std::vector<std::size_t> panel_ids(
               ids.size(), 0);  // We are assuming single panel detector
             table.add_column("panel", panel_ids.size(), 1, panel_ids);
+            table.add_column("bbox", panel_ids.size(), 6, bboxes);
+            table.add_column(
+              "intensity.sum.value", spot_intensities.size(), 1, spot_intensities);
+            table.add_column("spot_covariance_2d_packed",
+                             flat_covariances.size() / 3,
+                             3,
+                             flat_covariances);
+            table.add_column("spot_mobs_2d", flat_mobs.size() / 2, 2, flat_mobs);
 
             // Write the table to an HDF5 file
             table.write("results_ffs.h5", "dials/processing/group_0");

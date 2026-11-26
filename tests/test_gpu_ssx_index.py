@@ -175,11 +175,11 @@ def make_imported_expt(dials_data, tmp_path):
         json.dump(data, f)
 
 
-def test_gpu_ssx_index(dials_data, tmp_path):
+def test_gpu_ssx_index_integrate(dials_data, tmp_path):
     """
-    Test the GPU SSX indexing code.
+    Test the GPU SSX indexing and integration code.
 
-    First runs spotfinding and then ssx_index.py script.
+    First runs spotfinding and then ssx_index.py script, then ssx_integrate.
     Skips if ffbidx is not sourced/available.
     """
     try:
@@ -201,6 +201,7 @@ def test_gpu_ssx_index(dials_data, tmp_path):
     # First do spotfinding
     spotfinder_path: str | Path | None = os.getenv("SPOTFINDER_32BIT")
     ssx_index = Path(os.getenv("FFS_ROOT_DIR")) / "src" / "ffs" / "ssx_index.py"
+    integrator_path: str | Path | None = os.getenv("SSX_INTEGRATOR")
 
     assert spotfinder_path
     d = dials_data("lysozyme_ssx_25keV")
@@ -305,3 +306,36 @@ def test_gpu_ssx_index(dials_data, tmp_path):
         assert np.min(delpsi) == pytest.approx(-0.0018911, abs=1e-6)
         assert np.max(delpsi) == pytest.approx(0.0138742, abs=1e-6)
         assert np.mean(delpsi) == pytest.approx(0.0001618, abs=1e-6)
+
+    ## Now run gpu integrator
+    proc = subprocess.run(
+        [
+            integrator_path,
+            "-r",
+            "indexed.refl",
+            "-e",
+            "indexed.expt",
+        ],
+        capture_output=True,
+        cwd=tmp_path,
+    )
+    assert not proc.stderr
+    assert (tmp_path / "integrated.refl").exists()
+    assert (tmp_path / "integrated.expt").exists()
+
+    # Expected n refls are not ground truth values - just use to catch unexpected changes
+    # from current state
+    expected_n_refls = [1626, 270, 118, 450, 214, 116, 182]
+    expected_mean_intensity = [0.76, 3.43, 6.61, 0.46, 12.88, 11.0, 6.25]
+    with h5py.File(tmp_path / "integrated.refl", "r") as file:
+        ids = file["/dials/processing/group_0/id"][()]
+        intensities = file["/dials/processing/group_0/intensity.sum.value"][()]
+        assert ids.size == 2976
+        assert set(ids) == set(range(0, 7))  # 7 indexed images are all integrated.
+        for id_, n_expected, I_expected in zip(
+            range(0, 7), expected_n_refls, expected_mean_intensity
+        ):
+            n_this = ids[ids == id_].size
+            assert n_this == n_expected
+            intensities_this = intensities[ids == id_]
+            assert np.mean(intensities_this) == pytest.approx(I_expected, 1e-2)
