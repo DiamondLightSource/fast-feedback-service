@@ -239,7 +239,7 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
             "-r",
             "results_ffs.h5",
             "-e",
-            imported_expt,
+            "imported.expt",
             "-c",
             "79",
             "79",
@@ -247,6 +247,7 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
             "90",
             "90",
             "90",
+            "--output-summary",
         ],
         capture_output=True,
         cwd=tmp_path,
@@ -270,6 +271,10 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
             assert crystal["real_space_c"] == pytest.approx(
                 expected["real_space_c"], abs=1e-9
             )
+    assert (tmp_path / "results_summary.json").exists()
+    with open(tmp_path / "results_summary.json", "r") as f:
+        results_summary = json.load(f)
+        assert len(results_summary) == 20
 
     with h5py.File(tmp_path / "indexed.refl", "r") as file:
         ids = file["/dials/processing/group_0/id"]
