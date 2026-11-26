@@ -687,7 +687,6 @@ int main(int argc, char **argv) {
             CudaStream stream;
             CudaEvent copy_done;
 
-
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
             auto device_image = PitchedMalloc<pixel_t>(width, height);
 
@@ -806,8 +805,7 @@ int main(int argc, char **argv) {
                 size_t num_refls_this_image = refl_indices.size();
 
                 const size_t *d_reflection_indices =
-                      d_all_reflection_indices.data()
-                      + image_index_offset.at(image_num);
+                  d_all_reflection_indices.data() + image_index_offset.at(image_num);
 
                 logger.info("Launching GPU kernel for image {} with {} reflections",
                             image_num,

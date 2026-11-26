@@ -332,7 +332,9 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
         intensities = file["/dials/processing/group_0/intensity.sum.value"][()]
         assert ids.size == 2976
         assert set(ids) == set(range(0, 7))  # 7 indexed images are all integrated.
-        for id_, n_expected, I_expected in zip(range(0,7), expected_n_refls, expected_mean_intensity):
+        for id_, n_expected, I_expected in zip(
+            range(0, 7), expected_n_refls, expected_mean_intensity
+        ):
             n_this = ids[ids == id_].size
             assert n_this == n_expected
             intensities_this = intensities[ids == id_]
