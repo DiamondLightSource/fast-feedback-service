@@ -566,6 +566,7 @@ int main(int argc, char **argv) {
     DeviceBuffer<Vec2D> d_mubar(num_reflections);
     DeviceBuffer<Mat2D> d_sbar_inv(num_reflections);
     DeviceBuffer<uint8_t> d_success(num_reflections);
+    DeviceBuffer<size_t> d_reflection_indices(num_reflections);
 
     d_d_matrix.assign(d_matrix_flat.data());
     d_s1_vectors.assign(s1_vectors_vec.data());
@@ -576,6 +577,19 @@ int main(int argc, char **argv) {
     d_bboxes.assign(bboxes.data());
     std::vector<uint8_t> success_init(num_reflections, 1);
     d_success.assign(success_init.data());
+
+    // Every image's reflection indices in one device array, uploaded once, with
+    // each image's start offset. A per-image allocation would end in a cudaFree,
+    // which waits for the whole device and so serialises the reader threads.
+    std::unordered_map<int, size_t> image_index_offset;
+    std::vector<size_t> all_reflection_indices;
+    for (const auto &[image, refls] : reflections_by_image) {
+        image_index_offset[image] = all_reflection_indices.size();
+        all_reflection_indices.insert(
+          all_reflection_indices.end(), refls.begin(), refls.end());
+    }
+    DeviceBuffer<size_t> d_all_reflection_indices(all_reflection_indices.size());
+    d_all_reflection_indices.assign(all_reflection_indices.data());
 
     // Two copies of the pool must fit beside the image buffers, since the
     // reduction sorts into a second one.
@@ -673,7 +687,6 @@ int main(int argc, char **argv) {
             CudaStream stream;
             CudaEvent copy_done;
 
-            DeviceBuffer<size_t> d_reflection_indices(max_n_refls_in_image);
 
             auto host_image = make_cuda_pinned_malloc<pixel_t>(width * height);
             auto device_image = PitchedMalloc<pixel_t>(width, height);
@@ -792,8 +805,10 @@ int main(int argc, char **argv) {
                 const auto &refl_indices = reflections_by_image[image_num];
                 size_t num_refls_this_image = refl_indices.size();
 
-                // Allocate per-image device buffer for reflection indices
-                d_reflection_indices.assign(refl_indices.data(), refl_indices.size());
+                const size_t *d_reflection_indices =
+                      d_all_reflection_indices.data()
+                      + image_index_offset.at(image_num);
+
                 logger.info("Launching GPU kernel for image {} with {} reflections",
                             image_num,
                             num_refls_this_image);
@@ -808,7 +823,7 @@ int main(int argc, char **argv) {
                                             det_params,
                                             s0_vec,
                                             d_bboxes.data(),
-                                            d_reflection_indices.data(),
+                                            d_reflection_indices,
                                             d_s2_vectors.data(),
                                             d_mubar.data(),
                                             d_sbar_inv.data(),
