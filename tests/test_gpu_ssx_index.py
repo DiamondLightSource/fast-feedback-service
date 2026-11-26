@@ -323,6 +323,17 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
     assert (tmp_path / "integrated.refl").exists()
     assert (tmp_path / "integrated.expt").exists()
 
+    # Expected n refls are not ground truth values - just use to catch unexpected changes
+    # from current state
+    expected_n_refls = [1626, 270, 118, 450, 214, 116, 182]
+    expected_mean_intensity = [0.76, 3.43, 6.61, 0.46, 12.88, 11.0, 6.25]
     with h5py.File(tmp_path / "integrated.refl", "r") as file:
-        ids = file["/dials/processing/group_0/id"]
+        ids = file["/dials/processing/group_0/id"][()]
+        intensities = file["/dials/processing/group_0/intensity.sum.value"][()]
+        assert ids.size == 2976
         assert set(ids) == set(range(0, 7))  # 7 indexed images are all integrated.
+        for id_, n_expected, I_expected in zip(range(0,7), expected_n_refls, expected_mean_intensity):
+            n_this = ids[ids == id_].size
+            assert n_this == n_expected
+            intensities_this = intensities[ids == id_]
+            assert np.mean(intensities_this) == pytest.approx(I_expected, 1e-2)
