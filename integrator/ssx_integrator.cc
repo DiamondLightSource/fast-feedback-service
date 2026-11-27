@@ -356,7 +356,7 @@ int main(int argc, char **argv) {
                     mdspan_type<const double> mobs = mobs_opt.value();
 
                     // refine predict
-                    Simple6MosaicityParameterisation model =
+                    std::optional<Simple6MosaicityParameterisation> model =
                       refine_mosaicity(xyzcal_px,
                                        xyzobs_px,
                                        covariances,
@@ -366,22 +366,25 @@ int main(int argc, char **argv) {
                                        s0,
                                        panel,
                                        this_crystal.get_A_matrix());
-                    std::vector<Prediction> predictions =
-                      predict_ssx(model,
-                                  s0,
-                                  panel,
-                                  this_crystal.get_A_matrix(),
-                                  xyzcal_px.extent(0));
-                    logger.info("Predicted {} reflections on image {}",
-                                predictions.size(),
-                                image_no);
-                    if (predictions.size() > 0) {
-                        std::lock_guard<std::mutex> lock(predictions_mutex);
-                        (*predictions_mapptr)[image_no] = std::move(predictions);
-                        std::lock_guard<std::mutex> lock2(models_mutex);
-                        (*models_mapptr)[image_no] = std::move(model);
+                    if (model.has_value()){
+                      std::vector<Prediction> predictions =
+                          predict_ssx(model.value(),
+                                      s0,
+                                      panel,
+                                      this_crystal.get_A_matrix(),
+                                      xyzcal_px.extent(0));
+                        logger.info("Predicted {} reflections on image {}",
+                                    predictions.size(),
+                                    image_no);
+                        if (predictions.size() > 0) {
+                            std::lock_guard<std::mutex> lock(predictions_mutex);
+                            (*predictions_mapptr)[image_no] = std::move(predictions);
+                            std::lock_guard<std::mutex> lock2(models_mutex);
+                            (*models_mapptr)[image_no] = std::move(model.value());
+                        }
+                    } else {
+                      logger.info("Unable to refine mosaicity model for image {}", image_no);
                     }
-
                 } catch (...) {
                     std::lock_guard<std::mutex> lk(eptr_mtx);
                     if (!eptr) eptr = std::current_exception();

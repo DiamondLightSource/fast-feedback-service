@@ -4,6 +4,7 @@
 #include <experimental/mdspan>
 #include <math/math_utils.cuh>
 #include <vector>
+#include "ffs_logger.hpp"
 
 #include "fisher_scoring_max_likelihood.hpp"
 #include "integrator/extent.hpp"
@@ -21,7 +22,7 @@ using mdspan_type =
 The input vectors are typically short (<100 values),
 as they are the data for successfully indexed spots.
 */
-Simple6MosaicityParameterisation refine_mosaicity(
+std::optional<Simple6MosaicityParameterisation> refine_mosaicity(
   mdspan_type<const double> &xyzcal_px,
   mdspan_type<const double> &xyzobs_px,
   mdspan_type<const double> &covariances,
@@ -42,6 +43,13 @@ Simple6MosaicityParameterisation refine_mosaicity(
             keep.push_back(i);
         }
     }
+
+    if (keep.size() < 8){
+      // Return a null model
+      logger.info("Unable to refine as only {} reflections remain after filtering", keep.size());
+      return {};
+    }
+
     // Now make filtered arrays - redo this to be smart and do nothing if no data filtered out?
     std::vector<double> intensities_f;
     std::vector<Vector3d> covariances_f;
@@ -99,8 +107,12 @@ Simple6MosaicityParameterisation refine_mosaicity(
       model, A, s0, sp_list, covariances_f, intensities_f, miller_indices_f, mobs_f);
     FisherScoringMaximumLikelihood scorer =
       FisherScoringMaximumLikelihood(model, target);
-    scorer.solve();
-    Matrix3d sigma = model.sigma();
+    try {
+      scorer.solve();
+    } catch (const std::exception &e) {
+        logger.info("Mosaicity refinement failed: {}", e.what());
+        return {};
+    }
     return model;
 }
 

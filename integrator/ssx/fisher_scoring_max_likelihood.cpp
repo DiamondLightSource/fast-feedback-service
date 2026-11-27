@@ -32,7 +32,13 @@ ParameterVector FisherScoringMaximumLikelihood::solve_update_equation(
     if (ldlt.info() != Eigen::Success) {
         throw std::runtime_error("Failed to compute decomposition");
     }
-    return ldlt.solve(S);
+    ParameterVector p = ldlt.solve(S);
+
+    if (ldlt.info() != Eigen::Success) {
+        throw std::runtime_error("Failed to solve update equation");
+    }
+
+    return p;
 }
 
 double FisherScoringMaximumLikelihood::line_search(const ParameterVector &x,
@@ -102,6 +108,14 @@ void FisherScoringMaximumLikelihood::solve() {
 
     for (std::size_t iter = 0; iter < max_iter_; ++iter) {
         auto [S, I] = score_and_fisher_information(x);
+
+        if (!I.allFinite()) {
+            throw std::runtime_error("Fisher matrix contains NaNs/Infs");
+        }
+
+        if (!S.allFinite()) {
+            throw std::runtime_error("Score vector contains NaNs/Infs");
+        }
 
         ParameterVector p = solve_update_equation(S, I);
 
