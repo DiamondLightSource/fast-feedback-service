@@ -307,7 +307,8 @@ int main(int argc, char **argv) {
                     mdspan_type<const double> covariances = covariances_opt.value();
 
                     // FIXME - dials data comes in as double, ffs as int
-                    std::vector<double> strong_intensities_storage; // Here to keep in scope
+                    std::vector<double>
+                      strong_intensities_storage;  // Here to keep in scope
                     mdspan_type<const double> strong_intensities;
                     auto intensities_opt = table.column<double>("intensity.sum.value");
                     if (!intensities_opt) {
