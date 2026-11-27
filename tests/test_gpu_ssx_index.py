@@ -296,8 +296,8 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
         maximum = np.max(xyzobs, axis=0)
         mean = np.mean(xyzobs, axis=0)
         assert minimum.tolist() == pytest.approx([735.07, 736.18, 0.50], abs=5e-3)
-        assert maximum.tolist() == pytest.approx([2788.09, 2672.50, 0.50], abs=5e-3)
-        assert mean.tolist() == pytest.approx([1684.60, 1714.56, 0.50], abs=5e-3)
+        assert maximum.tolist() == pytest.approx([2788.09, 2672.50, 18.50], abs=5e-3)
+        assert mean.tolist() == pytest.approx([1684.60, 1714.56, 12.6566], abs=5e-3)
 
         assert np.min(miller_index, axis=0).tolist() == [-19, -30, -17]
         assert np.max(miller_index, axis=0).tolist() == [25, 21, 10]
@@ -325,12 +325,12 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
 
     # Expected n refls are not ground truth values - just use to catch unexpected changes
     # from current state
-    expected_n_refls = [1626, 270, 118, 450, 214, 116, 182]
-    expected_mean_intensity = [0.76, 3.43, 6.61, 0.46, 12.88, 11.0, 6.25]
+    expected_n_refls = [1487, 249, 124, 380, 196, 108, 182]
+    expected_mean_intensity = [0.83, 3.61, 6.39, 1.28, 13.66, 11.74, 6.24]
     with h5py.File(tmp_path / "integrated.refl", "r") as file:
         ids = file["/dials/processing/group_0/id"][()]
         intensities = file["/dials/processing/group_0/intensity.sum.value"][()]
-        assert ids.size == 2976
+        assert ids.size == 2726
         assert set(ids) == set(range(0, 7))  # 7 indexed images are all integrated.
         for id_, n_expected, I_expected in zip(
             range(0, 7), expected_n_refls, expected_mean_intensity

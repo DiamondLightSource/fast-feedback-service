@@ -237,6 +237,7 @@ int main(int argc, char **argv) {
     int num_reflections = 0;
 
     std::unordered_map<int, size_t> reflections_in_image;
+    std::mutex reflections_in_image_mutex;
 
     const std::vector<std::string> &identifiers = reflections.get_identifiers();
     const std::vector<uint64_t> &expt_ids = reflections.get_experiment_ids();
@@ -273,8 +274,12 @@ int main(int argc, char **argv) {
 
                     std::vector<std::string> identifiers = table.get_identifiers();
                     int image_no = identifier_to_image_number[identifier];
-                    reflections_in_image[image_no] = table.size();
-                    num_reflections += table.size();
+                    size_t n = table.size();
+                    {
+                        std::lock_guard<std::mutex> lock(reflections_in_image_mutex);
+                        reflections_in_image[image_no] = n;
+                        num_reflections += n;
+                    }
                     Crystal this_crystal = identifier_to_crystal_model[identifier];
                     // make mdspans of data
                     auto xyzobs_px_ = table.column<double>("xyzobs.px.value");
@@ -302,6 +307,8 @@ int main(int argc, char **argv) {
                     mdspan_type<const double> covariances = covariances_opt.value();
 
                     // FIXME - dials data comes in as double, ffs as int
+                    std::vector<double>
+                      strong_intensities_storage;  // Here to keep in scope
                     mdspan_type<const double> strong_intensities;
                     auto intensities_opt = table.column<double>("intensity.sum.value");
                     if (!intensities_opt) {
@@ -315,19 +322,18 @@ int main(int argc, char **argv) {
                         }
                         mdspan_type<const int> strong_intensities_int =
                           intensities_opt_int.value();
-                        std::vector<double> strong_intensities_double;
-                        strong_intensities_double.reserve(
+                        strong_intensities_storage.reserve(
                           strong_intensities_int.extent(0)
                           * strong_intensities_int.extent(1));
 
                         for (std::size_t i = 0; i < strong_intensities_int.extent(0);
                              ++i) {
-                            strong_intensities_double.push_back(
+                            strong_intensities_storage.push_back(
                               static_cast<double>(strong_intensities_int(i, 0)));
                         }
                         strong_intensities =
-                          mdspan_type<const double>(strong_intensities_double.data(),
-                                                    strong_intensities_double.size(),
+                          mdspan_type<const double>(strong_intensities_storage.data(),
+                                                    strong_intensities_storage.size(),
                                                     1);
                     } else {
                         strong_intensities = intensities_opt.value();
