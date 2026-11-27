@@ -21,6 +21,7 @@
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <numeric>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -356,7 +357,7 @@ int main(int argc, char **argv) {
                     mdspan_type<const double> mobs = mobs_opt.value();
 
                     // refine predict
-                    Simple6MosaicityParameterisation model =
+                    std::optional<Simple6MosaicityParameterisation> model =
                       refine_mosaicity(xyzcal_px,
                                        xyzobs_px,
                                        covariances,
@@ -366,22 +367,26 @@ int main(int argc, char **argv) {
                                        s0,
                                        panel,
                                        this_crystal.get_A_matrix());
-                    std::vector<Prediction> predictions =
-                      predict_ssx(model,
-                                  s0,
-                                  panel,
-                                  this_crystal.get_A_matrix(),
-                                  xyzcal_px.extent(0));
-                    logger.info("Predicted {} reflections on image {}",
-                                predictions.size(),
-                                image_no);
-                    if (predictions.size() > 0) {
-                        std::lock_guard<std::mutex> lock(predictions_mutex);
-                        (*predictions_mapptr)[image_no] = std::move(predictions);
-                        std::lock_guard<std::mutex> lock2(models_mutex);
-                        (*models_mapptr)[image_no] = std::move(model);
+                    if (model.has_value()) {
+                        std::vector<Prediction> predictions =
+                          predict_ssx(model.value(),
+                                      s0,
+                                      panel,
+                                      this_crystal.get_A_matrix(),
+                                      xyzcal_px.extent(0));
+                        logger.info("Predicted {} reflections on image {}",
+                                    predictions.size(),
+                                    image_no);
+                        if (predictions.size() > 0) {
+                            std::lock_guard<std::mutex> lock(predictions_mutex);
+                            (*predictions_mapptr)[image_no] = std::move(predictions);
+                            std::lock_guard<std::mutex> lock2(models_mutex);
+                            (*models_mapptr)[image_no] = std::move(model.value());
+                        }
+                    } else {
+                        logger.info("Unable to refine mosaicity model for image {}",
+                                    image_no);
                     }
-
                 } catch (...) {
                     std::lock_guard<std::mutex> lk(eptr_mtx);
                     if (!eptr) eptr = std::current_exception();
@@ -391,13 +396,16 @@ int main(int argc, char **argv) {
     }
     if (eptr) std::rethrow_exception(eptr);
 
+    std::vector<std::string> identifiers_to_keep;
+    identifiers_to_keep.reserve(image_number_to_identifier.size());
     std::size_t total_predictions = 0;
     for (const auto &[key, predictions] : *predictions_mapptr) {
         total_predictions += predictions.size();
+        identifiers_to_keep.push_back(image_number_to_identifier[key]);
     }
     logger.info("{} reflections predicted across {} unique images",
                 total_predictions,
-                reflections_in_image.size());
+                (*predictions_mapptr).size());
     num_reflections = total_predictions;
 
     const uint64_t background_pool_capacity =
@@ -1045,9 +1053,9 @@ int main(int argc, char **argv) {
         }
     }
 
-    std::vector<std::string> final_identifiers = reflections.get_identifiers();
-    std::vector<uint64_t> ids_in = reflections.get_experiment_ids();
-    ReflectionTable integrated_data(ids_in, final_identifiers);
+    std::vector<uint64_t> ids_out(current_id);
+    std::iota(ids_out.begin(), ids_out.end(), 0);
+    ReflectionTable integrated_data(ids_out, identifiers_to_keep);
     integrated_data.add_column("intensity.sum.value", num_reflections, 1, intensities);
     integrated_data.add_column("intensity.sum.variance", num_reflections, 1, variances);
     integrated_data.add_column("id", num_reflections, 1, predicted_ids);
@@ -1080,7 +1088,7 @@ int main(int argc, char **argv) {
     success_data.write("integrated.refl");
 
     // Need to add profile models to an integrated.expt list.
-    ExperimentList integrated_expts = elist.select(identifiers);
+    ExperimentList integrated_expts = elist.select(identifiers_to_keep);
     json integrated_elist_json = integrated_expts.to_json();
     std::string efile_name = "integrated.expt";
     std::ofstream efile(efile_name);

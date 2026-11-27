@@ -2,6 +2,7 @@
 #include <Eigen/Dense>
 #include <dx2/detector.hpp>
 #include <experimental/mdspan>
+#include <optional>
 #include <vector>
 
 #include "mosaicity_parameterisation.hpp"
@@ -14,7 +15,7 @@ template <typename T>
 using mdspan_type =
   std::experimental::mdspan<T, std::experimental::dextents<size_t, 2>>;
 
-Simple6MosaicityParameterisation refine_mosaicity(
+std::optional<Simple6MosaicityParameterisation> refine_mosaicity(
   mdspan_type<const double> &xyzcal_px,
   mdspan_type<const double> &xyzobs_px,
   mdspan_type<const double> &covariances,
