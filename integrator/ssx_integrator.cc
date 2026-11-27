@@ -1053,8 +1053,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    //std::vector<std::string> final_identifiers = reflections.get_identifiers();
-    //std::vector<uint64_t> ids_in = reflections.get_experiment_ids();
     std::vector<uint64_t> ids_out(current_id);
     std::iota(ids_out.begin(), ids_out.end(), 0);
     ReflectionTable integrated_data(ids_out, identifiers_to_keep);
