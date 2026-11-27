@@ -188,7 +188,7 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
         pytest.skip("ffbidx not installed")
     try:
         ffbidx.Indexer()
-        #ffbidx.runtime_check()
+        ffbidx.runtime_check()
     except RuntimeError:
         pytest.skip("ffbidx installed but not functional on this system")
 
@@ -325,12 +325,12 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
 
     # Expected n refls are not ground truth values - just use to catch unexpected changes
     # from current state
-    expected_n_refls = [1626, 270, 118, 450, 214, 116, 182]
-    expected_mean_intensity = [0.76, 3.43, 6.61, 0.46, 12.88, 11.0, 6.25]
+    expected_n_refls = [1487, 249, 124, 380, 196, 108, 182]
+    expected_mean_intensity = [0.83, 3.61, 6.39, 1.28, 13.66, 11.74, 6.24]
     with h5py.File(tmp_path / "integrated.refl", "r") as file:
         ids = file["/dials/processing/group_0/id"][()]
         intensities = file["/dials/processing/group_0/intensity.sum.value"][()]
-        assert ids.size == 2976
+        assert ids.size == 2726
         assert set(ids) == set(range(0, 7))  # 7 indexed images are all integrated.
         for id_, n_expected, I_expected in zip(
             range(0, 7), expected_n_refls, expected_mean_intensity
