@@ -21,10 +21,10 @@
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <numeric>
 #include <stop_token>
 #include <string>
 #include <thread>
-#include <numeric>
 
 #include "../spotfinder/cbfread.hpp"
 #include "../spotfinder/shmread.hpp"
@@ -367,8 +367,8 @@ int main(int argc, char **argv) {
                                        s0,
                                        panel,
                                        this_crystal.get_A_matrix());
-                    if (model.has_value()){
-                      std::vector<Prediction> predictions =
+                    if (model.has_value()) {
+                        std::vector<Prediction> predictions =
                           predict_ssx(model.value(),
                                       s0,
                                       panel,
@@ -384,7 +384,8 @@ int main(int argc, char **argv) {
                             (*models_mapptr)[image_no] = std::move(model.value());
                         }
                     } else {
-                      logger.info("Unable to refine mosaicity model for image {}", image_no);
+                        logger.info("Unable to refine mosaicity model for image {}",
+                                    image_no);
                     }
                 } catch (...) {
                     std::lock_guard<std::mutex> lk(eptr_mtx);

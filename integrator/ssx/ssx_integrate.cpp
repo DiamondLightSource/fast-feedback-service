@@ -4,8 +4,8 @@
 #include <experimental/mdspan>
 #include <math/math_utils.cuh>
 #include <vector>
-#include "ffs_logger.hpp"
 
+#include "ffs_logger.hpp"
 #include "fisher_scoring_max_likelihood.hpp"
 #include "integrator/extent.hpp"
 #include "integrator/sigma_estimation.hpp"
@@ -44,10 +44,11 @@ std::optional<Simple6MosaicityParameterisation> refine_mosaicity(
         }
     }
 
-    if (keep.size() < 8){
-      // Return a null model
-      logger.info("Unable to refine as only {} reflections remain after filtering", keep.size());
-      return {};
+    if (keep.size() < 8) {
+        // Return a null model
+        logger.info("Unable to refine as only {} reflections remain after filtering",
+                    keep.size());
+        return {};
     }
 
     // Now make filtered arrays - redo this to be smart and do nothing if no data filtered out?
@@ -108,7 +109,7 @@ std::optional<Simple6MosaicityParameterisation> refine_mosaicity(
     FisherScoringMaximumLikelihood scorer =
       FisherScoringMaximumLikelihood(model, target);
     try {
-      scorer.solve();
+        scorer.solve();
     } catch (const std::exception &e) {
         logger.info("Mosaicity refinement failed: {}", e.what());
         return {};

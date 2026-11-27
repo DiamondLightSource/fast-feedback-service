@@ -162,15 +162,16 @@ TEST(SSXIntegrator, ssx_refine_mosaicity) {
     mdspan_type<const double> mobs_span =
       mdspan_type<const double>(mobs.data(), mobs.size() / 2, 2);
 
-    std::optional<Simple6MosaicityParameterisation> model = refine_mosaicity(xyzcal_px_span,
-                                                              xyzobs_px_span,
-                                                              covariances_span,
-                                                              intensities_span,
-                                                              miller_indices_span,
-                                                              mobs_span,
-                                                              s0,
-                                                              panel,
-                                                              A);
+    std::optional<Simple6MosaicityParameterisation> model =
+      refine_mosaicity(xyzcal_px_span,
+                       xyzobs_px_span,
+                       covariances_span,
+                       intensities_span,
+                       miller_indices_span,
+                       mobs_span,
+                       s0,
+                       panel,
+                       A);
     auto mosaicity = model.value().mosaicity();
     EXPECT_NEAR(mosaicity.min * 1e6, 80.1153, 1e-3);  // Verified calculations
     EXPECT_NEAR(mosaicity.mid * 1e6, 629.709, 1e-3);  // Verified calculations

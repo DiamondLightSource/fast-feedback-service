@@ -2,8 +2,8 @@
 #include <Eigen/Dense>
 #include <dx2/detector.hpp>
 #include <experimental/mdspan>
-#include <vector>
 #include <optional>
+#include <vector>
 
 #include "mosaicity_parameterisation.hpp"
 #include "predictor/predict.hpp"
