@@ -24,6 +24,7 @@
 #include <stop_token>
 #include <string>
 #include <thread>
+#include <numeric>
 
 #include "../spotfinder/cbfread.hpp"
 #include "../spotfinder/shmread.hpp"
@@ -394,13 +395,16 @@ int main(int argc, char **argv) {
     }
     if (eptr) std::rethrow_exception(eptr);
 
+    std::vector<std::string> identifiers_to_keep;
+    identifiers_to_keep.reserve(image_number_to_identifier.size());
     std::size_t total_predictions = 0;
     for (const auto &[key, predictions] : *predictions_mapptr) {
         total_predictions += predictions.size();
+        identifiers_to_keep.push_back(image_number_to_identifier[key]);
     }
     logger.info("{} reflections predicted across {} unique images",
                 total_predictions,
-                reflections_in_image.size());
+                (*predictions_mapptr).size());
     num_reflections = total_predictions;
 
     const uint64_t background_pool_capacity =
@@ -1048,9 +1052,11 @@ int main(int argc, char **argv) {
         }
     }
 
-    std::vector<std::string> final_identifiers = reflections.get_identifiers();
-    std::vector<uint64_t> ids_in = reflections.get_experiment_ids();
-    ReflectionTable integrated_data(ids_in, final_identifiers);
+    //std::vector<std::string> final_identifiers = reflections.get_identifiers();
+    //std::vector<uint64_t> ids_in = reflections.get_experiment_ids();
+    std::vector<uint64_t> ids_out(current_id);
+    std::iota(ids_out.begin(), ids_out.end(), 0);
+    ReflectionTable integrated_data(ids_out, identifiers_to_keep);
     integrated_data.add_column("intensity.sum.value", num_reflections, 1, intensities);
     integrated_data.add_column("intensity.sum.variance", num_reflections, 1, variances);
     integrated_data.add_column("id", num_reflections, 1, predicted_ids);
@@ -1083,7 +1089,7 @@ int main(int argc, char **argv) {
     success_data.write("integrated.refl");
 
     // Need to add profile models to an integrated.expt list.
-    ExperimentList integrated_expts = elist.select(identifiers);
+    ExperimentList integrated_expts = elist.select(identifiers_to_keep);
     json integrated_elist_json = integrated_expts.to_json();
     std::string efile_name = "integrated.expt";
     std::ofstream efile(efile_name);
