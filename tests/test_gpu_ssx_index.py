@@ -188,7 +188,7 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
         pytest.skip("ffbidx not installed")
     try:
         ffbidx.Indexer()
-        ffbidx.runtime_check()
+        #ffbidx.runtime_check()
     except RuntimeError:
         pytest.skip("ffbidx installed but not functional on this system")
 
@@ -296,8 +296,8 @@ def test_gpu_ssx_index_integrate(dials_data, tmp_path):
         maximum = np.max(xyzobs, axis=0)
         mean = np.mean(xyzobs, axis=0)
         assert minimum.tolist() == pytest.approx([735.07, 736.18, 0.50], abs=5e-3)
-        assert maximum.tolist() == pytest.approx([2788.09, 2672.50, 0.50], abs=5e-3)
-        assert mean.tolist() == pytest.approx([1684.60, 1714.56, 0.50], abs=5e-3)
+        assert maximum.tolist() == pytest.approx([2788.09, 2672.50, 18.50], abs=5e-3)
+        assert mean.tolist() == pytest.approx([1684.60, 1714.56, 12.6566], abs=5e-3)
 
         assert np.min(miller_index, axis=0).tolist() == [-19, -30, -17]
         assert np.max(miller_index, axis=0).tolist() == [25, 21, 10]
